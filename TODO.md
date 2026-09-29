@@ -43,9 +43,9 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 
 ## Todo (near term)
 
-- [ ] Plan Phase 2 in Plan mode (equations of motion, frames, events): PlanarDynamics2D, rotation and the 465.1 m/s release test, atmosphere in the RHS, drag and back-pressure, guidance, payload bisection, elliptical-orbit test, calibration fork of the F9 file.
-- [ ] Cosmetic: track-normal g of 6e-17 (cos(pi/2) roundoff) appears in metrics.json for vertical tracks (summary prints 0); clamp in assist.base.normal_load_N when next touching it.
-- [ ] Cosmetic: config.SweepPoint.sweep_index is 0-based while sim uses 1-based sweep_<n> directories (sim checks the relation); make config 1-based.
+- [~] Plan Phase 2 in Plan mode (equations of motion, frames, events): PlanarDynamics2D, rotation and the 465.1 m/s release test, atmosphere in the RHS, drag and back-pressure, guidance, payload bisection, elliptical-orbit test, calibration fork of the F9 file.
+- [x] Won't fix: track-normal g of 6e-17 on vertical tracks is cos(pi/2) roundoff; the summary prints 0 and a clamp would need a magic tolerance.
+- [x] config.SweepPoint.sweep_index is now 1-based like the sweep_<n> directories (test added).
 - [ ] Results retention: three run+sweep pairs from 2026-09-29 have tracked summaries (cited pair 103623Z/103634Z, reviewer pair 104503Z/104510Z, gate pair 105657Z/105707Z); decide whether to keep only cited pairs (deleting results needs your OK per CLAUDE.md).
 - [ ] Phase 2 prep: re-source the F9 propellant loads and stage-2 dry mass in the calibration fork (FT spec sheet values differ from the README generics).
 

@@ -643,9 +643,12 @@ class ResolvedRun:
 class SweepPoint:
     """One grid point of a sweep.
 
-    ``run.name`` is ``run_NNNN`` with NNNN = point_index, numbered within its own sweep,
-    so it is unique only per sweep: results must be namespaced by sweep_index as well
-    (for example ``sweep_1/run_0001``) or the sweeps of one experiment would collide.
+    ``sweep_index`` and ``point_index`` are both 1-based: sweep_index is the position of
+    the sweep in the experiment's ``sweeps`` list and names the ``sweep_<n>`` results
+    directory. ``run.name`` is ``run_NNNN`` with NNNN = point_index, numbered within its
+    own sweep, so it is unique only per sweep: results must be namespaced by sweep_index
+    as well (for example ``sweep_1/run_0001``) or the sweeps of one experiment would
+    collide.
     """
 
     sweep_index: int
@@ -749,13 +752,13 @@ def resolve_experiment(
     runs = {baseline.name: baseline, **variants}
 
     sweeps: list[list[SweepPoint]] = []
-    for k, sweep in enumerate(experiment.sweeps):
+    for k, sweep in enumerate(experiment.sweeps, start=1):
         parent = runs[sweep.of]
         points: list[SweepPoint] = []
         paths = list(sweep.axes)
         for i, values in enumerate(itertools.product(*(sweep.axes[p] for p in paths)), start=1):
             overrides = dict(zip(paths, values, strict=True))
-            r, v = _perturb(parent, overrides, f"sweep {k + 1}")
+            r, v = _perturb(parent, overrides, f"sweep {k}")
             point = resolve_run(f"run_{i:04d}", r, v)
             points.append(SweepPoint(k, i, sweep.of, overrides, point))
         sweeps.append(points)

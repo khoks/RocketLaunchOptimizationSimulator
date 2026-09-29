@@ -610,3 +610,16 @@ def test_tiny_experiment_resolves(tiny_dict: dict[str, Any], toy_dict: dict[str,
     toy = resolved.baseline.to_vehicle()
     assert math.isclose(toy.stages[0].c_mps, 3000.0, rel_tol=1e-12)
     assert toy.liftoff_mass_kg() == 1360.0
+
+
+def test_sweep_points_are_numbered_from_one(repo_root: Path) -> None:
+    """Sweeps and points are both 1-based so they match the sweep_<n>/run_<NNNN> dirs."""
+    exp_path = repo_root / "experiments" / "silo_screening_1d.yaml"
+    exp = yaml.safe_load(exp_path.read_text(encoding="utf-8"))
+    veh_path = repo_root / exp["vehicle"]
+    veh = yaml.safe_load(veh_path.read_text(encoding="utf-8"))
+    resolved = resolve_experiment(exp, veh)
+    for k, points in enumerate(resolved.sweeps, start=1):
+        assert [p.sweep_index for p in points] == [k] * len(points)
+        assert [p.point_index for p in points] == list(range(1, len(points) + 1))
+        assert all(p.run.name == f"run_{p.point_index:04d}" for p in points)

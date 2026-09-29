@@ -459,10 +459,8 @@ class ExperimentResult:
 class SweepResult:
     """One sweep: its 1-based index, the run it perturbs, the axis paths and the points.
 
-    ``sweep_index`` is 1-based and names the ``sweep_<n>`` directory;
-    config.SweepPoint.sweep_index (on every entry of ``points``) is 0-based, so
-    ``point.sweep_index + 1 == sweep_index`` (checked by run_sweep). Build paths and
-    labels from this field, not from the points.
+    ``sweep_index`` is 1-based and names the ``sweep_<n>`` directory; it equals
+    config.SweepPoint.sweep_index on every entry of ``points`` (checked by run_sweep).
     """
 
     sweep_index: int
@@ -2752,8 +2750,8 @@ def _run_sweeps_into(
     sweeps: list[SweepResult] = []
     frames: list[pd.DataFrame] = []
     for k, points in enumerate(resolved.sweeps, start=1):
-        if any(p.sweep_index != k - 1 for p in points):
-            raise ValueError(f"sweep_{k}: config.SweepPoint.sweep_index is expected 0-based")
+        if any(p.sweep_index != k for p in points):
+            raise ValueError(f"sweep_{k}: config.SweepPoint.sweep_index must equal {k}")
         sweep_dir = out_dir / f"sweep_{k}"
         axes = list(exp.sweeps[k - 1].axes)
         results: list[RunResult] = []
