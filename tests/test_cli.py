@@ -54,20 +54,20 @@ def test_run_writes_layout_and_prints_ascii(
     out.encode("ascii")  # pure ASCII stdout
     run_dir = _only_run_dir(tmp_path, "tiny_experiment")
     assert _ascii(str(run_dir)) in out  # say() escapes non-ASCII temp paths
-    assert "pad (baseline): not_simulated" in out
-    assert "silo: not_simulated" in out
+    assert "pad (baseline): nominal" in out
+    assert "silo: nominal" in out
 
     for name in ("resolved_config.yaml", "metrics.json", "summary.md"):
         assert (run_dir / name).is_file(), name
     for variant in ("pad", "silo"):
         assert (run_dir / variant / "timeseries.csv").is_file()
         assert (run_dir / variant / "events.csv").is_file()
-    assert not (run_dir / "plots").exists()  # no time series yet, and --no-plots
+    assert not (run_dir / "plots").exists()  # --no-plots
 
     metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
     assert metrics["timestamp_utc"] == run_dir.name.split("-")[0]  # one clock read
     assert set(metrics["runs"]) == {"pad", "silo"}
-    assert metrics["runs"]["silo"]["status"] == "not_simulated"
+    assert metrics["runs"]["silo"]["status"] == "nominal"
     assert metrics["runs"]["silo"]["assist_model"] == "constant_accel"
     assert metrics["runs"]["pad"]["liftoff_mass_kg"] == pytest.approx(1360.0)
     assert metrics["comparison"]["silo"]["delta_liftoff_mass_kg"] == 0.0
@@ -87,10 +87,15 @@ def test_run_writes_layout_and_prints_ascii(
     for key in sim.REQUIRED_METRICS:  # the CLAUDE.md summary list is always a column
         assert f" {key} " in header, key
 
-    header = (run_dir / "silo" / "timeseries.csv").read_text(encoding="utf-8").splitlines()
-    assert header == ["t_s,z_m,v_mps,m_kg"]  # header written even when empty
+    silo_rows = (run_dir / "silo" / "timeseries.csv").read_text(encoding="utf-8").splitlines()
+    assert silo_rows[0] == ",".join(sim.TIMESERIES_COLUMNS) and len(silo_rows) > 100
     events = (run_dir / "silo" / "events.csv").read_text(encoding="utf-8").splitlines()
-    assert events == ["t_s,event,phase"]
+    assert events[0] == ",".join(sim.EVENT_COLUMNS) and len(events) > 3
+    assert metrics["runs"]["silo"]["exit_speed_mps"] > 0.0
+    pad_rows = (run_dir / "pad" / "timeseries.csv").read_text(encoding="utf-8").splitlines()
+    assert pad_rows[0] == ",".join(sim.TIMESERIES_COLUMNS) and len(pad_rows) > 100
+    assert metrics["runs"]["pad"]["status"] == "nominal"
+    assert metrics["runs"]["pad"]["stage1_burnout_t_s"] == pytest.approx(160.0, rel=1e-9)
 
 
 def test_second_run_creates_a_new_directory(
@@ -316,7 +321,7 @@ def test_sweep_writes_points_and_index(tmp_path: Path, capsys: pytest.CaptureFix
     # the top-level summary's assumptions cover the swept points, not only the baseline
     top = (run_dir / "summary.md").read_text(encoding="utf-8")
     assumptions = top.split("## Assumptions")[1]
-    assert "constant_accel: prescribed net acceleration 1 g0 over 10 m (assumed) [" in assumptions
+    assert "constant_accel: prescribed net acceleration 1 g0 (assumed)" in assumptions
     assert "sweep_1/run_0001" in assumptions
     assert "[all runs]" in assumptions  # the Phase 1 lines are shared by pad and every point
     assert "constant_accel: carriage mass 0 t (assumed) [all sweep points]" in assumptions
@@ -327,17 +332,17 @@ def test_sweep_writes_points_and_index(tmp_path: Path, capsys: pytest.CaptureFix
     assert [r["run_dir"] for r in rows] == [f"sweep_1/run_{i:04d}" for i in range(1, 5)]
     grid = [(float(r["assist.net_accel_g"]), float(r["assist.stroke_m"])) for r in rows]
     assert grid == [(1, 10), (1, 20), (2, 10), (2, 20)]  # itertools.product, axis order
-    assert all(r["status"] == "not_simulated" for r in rows)
+    assert all(r["status"] == "nominal" for r in rows)
     point3 = json.loads((sweep_dir / "run_0003" / "metrics.json").read_text(encoding="utf-8"))
     assert point3["run"] == "run_0003" and point3["baseline"] == "pad"
 
 
-def test_full_experiment_with_plots_enabled_placeholder_writes_no_plots(
+@pytest.mark.slow
+def test_full_experiment_with_plots_enabled_writes_pad_plots(
     repo_root: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The shipped experiment runs end to end with plots on; the placeholder has no time
-    series, so no plots/ directory appears (write_plots itself is tested in
-    test_results_io). Build step 9 turns this into an assertion on the PNGs."""
+    """The shipped experiment runs end to end with plots on: every run, pad and silo,
+    gets its PNGs. Build step 9 curates the plotted set."""
     exp = repo_root / "experiments" / "silo_screening_1d.yaml"
     code = main(["run", str(exp), "--results-root", str(tmp_path)])
     out = capsys.readouterr().out
@@ -347,4 +352,9 @@ def test_full_experiment_with_plots_enabled_placeholder_writes_no_plots(
     metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
     assert len(metrics["runs"]) == 10  # pad + 9 variants
     assert (run_dir / "silo_failed" / "timeseries.csv").is_file()
-    assert not (run_dir / "plots").exists()
+    assert metrics["runs"]["pad"]["status"] == "nominal"
+    assert metrics["runs"]["pad_instant"]["status"] == "nominal"
+    assert metrics["runs"]["silo_cold"]["status"] == "nominal"
+    assert metrics["runs"]["silo_failed"]["status"] == "impact"
+    assert (run_dir / "plots" / "pad_v_mps.png").is_file()
+    assert (run_dir / "plots" / "silo_cold_v_mps.png").is_file()

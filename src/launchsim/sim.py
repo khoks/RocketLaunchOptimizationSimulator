@@ -1,9 +1,12 @@
 """Run one configuration and return a Result; results I/O (the only module besides cli.py
 that touches the file system).
 
-Build step 4 ships the results layout and a placeholder ``run`` (status
-``not_simulated``); build steps 5-9 replace ``run`` and extend the metrics and summary
-content. ``run_experiment`` and ``run_sweep`` are the stable entry points the CLI calls.
+``simulate`` (pure) runs one configuration through the 1-D planner (``phases``) and
+assembles the Result: time series, events, metrics and the loss budget (``losses``);
+``run`` builds the run-model inputs from a validated RunConfig (mu/r^2 gravity,
+g_eff = mu/R_E^2, ignition specs, the assist model and its track through
+``assist.build_assist``) and calls it. ``run_experiment`` and ``run_sweep`` are the
+stable entry points the CLI calls.
 
 Results layout (never overwritten; CLAUDE.md)::
 
@@ -40,7 +43,7 @@ import re
 import subprocess
 import traceback
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -50,23 +53,74 @@ import pandas as pd
 import yaml
 from matplotlib.figure import Figure
 
-from launchsim.config import (
-    ConstantAccelConfig,
-    ResolvedExperiment,
-    ResolvedRun,
-    RunConfig,
-    SweepPoint,
+from launchsim.assist import NoAssist, build_assist
+from launchsim.assist.base import AssistModel, TrackGeometry
+from launchsim.config import ResolvedExperiment, ResolvedRun, RunConfig, SweepPoint
+from launchsim.constants import MU_EARTH_M3S2
+from launchsim.dynamics import (
+    VERTICAL_LAYOUT,
+    ConstantGravity,
+    Gravity,
+    InverseSquareGravity,
+    TrackParams,
+    g_eff_track,
+    track_observables,
+    track_to_vertical,
 )
+from launchsim.losses import AssistEnergyBudget, LossBudget, assist_energy_budget, loss_budget
+from launchsim.phases import (
+    ASCENT_KINDS,
+    ASSIST_KIND,
+    AscentStart,
+    HoldParams,
+    IgnitionSpec,
+    IntegratorSettings,
+    PhaseResult,
+    RunTrace,
+    VerticalPlanner,
+    sample_grid,
+)
+from launchsim.units import j_to_kwh, to_g
 from launchsim.vehicle import Vehicle
 
-Status = Literal["nominal", "impact", "no_liftoff", "drive_limit", "not_simulated"]
+__all__ = ["NoAssist"]  # re-exported: tests build a pad run with sim.NoAssist()
+
+Status = Literal["nominal", "impact", "no_liftoff", "drive_limit"]
 
 COMPARISON_BASIS = (
     "Comparison basis: sweep-optimized (Phase 1 has no guidance parameters); "
     "1-D vertical, vacuum thrust, no drag, no rotation, no throttling"
 )
-TIMESERIES_COLUMNS: tuple[str, ...] = ("t_s", "z_m", "v_mps", "m_kg")
-EVENT_COLUMNS: tuple[str, ...] = ("t_s", "event", "phase")
+# Track-phase columns of the time series (track_observables); NaN outside ASSIST rows.
+TRACK_COLUMNS: tuple[str, ...] = (
+    "s_m",
+    "drive_force_N",
+    "interface_force_N",
+    "drive_power_W",
+    "track_normal_g_vehicle",
+    "track_normal_g_carriage",
+)
+TIMESERIES_COLUMNS: tuple[str, ...] = (
+    "t_s",
+    "z_m",
+    "v_mps",
+    "m_kg",
+    "t_rel_release_s",
+    "thrust_N",
+    "thrust_vac_N",
+    "accel_felt_g",
+    "phase",
+    "stage",
+    "J_vac_mps",
+    "J_grav_mps",
+    "J_alt_mps",
+    "J_bp_mps",
+    "J_steer_mps",
+    *TRACK_COLUMNS,
+)
+TIMESERIES_TEXT_COLUMNS: frozenset[str] = frozenset({"phase", "stage"})
+EVENT_COLUMNS: tuple[str, ...] = ("t_s", "event", "phase", "stage", "z_m", "v_mps", "m_kg")
+EVENT_TEXT_COLUMNS: frozenset[str] = frozenset({"event", "phase", "stage"})
 TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 GIT_TIMEOUT_S = 5.0
 GIT_EXCLUDE_RESULTS = ":(exclude)results"  # pathspec: the results tree never counts as dirty
@@ -84,20 +138,35 @@ PLOT_DPI = 120
 # with one of these names would be silently overwritten in metrics.json, so it is refused.
 RESERVED_METRIC_KEYS: frozenset[str] = frozenset({"status", "flags"})
 PHASE1_ASSUMPTIONS: tuple[str, ...] = (
-    "1-D vertical motion; gravity mu/r^2 in flight",
+    "1-D vertical motion",
     "vacuum thrust from sea level (no back-pressure), no atmosphere, no drag",
     "no Earth rotation (omega_p = 0), Coriolis neglected",
     "no throttling; instantaneous cutoff at propellant depletion",
 )
+# Phase 1 runs without Earth rotation: the planar rate ``run`` hands to g_eff_track, the
+# one place the value lives (the assumption string below quotes it).
+OMEGA_P_PHASE1_RADS = 0.0
+# What ``run`` fixes and ``simulate`` cannot know from its arguments alone: the run
+# model's gravity and the origin of its g_eff (simulate states the model it was handed).
+RUN_MODEL_ASSUMPTIONS: tuple[str, ...] = (
+    "gravity mu/r^2 in flight (InverseSquareGravity; ConstantGravity exists only for tests)",
+    "pad and track g_eff = mu/R_E^2 - omega_p^2 R_E with omega_p = "
+    f"{OMEGA_P_PHASE1_RADS:g} rad/s, continuous with mu/r^2 at z = 0",
+)
+# Time-series columns write_plots skips: the abscissa itself, t_rel_release_s (a straight
+# line against t_s) and thrust_vac_N (equal to thrust_N while p_amb = 0). Build step 9
+# curates the set for the summaries.
+PLOT_SKIP_COLUMNS: frozenset[str] = frozenset({"t_s", "t_rel_release_s", "thrust_vac_N"})
 # Metric keys every summary must report (CLAUDE.md "Every summary reports"). metrics_table
 # prints them first, "n/a" when a run does not carry one, so a missing item is visible;
-# build step 9 fills them in with these names.
+# the loss and load items are filled by ``run_metrics``, the assist ones by build step 7,
+# the comparison ones (payload equivalent) by build step 9.
 REQUIRED_METRICS: tuple[str, ...] = (
     "payload_equiv_ideal_kg",  # ideal-screening payload equivalent (Phase 1: no payload)
-    "loss_gravity_mps",
-    "loss_drag_mps",
-    "loss_steering_mps",
-    "loss_back_pressure_mps",
+    "gravity_loss_mps",
+    "drag_loss_mps",
+    "steering_loss_mps",
+    "back_pressure_loss_mps",
     "max_q_pa",
     "peak_felt_axial_g",
     "peak_interface_force_N",
@@ -172,18 +241,19 @@ def check_result_names(resolved: ResolvedExperiment) -> None:
 
 
 def empty_timeseries() -> pd.DataFrame:
-    """An empty time-series frame with the standard columns (t_s, z_m, v_mps, m_kg)."""
-    return pd.DataFrame({c: pd.Series(dtype="float64") for c in TIMESERIES_COLUMNS})
+    """An empty time-series frame with the standard columns (TIMESERIES_COLUMNS)."""
+    return pd.DataFrame(
+        {
+            c: pd.Series(dtype="str" if c in TIMESERIES_TEXT_COLUMNS else "float64")
+            for c in TIMESERIES_COLUMNS
+        }
+    )
 
 
 def empty_events() -> pd.DataFrame:
-    """An empty events frame with columns t_s [s], event, phase."""
+    """An empty events frame with the standard columns (EVENT_COLUMNS)."""
     return pd.DataFrame(
-        {
-            "t_s": pd.Series(dtype="float64"),
-            "event": pd.Series(dtype="str"),
-            "phase": pd.Series(dtype="str"),
-        }
+        {c: pd.Series(dtype="str" if c in EVENT_TEXT_COLUMNS else "float64") for c in EVENT_COLUMNS}
     )
 
 
@@ -192,21 +262,24 @@ class Result:
     """Outcome of one run (SI; times are seconds since the run's internal t = 0).
 
     metrics: flat name -> value dict (numbers, strings, None); written to metrics.json.
-    timeseries: sampled state, columns t_s, z_m, v_mps, m_kg (more in later steps).
-    events: phase-boundary events, columns t_s, event, phase.
-    loss_budget / assist_budget: LossBudget / AssistEnergyBudget from build steps 6-7.
+    timeseries: sampled state, columns TIMESERIES_COLUMNS (t_s, z_m, v_mps, m_kg,
+    t_rel_release_s, thrust_N, thrust_vac_N, accel_felt_g, phase, stage, J_*_mps).
+    events: logged events, columns EVENT_COLUMNS (t_s, event, phase, stage, z_m, v_mps,
+    m_kg).
+    loss_budget: LossBudget from release onward (None when not simulated);
+    assist_budget: AssistEnergyBudget (build step 7).
     assumptions: attributed assumption strings for the summary.
-    phases: PhaseResult list (build step 5); empty in the placeholder.
+    phases: the PhaseResult list of the run; empty when not simulated.
     status: nominal, impact, no_liftoff, drive_limit or not_simulated.
-    flags: warnings such as interface_tensile.
+    flags: warnings such as interface_tensile or a disarmed event.
     """
 
     metrics: dict[str, Any]
     timeseries: pd.DataFrame
-    loss_budget: object | None
-    assist_budget: object | None
+    loss_budget: LossBudget | None
+    assist_budget: AssistEnergyBudget | None
     assumptions: list[str]
-    phases: list[Any]
+    phases: list[PhaseResult]
     status: Status
     flags: list[str]
     events: pd.DataFrame = field(default_factory=empty_events)
@@ -259,63 +332,476 @@ class SweepResult:
     run_dirs: list[Path]
 
 
-# ------------------------------------------------------------------- placeholder run
+# ------------------------------------------------------------------------ simulate
+
+SIM_ASSUMPTIONS: tuple[str, ...] = (
+    "loss quadratures reset at release; the identity is accounted from release onward",
+    "a vehicle at rest on the ground is clamped until its thrust exceeds its weight; no "
+    "gravity loss accrues while clamped (propellant burned then is reported as burned "
+    "before flight)",
+    "felt axial acceleration is T/m in flight (vacuum thrust, unthrottled), g_eff while "
+    "clamped and (F_int + T)/m_v = sddot + g_eff sin phi on the track",
+)
+TRACK_ASSUMPTIONS: tuple[str, ...] = (
+    "track phase: 1-DOF along the track in a flat local frame with constant g_eff; the "
+    "carriage stays on the track at release; carriage braking is not modelled as a phase "
+    "(its distance v^2/(2 a_brake) is added to the facility length)",
+    "hot start: the propellant burned before release is reported with its delta-v "
+    "equivalent; the exhaust impingement fraction f_imp on the carriage is an assumed "
+    "amendment to the track equation (the system keeps (1 - f_imp) T)",
+)
 
 
-def constant_accel_assumptions(cfg: ConstantAccelConfig) -> list[str]:
-    """Assumptions of the constant_accel screening drive, listed from its config.
-
-    Every parameter of the drive is an assumption in Phase 1 (nothing is sourced).
-    """
-    return [
-        f"constant_accel: prescribed net acceleration {cfg.net_accel_g:g} g0 over "
-        f"{cfg.stroke_m:g} m (assumed)",
-        f"constant_accel: carriage mass {cfg.carriage_mass_t:g} t (assumed)",
-        f"constant_accel: braking deceleration {cfg.brake_decel_g:g} g0 (assumed)",
-        f"constant_accel: drive efficiency {cfg.drive_efficiency:g} (assumed)",
-        "constant_accel: exhaust impingement fraction "
-        f"{cfg.exhaust_impingement_fraction:g} (assumed)",
-        f"constant_accel: shaft {cfg.shaft}; no air column, no friction",
-        "constant_accel: constant g_eff = mu/R_E^2 on the track, omega_p = 0, Coriolis neglected",
-        "constant_accel: drive force unconstrained; infinite jerk at push start and release",
-        "constant_accel: vehicle clamped to the carriage during any hold",
-    ]
+def gravity_assumption(gravity: Gravity) -> str:
+    """The assumption line naming the ascent gravity model ``simulate`` was handed."""
+    if isinstance(gravity, InverseSquareGravity):
+        return f"gravity mu/r^2 in flight (mu = {gravity.mu_m3s2:.10g} m^3/s^2)"
+    if isinstance(gravity, ConstantGravity):
+        return (
+            f"constant gravity g = {gravity.g_mps2:.7g} m/s^2 in flight (analytic test model, "
+            "not the run model)"
+        )
+    return f"gravity model {type(gravity).__name__} in flight"
 
 
-def run_assumptions(run_config: RunConfig) -> list[str]:
-    """Phase 1 assumptions of a run plus those of its assist model."""
-    out = list(PHASE1_ASSUMPTIONS)
-    if isinstance(run_config.assist, ConstantAccelConfig):
-        out += constant_accel_assumptions(run_config.assist)
-    return out
+def _phase_samples(res: PhaseResult, dt: float) -> tuple[np.ndarray, np.ndarray]:
+    """Sample times [s] and states of one PhaseResult: the phase boundaries plus every
+    multiple of dt strictly inside, from the dense output; a phase without dense
+    output (closed-form hold, pass-through) contributes its own samples."""
+    if res.dense is None:
+        return np.asarray(res.t, dtype=float), np.asarray(res.y, dtype=float)
+    t0, t1 = float(res.spec.t0), float(res.t_end)
+    ts = np.concatenate(([t0], sample_grid(t0, t1, dt), [t1]))
+    ys = np.asarray(res.dense(ts), dtype=float)
+    ys[:, 0] = res.y[:, 0]
+    ys[:, -1] = res.y_end
+    return ts, ys
 
 
-def run(run_config: RunConfig, vehicle: Vehicle) -> Result:
-    """Run one configuration (placeholder until build steps 5-9 land).
-
-    Inputs: a validated RunConfig and the Vehicle dataclass (SI). Output: a Result with
-    status ``not_simulated``, an empty time series and the metrics the layout needs
-    (the status lives on Result.status; metrics must not use RESERVED_METRIC_KEYS).
-    """
-    metrics: dict[str, Any] = {
-        "liftoff_mass_kg": vehicle.liftoff_mass_kg(),
-        "assist_model": run_config.assist.model,
+def _track_rows(ts: np.ndarray, ys: np.ndarray, params: TrackParams) -> dict[str, Any]:
+    """Time-series columns of an ASSIST phase from its track-layout samples: the
+    ascent-frame view (z, v, m through ``track_to_vertical``), the thrust, the felt
+    axial acceleration and the track observables (``track_observables``)."""
+    obs = [track_observables(float(t), ys[:, i], params) for i, t in enumerate(ts)]
+    vert = np.column_stack([track_to_vertical(ys[:, i], params) for i in range(len(ts))])
+    layout = VERTICAL_LAYOUT
+    part: dict[str, Any] = {
+        "z_m": layout.get(vert, "z_m"),
+        "v_mps": layout.get(vert, "v_mps"),
+        "m_kg": layout.get(vert, "m_kg"),
+        "thrust_N": np.array([params.thrust_N(float(t)) for t in ts]),
+        "thrust_vac_N": np.array([params.thrust_vac_N(float(t)) for t in ts]),
+        "accel_felt_g": np.array([o["felt_g"] for o in obs]),
+        "s_m": params.layout.get(ys, "s_m"),
+        "drive_force_N": np.array([o["F_drive_N"] for o in obs]),
+        "interface_force_N": np.array([o["F_int_N"] for o in obs]),
+        "drive_power_W": np.array([o["P_drive_W"] for o in obs]),
+        "track_normal_g_vehicle": np.array([o["N_vehicle_g"] for o in obs]),
+        "track_normal_g_carriage": np.array([o["N_carriage_g"] for o in obs]),
     }
+    for name in layout.names:
+        if name.startswith("J_"):
+            part[name] = np.zeros(len(ts))  # the ascent quadratures start at release
+    return part
+
+
+def sample_trace(trace: RunTrace, vehicle: Vehicle, settings: IntegratorSettings) -> pd.DataFrame:
+    """The time series of a run: every phase sampled at settings.sample_dt_s plus every
+    phase boundary, with the thrust, the felt (proper) axial acceleration in g0 and the
+    loss quadratures; columns TIMESERIES_COLUMNS. accel_felt_g is T/m in free flight,
+    g_eff while clamped (the hold-down carries the weight, so the vehicle feels
+    1 g_eff, not the thrust building under it) and (F_int + T)/m_v = sddot + g_eff sin
+    phi on the track. ASSIST rows show the ascent-frame view of the track state (z from
+    the track start altitude, v = sdot sin phi) plus the TRACK_COLUMNS, which are NaN
+    everywhere else; their ascent quadratures read 0 (the accounting starts at
+    release)."""
+    layout = VERTICAL_LAYOUT
+    parts: list[dict[str, Any]] = []
+    for res in trace.phases:
+        ts, ys = _phase_samples(res, settings.sample_dt_s)
+        params = res.spec.params
+        if isinstance(params, TrackParams):
+            part = _track_rows(ts, ys, params)
+            part.update(
+                {
+                    "t_s": ts,
+                    "t_rel_release_s": ts - trace.t_release_s,
+                    "phase": np.full(len(ts), res.spec.kind, dtype=object),
+                    "stage": np.full(
+                        len(ts), vehicle.stage_names[res.spec.stage_index], dtype=object
+                    ),
+                }
+            )
+            parts.append(part)
+            continue
+        m = np.asarray(layout.get(ys, "m_kg"), dtype=float)
+        if isinstance(params, HoldParams):
+            t_vac = np.array([params.thrust_vac_N(float(t)) for t in ts])
+            thrust = np.array([params.thrust_N(float(t)) for t in ts])
+            felt = np.full(len(ts), to_g(params.g_eff_mps2))
+        else:
+            schedule = getattr(params, "schedule", None)
+            p_amb = float(getattr(params, "p_amb_pa", 0.0))
+            if schedule is None:
+                t_vac = np.zeros(len(ts))
+                thrust = np.zeros(len(ts))
+            else:
+                t_vac = np.array([schedule.thrust_vac_N(float(t)) for t in ts])
+                thrust = np.array([schedule.thrust_N(float(t), p_amb) for t in ts])
+            felt = to_g(thrust / m)
+        part: dict[str, Any] = {
+            "t_s": ts,
+            "z_m": layout.get(ys, "z_m"),
+            "v_mps": layout.get(ys, "v_mps"),
+            "m_kg": m,
+            "t_rel_release_s": ts - trace.t_release_s,
+            "thrust_N": thrust,
+            "thrust_vac_N": t_vac,
+            "accel_felt_g": felt,
+            "phase": np.full(len(ts), res.spec.kind, dtype=object),
+            "stage": np.full(len(ts), vehicle.stage_names[res.spec.stage_index], dtype=object),
+        }
+        for name in layout.names:
+            if name.startswith("J_"):
+                part[name] = layout.get(ys, name)
+        for name in TRACK_COLUMNS:
+            part[name] = np.full(len(ts), np.nan)
+        parts.append(part)
+    if not parts:
+        return empty_timeseries()
+    frame = pd.concat([pd.DataFrame(p) for p in parts], ignore_index=True)
+    return frame[list(TIMESERIES_COLUMNS)]
+
+
+def events_frame(trace: RunTrace) -> pd.DataFrame:
+    """The events of a run as a DataFrame with columns EVENT_COLUMNS."""
+    if not trace.events:
+        return empty_events()
+    rows = [
+        {
+            "t_s": e.t_s,
+            "event": e.name,
+            "phase": e.phase,
+            "stage": e.stage,
+            "z_m": e.z_m,
+            "v_mps": e.v_mps,
+            "m_kg": e.m_kg,
+        }
+        for e in trace.events
+    ]
+    return pd.DataFrame(rows)[list(EVENT_COLUMNS)]
+
+
+def _peak_felt(frame: pd.DataFrame) -> tuple[float | None, float | None, float | None]:
+    """(peak T/m in g0, its time relative to release [s], the mass there [kg]) over the
+    free-flight rows, or Nones when there are none."""
+    flight = frame[frame["phase"].isin(ASCENT_KINDS)]
+    if flight.empty:
+        return None, None, None
+    i = int(flight["accel_felt_g"].to_numpy().argmax())
+    row = flight.iloc[i]
+    return float(row["accel_felt_g"]), float(row["t_rel_release_s"]), float(row["m_kg"])
+
+
+def run_metrics(
+    trace: RunTrace,
+    vehicle: Vehicle,
+    budget: LossBudget,
+    frame: pd.DataFrame,
+    assist_name: str,
+) -> dict[str, Any]:
+    """The flat metrics dict of a run (SI; times relative to release unless the key says
+    otherwise). Items a run did not reach are None (n/a in the summary, null in JSON,
+    skipped by ``compare``); status and flags live on Result, not here.
+
+    Two "burned before" bookkeepings: ``*_before_release`` counts up to t_release (the
+    hold before t = 0 and, with a track, the push); ``*_before_flight`` counts up to the
+    start of the free flight, which adds the propellant burned while clamped past
+    t = 0 waiting for liftoff (an extended hold). The loss budget starts at the flight
+    start, so dv_vac_mps + dv_vac_equiv_before_flight_mps = c ln(m0/m_final) for a
+    first-stage burn: the ``before_flight`` pair is what an identity line against the
+    liftoff mass must use.
+    """
+    layout = VERTICAL_LAYOUT
+    stage0 = vehicle.stages[0]
+    m0 = vehicle.liftoff_mass_kg()
+    t_rel = trace.t_release_s
+    y_rel = trace.y_release
+    y_fs = trace.y_flight_start
+    m_release = m0 if y_rel is None else float(layout.get(y_rel, "m_kg"))
+    m_flight = None if y_fs is None else float(layout.get(y_fs, "m_kg"))
+    metrics: dict[str, Any] = {
+        "liftoff_mass_kg": m0,
+        "assist_model": assist_name,
+        "t_release_s": t_rel,
+        "speed_at_release_mps": None if y_rel is None else abs(float(layout.get(y_rel, "v_mps"))),
+        "alt_at_release_m": None if y_rel is None else float(layout.get(y_rel, "z_m")),
+        "mass_at_release_kg": m_release,
+        "propellant_burned_before_release_kg": m0 - m_release,
+        "dv_vac_equiv_before_release_mps": stage0.c_mps * math.log(m0 / m_release),
+        "t_flight_start_s": (
+            None if trace.t_flight_start_s is None else trace.t_flight_start_s - t_rel
+        ),
+        "mass_at_flight_start_kg": m_flight,
+        "propellant_burned_before_flight_kg": None if m_flight is None else m0 - m_flight,
+        "dv_vac_equiv_before_flight_mps": (
+            None if m_flight is None else stage0.c_mps * math.log(m0 / m_flight)
+        ),
+        "hold_duration_s": None if trace.hold is None else trace.hold.duration_s,
+        "hold_extension_s": None if trace.hold is None else trace.hold.extension_s,
+        "hold_down_force_min_N": None if trace.hold is None else trace.hold.force_min_N,
+        "hold_propellant_burned_kg": (
+            None if trace.hold is None else trace.hold.propellant_burned_kg
+        ),
+    }
+    for stage in vehicle.stages:
+        t_ign = trace.t_ign_abs_s.get(stage.name)
+        metrics[f"t_ign_rel_release_s_{stage.name}"] = None if t_ign is None else t_ign - t_rel
+    bo = trace.burnouts.get(stage0.name)
+    metrics["stage1_burnout_t_s"] = None if bo is None else bo[0] - t_rel
+    metrics["stage1_burnout_speed_mps"] = (
+        None if bo is None else abs(float(layout.get(bo[1], "v_mps")))
+    )
+    metrics["stage1_burnout_alt_m"] = None if bo is None else float(layout.get(bo[1], "z_m"))
+    metrics["stage1_burnout_mass_kg"] = None if bo is None else float(layout.get(bo[1], "m_kg"))
+    if trace.phases:
+        last = trace.phases[-1]
+        metrics["final_t_s"] = last.t_end - t_rel
+        metrics["final_speed_mps"] = abs(float(layout.get(last.y_end, "v_mps")))
+        metrics["final_alt_m"] = float(layout.get(last.y_end, "z_m"))
+        metrics["final_mass_kg"] = float(layout.get(last.y_end, "m_kg"))
+    apexes = [e for e in trace.events if e.name == "apex"]
+    top = max(apexes, key=lambda e: e.z_m) if apexes else None
+    metrics["apex_alt_m"] = None if top is None else top.z_m
+    metrics["apex_t_s"] = None if top is None else top.t_s - t_rel
+    impact = trace.first_event("impact")
+    metrics["impact_t_s"] = None if impact is None else impact.t_s - t_rel
+    metrics["impact_speed_mps"] = None if impact is None else abs(impact.v_mps)
+    peak_g, peak_t, peak_m = _peak_felt(frame)
+    metrics["peak_felt_g_flight"] = peak_g
+    metrics["peak_felt_g_flight_t_s"] = peak_t
+    metrics["peak_felt_g_flight_mass_kg"] = peak_m
+    metrics.update(
+        {
+            "dv_vac_mps": budget.dv_vac,
+            "gravity_loss_mps": budget.gravity,
+            "gravity_loss_duration_mps": budget.gravity_duration,
+            "gravity_loss_alt_mps": budget.gravity_alt,
+            "drag_loss_mps": budget.drag,
+            "steering_loss_mps": budget.steering,
+            "back_pressure_loss_mps": budget.back_pressure,
+            "speed_start_mps": budget.speed_start,
+            "speed_end_mps": budget.speed_end,
+            "identity_residual_mps": budget.residual_mps(),
+            # CLAUDE.md summary items the pad answers trivially; the track ones (build
+            # step 7) overwrite them for assisted runs.
+            "peak_felt_axial_g": peak_g,
+            "peak_track_normal_g": 0.0,
+            "assist_energy_J": 0.0,
+            "assist_energy_kWh": 0.0,
+            "peak_drive_power_W": 0.0,
+            "facility_length_m": 0.0,
+        }
+    )
+    return metrics
+
+
+def track_metrics(
+    trace: RunTrace,
+    assist: AssistModel,
+    track: TrackGeometry,
+    budget: AssistEnergyBudget,
+    frame: pd.DataFrame,
+) -> dict[str, Any]:
+    """The track metrics of an assisted run (SI; units in the names; docs/physics.md,
+    "Silo model ... and every reported quantity").
+
+    Peaks and minima are taken over the sampled ASSIST rows of the time series (every
+    sample_dt_s plus both ends of every sub-phase, so the push start and the release
+    are always included). exit_speed_mps and push_time_s are the release state (None
+    when the run stopped on the track); the facility length includes the carriage
+    braking distance from the exit speed; electrical energy = drive work / efficiency;
+    propellant_burned_on_track_kg counts from the push start to the end of the last
+    track phase.
+    """
+    rows = frame[frame["phase"] == ASSIST_KIND]
+    assist_phases = trace.assist_phases()
+    y_rel = trace.y_release
+    layout = VERTICAL_LAYOUT
+    v_exit = None if y_rel is None else abs(float(layout.get(y_rel, "v_mps")))
+    first, last = assist_phases[0], assist_phases[-1]
+    m_start = float(first.spec.params.layout.get(first.y[:, 0], "m_kg"))
+    m_end = float(last.spec.params.layout.get(last.y_end, "m_kg"))
+    e_drive = budget.work_drive
+    felt_peak = float(rows["accel_felt_g"].max())
+    n_v = float(rows["track_normal_g_vehicle"].max())
+    n_c = float(rows["track_normal_g_carriage"].max())
+    return {
+        "exit_speed_mps": v_exit,
+        "push_time_s": None if y_rel is None else trace.t_release_s,
+        "felt_g_track_peak": felt_peak,
+        "interface_force_peak_N": float(rows["interface_force_N"].max()),
+        "interface_force_min_N": float(rows["interface_force_N"].min()),
+        "drive_force_peak_N": float(rows["drive_force_N"].max()),
+        "drive_energy_J": e_drive,
+        "drive_energy_kWh": float(j_to_kwh(e_drive)),
+        "electrical_energy_J": e_drive / assist.efficiency,
+        "electrical_energy_kWh": float(j_to_kwh(e_drive / assist.efficiency)),
+        "drive_power_peak_W": float(rows["drive_power_W"].max()),
+        "braking_distance_m": None if v_exit is None else assist.braking_distance_m(v_exit),
+        "facility_length_m": (None if v_exit is None else assist.facility_length_m(track, v_exit)),
+        "propellant_burned_on_track_kg": m_start - m_end,
+        "track_normal_g_vehicle_peak": n_v,
+        "track_normal_g_carriage_peak": n_c,
+        "assist_energy_residual_rel": budget.residual_rel(),
+        "track_start_altitude_m": track.start_altitude_m,
+        "carriage_mass_kg": assist.carriage_mass_kg,
+        # CLAUDE.md summary items: the track values overwrite the pad's zeros.
+        "peak_track_normal_g": max(n_v, n_c),
+        "assist_energy_J": e_drive,
+        "assist_energy_kWh": float(j_to_kwh(e_drive)),
+        "peak_drive_power_W": float(rows["drive_power_W"].max()),
+        "peak_interface_force_N": float(rows["interface_force_N"].max()),
+    }
+
+
+def track_flags(frame: pd.DataFrame) -> list[str]:
+    """Run flags read off the ASSIST rows: ``interface_tensile`` when the interface
+    force is negative anywhere during the push (the vehicle would have to be held back
+    on the carriage)."""
+    rows = frame[frame["phase"] == ASSIST_KIND]
+    if rows.empty:
+        return []
+    f_min = float(rows["interface_force_N"].min())
+    if f_min < 0.0:
+        t_min = float(rows["t_s"].iloc[int(rows["interface_force_N"].to_numpy().argmin())])
+        return [
+            f"interface_tensile: the carriage-vehicle interface force reaches {f_min:.6g} N "
+            f"(tension) at t = {t_min:.6g} s during the push"
+        ]
+    return []
+
+
+def simulate(
+    vehicle: Vehicle,
+    ignition: Mapping[str, IgnitionSpec],
+    gravity: Gravity,
+    g_eff_mps2: float,
+    assist: AssistModel,
+    track: TrackGeometry | None,
+    start: AscentStart | None,
+    end: str,
+    settings: IntegratorSettings,
+) -> Result:
+    """Run one configuration and return its Result (pure: no I/O).
+
+    Inputs: the Vehicle; ignition, an IgnitionSpec per stage name; gravity, the ascent
+    Gravity (``run`` passes InverseSquareGravity(MU); tests may inject
+    ConstantGravity); g_eff_mps2, the pad/track effective gravity [m/s^2] and the
+    reference g_ref of the gravity-loss split; assist, the assist model (``NoAssist``
+    for a pad, ``ConstantAccelAssist`` with its track otherwise); track, the track
+    geometry (None for a pad; required for any other model); start, the AscentStart
+    of a pad run (z0, v0 at release; None = the pad at rest; a track run accepts only
+    the default); end, one of phases.END_KINDS; settings, the IntegratorSettings.
+    Output: a Result with the sampled time series, the events, the metrics, the
+    LossBudget from release onward, the AssistEnergyBudget of the push (None for a
+    pad), the run's status (nominal, impact, no_liftoff, drive_limit) and flags
+    (``interface_tensile`` is evaluated over the ASSIST rows only). The assumptions
+    name the gravity model and the g_eff actually used, not the run model's (``run``
+    adds those).
+    """
+    planner = VerticalPlanner(vehicle, ignition, gravity, g_eff_mps2, end, settings)
+    if track is None:
+        if assist.name != "none":
+            raise ValueError(f"assist model {assist.name!r} needs a track")
+        trace = planner.run_pad(AscentStart() if start is None else start)
+    else:
+        if assist.name == "none":
+            raise ValueError("a track was given with the 'none' assist model")
+        if start is not None and start != AscentStart():
+            raise ValueError("a track run starts at rest at the track start; no AscentStart")
+        trace = planner.run_track(assist, track)
+    budget = loss_budget(trace.ascent_phases())
+    frame = sample_trace(trace, vehicle, settings)
+    metrics = run_metrics(trace, vehicle, budget, frame, assist.name)
+    flags = list(trace.flags)
+    assumptions = [
+        *PHASE1_ASSUMPTIONS,
+        gravity_assumption(gravity),
+        f"pad/track effective gravity g_eff = {g_eff_mps2:.7g} m/s^2, also the g_ref of the "
+        "gravity-loss split",
+        *SIM_ASSUMPTIONS,
+    ]
+    assist_budget: AssistEnergyBudget | None = None
+    if track is not None:
+        assist_phases = trace.assist_phases()
+        assist_budget = assist_energy_budget(
+            assist_phases,
+            assist_phases[0].spec.params.layout,
+            assist.carriage_mass_kg,
+            g_eff_mps2,
+        )
+        metrics.update(track_metrics(trace, assist, track, assist_budget, frame))
+        flags += track_flags(frame)
+        assumptions += [
+            *TRACK_ASSUMPTIONS,
+            f"track: straight, L = {track.length_m:.6g} m at {track.phi(0.0):.6g} rad above "
+            f"horizontal, start altitude {track.start_altitude_m:.6g} m (exit at "
+            f"{track.start_altitude_m + track.z(track.length_m):.6g} m)",
+        ]
+    assumptions += [*trace.assumptions, *assist.assumptions()]
     return Result(
         metrics=metrics,
-        timeseries=empty_timeseries(),
-        loss_budget=None,
-        assist_budget=None,
-        assumptions=[*run_assumptions(run_config), "placeholder: no dynamics yet (steps 5-9)"],
-        phases=[],
-        status="not_simulated",
-        flags=[],
+        timeseries=frame,
+        loss_budget=budget,
+        assist_budget=assist_budget,
+        assumptions=assumptions,
+        phases=list(trace.phases),
+        status=trace.status,  # type: ignore[arg-type]
+        flags=flags,
+        events=events_frame(trace),
     )
 
 
+def ignition_specs(run_config: RunConfig, vehicle: Vehicle) -> dict[str, IgnitionSpec]:
+    """One IgnitionSpec per stage from the run's ignition block (defaults when absent),
+    with startup overrides resolved against the vehicle's own Startup."""
+    return {
+        stage.name: IgnitionSpec.from_config(run_config.ignition_for(stage.name), stage.startup)
+        for stage in vehicle.stages
+    }
+
+
+def run(run_config: RunConfig, vehicle: Vehicle) -> Result:
+    """Run one validated configuration (SI) and return its Result.
+
+    Builds InverseSquareGravity(MU_EARTH_M3S2) for the ascent, g_eff = g_eff_track(0)
+    (omega_p = 0 in Phase 1, stated in the assumptions) for the pad and the track, the
+    IgnitionSpecs from the config, the assist model and its track
+    (``assist.build_assist``), and calls ``simulate``; RUN_MODEL_ASSUMPTIONS go in front
+    of the assumptions ``simulate`` derived from what it was handed.
+    """
+    g_eff = g_eff_track(OMEGA_P_PHASE1_RADS)
+    assist, track = build_assist(run_config.assist, g_eff)
+    result = simulate(
+        vehicle=vehicle,
+        ignition=ignition_specs(run_config, vehicle),
+        gravity=InverseSquareGravity(MU_EARTH_M3S2),
+        g_eff_mps2=g_eff,
+        assist=assist,
+        track=track,
+        start=AscentStart(),
+        end=run_config.end,
+        settings=IntegratorSettings.from_config(run_config.integrator),
+    )
+    return replace(result, assumptions=[*RUN_MODEL_ASSUMPTIONS, *result.assumptions])
+
+
 def run_resolved(resolved: ResolvedRun) -> RunResult:
-    """Run a ResolvedRun and wrap the Result with its name and config."""
-    return RunResult(resolved.name, resolved, run(resolved.run, resolved.to_vehicle()))
+    """Run a ResolvedRun and wrap the Result with its name and config. Every exception
+    propagates (FAILED.txt is written by the caller)."""
+    vehicle = resolved.to_vehicle()
+    return RunResult(resolved.name, resolved, run(resolved.run, vehicle))
 
 
 # ---------------------------------------------------------------------- comparison
@@ -522,7 +1008,11 @@ def write_timeseries(result: Result, out_dir: Path) -> None:
 
 
 def _plot_columns(frame: pd.DataFrame) -> list[str]:
-    return [c for c in frame.columns if c != "t_s" and pd.api.types.is_numeric_dtype(frame[c])]
+    return [
+        c
+        for c in frame.columns
+        if c not in PLOT_SKIP_COLUMNS and pd.api.types.is_numeric_dtype(frame[c])
+    ]
 
 
 def plot_stem(prefix: str, column: str) -> str:
@@ -538,7 +1028,8 @@ def _plot_text(text: str) -> str:
 
 def write_plots(result: Result, plots_dir: Path, prefix: str) -> list[Path]:
     """Write plots/<plot_stem(prefix, column)>.png, one single-series panel per numeric
-    column against t_s. Nothing is written when the time series is empty.
+    column against t_s, skipping PLOT_SKIP_COLUMNS. Nothing is written when the time
+    series is empty.
 
     Figures are built from matplotlib.figure.Figure and saved through the Agg canvas
     that PNG output selects, so no pyplot state and no global backend switch is needed:

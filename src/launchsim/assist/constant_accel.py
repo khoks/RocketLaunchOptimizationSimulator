@@ -1,0 +1,135 @@
+"""The screening drive: a prescribed constant net acceleration along the track
+(docs/physics.md, "Silo model (constant_accel, vertical) and every reported quantity").
+
+The acceleration is imposed, sddot = a exactly, and the drive force is solved from the
+track equation at every instant, so every closed form is exact (v_exit = sqrt(2 a L),
+t_push = sqrt(2 L / a), s = a t^2 / 2) and a hot start changes only the forces and the
+energy, never the exit speed. Force and power limits are Phase 3's ``linear_motor``
+behind the same interface. SI, radians, pure.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import numpy as np
+
+from launchsim import units
+from launchsim.assist.base import AssistForces, TrackGeometry
+
+
+@dataclass(frozen=True)
+class ConstantAccelAssist:
+    """Prescribed-acceleration drive (``assist.base.AssistModel``).
+
+    net_accel_mps2: the net acceleration a along the track [m/s^2]; carriage_mass_kg:
+    the carriage (sled) mass [kg] that rides with the vehicle and stays on the track;
+    brake_decel_mps2: the carriage's braking deceleration after release [m/s^2];
+    efficiency: electrical-to-mechanical drive efficiency in (0, 1]; f_imp: exhaust
+    impingement fraction in [0, 1]; allow_negative_drive: whether a negative drive
+    force (the drive braking the engine) is allowed rather than ending the run with
+    status ``drive_limit``; g_eff_mps2: the track's effective gravity [m/s^2], quoted in
+    the assumptions only (the dynamics receive g_eff through ``state_rate``). At each
+    instant, with M = m_v + m_c and T the vehicle's delivered thrust along the track,
+
+        F_drive = M (a + g_eff sin phi) - (1 - f_imp) T
+        F_int   = m_v (a + g_eff sin phi) - T
+
+    (drive_normal = 0, dissipated = 0).
+    """
+
+    net_accel_mps2: float
+    carriage_mass_kg: float
+    brake_decel_mps2: float
+    efficiency: float = 1.0
+    f_imp: float = 0.0
+    allow_negative_drive: bool = False
+    g_eff_mps2: float | None = None
+    name: str = "constant_accel"
+    extra_state_names: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.net_accel_mps2 <= 0.0:
+            raise ValueError("net_accel_mps2 must be > 0")
+        if self.carriage_mass_kg < 0.0:
+            raise ValueError("carriage_mass_kg must be >= 0")
+        if self.brake_decel_mps2 <= 0.0:
+            raise ValueError("brake_decel_mps2 must be > 0")
+        if not 0.0 < self.efficiency <= 1.0:
+            raise ValueError("efficiency must lie in (0, 1]")
+        if not 0.0 <= self.f_imp <= 1.0:
+            raise ValueError("f_imp must lie in [0, 1]")
+
+    def initial_extra(self) -> np.ndarray:
+        """No extra states."""
+        return np.zeros(0)
+
+    def state_rate(
+        self,
+        t: float,
+        s_m: float,
+        sdot_mps: float,
+        extra: np.ndarray,
+        m_vehicle_kg: float,
+        m_carriage_kg: float,
+        thrust_axial_N: float,
+        g_eff_mps2: float,
+        track: TrackGeometry,
+    ) -> AssistForces:
+        """sddot = a; F_drive = M (a + g_eff sin phi) - (1 - f_imp) T; F_int =
+        m_v (a + g_eff sin phi) - T; no normal drive force, no dissipation. Inputs as in
+        ``AssistModel.state_rate`` (SI, track frame); m_carriage_kg is the carriage mass
+        the phase carries (the planner passes this model's own)."""
+        a_up = self.net_accel_mps2 + g_eff_mps2 * math.sin(track.phi(s_m))
+        total = m_vehicle_kg + m_carriage_kg
+        return AssistForces(
+            sddot_mps2=self.net_accel_mps2,
+            drive_force_N=total * a_up - (1.0 - self.f_imp) * thrust_axial_N,
+            drive_normal_N=0.0,
+            interface_force_N=m_vehicle_kg * a_up - thrust_axial_N,
+            dissipated_W=0.0,
+            extra_rate=np.zeros(0),
+        )
+
+    def exit_speed_mps(self, length_m: float) -> float:
+        """Speed [m/s] at the end of a push over length_m [m] from rest: sqrt(2 a L)."""
+        return math.sqrt(2.0 * self.net_accel_mps2 * length_m)
+
+    def push_time_s(self, length_m: float) -> float:
+        """Push duration [s] over length_m [m] from rest: sqrt(2 L / a)."""
+        return math.sqrt(2.0 * length_m / self.net_accel_mps2)
+
+    def push_time_estimate(self, track: TrackGeometry) -> float:
+        """Exact push duration [s] for the track: sqrt(2 L / a)."""
+        return self.push_time_s(track.length_m)
+
+    def braking_distance_m(self, v_mps: float) -> float:
+        """Carriage braking distance [m] from v_mps [m/s]: v^2 / (2 a_brake)."""
+        return v_mps * v_mps / (2.0 * self.brake_decel_mps2)
+
+    def facility_length_m(self, track: TrackGeometry, v_exit_mps: float) -> float:
+        """Track length plus the braking distance [m] from the exit speed v_exit_mps."""
+        return track.length_m + self.braking_distance_m(v_exit_mps)
+
+    def assumptions(self) -> tuple[str, ...]:
+        """The drive's assumptions, every parameter being an assumption in Phase 1."""
+        g_eff = (
+            "constant g_eff = mu/R_E^2 - omega_p^2 R_E on the track"
+            if self.g_eff_mps2 is None
+            else f"constant g_eff = {self.g_eff_mps2:.7g} m/s^2 on the track"
+        )
+        return (
+            f"constant_accel: prescribed net acceleration {units.to_g(self.net_accel_mps2):g} g0 "
+            "(assumed); drive force unconstrained, solved from the track equation",
+            f"constant_accel: carriage mass {units.kg_to_t(self.carriage_mass_kg):g} t (assumed)",
+            f"constant_accel: braking deceleration {units.to_g(self.brake_decel_mps2):g} g0 "
+            "(assumed)",
+            f"constant_accel: drive efficiency {self.efficiency:g} (assumed)",
+            f"constant_accel: exhaust impingement fraction {self.f_imp:g} (assumed); the "
+            "system keeps (1 - f_imp) T of the on-track thrust",
+            "constant_accel: shaft vented (no air column), no friction",
+            f"constant_accel: {g_eff}, omega_p = 0, Coriolis neglected",
+            "constant_accel: infinite jerk at push start and release",
+            "constant_accel: vehicle clamped to the carriage during any hold before the push",
+        )

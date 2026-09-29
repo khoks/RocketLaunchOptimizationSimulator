@@ -3,13 +3,13 @@
 Living tracker for launch-assist-sim. Milestones follow the README roadmap; build steps
 follow the approved plan (Phase 0 + Phase 1 + vertical constant-acceleration silo push).
 Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a decision.
-Last updated: 2026-09-28.
+Last updated: 2026-09-29.
 
 ## Milestones
 
 - [x] M0 Plan approved: Phase 0 scaffold, Phase 1 1-D vertical rocket, concept-A silo push (2026-09-28)
 - [x] M1 Phase 0 gate: 200 tests pass, all CLAUDE.md commands and the pip fallback work; first commit (2026-09-28)
-- [ ] M2 Phase 1 gate: rocket-equation, gravity-loss (vertical burn) and coast-apex tests pass
+- [x] M2 Phase 1 gate: rocket-equation, vertical-burn, coast-apex and staging tests pass; 269 tests green (2026-09-29)
 - [ ] M3 Silo push validated: straight-track, loads, assist-energy identity, failed-ignition tests pass
 - [ ] M4 First concept-A numbers: silo_screening_1d run + sweep, identity lines close, README-number smoke test passes
 - [ ] M5 Findings RQ2 and RQ3 (preliminary), status lines updated, commit
@@ -23,9 +23,9 @@ Last updated: 2026-09-28.
 | 2 | atmosphere.py + ICAO/extension tests + docs/physics.md start | [x] | ICAO layer closed forms from ambiance's constant table (ambiance.Atmosphere is the 1e-12 oracle); 2 review rounds |
 | 3 | config.py, vehicle.py, F9 YAML, experiment YAML, toy data, fixtures, tests | [x] | 542,570 kg; README screening table reproduced; 2 review rounds |
 | 4 | cli.py + sim.py results I/O (placeholder run), tests -> Phase 0 gate | [x] | run/sweep write results dirs; independent gate passed |
-| 5 | dynamics.py (gravity, 1-D RHS), phases.py engine, rocket-eq/vertical-burn/coast/events tests | [ ] | physics-core workflow |
-| 6 | VerticalPlanner, simulate/run, losses.py, staging/hold/ignition-loss/identity tests -> Phase 1 gate | [ ] | |
-| 7 | assist/* (constant_accel, track, none), track RHS, release map, energy budget, silo tests | [ ] | |
+| 5 | dynamics.py (gravity, 1-D RHS), phases.py engine, rocket-eq/vertical-burn/coast/events tests | [x] | event rules verified against scipy; 2 review rounds |
+| 6 | VerticalPlanner, simulate/run, losses.py, staging/hold/ignition-loss/identity tests -> Phase 1 gate | [x] | exact ignition-loss forms and identity closure tested; 2 review rounds |
+| 7 | assist/* (constant_accel, track, none), track RHS, release map, energy budget, silo tests | [~] | code written by an interrupted agent (OAuth expiry); tests and docs pending; workflow resumed |
 | 8 | failed-ignition coast + test | [ ] | |
 | 9 | full metrics, comparison, sensitivity, summary.md with identity line, plots | [ ] | |
 | 10 | convergence test, slow marks | [ ] | |

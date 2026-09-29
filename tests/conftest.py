@@ -6,14 +6,19 @@ stage 1 = 1000 kg at liftoff with 800 kg of propellant, 15 kN (mdot = 5 kg/s, 16
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Protocol
 
 import matplotlib
 import pytest
 import yaml
 
+from launchsim import sim
 from launchsim.config import VehicleConfig
 from launchsim.constants import G0_MPS2
+from launchsim.dynamics import Gravity
+from launchsim.phases import AscentStart, IgnitionSpec, IntegratorSettings
 from launchsim.vehicle import Engine, Stage, Startup, Vehicle
 
 matplotlib.use("Agg")
@@ -43,6 +48,12 @@ def f9_vehicle(f9_vehicle_dict: dict) -> Vehicle:
 
 def _toy_engine(thrust_n: float) -> Engine:
     return Engine(thrust_vac_N=thrust_n, isp_vac_s=TOY_C_MPS / G0_MPS2, exit_area_m2=0.0)
+
+
+@pytest.fixture(scope="session")
+def tight_settings() -> IntegratorSettings:
+    """Integrator settings for validation tests: DOP853, rtol 1e-10, per-state atol."""
+    return IntegratorSettings(rtol=1e-10)
 
 
 @pytest.fixture(scope="session")
@@ -79,3 +90,55 @@ def two_stage_toy(toy_stage: Stage) -> Vehicle:
         fairing_drop="staging",
         screening_isp_s=(TOY_C_MPS / G0_MPS2, TOY_C_MPS / G0_MPS2),
     )
+
+
+class RunVertical(Protocol):
+    """Signature of the ``run_vertical`` fixture (see its docstring)."""
+
+    def __call__(
+        self,
+        vehicle: Vehicle,
+        ignition: Mapping[str, IgnitionSpec],
+        gravity: Gravity,
+        g_eff: float,
+        start: AscentStart | None = None,
+        end: str = "stage1_burnout",
+        settings: IntegratorSettings | None = None,
+    ) -> sim.Result: ...
+
+
+@pytest.fixture(scope="session")
+def run_vertical(tight_settings: IntegratorSettings) -> RunVertical:
+    """``sim.simulate`` on the pad (no track) with an injected gravity model and start.
+
+    run_vertical(vehicle, ignition, gravity, g_eff, start=AscentStart(), end=
+    "stage1_burnout", settings=tight_settings) -> Result. ``ignition`` is an
+    IgnitionSpec per stage name; stages absent from it get IgnitionSpec() (lit at
+    release, step or the stage's own startup). ``gravity`` is the Gravity model
+    (ConstantGravity in analytic tests, InverseSquareGravity for the run model) and
+    ``g_eff`` the pad gravity and the g_ref of the gravity-loss split.
+    """
+
+    def _run(
+        vehicle: Vehicle,
+        ignition: Mapping[str, IgnitionSpec],
+        gravity: Gravity,
+        g_eff: float,
+        start: AscentStart | None = None,
+        end: str = "stage1_burnout",
+        settings: IntegratorSettings | None = None,
+    ) -> sim.Result:
+        specs = {name: ignition.get(name, IgnitionSpec()) for name in vehicle.stage_names}
+        return sim.simulate(
+            vehicle=vehicle,
+            ignition=specs,
+            gravity=gravity,
+            g_eff_mps2=g_eff,
+            assist=sim.NoAssist(),
+            track=None,
+            start=AscentStart() if start is None else start,
+            end=end,
+            settings=tight_settings if settings is None else settings,
+        )
+
+    return _run
