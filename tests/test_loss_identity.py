@@ -13,6 +13,11 @@ apex and a burn against the velocity (docs/physics.md, "Loss accounting"):
     logs exactly one apex (the pre-ignition one) and one turnaround; with end
     ``impact`` the vehicle then coasts to a second apex and falls to the ground.
 (d) F9 pad start v0 = 0 to stage-1 burnout under mu/r^2, the run model.
+(a) the F9 through the 3 g0 / 100 m vertical silo (silo_cold: 0.5 s delay and the 2 s
+    ramp after release) under mu/r^2 to stage-1 burnout, via ``sim.run`` from the
+    experiment's assist block: the quadratures start at release with speed_start =
+    sqrt(2 a L); nothing burns on the track, so dv_vac = c ln(m0/m_dry) and the burnout
+    comes t_d + t_r/2 + t_b after release.
 (e) an apex inside a burn: the toy released at z0 = 1000 m with v0 = 3 m/s and a 4 s
     ramp lit at release, so the thrust is below the weight until t = t_r m g/T = 2.6 s:
     the vehicle tops out under thrust (sigma +1 -> -1 in the same burn), falls, turns
@@ -20,8 +25,7 @@ apex and a burn against the velocity (docs/physics.md, "Loss accounting"):
     g (t_b + t_r/2) whatever the sign of v, and the steering loss is 2 c ln(m_apex /
     m_turn). From z0 = 0 the same start hits the ground while thrusting (status impact).
 
-Residual < 1e-6 m/s in every case (CLAUDE.md allows 0.01). Case (a), the silo, comes
-with the assist models (build step 7).
+Residual < 1e-6 m/s in every case (CLAUDE.md allows 0.01).
 """
 
 from __future__ import annotations
@@ -319,3 +323,72 @@ def test_e_impact_while_thrusting_from_the_ground(
     assert abs(m["identity_residual_mps"]) < RESIDUAL
     assert abs(_budget_from_metrics(m)) < RESIDUAL
     assert m["speed_end_mps"] == m["impact_speed_mps"]
+
+
+SILO_ASSIST = {
+    "model": "constant_accel",
+    "net_accel_g": 3.0,
+    "stroke_m": 100.0,
+    "carriage_mass_t": 0.0,
+    "brake_decel_g": 5.0,
+    "drive_efficiency": 0.5,
+    "exhaust_impingement_fraction": 0.0,
+    "shaft": "vented",
+    "track": {"angle_deg": 90.0, "exit_altitude_m": 0.0},
+}
+
+
+def test_a_silo_cold_f9_under_inverse_square_gravity(f9_vehicle: Vehicle) -> None:
+    t_d, t_r = 0.5, 2.0
+    cfg = RunConfig.model_validate(
+        {
+            "name": "silo_cold",
+            "assist": SILO_ASSIST,
+            "ignition": {"stage1": {"t_ign_s": t_d}, "stage2": {"t_ign_s": 0.0}},
+            "end": "stage1_burnout",
+        }
+    )
+    result = sim.run(cfg, f9_vehicle)
+    m = result.metrics
+    assert result.status == "nominal" and result.flags == []
+    assert abs(m["identity_residual_mps"]) < RESIDUAL
+    assert abs(_budget_from_metrics(m)) < RESIDUAL
+    budget = result.loss_budget
+    assert isinstance(budget, LossBudget)
+    assert abs(budget.residual_mps()) < RESIDUAL
+    # The accounting starts at release: speed_start is the exit speed, quadratures zero.
+    a, length = 3.0 * G0_MPS2, 100.0
+    v_exit = math.sqrt(2.0 * a * length)
+    t_push = math.sqrt(2.0 * length / a)
+    assert math.isclose(m["speed_start_mps"], v_exit, rel_tol=1e-10)
+    assert math.isclose(m["speed_at_release_mps"], v_exit, rel_tol=1e-10)
+    assert math.isclose(m["t_release_s"], t_push, rel_tol=1e-10)
+    assert m["alt_at_release_m"] == 0.0 and m["propellant_burned_before_release_kg"] == 0.0
+    first_flight = next(p for p in result.phases if p.spec.kind == "COAST_PRE_IGN")
+    y0 = first_flight.y[:, 0]
+    assert all(y0[VERTICAL_LAYOUT.index(n)] == 0.0 for n in VERTICAL_LAYOUT.names if n[0] == "J")
+    assert math.isclose(y0[VERTICAL_LAYOUT.index("v_mps")], v_exit, rel_tol=1e-10)
+    # Nothing burned on the track: dv_vac is the whole stage in one log.
+    stage = f9_vehicle.stages[0]
+    m0 = f9_vehicle.liftoff_mass_kg()
+    assert m["mass_at_release_kg"] == m0
+    assert math.isclose(
+        m["dv_vac_mps"], stage.c_mps * math.log(m0 / f9_vehicle.stack_dry_mass_kg(0)), rel_tol=1e-9
+    )
+    # Delay plus ramp: burnout t_d + t_r/2 + t_b after release; the duration part of
+    # the gravity loss is g_ref times that (the coast before ignition included).
+    t_b = stage.propellant_mass_kg / stage.mdot_full_kgps
+    assert math.isclose(m["stage1_burnout_t_s"], t_d + 0.5 * t_r + t_b, rel_tol=1e-9)
+    g_ref = MU_EARTH_M3S2 / R_EARTH_M**2
+    assert math.isclose(
+        m["gravity_loss_duration_mps"], g_ref * m["stage1_burnout_t_s"], rel_tol=1e-9
+    )
+    assert m["gravity_loss_alt_mps"] < 0.0
+    assert m["steering_loss_mps"] == 0.0 and m["drag_loss_mps"] == 0.0
+    assert m["back_pressure_loss_mps"] == 0.0
+    assert math.isclose(m["t_ign_rel_release_s_stage1"], t_d, rel_tol=1e-9)
+    # No variant beats the ideal: speed gained <= dv_vac; and the sigma partition held.
+    assert m["speed_end_mps"] - m["speed_start_mps"] < m["dv_vac_mps"]
+    kinds = [p.spec.kind for p in result.phases]
+    assert kinds[0] == "ASSIST" and "COAST_PRE_IGN" in kinds and kinds[-1] == "BURN"
+    assert all(p.spec.sigma == 1 for p in result.phases if p.spec.kind != "ASSIST")

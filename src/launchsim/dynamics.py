@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 import numpy as np
 
+from launchsim.assist.base import normal_load_N
 from launchsim.constants import MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.units import to_g
 
@@ -109,6 +110,26 @@ def g_eff_track(omega_p_rads: float) -> float:
     folded in; Coriolis is neglected (stated in every assumptions list).
     """
     return MU_EARTH_M3S2 / (R_EARTH_M * R_EARTH_M) - omega_p_rads * omega_p_rads * R_EARTH_M
+
+
+def thrust_terms(
+    schedule: ThrustSchedule | None, t: float, p_amb_pa: float
+) -> tuple[float, float, float]:
+    """The engine terms every right-hand side needs at absolute time t [s], from one
+    evaluation of the schedule: (T_vac, T, mdot).
+
+    Inputs: the stage's ThrustSchedule, or None for an unpowered (or unlit) phase;
+    t [s]; p_amb_pa, the ambient pressure [Pa]. Output: the vacuum thrust T_vac [N],
+    the delivered thrust T = max(0, T_vac - p_amb A_e) [N] (the same clamp as
+    ``ThrustSchedule.thrust_N``, which test_vertical_burn checks against it with
+    p_amb > 0) and the mass flow mdot = T_vac / c [kg/s], which follows the vacuum
+    thrust; all zero without a schedule. Frame-free scalars along the thrust axis.
+    """
+    if schedule is None:
+        return 0.0, 0.0, 0.0
+    t_vac = schedule.thrust_vac_N(t)
+    thrust = max(0.0, t_vac - p_amb_pa * schedule.exit_area_total_m2)
+    return t_vac, thrust, t_vac / schedule.c_mps
 
 
 # ------------------------------------------------------------------------ state layout
@@ -274,18 +295,7 @@ def rhs_vertical(t: float, y: np.ndarray, p: VerticalParams) -> np.ndarray:
     m = y[_IM]
     g = p.gravity(p.r_datum_m + z)
     sigma = p.v_sign
-    schedule = p.schedule
-    if schedule is None:
-        t_vac = 0.0
-        thrust = 0.0
-        mdot = 0.0
-    else:
-        t_vac = schedule.thrust_vac_N(t)
-        # Same clamp as ThrustSchedule.thrust_N(t, p_amb), inlined so the schedule is
-        # evaluated once per RHS call; the two must stay identical (test_vertical_burn
-        # checks them against each other with p_amb > 0).
-        thrust = max(0.0, t_vac - p.p_amb_pa * schedule.exit_area_total_m2)
-        mdot = t_vac / schedule.c_mps
+    t_vac, thrust, mdot = thrust_terms(p.schedule, t, p.p_amb_pa)
     a_thrust = thrust / m
     dy = np.empty(len(VERTICAL_STATE_NAMES))
     dy[_IZ] = v
@@ -439,16 +449,7 @@ def rhs_track(t: float, y: np.ndarray, p: TrackParams) -> np.ndarray:
     lay = p.layout
     s = float(lay.get(y, "s_m"))
     sdot = float(lay.get(y, "sdot_mps"))
-    schedule = p.schedule
-    if schedule is None or not p.lit:
-        t_vac = 0.0
-        thrust = 0.0
-        mdot = 0.0
-    else:
-        t_vac = schedule.thrust_vac_N(t)
-        # Same clamp as ThrustSchedule.thrust_N (one schedule evaluation per RHS call).
-        thrust = max(0.0, t_vac - p.p_amb_pa * schedule.exit_area_total_m2)
-        mdot = t_vac / schedule.c_mps
+    _t_vac, thrust, mdot = thrust_terms(p.schedule if p.lit else None, t, p.p_amb_pa)
     f = p.forces(t, y, thrust)
     dy = np.empty(len(lay))
     dy[lay.index("s_m")] = sdot
@@ -474,8 +475,6 @@ def track_observables(t: float, y: np.ndarray, p: TrackParams) -> dict[str, floa
     for a massless carriage the kinematic demand kappa sdot^2 + g_eff cos phi is
     reported so the value stays defined). Frame: the track frame.
     """
-    from launchsim.assist.base import normal_load_N  # runtime import: no package cycle
-
     lay = p.layout
     s = float(lay.get(y, "s_m"))
     sdot = float(lay.get(y, "sdot_mps"))

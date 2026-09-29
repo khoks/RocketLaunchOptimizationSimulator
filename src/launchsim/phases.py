@@ -5,9 +5,9 @@ A run is a sequence of phases joined by events. This module holds the engine
 (``integrate_phase``), the specs it consumes, the integrator settings, the event
 factories, the release and staging maps, and the 1-D planner (``VerticalPlanner``) that
 strings HOLD, COAST, BURN and FALL phases together for a run (docs/physics.md, "Phases
-and events"). The track (ASSIST) phase and its release into the ascent arrive with the
-assist models; the planner exposes ``TraceBuilder`` and ``ascend`` so they can prepend
-their phases and hand over the released state.
+and events") and, for an assisted run, the ASSIST (track) phase and its release into
+the ascent (``VerticalPlanner.run_track``, ``map_release``); the assist models supply
+the track forces through ``dynamics.TrackParams``.
 
 Everything is SI and pure: no I/O, no globals, no printing. Every time in this module
 (t, t0, t_end, max_step, the entries of PhaseResult.t) is an absolute run time or a
@@ -599,6 +599,10 @@ HOLD_KIND = "HOLD"
 """Phase kind of a clamped vehicle (before t = 0, or extended past it until liftoff)."""
 ASSIST_KIND = "ASSIST"
 """Phase kind of the track push (state in the track layout, not VERTICAL_LAYOUT)."""
+RELEASE_LABEL = "RELEASE"
+"""Phase label of a pad's release event when no hold ran before it (nothing was lit
+before t = 0): the event belongs to no phase, so it carries this label instead of
+HOLD_KIND."""
 ASCENT_KINDS = (
     "COAST_PRE_IGN",
     "FALL_PRE_IGN",
@@ -651,6 +655,10 @@ class IgnitionSpec:
         return origin + self.t_ign_s
 
 
+_DEFAULT_IGNITION = IgnitionSpec()
+"""The field defaults of IgnitionSpec, the reference for "set away from the default"."""
+
+
 @dataclass(frozen=True)
 class AscentStart:
     """Where a pad run starts its ascent frame: altitude z0_m [m] above the datum and
@@ -672,8 +680,9 @@ class AscentStart:
 
     @property
     def at_rest(self) -> bool:
-        """True for a vehicle that is not moving at release (v0 = 0)."""
-        return self.v0_mps == 0.0
+        """True for a vehicle that is not moving at release (|v0| within ATOL_MPS of 0,
+        the same floor the sigma rule treats as v = 0)."""
+        return abs(self.v0_mps) <= ATOL_MPS
 
     def on_ground(self, z_ground_m: float) -> bool:
         """True for a vehicle standing on the ground: at rest within ATOL_M of
@@ -772,12 +781,18 @@ class RunTrace:
     disarmed-event note, no_liftoff, ...); assumptions: run-specific assumption strings
     (hold extension); t_release_s: absolute release time [s] (0 on a pad, the track-end
     root on a track); y_release: the ascent state at release (VERTICAL_LAYOUT;
-    quadratures zero), None when the vehicle never lifted off or left the track;
+    quadratures zero): on a pad the state at the hold-down release t = 0, which always
+    happens; None when a track run stopped before the track end (drive_limit);
     t_flight_start_s and y_flight_start: when and in what state the free flight (the
     loss accounting) began: release, or the liftoff root of an extended hold; None when
     it never began; hold: the HoldSummary or None; t_ign_abs_s: absolute ignition time
-    [s] per stage name (stages that never got to ignite are absent); burnouts: (t [s],
-    state) at burnout per stage name.
+    [s] per stage name (stages that never got to ignite, including one whose ignition
+    failed, are absent); burnouts: (t [s], state) at burnout per stage name;
+    failed_stage: the name of the stage whose ignition failed (``IgnitionSpec.fails``)
+    once the planner reached it, else None; t_fail_s: the absolute time [s] its
+    unpowered coast began (release for a first stage, the end of the staging coast for
+    a later one), or None when the vehicle never left the ground (a pad, status
+    ``no_liftoff``).
     """
 
     phases: tuple[PhaseResult, ...]
@@ -792,6 +807,8 @@ class RunTrace:
     hold: HoldSummary | None
     t_ign_abs_s: Mapping[str, float]
     burnouts: Mapping[str, tuple[float, np.ndarray]]
+    failed_stage: str | None = None
+    t_fail_s: float | None = None
 
     def ascent_phases(self) -> list[PhaseResult]:
         """The free-flight phases after release (kinds in ASCENT_KINDS), in order."""
@@ -827,6 +844,8 @@ class TraceBuilder:
         self.hold: HoldSummary | None = None
         self.t_ign_abs_s: dict[str, float] = {}
         self.burnouts: dict[str, tuple[float, np.ndarray]] = {}
+        self.failed_stage: str | None = None
+        self.t_fail_s: float | None = None
         self._stage_names = stage_names
 
     def stage_name(self, index: int) -> str:
@@ -879,6 +898,8 @@ class TraceBuilder:
             hold=self.hold,
             t_ign_abs_s=dict(self.t_ign_abs_s),
             burnouts=dict(self.burnouts),
+            failed_stage=self.failed_stage,
+            t_fail_s=self.t_fail_s,
         )
 
 
@@ -1022,21 +1043,26 @@ class VerticalPlanner:
         tr = self.new_builder()
         t_release = 0.0
         t_ign = spec.t_ign_abs_s(t_release)
-        tr.t_ign_abs_s[stage0.name] = t_ign
+        if not spec.fails:
+            tr.t_ign_abs_s[stage0.name] = t_ign
+        self._flag_ignored_ignition_settings(tr, stage0.name, spec)
         schedule = stage0.schedule(t_ign, spec.startup, spec.fails)
         params = HoldParams(schedule, self.g_eff_mps2, self.p_amb_pa)
         m0 = self.vehicle.liftoff_mass_kg()
         y = VERTICAL_LAYOUT.build(z_m=start.z0_m, v_mps=start.v0_mps, m_kg=m0)
         hold_start = t_release
         force_min = math.inf
-        if t_ign < t_release:
+        if t_ign < t_release and not spec.fails:
+            # A failed engine has no ignition to hold through: nothing burns before
+            # release and no ignition is logged (the schedule's T_vac is 0 throughout).
             hold_start = t_ign
             tr.add_event("ignition", t_ign, HOLD_KIND, 0, y)
             y, f_min = self.hold_closed_form(tr, params, t_ign, t_release, y)
             force_min = min(force_min, f_min)
         tr.t_release_s = t_release
         tr.y_release = y.copy()
-        tr.add_event("release", t_release, HOLD_KIND if t_ign < t_release else "RELEASE", 0, y)
+        label = HOLD_KIND if hold_start < t_release else RELEASE_LABEL
+        tr.add_event("release", t_release, label, 0, y)
         t_start, sigma_hint = t_release, None
         if start.on_ground(self.z_ground_m):
             t_start, y, f_min = self.hold_until_liftoff(tr, params, t_release, y)
@@ -1047,6 +1073,8 @@ class VerticalPlanner:
             burned = m0 - float(y[_IM])  # over the whole clamp, ignition to liftoff
             tr.hold = HoldSummary(hold_start, t_start, t_start - t_release, force_min, burned)
         if tr.status == "no_liftoff":
+            if spec.fails:
+                tr.failed_stage = stage0.name  # never left the ground: t_fail_s stays None
             return tr.finish()
         self.ascend(tr, t_start, y, sigma_hint=sigma_hint)
         return tr.finish()
@@ -1079,11 +1107,14 @@ class VerticalPlanner:
         if t_push_est <= 0.0:
             raise ValueError(f"assist model {assist.name!r} estimates no push (t_push <= 0)")
         t_ign = spec.t_ign_abs_s(t_push_est, t_push_start)
-        tr.t_ign_abs_s[stage0.name] = t_ign
+        if not spec.fails:
+            tr.t_ign_abs_s[stage0.name] = t_ign
+        self._flag_ignored_ignition_settings(tr, stage0.name, spec)
         schedule = stage0.schedule(t_ign, spec.startup, spec.fails)
         m0 = self.vehicle.liftoff_mass_kg()
         y_hold = VERTICAL_LAYOUT.build(z_m=track.start_altitude_m, m_kg=m0)
-        if t_ign < t_push_start:
+        if t_ign < t_push_start and not spec.fails:
+            # A failed engine has no ignition to hold through (see run_pad).
             # The clamp carries the weight component along the track, m g_eff sin phi.
             g_axial = self.g_eff_mps2 * math.sin(track.phi(0.0))
             hold = HoldParams(schedule, g_axial, self.p_amb_pa)
@@ -1139,13 +1170,17 @@ class VerticalPlanner:
                 raise ValueError(
                     f"stage {stage0.name!r} exhausted its propellant at t = {t:.6g} s on the track"
                 )
+            # A ramp ending at this sub-phase's boundary is logged before a release at
+            # the same instant (the flight's burn skips a ramp segment already over).
+            if t_b is not None and t >= t_b - ZERO_SPAN_S:
+                if schedule.startup.effective_kind == "ramp" and (
+                    abs(t_b - (schedule.t_ign_abs_s + schedule.startup.t_ramp_s)) <= ZERO_SPAN_S
+                ):
+                    tr.add_event("ramp_end", t, ASSIST_KIND, 0, track_to_vertical(y, params))
             s_end = float(layout.get(y, "s_m"))
             if res.ended_by == "track_end" or s_end >= length - ATOL_M:
                 released = True
                 break
-            if t_b is not None and schedule.startup.effective_kind == "ramp":
-                if abs(t_b - (schedule.t_ign_abs_s + schedule.startup.t_ramp_s)) <= ZERO_SPAN_S:
-                    tr.add_event("ramp_end", t, ASSIST_KIND, 0, track_to_vertical(y, params))
         if not released:
             raise RuntimeError("track phase ended without reaching the track end (planner bug)")
         y_rel = map_release(
@@ -1197,6 +1232,9 @@ class VerticalPlanner:
         for; sets tr.status ("nominal", "impact") and tr.burnouts. The first stage's
         ignition event is logged here only when its burn starts at ignition and the
         caller has not logged it (a hold or a track logs an earlier ignition itself).
+        A stage whose ignition fails (``IgnitionSpec.fails``; the run must end at
+        impact) gets no ignition time and no burn: ``_fail_ignition`` records it and
+        the terminal coast (COAST to apex, FALL to the ground) follows at once.
         """
         t = t_start_s
         tr.t_flight_start_s = t
@@ -1208,7 +1246,6 @@ class VerticalPlanner:
                 t_ign = tr.t_ign_abs_s.get(stage.name)
                 if t_ign is None:
                     t_ign = spec.t_ign_abs_s(tr.t_release_s)
-                    tr.t_ign_abs_s[stage.name] = t_ign
             else:
                 if spec.reference != "release" or spec.t_ign_s < 0.0:
                     raise ValueError(
@@ -1223,12 +1260,19 @@ class VerticalPlanner:
                 if how == "impact":
                     return
                 t_ign = t_coast_end + spec.t_ign_s
-                tr.t_ign_abs_s[stage.name] = t_ign
             if spec.fails:
+                # Failed ignition (docs/physics.md, "Failed-ignition coast"): the stage's
+                # T_vac is 0 for the whole run, so its scheduled ignition time is moot
+                # (no COAST_PRE_IGN, no ignition time recorded); the vehicle coasts
+                # unpowered from here to apex and falls to the ground.
                 if self.end != "impact":
                     raise ValueError(f"stage {stage.name!r} fails: the run must end at impact")
+                if k > 0:  # the first stage's settings were flagged by run_pad/run_track
+                    self._flag_ignored_ignition_settings(tr, stage.name, spec)
+                self._fail_ignition(tr, k, t, y, sigma_hint)
                 self._terminal_coast(tr, k, t, y, sigma_hint)
                 return
+            tr.t_ign_abs_s[stage.name] = t_ign
             if t_ign > t + ZERO_SPAN_S:
                 t, y, how = self._coast(
                     tr, ("COAST_PRE_IGN", "FALL_PRE_IGN"), k, t, t_ign, y, sigma_hint
@@ -1256,6 +1300,43 @@ class VerticalPlanner:
                 continue
             self._terminal_coast(tr, k, t, y, None)
             return
+
+    @staticmethod
+    def _flag_ignored_ignition_settings(
+        tr: TraceBuilder, stage_name: str, spec: IgnitionSpec
+    ) -> None:
+        """A failed stage (``spec.fails``) never lights, so its t_ign_s, reference and
+        startup override play no part; any of them set away from the IgnitionSpec
+        field defaults (``_DEFAULT_IGNITION``) is recorded as a run flag so a config
+        that combines them with ``fails: true`` is not misread as a hot start that then
+        failed. No flag for a stage that lights."""
+        if not spec.fails:
+            return
+        ignored: list[str] = []
+        if spec.t_ign_s != _DEFAULT_IGNITION.t_ign_s:
+            ignored.append(f"t_ign_s = {spec.t_ign_s:g}")
+        if spec.reference != _DEFAULT_IGNITION.reference:
+            ignored.append(f"reference = {spec.reference!r}")
+        if spec.startup is not _DEFAULT_IGNITION.startup:
+            ignored.append("the startup override")
+        if ignored:
+            tr.flags.append(
+                f"ignition_failed: stage {stage_name!r} has fails: true, so nothing burns; "
+                f"ignored: {', '.join(ignored)}"
+            )
+
+    def _fail_ignition(
+        self, tr: TraceBuilder, k: int, t: float, y: np.ndarray, sigma_hint: int | None
+    ) -> None:
+        """Record that stage k's ignition failed at time t [s] (state y): sets
+        tr.failed_stage and tr.t_fail_s and logs the ``ignition_failed`` event in the
+        terminal-coast phase that starts here (COAST when rising, FALL when falling).
+        The stage's thrust schedule is identically zero, so nothing else changes: the
+        coast that follows is the same unpowered flight as after a last burnout."""
+        tr.failed_stage = self.vehicle.stages[k].name
+        tr.t_fail_s = t
+        kind = "COAST" if self._sigma(y, None, t, sigma_hint) == 1 else "FALL"
+        tr.add_event("ignition_failed", t, kind, k, y)
 
     # ------------------------------------------------------------------------ holds
 
@@ -1476,7 +1557,12 @@ class VerticalPlanner:
         stop_at_apex; an impact sets tr.status. The event lists are partitioned by
         sigma, and that partition is what keeps the event that ended the previous phase
         off the next one's list: an apex hands over sigma = -1, whose list has no apex;
-        a coast never lists a turnaround; the propellant event belongs to burns only."""
+        a coast never lists a turnaround; the propellant event belongs to burns only.
+        A falling phase that starts on the ground (z within ATOL_M of z_ground, moving
+        down: an apex within ATOL_M of the ground, or a start at the ground already
+        sinking) is the "phase starting on the event surface moving into it" case the
+        engine's disarm rule cannot resolve (``integrate_phase``), so it is the impact
+        itself: the phase is a zero-length pass-through ended by impact at t0."""
         while True:
             sigma = self._sigma(y, None, t, sigma_hint)
             if sigma == 1:
@@ -1496,6 +1582,16 @@ class VerticalPlanner:
                 self.atol,
                 sigma=sigma,
             )
+            if sigma == -1 and abs(float(y[_IZ]) - self.z_ground_m) <= ATOL_M:
+                note = (
+                    f"{kind} starts on the ground (z = {float(y[_IZ]):.6g} m, within "
+                    f"{ATOL_M:.3g} m of z_ground = {self.z_ground_m:.6g} m) moving down: "
+                    "impact at t0"
+                )
+                tr.add_phase(_pass_through(spec, y, "impact", [note], (("impact", t),)))
+                tr.add_event("impact", t, kind, k, y)
+                tr.status = "impact"
+                return t, y, "impact"
             res = self._integrate(tr, spec, y)
             t, y = res.t_end, res.y_end
             if res.ended_by in ("t_end", "zero_span"):

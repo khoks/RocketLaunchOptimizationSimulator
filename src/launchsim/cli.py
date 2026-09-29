@@ -7,6 +7,7 @@ usage errors (no command, an unknown option) exit 2 with the usage text, as argp
 does. Anything else (a bug in the simulator) keeps its traceback.
 
     launchsim run   <experiment.yaml> [--results-root DIR] [--variant NAME] [--no-plots]
+                    [--no-sensitivity]
     launchsim sweep <experiment.yaml> [--results-root DIR] [--no-plots]
     launchsim --version
 
@@ -51,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--results-root", default=None, help=RESULTS_ROOT_HELP)
     run.add_argument("--variant", default=None, help="Run only this variant (plus the baseline).")
     run.add_argument("--no-plots", action="store_true", help="Skip PNG plots.")
+    run.add_argument(
+        "--no-sensitivity",
+        action="store_true",
+        help="Skip the sensitivity cases (the +/- parameter re-runs).",
+    )
 
     sweep = sub.add_parser("sweep", help="Run every sweep declared in an experiment.")
     sweep.add_argument("experiment", help="Path to an experiment YAML file.")
@@ -192,12 +198,15 @@ def command_run(args: argparse.Namespace) -> int:
         plots=not args.no_plots,
         only_variant=args.variant,
         repo_root=repo_root_or_cwd(experiment_path),
+        sensitivity=not args.no_sensitivity,
     )
     say(f"results: {out_dir}")
     for name, rr in er.runs.items():
         tag = " (baseline)" if name == er.baseline.name else ""
         flags = f" flags: {', '.join(rr.result.flags)}" if rr.result.flags else ""
         say(f"  {name}{tag}: {rr.result.status}{flags}")
+    if er.sensitivity:
+        say(f"  sensitivity: {len(er.sensitivity)} cases")
     return 0
 
 

@@ -25,7 +25,7 @@ variants:
   silo_hot_full:    {assist: *silo, ignition: {stage1: {t_ign_s: -2.0, reference: push_start}}}     # full thrust for the whole push
   silo_hot_full_impinged: {assist: {<<: *silo, exhaust_impingement_fraction: 1.0},
                            ignition: {stage1: {t_ign_s: -2.0, reference: push_start}}}
-  silo_failed:      {assist: *silo, ignition: {stage1: {fails: true}}, end: impact}
+  silo_failed:      {assist: *silo, ignition: {stage1: {fails: true, t_ign_s: 0.0}}, end: impact}
   silo_sled_22t:    {assist: {<<: *silo, carriage_mass_t: 22}, ignition: {stage1: {t_ign_s: 0.5}}}  # MagLifter ~4% of liftoff
 sweeps:
   - {of: silo_cold, axes: {assist.net_accel_g: [0.5, 1, 3, 5], assist.stroke_m: [50, 100, 300]}}

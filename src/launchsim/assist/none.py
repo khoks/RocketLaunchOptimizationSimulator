@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 
 from launchsim.assist.base import AssistForces, TrackGeometry
+
+if TYPE_CHECKING:
+    from launchsim.config import NoAssistConfig
 
 
 @dataclass(frozen=True)
@@ -14,14 +18,21 @@ class NoAssist:
     """A pad launch. name is the registry key ``none``; there are no extra states, no
     impingement (f_imp = 0), a unit efficiency, a zero push time and a zero facility
     length; ``state_rate`` is never called because the planner issues no track phase
-    for this model (calling it raises)."""
+    for this model (calling it raises). name and extra_state_names are class constants
+    (the registry key and the track state layout cannot change per instance)."""
 
-    name: str = "none"
-    extra_state_names: tuple[str, ...] = ()
+    name: ClassVar[str] = "none"
+    extra_state_names: ClassVar[tuple[str, ...]] = ()
     f_imp: float = 0.0
     efficiency: float = 1.0
     carriage_mass_kg: float = 0.0
     allow_negative_drive: bool = False
+
+    @classmethod
+    def from_config(cls, config: NoAssistConfig, g_eff_mps2: float) -> tuple[NoAssist, None]:
+        """The pad from its validated config (``assist.build_assist``): the model and no
+        track; g_eff_mps2 [m/s^2] is unused."""
+        return cls(), None
 
     def initial_extra(self) -> np.ndarray:
         """No extra states."""

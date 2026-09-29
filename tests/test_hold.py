@@ -19,7 +19,7 @@
 - While clamped the felt axial acceleration is g_eff (1 g), not the thrust building
   under the hold-down.
 - ``hold_closed_form`` subtracts only its segment's burn, so a lit hold split after
-  ignition gives the single-call mass (the track prelude of build step 7 splits holds).
+  ignition gives the single-call mass (the track prelude of the assist phase splits holds).
 - A moving ``AscentStart`` lit before release is the test-only emulation of a burn on
   the carriage: HOLD rows keep v0, and the flight is behind an instant start by the
   straddle form.

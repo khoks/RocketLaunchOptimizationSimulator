@@ -25,9 +25,12 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from launchsim.config import AssistConfig
 
 
 class TrackGeometry(Protocol):
@@ -166,6 +169,23 @@ class AssistModel(Protocol):
 
     def assumptions(self) -> Sequence[str]:
         """Assumption strings the model adds to every summary."""
+        ...
+
+
+class AssistBuilder(Protocol):
+    """What a class must provide to be registered in ``assist.ASSIST_MODELS``: the
+    class-level registry key ``name`` (the ``model`` discriminator of its
+    ``config.AssistConfig``) and a ``from_config`` classmethod that turns the validated
+    config and the track's g_eff [m/s^2] into the ``AssistModel`` instance and its
+    ``TrackGeometry`` (None for a model without a track phase)."""
+
+    name: ClassVar[str]
+
+    @classmethod
+    def from_config(
+        cls, config: AssistConfig, g_eff_mps2: float
+    ) -> tuple[AssistModel, TrackGeometry | None]:
+        """The model and its track (or None) from a validated config."""
         ...
 
 

@@ -2,7 +2,7 @@
 
 A research simulator for giving rockets a ground-powered head start, and for finding out what that head start is really worth.
 
-**Status:** Phase 0 done (scaffold, atmosphere, vehicle and experiment configs, CLI, results I/O). Phase 1 (1-D vertical model) and the vertical silo push are in progress; `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
+**Status:** Phases 0 and 1 done: scaffold, atmosphere, vehicle and experiment configs, CLI, results I/O, the 1-D vertical model with staging, and the constant-acceleration vertical silo push (concept A) with first numbers in `docs/findings/`. Phase 2 (2-D ascent to orbit) is next; `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
 
 ## Why this exists
 

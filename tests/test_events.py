@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 
 from launchsim import sim
+from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.assist.track import VERTICAL, StraightTrack
 from launchsim.config import IntegratorConfig
 from launchsim.constants import G0_MPS2, MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.dynamics import (
@@ -498,3 +500,72 @@ def test_pad_start_through_simulate_is_the_release_state(
     assert all(first[n] == 0.0 for n in VERTICAL_STATE_NAMES if n.startswith("J_"))
     assert result.phases[0].spec.t0 == 0.0 and result.phases[0].spec.kind == "BURN"
     assert result.loss_budget is not None and result.loss_budget.speed_start == v0
+
+
+def test_release_map_from_a_track_through_simulate(
+    f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """The F9 through the 3 g0 / 100 m buried silo (mouth at z = 0): the release event
+    and the first free-flight state are z = 0, v = sqrt(2 a L) = 76.70717 m/s, m = m_v
+    (the carriage stays), every quadrature zero, at t_release = sqrt(2 L / a) =
+    2.60732 s (the track-end root, |s - L| < 1e-9 m); the ASSIST rows of the time series
+    carry the track's ascent-frame view up to that point."""
+    a, length, m_c = 3.0 * G0_MPS2, 100.0, 5_000.0
+    assist = ConstantAccelAssist(
+        net_accel_mps2=a, carriage_mass_kg=m_c, brake_decel_mps2=5.0 * G0_MPS2, g_eff_mps2=G
+    )
+    result = sim.simulate(
+        f9_vehicle,
+        {"stage1": IgnitionSpec(0.5), "stage2": IgnitionSpec()},
+        InverseSquareGravity(MU_EARTH_M3S2),
+        MU_EARTH_M3S2 / R_EARTH_M**2,
+        assist,
+        StraightTrack(length, VERTICAL, -length),
+        None,
+        "stage1_burnout",
+        tight_settings,
+    )
+    v_exit, t_push = math.sqrt(2.0 * a * length), math.sqrt(2.0 * length / a)
+    assert abs(v_exit - 76.70717) < 1e-5 and abs(t_push - 2.60732) < 1e-5
+    m0 = f9_vehicle.liftoff_mass_kg()
+    m = result.metrics
+    assert math.isclose(m["t_release_s"], t_push, rel_tol=1e-10)
+    assert m["alt_at_release_m"] == 0.0 and m["mass_at_release_kg"] == m0
+    assert math.isclose(m["speed_at_release_mps"], v_exit, rel_tol=1e-10)
+    assert math.isclose(m["speed_start_mps"], v_exit, rel_tol=1e-10)
+    release = result.events[result.events["event"] == "release"].iloc[0]
+    assert math.isclose(float(release["t_s"]), t_push, rel_tol=1e-10)
+    assert float(release["z_m"]) == 0.0 and float(release["m_kg"]) == m0
+    assert math.isclose(float(release["v_mps"]), v_exit, rel_tol=1e-10)
+    assert release["phase"] == "ASSIST"
+    track = result.phases[0]
+    assert track.spec.kind == "ASSIST" and track.ended_by == "track_end"
+    layout = track.spec.params.layout
+    assert abs(layout.get(track.y_end, "s_m") - length) < 1e-9
+    assert layout.get(track.y_end, "m_kg") == m0  # cold: no mass leaves on the track
+    flight = result.phases[1]
+    assert flight.spec.kind == "COAST_PRE_IGN" and flight.spec.t0 == track.t_end
+    y0 = flight.y[:, 0]
+    assert y0[VERTICAL_LAYOUT.index("z_m")] == 0.0
+    assert math.isclose(y0[VERTICAL_LAYOUT.index("v_mps")], v_exit, rel_tol=1e-10)
+    assert y0[VERTICAL_LAYOUT.index("m_kg")] == m0
+    assert all(y0[VERTICAL_LAYOUT.index(n)] == 0.0 for n in VERTICAL_STATE_NAMES if n[0] == "J")
+    assert result.loss_budget is not None
+    assert math.isclose(result.loss_budget.speed_start, v_exit, rel_tol=1e-10)
+    # Time series: the ASSIST rows end at the release; the next row is the same state
+    # in the ascent frame, quadratures zero, t_rel_release_s = 0 on both.
+    ts = result.timeseries
+    i_last_track = ts.index[ts["phase"] == "ASSIST"][-1]
+    last_track, first_flight = ts.loc[i_last_track], ts.loc[i_last_track + 1]
+    assert first_flight["phase"] == "COAST_PRE_IGN"
+    assert math.isclose(last_track["t_s"], first_flight["t_s"], rel_tol=1e-12)
+    assert abs(last_track["t_rel_release_s"]) < 1e-12
+    assert abs(first_flight["t_rel_release_s"]) < 1e-12
+    assert math.isclose(last_track["v_mps"], first_flight["v_mps"], rel_tol=1e-12)
+    assert abs(last_track["z_m"]) < 1e-9 and first_flight["z_m"] == 0.0
+    assert math.isclose(last_track["s_m"], length, rel_tol=1e-11)
+    assert np.isnan(first_flight["s_m"]) and np.isnan(first_flight["drive_force_N"])
+    assert all(first_flight[n] == 0.0 for n in VERTICAL_STATE_NAMES if n[0] == "J")
+    assert ts.iloc[0]["z_m"] == -length and ts.iloc[0]["v_mps"] == 0.0
+    events = list(result.events["event"])
+    assert events[:2] == ["push_start", "release"] and "ignition" in events

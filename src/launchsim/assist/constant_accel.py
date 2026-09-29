@@ -12,11 +12,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 
 from launchsim import units
 from launchsim.assist.base import AssistForces, TrackGeometry
+from launchsim.assist.track import StraightTrack
+
+if TYPE_CHECKING:
+    from launchsim.config import ConstantAccelConfig
 
 
 @dataclass(frozen=True)
@@ -30,14 +35,19 @@ class ConstantAccelAssist:
     impingement fraction in [0, 1]; allow_negative_drive: whether a negative drive
     force (the drive braking the engine) is allowed rather than ending the run with
     status ``drive_limit``; g_eff_mps2: the track's effective gravity [m/s^2], quoted in
-    the assumptions only (the dynamics receive g_eff through ``state_rate``). At each
-    instant, with M = m_v + m_c and T the vehicle's delivered thrust along the track,
+    the assumptions only (the dynamics receive g_eff through ``state_rate``). name and
+    extra_state_names are class constants (the registry key and the track state layout
+    cannot change per instance). At each instant, with M = m_v + m_c and T the
+    vehicle's delivered thrust along the track,
 
         F_drive = M (a + g_eff sin phi) - (1 - f_imp) T
         F_int   = m_v (a + g_eff sin phi) - T
 
     (drive_normal = 0, dissipated = 0).
     """
+
+    name: ClassVar[str] = "constant_accel"
+    extra_state_names: ClassVar[tuple[str, ...]] = ()
 
     net_accel_mps2: float
     carriage_mass_kg: float
@@ -46,8 +56,32 @@ class ConstantAccelAssist:
     f_imp: float = 0.0
     allow_negative_drive: bool = False
     g_eff_mps2: float | None = None
-    name: str = "constant_accel"
-    extra_state_names: tuple[str, ...] = ()
+
+    @classmethod
+    def from_config(
+        cls, config: ConstantAccelConfig, g_eff_mps2: float
+    ) -> tuple[ConstantAccelAssist, StraightTrack]:
+        """The model and its ``StraightTrack`` from a validated config
+        (``assist.build_assist``): the config's SI properties feed the model, g_eff_mps2
+        [m/s^2] is quoted in its assumptions, and the track starts at exit_altitude -
+        L sin phi so that its exit sits at the configured altitude in the datum frame
+        (a buried silo starts at -L)."""
+        phi = config.track.phi_rad
+        track = StraightTrack(
+            length_m=config.stroke_m,
+            phi_rad=phi,
+            start_altitude_m=config.track.exit_altitude_m - config.stroke_m * math.sin(phi),
+        )
+        model = cls(
+            net_accel_mps2=config.net_accel_mps2,
+            carriage_mass_kg=config.carriage_mass_kg,
+            brake_decel_mps2=config.brake_decel_mps2,
+            efficiency=config.drive_efficiency,
+            f_imp=config.exhaust_impingement_fraction,
+            allow_negative_drive=config.allow_negative_drive_force,
+            g_eff_mps2=g_eff_mps2,
+        )
+        return model, track
 
     def __post_init__(self) -> None:
         if self.net_accel_mps2 <= 0.0:
