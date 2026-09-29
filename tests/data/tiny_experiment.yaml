@@ -1,0 +1,18 @@
+# Tiny experiment for CLI and config tests: pad baseline, one 1 g / 20 m silo variant and
+# a 2x2 sweep on the toy vehicle (path relative to this file).
+name: tiny_experiment
+vehicle: toy_vehicle.yaml
+baseline:
+  name: pad
+  site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: false}
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: 0.0}, stage2: {t_ign_s: 0.0}}
+  end: stage1_burnout
+  integrator: {rtol: 1.0e-10, sample_dt_s: 0.05}
+variants:
+  silo: {assist: {model: constant_accel, net_accel_g: 1.0, stroke_m: 20, carriage_mass_t: 0,
+                  brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+                  shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}},
+         ignition: {stage1: {t_ign_s: 0.5}}}
+sweeps:
+  - {of: silo, axes: {assist.net_accel_g: [1, 2], assist.stroke_m: [10, 20]}}

@@ -1,0 +1,37 @@
+# Tiny two-stage test vehicle. Stage 1 matches the conftest toy_stage fixture:
+# m0 = 1000 kg (200 dry + 800 propellant), 15 kN, c = 3000 m/s exactly (mdot = 5 kg/s,
+# burn time 160 s). Everything is assumed; nothing here is a real rocket.
+name: toy_vehicle
+description: Two-stage toy for unit tests; all numbers chosen for closed forms.
+
+stages:
+  - name: stage1
+    dry_mass_t: {value: 0.2, assumed: true, note: "toy"}
+    propellant_mass_t: {value: 0.8, assumed: true, note: "toy"}
+    engine:
+      count: {value: 1, assumed: true, note: "toy"}
+      thrust_vac_kN: {value: 15.0, assumed: true, note: "toy: mdot = 5 kg/s with c = 3000 m/s"}
+      isp_vac_s: {value: 305.9148638933785, assumed: true, note: "chosen so c = 3000 m/s (3000 / g0)"}
+    startup:
+      kind: ramp
+      t_ramp_s: {value: 0.0, assumed: true, note: "ramp 0 = step"}
+    coast_before_ignition_s: {value: 0.0, assumed: true, note: "toy"}
+  - name: stage2
+    dry_mass_t: {value: 0.15, assumed: true, note: "toy"}
+    propellant_mass_t: {value: 0.15, assumed: true, note: "toy"}
+    engine:
+      count: {value: 1, assumed: true, note: "toy"}
+      thrust_vac_kN: {value: 3.0, assumed: true, note: "toy: mdot = 1 kg/s with c = 3000 m/s"}
+      isp_vac_s: {value: 305.9148638933785, assumed: true, note: "chosen so c = 3000 m/s (3000 / g0)"}
+    startup:
+      kind: step
+    coast_before_ignition_s: {value: 0.0, assumed: true, note: "toy"}
+
+fairing_mass_t: {value: 0.01, assumed: true, note: "toy"}
+payload_mass_t: {value: 0.05, assumed: true, note: "toy"}
+fairing_drop: staging
+
+screening:
+  stage_isp_eff_s:
+    - {value: 305.9148638933785, assumed: true, note: "chosen so c = 3000 m/s (3000 / g0)"}
+    - {value: 305.9148638933785, assumed: true, note: "chosen so c = 3000 m/s (3000 / g0)"}

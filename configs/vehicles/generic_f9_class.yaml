@@ -1,0 +1,57 @@
+# Generic Falcon 9-class two-stage vehicle (README "first-order numbers" section).
+#
+# Totals 542,570 kg = the README's 542.6 t against the published 549 t. Every number is
+# {value, source} or {value, assumed: true, note}; a bare number fails validation.
+# Units by suffix (_t, _kN, _s, _m); config.py converts to SI.
+#
+# Phase 1 caveats: the 1-D model applies vacuum thrust from sea level (liftoff TWR 1.55
+# instead of the real 1.43) and no drag. thrust_sl_kN is used only to derive the nozzle
+# exit area (about 0.680 m^2 per engine) for Phase 2 back-pressure. The Phase 2
+# calibration forks this file; do not edit it once results depend on it.
+#
+# Sources: spacex.com/vehicles/falcon-9 (stage-1 vacuum and sea-level thrust 8,227 /
+# 7,607 kN, MVac thrust 981 kN, LEO payload 22,800 kg expendable); the same figures plus
+# MVac Isp 348 s and the fairing mass (about 1,900 kg) are in the specification tables
+# of en.wikipedia.org/wiki/Falcon_9, and Merlin 1D vacuum Isp 311 s is in the table of
+# en.wikipedia.org/wiki/SpaceX_Merlin (both checked 2026-09-28). The stage propellant
+# loads and the stage-2 dry mass are the README's generic F9-class assumptions: published
+# Full Thrust spec sheets give 410.9 t / 107.5 t of propellant and a 4.0 t stage-2 empty
+# mass, so they are marked assumed and must be re-sourced in the Phase 2 calibration fork.
+
+name: generic_f9_class
+description: Generic Falcon 9-class two-stage vehicle for the launch-assist screening.
+
+stages:
+  - name: stage1
+    dry_mass_t: {value: 25.6, assumed: true, note: "README assumption; SpaceX does not publish it"}
+    propellant_mass_t: {value: 395.7, assumed: true, note: "README generic F9-class load; FT spec sheets give 410.9 t (287.4 LOX + 123.5 RP-1); re-source in the Phase 2 calibration fork"}
+    engine:
+      count: {value: 9, source: "spacex.com Falcon 9 page (9 Merlin 1D)"}
+      thrust_vac_kN: {value: 914.1, source: "spacex.com Falcon 9 page, 8,227 kN vacuum / 9 = 914.11, rounded to 0.1 kN"}
+      thrust_sl_kN: {value: 845.2, source: "spacex.com Falcon 9 page, 7,607 kN sea level / 9 = 845.22, rounded to 0.1 kN"}
+      isp_vac_s: {value: 311, source: "en.wikipedia.org/wiki/SpaceX_Merlin specification table, Merlin 1D vacuum Isp 311 s"}
+    startup:
+      kind: ramp
+      t_ramp_s: {value: 2.0, assumed: true, note: "linear ramp; F9 ignites at T-3 s and holds down"}
+    coast_before_ignition_s: {value: 0.0, assumed: true, note: "first stage; no coast"}
+  - name: stage2
+    dry_mass_t: {value: 3.9, assumed: true, note: "README generic F9-class value; FT spec sheets give a 4.0 t empty mass; re-source in the Phase 2 calibration fork"}
+    propellant_mass_t: {value: 92.67, assumed: true, note: "README generic F9-class load; FT spec sheets give 107.5 t (75.2 LOX + 32.3 RP-1); re-source in the Phase 2 calibration fork"}
+    engine:
+      count: {value: 1, source: "spacex.com Falcon 9 page (1 Merlin Vacuum)"}
+      thrust_vac_kN: {value: 981, source: "spacex.com Falcon 9 page, MVac thrust"}
+      isp_vac_s: {value: 348, source: "en.wikipedia.org/wiki/Falcon_9 specification table, second-stage Isp 348 s"}
+    startup:
+      kind: step
+    coast_before_ignition_s: {value: 3.0, assumed: true, note: "staging coast before MVac ignition"}
+
+fairing_mass_t: {value: 1.9, source: "en.wikipedia.org/wiki/Falcon_9, fairing section (approximately 1,900 kg)"}
+payload_mass_t: {value: 22.8, source: "spacex.com Falcon 9 page, LEO expendable"}
+fairing_drop: staging
+
+# Effective (loss-averaged) per-stage Isp for the ideal-rocket-equation screening only.
+# Reproduces the README table (687.4 kg of payload at 77 m/s).
+screening:
+  stage_isp_eff_s:
+    - {value: 295, assumed: true, note: "README stage-1 average Isp between sea level and vacuum"}
+    - {value: 348, source: "en.wikipedia.org/wiki/Falcon_9 specification table, second-stage Isp 348 s (vacuum stage)"}
