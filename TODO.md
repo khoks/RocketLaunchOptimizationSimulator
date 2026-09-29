@@ -13,8 +13,10 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 - [x] M3 Silo push validated: straight-track, loads, assist-energy identity and failed-ignition tests pass (2026-09-29)
 - [x] M4 First concept-A numbers: silo_screening_1d run + sweep, every identity line closes to ~1e-12 m/s, README-number smoke test passes (2026-09-29)
 - [x] M5 Findings RQ2 and RQ3 (preliminary) in docs/findings/, status lines updated, commit (2026-09-29)
-- [ ] M6 Phase 2 plan (2-D ascent, rotation, drag, guidance, payload search, calibration)
-- [ ] M7 Phase 2 gate: orbit, loss-budget and convergence tests pass; generic F9-class within +/-10% of 22.8 t to LEO at a stated altitude
+- [x] M6 Phase 2 plan (2-D ascent, rotation, drag, guidance, payload search, calibration): written 2026-09-29 from 3 designs, 9 reviews and a critique; defaults below apply unless the user objects
+- [ ] M7 Phase 2 gate: orbit, loss-budget and convergence tests pass; the pre-registered gate vehicle lands within +/-10% of 22.8 t to 200 km circular, 28.5 deg (band 20,520-25,080 kg)
+- [ ] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary
+- [ ] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO
 
 ## Build steps (plan, "Build sequence")
 
@@ -34,6 +36,26 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | 12 | run + sweep silo_screening_1d; verify identity lines; test_readme_numbers | [x] | results/silo_screening_1d/20260929T103623Z (run) and 103634Z (sweeps); two reproduction pairs |
 | 13 | findings RQ2/RQ3 (preliminary); CLAUDE.md + README status lines; commit | [x] | 345 tests |
 
+## Phase 2 build steps (plan section 10 and section 14 amendments)
+
+| # | Step | Status | Gate / notes |
+|---|---|---|---|
+| 14 | Pre-registration of decisions (no code); tracker rows | [x] | decisions logged below with defaults |
+| 15 | Golden capture of every 1-D output + test_golden_1d | [ ] | golden equal to HEAD |
+| 16 | Split sim.py into sim, metrics, compare, summary, results_io, plots | [ ] | unchanged suite + golden; byte-identical CLI outputs |
+| 17 | phases/ package (engine, trace, prelude, vertical); y_events, nfev, dense-off setting | [ ] | full suite + golden |
+| 18 | Aero data layer: ambient_scalar, C_D PCHIP, drag, fairing rule; three 2-D vehicle forks | [ ] | full suite + golden |
+| 19 | Config schema: dynamics, shared blocks, target orbit, search/ltg/checks, bounds, cases; four experiment YAMLs | [ ] | 1-D resolved dicts identical |
+| 20 | Planar EOM, orbit.py, H0 gravity; orbit/coast/rocket-eq/pointwise-identity/reduction tests | [ ] | CLAUDE.md elliptical-orbit test |
+| 21 | Stage-1 planner and guidance: hold, release map, rise, kick, gravity turn, staging, gamma* solve | [ ] | 465.1 m/s release test; Culler-Fried |
+| 22 | Stage 2: LTG law and shooting, energy cutoff, fairing, insertion, max-Q, loads | [ ] | full-ascent loss budget < 0.01 m/s |
+| 23 | search.py: residual, payload capacity, gamma* sweep, final verify | [ ] | one pad searched run < 30 s |
+| 24 | Pipeline: dispatch, planar metrics, compare with closure/attribution/checks, summary, plots | [ ] | full suite + golden |
+| 25 | Convergence and performance gate; slow marks | [ ] | every CLAUDE.md Phase 2 test green; budgets met |
+| 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [ ] | needs the pre-registration commit first |
+| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [ ] | after M7 or an accepted miss |
+| 28 | Close Phase 2 | [ ] | |
+
 ## Priorities
 
 1. P0 Physics correctness and honest tests (validation first; closed forms computed in the tests).
@@ -43,7 +65,7 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 
 ## Todo (near term)
 
-- [~] Plan Phase 2 in Plan mode (equations of motion, frames, events): PlanarDynamics2D, rotation and the 465.1 m/s release test, atmosphere in the RHS, drag and back-pressure, guidance, payload bisection, elliptical-orbit test, calibration fork of the F9 file.
+- [x] Plan Phase 2 in Plan mode (equations of motion, frames, events): PlanarDynamics2D, rotation and the 465.1 m/s release test, atmosphere in the RHS, drag and back-pressure, guidance, payload bisection, elliptical-orbit test, calibration fork of the F9 file.
 - [x] Won't fix: track-normal g of 6e-17 on vertical tracks is cos(pi/2) roundoff; the summary prints 0 and a clamp would need a magic tolerance.
 - [x] config.SweepPoint.sweep_index is now 1-based like the sweep_<n> directories (test added).
 - [ ] Results retention: three run+sweep pairs from 2026-09-29 have tracked summaries (cited pair 103623Z/103634Z, reviewer pair 104503Z/104510Z, gate pair 105657Z/105707Z); decide whether to keep only cited pairs (deleting results needs your OK per CLAUDE.md).
@@ -56,6 +78,18 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 - Later: parquet, multiprocessing sweeps, notebooks, optimize.py, RocketPy comparison, findings for RQ1-RQ8.
 
 ## Decisions log
+
+Phase 2 pre-registration (2026-09-29; defaults from the plan, each open to objection until the pre-registration commit before step 26):
+
+- Calibration mass sets A (README), B (recorded re-sourcing scope) and C (full FT table with Block 5 thrust, version mix disclosed) are all run and reported with equal prominence; default gate C on provenance (546.3 t of 549 t launch-mass closure). Prototype disclosure: A about 25,082 kg (+10.01%, 2 kg above the band edge), C roughly +10 to +14%, B not prototyped; indicative only.
+- Reference orbit 200 km circular (r_t = 6,578,137 m), 28.5 deg, due east, expendable; never moved.
+- Fitted or solved in calibration: guidance outputs only (gamma*_MECO, delta, LTG a and b). Fixed inputs: A_ref 10.52 m^2 (21.24 m^2 as a bound case), Braeunig C_D(M) with PCHIP, fairing jettison at 1,135 W/m^2, 11 s staging coast, stage-2 A_e 8.6 m^2 (assumed), no throttle, no reserves. On a miss: report, checklist, stop, ask.
+- Shared across runs: guidance parametrisation, gamma* grid 8-36 deg step 2, tolerances, LTG settings; gamma* sweep-optimized per run. v_k = 50 m/s and the hold-to-alignment kick were chosen with prototype knowledge; the trigger study reports best-vs-best dP*, and headlines are quoted against the pad's best v_k if it beats v_k = 50 by more than 5 kg.
+- Deferred: throttling (max-Q reported unthrottled), --jobs parallelism (unless an experiment exceeds 30 min serial).
+- Layout: phases/ package; sim.py split into sim, metrics, compare, summary, results_io, plots; new guidance.py, orbit.py, search.py; optimize.py stays for Phase 5.
+- Output angles in _rad; degrees only in summary cells and plot labels. Nothing in results/ is deleted.
+
+Phase 0-1:
 
 - 2026-09-28 constant_accel means prescribed net acceleration (drive force solved each instant); hot start therefore buys no exit speed and trades propellant for drive energy; report plainly.
 - 2026-09-28 Earth rotation off in Phase 1 (omega_p = 0 on the track and in the ascent).
