@@ -65,12 +65,13 @@ checks:
   convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
                 gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
   gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+  m2_role: diagnostic                      # M2 reported, never bug_suspect (user decision 2026-09-30)
 baseline:                                  # pad: held down, full thrust exactly at release
   name: pad
   assist: {model: none}
   ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
   end: insertion
-  integrator: {method: DOP853, rtol: 1.0e-10, sample_dt_s: 0.1}
+  integrator: {method: DOP853, rtol: 1.0e-10, planar_max_step_s: 2.0, sample_dt_s: 0.1}
 cases:                                     # independent runs, never compared
   readme_loads: {vehicle: configs/vehicles/generic_f9_class_2d_readme_loads.yaml}      # set A
   recorded_scope: {vehicle: configs/vehicles/generic_f9_class_2d_recorded_scope.yaml}  # set B

@@ -691,8 +691,9 @@ class SearchContext:
     def tightened(self, conv: ConvergenceConfig) -> SearchContext:
         """The context with the budget tightened by conv.tighten_factor
         (``SearchBudget.tightened``) and the max_step caps multiplied by
-        conv.max_step_factor (ramp, lag and push step counts divided by it, rounded up):
-        the convergence check of amendment 3."""
+        conv.max_step_factor (ramp, lag and push step counts divided by it, rounded up;
+        the planar flight-phase cap planar_max_step_s multiplied by it): the
+        convergence check of amendment 3."""
         s = self.settings
 
         def steps(n: int) -> int:
@@ -703,6 +704,7 @@ class SearchContext:
             ramp_steps=steps(s.ramp_steps),
             lag_steps_per_tau=steps(s.lag_steps_per_tau),
             push_steps=steps(s.push_steps),
+            planar_max_step_s=s.planar_max_step_s * conv.max_step_factor,
         )
         return dataclasses.replace(
             self, settings=settings, budget=self.budget.tightened(conv.tighten_factor)

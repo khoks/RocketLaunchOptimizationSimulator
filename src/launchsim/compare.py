@@ -7,8 +7,9 @@ sim.py).
 ``sensitivity_record`` gives the metrics.json record of one. Units are SI with the unit
 in each key. The planar_2d counterpart is ``compare_planar`` (dP*, the screening
 yardstick, the matched-payload attribution ``matched_attribution`` of rung-2 runs the
-caller executes, and the screening-beat checks M2 to M5 with status ``bug_suspect``;
-docs/physics.md, "Screening-beat rule (2-D)"). ``compare`` and its helpers are pure;
+caller executes, and the screening-beat checks M2 to M5 with status ``bug_suspect``,
+M2 only when ``checks.m2_role`` is blocking; docs/physics.md, "Screening-beat rule
+(2-D)"). ``compare`` and its helpers are pure;
 ``run_sensitivity`` runs simulations through ``sim.run_resolved`` (and, for a planar
 energy-only case, ``sim.rerun_resolved``), looked up on the ``sim`` module at call time
 (a test that patches ``sim.run`` changes what it runs). ``sim`` re-exports every name;
@@ -33,6 +34,8 @@ import pandas as pd
 from scipy.optimize import brentq
 
 from launchsim.config import (
+    BLOCKING_ROLE,
+    DIAGNOSTIC_ROLE,
     NO_SEARCH,
     PLANAR_2D,
     VEHICLE_PREFIX,
@@ -500,7 +503,7 @@ CD_SENSITIVITY_NOTES: dict[str, str] = {
 
 SCREENING_OK = "ok"
 """Screening status of a variant with a matched-payload attribution whose applicable
-checks all pass."""
+blocking checks all pass (a failed diagnostic check, M2 by default, does not change it)."""
 SCREENING_NOT_CHECKED = "not_checked"
 """Screening status of a comparison without a matched-payload attribution and without a
 failed check: by design for a comparison across two vehicles (``attribution_required``
@@ -509,12 +512,27 @@ baseline), or a variant with no rung-2 run at the matched payload that does not 
 the screening yardstick (a failed ignition). Its dP* is not explained by a loss breakdown,
 so it supports no finding about a beat."""
 BUG_SUSPECT = "bug_suspect"
-"""Status of a run or comparison that fails a pre-registered check (docs/physics.md,
-"Screening-beat rule (2-D)"): it blocks findings until investigated."""
+"""Status of a run or comparison that fails a pre-registered blocking check
+(docs/physics.md, "Screening-beat rule (2-D)"): it blocks findings until investigated."""
 CHECK_PASS = "pass"
 CHECK_FAIL = "fail"
 CHECK_NA = "n/a"
 """Outcome of one mechanism check (n/a: not applicable to this pair)."""
+ROLE_KEY = "role"
+"""Key of a check record's role (config.CheckRole); a record without it is blocking."""
+
+
+def check_role(rec: Mapping[str, Any]) -> str:
+    """The role of one check record: its ``role`` item (config.DIAGNOSTIC_ROLE or
+    BLOCKING_ROLE), BLOCKING_ROLE when it has none (every check but M2). Input: a
+    ``checks_<name>`` record; output: the role string."""
+    return str(rec.get(ROLE_KEY, BLOCKING_ROLE))
+
+
+def is_diagnostic(rec: Mapping[str, Any]) -> bool:
+    """True when the check record is diagnostic only: its fail is reported but gives no
+    bug_suspect and blocks no finding (docs/physics.md, "Screening-beat rule (2-D)")."""
+    return check_role(rec) == DIAGNOSTIC_ROLE
 
 
 def gamma_sensitivity_step_rad(checks: ChecksConfig) -> float:
@@ -892,7 +910,9 @@ def _m2_m3(
     only (docs/physics.md, "Screening-beat rule (2-D)"). Both records carry the ratio's
     range over the variant's gamma* +/- h (``_gamma_range``: ``value_range``,
     ``neighbour_status``, ``gamma_robust``) when the attribution has neighbours: the
-    baseline and its estimate stay fixed, only the variant's d J moves."""
+    baseline and its estimate stay fixed, only the variant's d J moves. The M2 record's
+    ``role`` (checks.m2_role) is added by ``compare_planar``; the numbers and the verdict
+    here do not depend on it."""
     na = {"m2": _check_row(CHECK_NA), "m3": _check_row(CHECK_NA)}
     v0 = result.metrics.get("speed_at_release_mps")
     v0_b = baseline.metrics.get("speed_at_release_mps")
@@ -1135,9 +1155,13 @@ def compare_planar(
     ``matched_attribution``. The checks (``checks_<name>`` records: closure,
     attribution, m2, m3, m4, m5; ``_attribution_check`` fails an unexplained beat when
     ``attribution_required``, which a comparison across two vehicles sets False) and
-    ``screening_status``: BUG_SUSPECT when any applicable check fails, else
+    ``screening_status``: BUG_SUSPECT when any applicable blocking check fails, else
     SCREENING_NOT_CHECKED without an attribution, else SCREENING_OK;
-    ``screening_failed`` lists the failed checks."""
+    ``screening_failed`` lists the failed blocking checks and
+    ``screening_diagnostic_failed`` the failed diagnostic ones. The M2 record carries
+    ``role`` = checks.m2_role: diagnostic (the default, the user's decision of
+    2026-09-30) computes and records M2 exactly as blocking does, but its fail neither
+    sets BUG_SUSPECT nor enters ``screening_failed``; every other check is blocking."""
     out: dict[str, Any] = {"status": result.status, "baseline_status": baseline.status}
     for key, value in result.metrics.items():
         base = baseline.metrics.get(key)
@@ -1201,10 +1225,13 @@ def compare_planar(
         "m4": _m4(attribution, checks),
         "m5": _m5(name, result, d_payload, anchor, checks),
     }
+    records["m2"] = {**records["m2"], ROLE_KEY: checks.m2_role}
     for key, rec in records.items():
         out[f"checks_{key}"] = rec
-    failed = [key for key, rec in records.items() if rec["status"] == CHECK_FAIL]
+    fails = [key for key, rec in records.items() if rec["status"] == CHECK_FAIL]
+    failed = [key for key in fails if not is_diagnostic(records[key])]
     out["screening_failed"] = failed
+    out["screening_diagnostic_failed"] = [key for key in fails if key not in failed]
     if failed:
         out["screening_status"] = BUG_SUSPECT
     elif attribution is None:

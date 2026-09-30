@@ -549,6 +549,7 @@ def test_method_comes_from_the_config() -> None:
         ramp_steps: int = 10
         lag_steps_per_tau: int = 4
         push_steps: int = 50
+        planar_max_step_s: float = 2.0
         t_max_s: float = 3600.0
         sample_dt_s: float = 0.05
 

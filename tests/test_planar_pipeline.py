@@ -15,9 +15,12 @@ screening-beat machinery (t_v0 and the time-shift estimate against an independen
 quadrature, the M2/M3 ratio rule and M2's sign, M4 and its floor, M5 and the anchor,
 per-run bug_suspect, the attribution check and not_checked, the stricter yardstick, the
 gamma*-sensitivity ranges, the M2 stage-1 diagnostic, the M3 floor, the trajectory key,
-the unconstrained-kick label and unwrap_rad). Slow: the same with a searched payload
-figure of merit on a small grid (every PLANAR_REQUIRED_METRICS key non-null, the gamma*
-neighbours), and bounds, calibration cases and a paired sweep with fixed guidance.
+the unconstrained-kick label and unwrap_rad), and the M2 role (checks.m2_role: a
+diagnostic M2 fail is reported but not bug_suspect, a blocking one is bug_suspect as
+pre-registered, end to end too; the other checks do not depend on the role). Slow: the
+same with a searched payload figure of merit on a small grid (every
+PLANAR_REQUIRED_METRICS key non-null, the gamma* neighbours), and bounds, calibration
+cases and a paired sweep with fixed guidance.
 Expected values (g_eff, the energy ratio, the angle bounds) are computed here from
 constants and the configs.
 """
@@ -178,9 +181,54 @@ def test_summary_rows_label_and_screening_line(fast_run: tuple[Any, Path]) -> No
         assert "Checks: closure" in line
     silo = next(ln for ln in text.splitlines() if ln.startswith("- silo_cold: dP* "))
     assert "matched-payload attribution at P_ref" in silo
-    status = er.comparison["silo_cold"]["screening_status"]
+    c = er.comparison["silo_cold"]
+    status = c["screening_status"]
     assert (sim.FINDINGS_BLOCKED in text) == (status == sim.BUG_SUSPECT)
+    # the shipped M2 role is diagnostic (user decision of 2026-09-30): M2 is printed
+    # marked, and a failed M2 is listed apart without blocking anything
+    assert c["checks_m2"]["role"] == "diagnostic" and "M2 (diagnostic) fail (d " in silo
+    # with the fixed guidance silo_cold's M2 fails (a low-speed cold start: the reason M2
+    # became diagnostic) while the blocking checks pass, so the status is ok and the fail
+    # shows in the screening line, its own Checks line and the table cell
+    assert c["screening_failed"] == [] and c["screening_diagnostic_failed"] == ["m2"]
+    assert status == sim.SCREENING_OK
+    assert summary.DIAGNOSTIC_FAILED_TEXT in text
+    row = next(ln for ln in text.splitlines() if ln.startswith("| screening status ("))
+    assert "| ok (diagnostic fail: M2) |" in row
     assert "CALIBRATION" not in text
+
+
+def test_blocking_m2_role_end_to_end(
+    repo_root: Path, tmp_path: Path, fast_run: tuple[Any, Path]
+) -> None:
+    """The pre-registered rule (checks.m2_role blocking) through run_experiment: the
+    same fixed-guidance pad and silo_cold give the same M2 record apart from its role,
+    and the comparison is bug_suspect exactly when a blocking check (M2 included) fails,
+    in which case summary.md says findings are blocked; M2 is printed unmarked. With the
+    fixed guidance silo_cold's M2 fails (docs/physics.md, "Screening-beat rule (2-D)"),
+    so this is the old default's bug_suspect, kept for the blocking role."""
+    er_diag, _out = fast_run
+    exp, veh = _raw(repo_root)
+    exp = _fixed(exp, ("silo_cold",))
+    exp["checks"]["m2_role"] = "blocking"
+    er, out = sim.run_experiment(
+        resolve_experiment(exp, veh), tmp_path, plots=False, repo_root=repo_root
+    )
+    c, ref = er.comparison["silo_cold"], er_diag.comparison["silo_cold"]
+    assert c["checks_m2"]["role"] == "blocking"
+    assert {k: v for k, v in c["checks_m2"].items() if k != "role"} == {
+        k: v for k, v in ref["checks_m2"].items() if k != "role"
+    }
+    assert c["checks_m2"]["status"] == "fail"
+    assert "m2" in c["screening_failed"] and c["screening_diagnostic_failed"] == []
+    assert c["screening_status"] == sim.BUG_SUSPECT
+    text = (out / "summary.md").read_text(encoding="utf-8")
+    silo = next(ln for ln in text.splitlines() if ln.startswith("- silo_cold: dP* "))
+    assert "M2 fail (d " in silo and "(diagnostic)" not in silo
+    assert f"{sim.FINDINGS_BLOCKED}: silo_cold (comparison)" in text
+    row = next(ln for ln in text.splitlines() if ln.startswith("| screening status ("))
+    assert row.endswith("| bug_suspect |") and "diagnostic fail" not in row
+    assert summary.DIAGNOSTIC_FAILED_TEXT not in text
 
 
 def test_attribution_closes_at_the_matched_payload(fast_run: tuple[Any, Path]) -> None:
@@ -598,6 +646,183 @@ def test_attribution_check_fails_a_non_closing_attribution(fast_run: tuple[Any, 
     assert bad["screening_status"] == sim.BUG_SUSPECT
 
 
+def _m2_only_fail(er: Any, role: str) -> dict[str, Any]:
+    """silo_cold against the pad with the recorded matched runs at P0, under checks whose
+    M2 ratio bounds start 1 above |ratio| of the shipped comparison (so M2 fails) and
+    whose min_term_mps is 1e9 m/s (M3 and M4 n/a; M5 is n/a without an anchor): M2 is
+    then the only failing check, with checks.m2_role = role."""
+    ratio = er.comparison["silo_cold"]["checks_m2"]["ratio"]
+    assert ratio is not None
+    low = abs(float(ratio)) + 1.0
+    checks = _checks(er).model_copy(
+        update={"grav_ratio_bounds": (low, low + 1.0), "min_term_mps": 1.0e9, "m2_role": role}
+    )
+    p0 = er.baseline.resolved.to_vehicle().payload_mass_kg
+    pad, silo_rr = er.baseline, er.runs["silo_cold"]
+    mb = sim.matched_run(pad.resolved, pad.result, p0)
+    mv = sim.matched_run(silo_rr.resolved, silo_rr.result, p0)
+    assert mb is not None and mv is not None
+    vehicle = silo_rr.resolved.to_vehicle()
+    return compare.compare_planar(
+        silo_rr.result,
+        pad.result,
+        vehicle,
+        checks=checks,
+        name="silo_cold",
+        matched=mv,
+        matched_baseline=mb,
+    )
+
+
+def test_m2_diagnostic_fail_is_reported_but_blocks_nothing(fast_run: tuple[Any, Path]) -> None:
+    """User decision of 2026-09-30: with m2_role diagnostic an M2 fail is computed and
+    recorded exactly as with blocking (same ratio, bounds verdict and numbers; the record
+    labelled diagnostic) but gives no bug_suspect: screening_failed is empty, the fail is
+    listed in screening_diagnostic_failed and the status is ok. The Checks text marks M2
+    "(diagnostic)", the screening line names the diagnostic fail, and the blocked-findings
+    line says no comparison is bug_suspect while listing the diagnostic fail apart."""
+    er, _out = fast_run
+    diag = _m2_only_fail(er, "diagnostic")
+    block = _m2_only_fail(er, "blocking")
+    m2 = diag["checks_m2"]
+    assert m2["status"] == "fail" and m2["role"] == "diagnostic"
+    assert {k: v for k, v in m2.items() if k != "role"} == {
+        k: v for k, v in block["checks_m2"].items() if k != "role"
+    }
+    assert m2["ratio"] == pytest.approx(m2["d_mps"] / m2["estimate_mps"], rel=1e-12)
+    for key in ("closure", "attribution", "m3", "m4", "m5"):
+        assert diag[f"checks_{key}"] == block[f"checks_{key}"], key
+        assert "role" not in diag[f"checks_{key}"], key
+    assert diag["checks_closure"]["status"] == diag["checks_attribution"]["status"] == "pass"
+    assert {diag[f"checks_{k}"]["status"] for k in ("m3", "m4", "m5")} == {"n/a"}
+    assert diag["screening_failed"] == []
+    assert diag["screening_diagnostic_failed"] == ["m2"]
+    assert diag["screening_status"] == sim.SCREENING_OK
+    v0 = er.runs["silo_cold"].result.metrics["speed_at_release_mps"]
+    line = summary.screening_line("silo_cold", diag, v0)
+    assert "M2 (diagnostic) fail (d " in line
+    assert line.endswith(
+        "Screening status: ok (failed diagnostic checks, which block no finding: M2)"
+    )
+    blocked = summary.blocked_lines({}, [("silo_cold", diag)])
+    assert blocked[0] == "No run and no comparison is bug_suspect."
+    assert f"{summary.DIAGNOSTIC_FAILED_TEXT}: silo_cold (M2)" in blocked
+    assert not any(ln.startswith(summary.FINDINGS_BLOCKED) for ln in blocked)
+    compact = summary._compact_screening("silo_cold", diag)
+    assert "failed checks: none; failed diagnostic checks: M2;" in compact
+    assert compact.endswith("screening status ok")
+
+
+def test_m2_blocking_fail_is_bug_suspect_as_pre_registered(fast_run: tuple[Any, Path]) -> None:
+    """With m2_role blocking (the pre-registered rule) the same M2 fail gives status
+    bug_suspect, is listed in screening_failed (none diagnostic), is printed without the
+    diagnostic mark and blocks findings in the Checks section."""
+    er, _out = fast_run
+    block = _m2_only_fail(er, "blocking")
+    m2 = block["checks_m2"]
+    assert m2["status"] == "fail" and m2["role"] == "blocking"
+    assert block["screening_failed"] == ["m2"]
+    assert block["screening_diagnostic_failed"] == []
+    assert block["screening_status"] == sim.BUG_SUSPECT
+    assert summary._check_text("m2", m2).startswith("M2 fail (d ")
+    v0 = er.runs["silo_cold"].result.metrics["speed_at_release_mps"]
+    assert summary.screening_line("silo_cold", block, v0).endswith("Screening status: bug_suspect")
+    blocked = summary.blocked_lines({}, [("silo_cold", block)])
+    assert blocked[0] == f"{summary.FINDINGS_BLOCKED}: silo_cold (comparison)"
+    assert not any(ln.startswith(summary.DIAGNOSTIC_FAILED_TEXT) for ln in blocked)
+    compact = summary._compact_screening("silo_cold", block)
+    assert "failed checks: m2; failed diagnostic checks: none;" in compact
+
+
+def _synthetic_comparison(status: str, failed: list[str], diag: list[str]) -> dict[str, Any]:
+    """A comparison dict with only the keys the Checks text reads: the status, the failed
+    blocking and diagnostic checks, and a non-gamma*-robust M2 record whose role is
+    diagnostic when M2 is in diag."""
+    role = "diagnostic" if "m2" in diag else "blocking"
+    return {
+        "screening_status": status,
+        "screening_failed": failed,
+        "screening_diagnostic_failed": diag,
+        "checks_m2": {"status": "fail", "gamma_robust": False, "role": role},
+    }
+
+
+def test_sweep_check_lines_and_the_blocked_branch() -> None:
+    """The sweep Checks text on synthetic point comparisons (no run needed): a point
+    with a blocking fail is bug_suspect and blocks findings; a point with only a
+    diagnostic M2 fail is ok, its line names the fail, the gamma*-sensitive M2 is tagged
+    "(diagnostic)", it is listed on the diagnostic-fail line and blocks nothing; the
+    table cell adds the diagnostic fail to the status."""
+    bad = _synthetic_comparison(sim.BUG_SUSPECT, ["m2"], [])
+    ok = _synthetic_comparison(sim.SCREENING_OK, [], ["m2"])
+    assert summary._gamma_sensitive(ok) == "M2 (diagnostic)"
+    assert summary._gamma_sensitive(bad) == "M2"
+    assert summary.sweep_point_check_line("sweep_1/run_0001", ok) == (
+        "- sweep_1/run_0001: screening status ok (failed checks: none; failed diagnostic "
+        "checks: M2; gamma*-sensitive: M2 (diagnostic))"
+    )
+    assert summary.sweep_point_check_line("sweep_1/run_0002", bad) == (
+        "- sweep_1/run_0002: screening status bug_suspect (failed checks: m2; failed "
+        "diagnostic checks: none; gamma*-sensitive: M2)"
+    )
+    both = summary.blocked_lines({}, [("sweep_1/run_0001", ok), ("sweep_1/run_0002", bad)])
+    assert both[0] == f"{summary.FINDINGS_BLOCKED}: sweep_1/run_0002 (comparison)"
+    assert f"{summary.DIAGNOSTIC_FAILED_TEXT}: sweep_1/run_0001 (M2)" in both
+    assert any(ln.startswith(f"{summary.GAMMA_SENSITIVE_TEXT}: ") for ln in both)
+    only_ok = summary.blocked_lines({}, [("sweep_1/run_0001", ok)])
+    assert only_ok[0] == "No run and no comparison is bug_suspect."
+    assert summary.screening_cell(ok) == "ok (diagnostic fail: M2)"
+    assert summary.screening_cell(bad) == "bug_suspect"
+    assert summary.screening_cell({}) == "n/a"
+
+
+def test_sweep_index_text_cells() -> None:
+    """sweep_index.csv text cells: None stays empty, a list is joined (``none`` when
+    empty), anything else is its str."""
+    from launchsim.results_io import index_text
+
+    assert index_text(None) is None
+    assert index_text([]) == "none"
+    assert index_text(["m2"]) == "m2"
+    assert index_text(["m2", "m3"]) == "m2; m3"
+    assert index_text(True) == "True" and index_text("ok") == "ok"
+    assert "screening_diagnostic_failed" in sim.PLANAR_SWEEP_INDEX_TEXT
+
+
+@pytest.mark.parametrize("role", ["diagnostic", "blocking"])
+def test_m2_role_leaves_the_other_checks_alone(fast_run: tuple[Any, Path], role: str) -> None:
+    """The shipped checks under either M2 role: every record but M2's role is identical,
+    M2's verdict and numbers too, and the status is bug_suspect exactly when a blocking
+    check fails (M2 counting only under blocking)."""
+    er, _out = fast_run
+    p0 = er.baseline.resolved.to_vehicle().payload_mass_kg
+    pad, silo_rr = er.baseline, er.runs["silo_cold"]
+    mb = sim.matched_run(pad.resolved, pad.result, p0)
+    mv = sim.matched_run(silo_rr.resolved, silo_rr.result, p0)
+    vehicle = silo_rr.resolved.to_vehicle()
+    checks = _checks(er).model_copy(update={"m2_role": role})
+    c = compare.compare_planar(
+        silo_rr.result,
+        pad.result,
+        vehicle,
+        checks=checks,
+        name="silo_cold",
+        matched=mv,
+        matched_baseline=mb,
+    )
+    ref = er.comparison["silo_cold"]  # the shipped role: diagnostic
+    for key in summary.CHECK_KEYS:
+        got = {k: v for k, v in c[f"checks_{key}"].items() if k != "role"}
+        want = {k: v for k, v in ref[f"checks_{key}"].items() if k != "role"}
+        assert got == want, key
+    assert c["checks_m2"]["role"] == role
+    fails = [k for k in summary.CHECK_KEYS if c[f"checks_{k}"]["status"] == "fail"]
+    blocking = [k for k in fails if k != "m2" or role == "blocking"]
+    assert c["screening_failed"] == blocking
+    assert c["screening_diagnostic_failed"] == [k for k in fails if k not in blocking]
+    assert (c["screening_status"] == sim.BUG_SUSPECT) == bool(blocking)
+
+
 def test_m2_stage1_diagnostic_and_the_m3_floor(fast_run: tuple[Any, Path]) -> None:
     """The M2 record carries the stage-1 part of d J_grav: minus the difference of the
     two recorded runs' J_grav at their stage-1 burnouts (read here off the burnout
@@ -883,3 +1108,15 @@ def test_bounds_cases_and_paired_sweeps(repo_root: Path, tmp_path: Path) -> None
     assert "## Checks" in text and "sweep_1/run_0002__pad" in text
     status = [c["screening_status"] for c in sweeps[0].comparisons]
     assert (sim.FINDINGS_BLOCKED in text) == (sim.BUG_SUSPECT in status)
+    # both fixed-guidance cold-start points fail M2, diagnostic only: ok, and the fail
+    # shows in sweep_index.csv, the sweep Checks lines and the diagnostic-fail line
+    diag = [c["screening_diagnostic_failed"] for c in sweeps[0].comparisons]
+    assert diag == [["m2"], ["m2"]] and status == [sim.SCREENING_OK] * 2
+    assert list(index["screening_status"]) == [sim.SCREENING_OK] * 2
+    assert list(index["screening_diagnostic_failed"]) == ["m2", "m2"]
+    for n in ("run_0001", "run_0002"):
+        assert (
+            f"- sweep_1/{n}: screening status ok (failed checks: none; failed diagnostic "
+            "checks: M2; gamma*-sensitive: none)"
+        ) in text
+    assert f"{summary.DIAGNOSTIC_FAILED_TEXT}: sweep_1/run_0001 (M2)" in text

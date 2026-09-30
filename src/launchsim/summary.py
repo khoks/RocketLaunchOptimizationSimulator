@@ -34,6 +34,7 @@ from launchsim.compare import (
     _is_finite_number,
     _is_number,
     _is_pandas_missing,
+    is_diagnostic,
     planar_comparison_basis,
 )
 from launchsim.config import CALIBRATION_LABEL, PLANAR_2D, SEARCHED_FIGURES, SweepPoint
@@ -739,15 +740,32 @@ SCREENING_NOT_CHECKED_TEXT = (
     "the dP*; no finding about a beat rests on it)"
 )
 """What the Checks section says about comparisons with status not_checked."""
+DIAGNOSTIC_TAG = " (diagnostic)"
+"""Appended to a diagnostic check's name (M2 with checks.m2_role diagnostic) wherever
+the summary prints its verdict: it is reported, never bug_suspect."""
+DIAGNOSTIC_FAILED_TEXT = (
+    "Diagnostic checks that failed (computed and reported only: they give no bug_suspect "
+    "and block no finding; user decision of 2026-09-30, docs/physics.md, 'Screening-beat "
+    "rule (2-D)')"
+)
+"""What the Checks section says about comparisons with a failed diagnostic check."""
 PLANAR_DEG_SOURCE = "deg"
 """Row source of a metric stored in radians and printed in degrees (summary cells are
 the one place degrees appear, with plot labels)."""
+PLANAR_SCREENING_SOURCE = "screening"
+"""Row source of the screening status cell (``screening_cell``: the status, with the
+failed diagnostic checks in brackets)."""
 
 PLANAR_VARIANT_ROWS: tuple[VariantRow, ...] = (
     ("status", "status", ""),
     ("search status", "m", "search_status"),
     ("run checks (closure, loss identity, insertion e)", "m", "run_checks"),
-    ("screening status (closure, attribution, M2 to M5)", "c", "screening_status"),
+    (
+        "screening status (closure, attribution, M3 to M5; M2 only when blocking; "
+        "a failed diagnostic check in brackets)",
+        PLANAR_SCREENING_SOURCE,
+        "screening_status",
+    ),
     ("flags (see Flags)", "flags", ""),
     ("payload capacity P* [kg] (sweep-optimized)", "m", "payload_kg"),
     ("  dP* vs baseline [kg]", "c", "payload_delta_kg"),
@@ -869,8 +887,13 @@ def _planar_cell(
     runs: Mapping[str, RunResult], er: ExperimentResult, name: str, row: VariantRow
 ) -> str:
     """One cell of the planar per-variant table: a PLANAR_DEG_SOURCE metric in degrees,
-    everything else as ``_variant_cell``."""
+    the PLANAR_SCREENING_SOURCE row as ``screening_cell`` ("(baseline)" for the
+    baseline), everything else as ``_variant_cell``."""
     _label, source, key = row
+    if source == PLANAR_SCREENING_SOURCE:
+        if name == er.baseline.name:
+            return "(baseline)"
+        return screening_cell(er.comparison.get(name, {}))
     if source == PLANAR_DEG_SOURCE:
         value = runs[name].result.metrics.get(key)
         return _fmt(value if not _is_finite_number(value) else float(rad_to_deg(float(value))))
@@ -909,13 +932,22 @@ def _range_text(rec: Mapping[str, Any]) -> str:
     return f"; over gamma* +/- h: {values}, {words}"
 
 
+def _check_name(key: str, rec: Mapping[str, Any]) -> str:
+    """The printed name of a check: closure and attribution in lower case, the mechanism
+    checks upper case, with DIAGNOSTIC_TAG when the record is diagnostic."""
+    name = key if key in ("closure", "attribution") else key.upper()
+    return name + (DIAGNOSTIC_TAG if is_diagnostic(rec) else "")
+
+
 def _check_text(key: str, rec: Mapping[str, Any]) -> str:
-    """One mechanism check in words: its status and the number it turned on (with its
-    range over gamma* +/- h when the attribution has neighbours)."""
+    """One mechanism check in words: its name (marked diagnostic when it is), its status
+    and the number it turned on (with its range over gamma* +/- h when the attribution
+    has neighbours)."""
     status = str(rec.get("status"))
     if key in ("m2", "m3") and rec.get("ratio") is not None:
         text = (
-            f"{key.upper()} {status} (d {_signed(rec.get('d_mps'))} m/s against the time-shift "
+            f"{_check_name(key, rec)} {status} (d {_signed(rec.get('d_mps'))} m/s against the "
+            "time-shift "
             f"estimate {_signed(rec.get('estimate_mps'))} m/s: ratio {_fmt(rec.get('ratio'))}"
             f"{_range_text(rec)}"
         )
@@ -947,7 +979,7 @@ def _check_text(key: str, rec: Mapping[str, Any]) -> str:
         return f"closure {status} (worst residual {rec['worst_residual_mps']:.3g} m/s)"
     if key == "closure" and status == "n/a":
         return "closure n/a (the variant burned no stage 2)"
-    return f"{key if key in ('closure', 'attribution') else key.upper()} {status}"
+    return f"{_check_name(key, rec)} {status}"
 
 
 CHECK_KEYS: tuple[str, ...] = ("closure", "attribution", "m2", "m3", "m4", "m5")
@@ -1067,8 +1099,30 @@ def screening_line(name: str, c: Mapping[str, Any], v0_mps: Any) -> str:
         f"against the ideal screening yardstick {used} kg at its release speed {_fmt(v0_mps)} "
         f"m/s (the stricter of {at_p0} kg at P0 and {at_base} kg at the baseline's P*: "
         f"{basis}): {verdict}. {_attribution_text(c)}. Checks: {checks}. Screening status: "
-        f"{c.get('screening_status', 'n/a')}"
+        f"{c.get('screening_status', 'n/a')}{_diagnostic_text(c)}"
     )
+
+
+def _diagnostic_failed(c: Mapping[str, Any]) -> str:
+    """The failed diagnostic checks of comparison c (``screening_diagnostic_failed``),
+    upper case and comma-separated; empty when none."""
+    return ", ".join(k.upper() for k in c.get("screening_diagnostic_failed") or [])
+
+
+def screening_cell(c: Mapping[str, Any]) -> str:
+    """A table cell of comparison c's screening status: the status, followed by
+    `` (diagnostic fail: M2)`` when a diagnostic check failed (it blocks no finding, but a
+    reader who stops at the table still sees it)."""
+    names = _diagnostic_failed(c)
+    status = _fmt(c.get("screening_status"))
+    return f"{status} (diagnostic fail: {names})" if names else status
+
+
+def _diagnostic_text(c: Mapping[str, Any]) -> str:
+    """`` (failed diagnostic checks, which block no finding: M2)`` after a screening
+    status, or an empty string when no diagnostic check failed."""
+    names = _diagnostic_failed(c)
+    return f" (failed diagnostic checks, which block no finding: {names})" if names else ""
 
 
 def run_check_lines(runs: Mapping[str, RunResult]) -> list[str]:
@@ -1155,20 +1209,23 @@ def unattributed_comparisons(er: ExperimentResult) -> list[tuple[str, Mapping[st
 
 def _compact_screening(label: str, c: Mapping[str, Any]) -> str:
     """One line per extra comparison: dP*, the yardstick used, whether it beats it, the
-    failed checks, the gamma*-sensitive checks and the screening status."""
+    failed blocking checks, the failed diagnostic checks, the gamma*-sensitive checks and
+    the screening status."""
     failed = ", ".join(c.get("screening_failed") or []) or "none"
     return (
         f"- {label}: dP* {_signed(c.get('payload_delta_kg'))} kg against the yardstick "
         f"{_fmt(c.get('screening_yardstick_kg'))} kg (beats: {_fmt(c.get('beats_screening'))}); "
-        f"failed checks: {failed}; gamma*-sensitive: {_gamma_sensitive(c) or 'none'}; "
+        f"failed checks: {failed}; failed diagnostic checks: {_diagnostic_failed(c) or 'none'}; "
+        f"gamma*-sensitive: {_gamma_sensitive(c) or 'none'}; "
         f"screening status {c.get('screening_status', 'n/a')}"
     )
 
 
 def _gamma_sensitive(c: Mapping[str, Any]) -> str:
-    """The checks of comparison c whose verdict is not gamma*-robust, comma-separated."""
+    """The checks of comparison c whose verdict is not gamma*-robust, comma-separated
+    (a diagnostic one marked DIAGNOSTIC_TAG)."""
     names = [
-        k.upper()
+        k.upper() + (DIAGNOSTIC_TAG if is_diagnostic(c[f"checks_{k}"]) else "")
         for k in CHECK_KEYS
         if isinstance(c.get(f"checks_{k}"), Mapping)
         and c[f"checks_{k}"].get("gamma_robust") is False
@@ -1180,7 +1237,9 @@ def blocked_lines(
     runs: Mapping[str, RunResult], comparisons: Sequence[tuple[str, Mapping[str, Any]]]
 ) -> list[str]:
     """The blocked-findings line (runs and comparisons that are bug_suspect, or that none
-    is), the not_checked comparisons and the gamma*-sensitive verdicts."""
+    is: only blocking checks count), the comparisons with a failed diagnostic check
+    (DIAGNOSTIC_FAILED_TEXT: reported, not blocking), the not_checked comparisons and the
+    gamma*-sensitive verdicts."""
     lines: list[str] = []
     suspects = [n for n, rr in runs.items() if rr.result.status == BUG_SUSPECT]
     suspects += [
@@ -1190,6 +1249,9 @@ def blocked_lines(
         lines.append(f"{FINDINGS_BLOCKED}: " + ", ".join(suspects))
     else:
         lines.append("No run and no comparison is bug_suspect.")
+    diagnostic = [f"{n} ({_diagnostic_failed(c)})" for n, c in comparisons if _diagnostic_failed(c)]
+    if diagnostic:
+        lines.append(f"{DIAGNOSTIC_FAILED_TEXT}: " + ", ".join(diagnostic))
     unchecked = [n for n, c in comparisons if c.get("screening_status") == SCREENING_NOT_CHECKED]
     if unchecked:
         lines.append(f"{SCREENING_NOT_CHECKED_TEXT}: " + ", ".join(unchecked))
@@ -1243,7 +1305,7 @@ def planar_sensitivity_table(rows: Sequence[SensitivityRow], note: str) -> str:
                 _signed(row.comparison_perturbed.get("payload_delta_kg")) + same,
                 "yes" if m.get("trajectory_reused") else "no",
                 _fmt(row.comparison_perturbed.get("beats_screening")),
-                _fmt(row.comparison_perturbed.get("screening_status")),
+                screening_cell(row.comparison_perturbed),
                 _fmt(m.get("electrical_energy_kWh")),
                 _fmt(m.get("peak_drive_power_W")),
             ]
@@ -1284,7 +1346,7 @@ def bounds_section(er: ExperimentResult) -> str:
                 _signed(row.comparison_vs_nominal.get("payload_delta_kg")),
                 _fmt(row.result.result.metrics.get("max_q_pa")),
                 _fmt(row.comparison.get("beats_screening")),
-                _fmt(row.comparison.get("screening_status")),
+                screening_cell(row.comparison),
             ]
         )
     return _table(header, rows)
@@ -1456,10 +1518,16 @@ def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> 
                 runs[f"{tag}/{pair.name}"] = pair
             comparisons.append((f"{tag}/{rr.name}", comp))
     lines = [*run_check_lines(runs), ""]
-    lines += [
-        f"- {name}: screening status {c.get('screening_status', 'n/a')} (failed checks: "
-        f"{', '.join(c.get('screening_failed') or []) or 'none'}; gamma*-sensitive: "
-        f"{_gamma_sensitive(c) or 'none'})"
-        for name, c in comparisons
-    ]
+    lines += [sweep_point_check_line(name, c) for name, c in comparisons]
     return "\n".join([*lines, "", *blocked_lines(runs, comparisons)])
+
+
+def sweep_point_check_line(name: str, c: Mapping[str, Any]) -> str:
+    """One sweep point's line in the sweep Checks section: its screening status, the
+    failed blocking checks, the failed diagnostic checks (which block no finding) and the
+    gamma*-sensitive checks, each ``none`` when empty."""
+    return (
+        f"- {name}: screening status {c.get('screening_status', 'n/a')} (failed checks: "
+        f"{', '.join(c.get('screening_failed') or []) or 'none'}; failed diagnostic checks: "
+        f"{_diagnostic_failed(c) or 'none'}; gamma*-sensitive: {_gamma_sensitive(c) or 'none'})"
+    )

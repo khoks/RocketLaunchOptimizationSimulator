@@ -96,7 +96,10 @@ class IntegratorSettings:
     method: scipy method name; rtol: relative tolerance; first_step_s: first step [s]
     (capped at half the phase span); ramp_steps, lag_steps_per_tau, push_steps: how
     finely the planner caps max_step during a thrust ramp (t_ramp / ramp_steps), a lag
-    (tau / lag_steps_per_tau) and a track push (t_push / push_steps); t_max_s: the guard
+    (tau / lag_steps_per_tau) and a track push (t_push / push_steps);
+    planar_max_step_s: the step cap [s] of every planar flight phase (> 0; math.inf
+    for none), combined with the ramp or lag cap by min, read only by the planar
+    planner (the HOLD, the track and every 1-D phase ignore it); t_max_s: the guard
     [s] on open-ended phases; sample_dt_s: the output resampling interval [s] (the
     caller's job, from the dense output); dense_output: whether solve_ivp builds the
     dense output (``PhaseResult.dense``; off only for search evaluations, which read
@@ -114,6 +117,7 @@ class IntegratorSettings:
     ramp_steps: int = 10
     lag_steps_per_tau: int = 4
     push_steps: int = 50
+    planar_max_step_s: float = 2.0
     t_max_s: float = 3600.0
     sample_dt_s: float = 0.05
     dense_output: bool = True
@@ -128,6 +132,11 @@ class IntegratorSettings:
             raise ValueError("step counts must be >= 1")
         if self.t_max_s <= 0.0 or self.sample_dt_s <= 0.0:
             raise ValueError("t_max_s and sample_dt_s must be > 0")
+        if not self.planar_max_step_s > 0.0:
+            raise ValueError(
+                f"planar_max_step_s must be > 0 (math.inf for no cap), got "
+                f"{self.planar_max_step_s!r}"
+            )
         if not math.isfinite(self.atol_scale) or self.atol_scale <= 0.0:
             raise ValueError(f"atol_scale must be finite and > 0, got {self.atol_scale!r}")
 
@@ -144,6 +153,7 @@ class IntegratorSettings:
             ramp_steps=cfg.ramp_steps,
             lag_steps_per_tau=cfg.lag_steps_per_tau,
             push_steps=cfg.push_steps,
+            planar_max_step_s=cfg.planar_max_step_s,
             t_max_s=cfg.t_max_s,
             sample_dt_s=cfg.sample_dt_s,
         )

@@ -985,7 +985,8 @@ built from a config.
 ground lists the ground event `impact`: h - z_ground crossing downward, z_ground = 0 at
 the pad and the silo mouth; a rising coast or rise lists the `apex` split instead,
 which ends it before it could come down; lit phases are split at the thrust kinks with the ramp and lag `max_step` caps, and a
-ramp end inside a flight phase is logged as `ramp_end`):
+ramp end inside a flight phase is logged as `ramp_end`; every flight phase, lit or not,
+also carries the planar cap `planar_max_step_s`, 2 s, "Integrator"):
 
 | Phase | RHS / law | Events (direction; all terminal) | Next |
 |---|---|---|---|
@@ -1238,72 +1239,106 @@ jump (between 90.96 deg and the
 +180 deg sentinel) produces, and the guard turns that into GuidanceFailure
 `false_root` (the grid penalty).
 
-**Noise floor.** With the planar flight phases uncapped (no `max_step` outside the
-thrust ramp), gamma_MECO(delta) is not smooth at the integration-error level. The
-cause is the step-size control across the derivative kinks of the RHS, above all the
-clustered C1 knots of the transonic PCHIP C_D table (M 0.95, 1.0 and 1.05, 0.05
-apart): DOP853 sometimes accepts one long step across all three, and whether it does
-changes with delta. Two kicks 2e-10 rad apart at delta = 3.25 deg fly identically (to
-1e-9 rad) until t = 45 s; then one takes a single 3.59 s step from M 0.924 (t =
-49.47 s, h about 6 km, below every ICAO layer base) to M 1.044, where its gamma error
-against an rtol-1e-13 reference grows from -2e-9 to -6.1e-8 rad (the other's stays
-below 7e-11 rad), and it ends 6.9e-7 rad apart at MECO. Measured on the gate pad as
-the largest deviation from a local linear fit over 31 kicks 2e-10 rad apart, at 66 kick
-angles (61 evenly spaced from 2.5 to 4 deg, the three roots below and two neighbours;
-the map's slope is about -15 rad/rad), uncapped:
+**Noise floor** (user decision of 2026-09-30: the planar flight phases fly a 2 s
+`max_step` cap, "Integrator"; build step 26a). gamma_MECO(delta) is not smooth at the
+integration-error level. Without a cap the cause is the step-size control across the
+derivative kinks of the RHS, above all the clustered C1 knots of the transonic PCHIP
+C_D table (M 0.95, 1.0 and 1.05, 0.05 apart): DOP853 sometimes accepts one long step
+across all three, and whether it does changes with delta. Two kicks 2e-10 rad apart at
+delta = 3.25 deg fly identically (to 1e-9 rad) until t = 45 s; then one takes a single
+3.59 s step from M 0.924 (t = 49.47 s, h about 6 km, below every ICAO layer base) to
+M 1.044, where its gamma error against an rtol-1e-13 reference grows from -2e-9 to
+-6.1e-8 rad (the other's stays below 7e-11 rad), and it ends 6.9e-7 rad apart at MECO.
+Measured on the gate pad as the largest deviation from a local linear fit over 31
+kicks 2e-10 rad apart, at 66 kick angles (61 evenly spaced from 2.5 to 4 deg, the three
+roots of gamma* = 10, 20 and 30 deg, delta = 3.9095, 3.1285 and 2.5105 deg, and the two
+neighbours 3.2375 and 3.2625 deg of the worst uncapped angle; the map's slope is about
+-14 rad/rad), re-measured in build step 26a with dense output off, stage-1 flights
+stopped at MECO:
 
-| setting | largest deviation [rad] (at delta) | median | 90th percentile | largest step jump |
-|---|---|---|---|---|
-| rtol 1e-10 (recorded runs, the test) | 6.7e-7 (3.25 deg) | 2.2e-8 | 9.2e-8 | 6.9e-7 |
-| rtol 1e-9 | 1.6e-6 (2.55 deg) | 1.9e-7 | 6.3e-7 | 1.8e-6 |
-| search (rtol 1e-8, atol x 10) | 1.8e-5 (3.15 deg) | 1.1e-6 | 1.9e-6 | 1.8e-5 |
+| cap | setting | largest deviation [rad] (at delta) | median | 90th percentile | largest step jump |
+|---|---|---|---|---|---|
+| none | rtol 1e-10 | 6.7e-7 (3.25 deg) | 2.4e-8 | 9.3e-8 | 6.9e-7 |
+| none | search (rtol 1e-8, atol x 10) | 1.8e-5 (3.15 deg) | 1.1e-6 | 2.1e-6 | 1.8e-5 |
+| **2 s (shipped)** | **rtol 1e-10 (recorded runs, the test)** | **6.3e-8 (3.2375 deg); 8.1e-8 (3.8375 deg) on the review's 60 half-step angles** | **2.2e-9 to 2.4e-9** | **1.1e-8 to 3.8e-8** | **6.9e-8; 8.6e-8 (3.8375 deg)** |
+| **2 s (shipped)** | **search** | **9.9e-8 (3.75 deg)** | **1.8e-8** | **7.8e-8** | **1.0e-7** |
+| 1 s (the tightened budget's cap) | rtol 1e-10 | 9.8e-9 (3.15 deg) | 1.2e-9 | 4.4e-9 | 1.0e-8 |
+| 1 s | search | 2.6e-8 (2.85 deg) | 6.2e-9 | 1.4e-8 | 3.0e-8 |
 
-Sparse samples: 1.9e-9 to 3.2e-9 rad at rtol 1e-11; without drag 2.6e-9 (rtol 1e-10)
-to 6.4e-9 rad (1e-9); in vacuum 1.5e-12 to 1e-11 rad, consistent with the drag table as
-the source.
+The uncapped rows reproduce the build-step-23 measurement (6.7e-7 rad at 3.25 deg,
+median 2.2e-8, then over the uncapped roots; 1.8e-5 rad at 3.15 deg at the search
+setting); uncapped rtol 1e-9 gave 1.6e-6 rad (2.55 deg) then. Sparse samples: 1.9e-9 to
+3.2e-9 rad at rtol 1e-11; without drag 2.6e-9 (rtol 1e-10) to 6.4e-9 rad (1e-9); in
+vacuum 1.5e-12 to 1e-11 rad, consistent with the drag table as the source. A first
+five-angle sample (2.7 to 3.6 deg, build step 25) put the capped floor at 2.7e-8 rad
+(rtol 1e-10) and 5.5e-8 rad (search); the 66-angle table finds it larger, 6.3e-8 rad
+near 3.24 deg and 9.9e-8 rad at 3.75 deg, and the step-26a review's 60 half-step angles
+(2.5125 to 3.9875 deg) larger still at rtol 1e-10, 8.1e-8 rad deviation and 8.6e-8 rad
+jump at 3.8375 deg (7.9e-8 rad jump over 180 further angles; search setting 1.07e-7 rad,
+matching the table).
 
-The floor is not intrinsic. A `max_step` cap on the planar flight phases removes it
-(largest deviation over 31 kicks 2e-10 rad apart at five kick angles, 2.7 to 3.6 deg,
-with the mean time per stage-1 flight to MECO, dense output off):
+*The capped floor is flight-to-flight jitter, not a property of a kick angle.* It is
+heavy-tailed and sensitive at the ulp level: moving a 31-kick window's centre by one ulp
+(0.0669770100452824 against 0.06697701004528239 rad, both 3.8375 deg) changes its
+largest deviation from 1.2e-9 to 8.1e-8 rad, while a fresh and a reused planner give
+bitwise-identical flights. So the per-angle maxima in the table cannot be reproduced
+at another sampling, and a window maximum grows with the number of flights sampled.
+Read as a distribution (step-26a review, gate pad, rtol 1e-10, 2 s cap, 2,250 flights
+with kick offsets below 1e-12 rad, |gamma - median| per group): median 2.9e-10 rad, 99th
+percentile 7.6e-9 rad, largest single flight 7.9e-8 rad, none above 1e-7 rad (uncapped:
+99th percentile 7.7e-8, largest 9.7e-7 rad, 0.49 % of flights above 1e-7 rad). Over 120
+flights 1 ulp apart the peak-to-peak spread is 9.9e-8 rad at 3.8375 deg, 5.5e-8 at 3.25
+deg and 6.5e-8 at the 20 deg root (uncapped up to 2.3e-7 rad). The bound used below is
+therefore 1e-7 rad at rtol 1e-10 (`NOISE_MAX_RAD` in `test_guidance.py`).
 
-| cap | rtol 1e-10 | search setting (rtol 1e-8, atol x 10) |
-|---|---|---|
-| none (current) | 1.5e-9 to 6.3e-7 rad, 33 to 36 ms | 4.0e-7 to 1.6e-5 rad, 21 to 23 ms |
-| 2 s | 1.4e-9 to 2.7e-8 rad, 32 to 36 ms | 7e-9 to 5.5e-8 rad, 20 to 23 ms |
-| 1 s | 1.1e-9 to 4.8e-9 rad, 37 to 44 ms | 1.3e-10 to 1.3e-8 rad, 24 to 30 ms |
+The cap removes about 90 % of the floor at rtol 1e-10 and 99.4 % at the search setting; a 1 s cap would remove a further 85 % and
+75 %. It does not slow a stage-1 flight (serial, to MECO: 22.9 ms capped against 23.0
+ms uncapped at rtol 1e-10, 13.0 against 13.6 ms at the search setting); its cost is in
+the stage-2 burn ("Performance (measured)").
 
-A 2 s cap costs nothing measurable and puts the search-setting floor about 3,000x below
-the 0.01 deg (1.75e-4 rad) root guard (uncapped: about 10x); at the search setting the
-uncapped MECO altitude deviates from its linear trend by up to 1.9 m (V_rel by 1e-3
-m/s) over 31 kicks spanning 6e-9 rad, and by 3 to 7 mm (2e-5 m/s) with a 2 s cap. A
-cap is an integrator setting, so it is a Plan-mode change awaiting the user's decision
-(it would be planar-only, leaving the 1-D golden untouched); none is in the code.
+With the 2 s cap the search-setting floor (1e-7 rad) lies about 1,700x below the 0.01
+deg (1.75e-4 rad) root guard (uncapped: about 10x); at the search setting the uncapped
+MECO altitude deviates from its linear trend by up to 1.9 m (V_rel by 1e-3 m/s) over 31
+kicks spanning 6e-9 rad, and by 3 to 7 mm (2e-5 m/s) with the 2 s cap (build-step-25
+sample).
 
-brentq can only land on a sign change of the map, so with the current uncapped phases
-the plan's 1e-9 rad acceptance for the inner solve is below the floor, and even a
+**Acceptance.** brentq can only land on a sign change of the map, so the plan's 1e-9
+rad acceptance for the inner solve lies below the capped floor too, and even a
 noise-free map could not meet it: brentq stops at delta_xtol = 1e-10 rad, which at the
-slope of about 15 rad/rad leaves up to 1.5e-9 rad in gamma. The test asserts 3e-6 rad
-(1.7e-4 deg, about 4x the largest uncapped step jump at rtol 1e-10; measured residuals
-about 1e-9 rad at the three roots), below the root guard and the 0.1 deg gamma*
-resolution (amendment 3); with a 2 s cap about 1e-7 rad (4x the capped 2.7e-8) would
-do. This acceptance is a
-Plan-mode deviation awaiting the user's decision together with the cap. For the search:
-the refine, LTG finite-difference and convergence tolerances should be sized after the
-floor is removed, not from the uncapped floor (whose noise/slope, 1.2e-6 rad in delta
-at the search setting, is four orders above delta_xtol, so brentq's last iterations
-would bisect noise). Pending that decision the search keeps the shipped tolerances and
-their measured effect on the figures of merit is small ("Payload and gamma* search",
-Noise floor and the budget; "Convergence (planar)").
+slope of about 14 rad/rad leaves up to 1.4e-9 rad in gamma. The test asserts 3e-7 rad
+(1.7e-5 deg): three times the 1e-7 rad bound on the capped jitter at rtol 1e-10, about
+3.5x the largest capped step jump measured (8.6e-8 rad) and 3.8x the largest
+single-flight deviation (7.9e-8 rad), which bounds brentq's residual; tightened from
+3e-6 rad (4x the uncapped jump) by the user decision of 2026-09-30. The implementer's
+first figure, 4x a 6.9e-8 rad jump, rested on a window maximum that the review's denser
+sampling exceeded by 25 %. Residuals at 12 further gamma* (6 to 34 deg, cold and warm)
+are at most 1.4e-9 rad (rtol 1e-10) and 5.7e-9 rad (search setting). The plan
+expected about 1e-7 rad from the five-angle sample, which missed the largest capped
+deviations. Measured residuals at the three roots: 1.0e-10 to 3.3e-10 rad capped (up to
+1.1e-9 rad uncapped) at rtol 1e-10, and 3.6e-10 to 9.8e-10 rad capped (up to 7.9e-9 rad
+uncapped) at the search setting. The acceptance stays far below the root guard
+(`gamma_root_tol_deg`, 0.01 deg, unchanged) and the 0.1 deg gamma* resolution
+(amendment 3); the plan's 1e-9 rad remains a documented deviation (brentq's xtol alone
+exceeds it). For the search: at the search setting the capped noise over the slope is
+about 7e-9 rad in delta, still about 70x delta_xtol (1e-10 rad; uncapped 1.2e-6 rad,
+four orders above), so brentq's last few iterations still bisect noise, now at a level
+(gamma within about 1e-7 rad) far below every tolerance that uses gamma*. The refine,
+LTG finite-difference, delta and convergence tolerances are pre-registered and stay as
+shipped; their measured effect with the cap is in "Payload and gamma* search" (Noise
+floor and the budget) and "Convergence (planar)".
 
 **Cost** (gate pad, rtol 1e-10, the shipped delta settings): a cold solve takes 11 to
 13 flights (13 at gamma* = 20 deg, about 0.43 s), a warm one from the 20 deg kick 8 or
 9 (gamma* 10 to 30 deg); the false-root case bisects onto the jump (about 20 flights
-from a 5 to 10 deg bracket at xtol 1e-7 rad).
+from a 5 to 10 deg bracket at xtol 1e-7 rad). With the 2 s cap the cold solves take
+12, 13 and 13 flights at gamma* = 10, 20 and 30 deg (rtol 1e-10; 13, 15 and 15 at the
+search setting, against 13, 19 and 15 uncapped).
 
 **Validation** (`test_guidance.py`): the laws and the spec; typed, picklable failures;
 the settings from `SearchConfig`; gamma_MECO strictly decreasing on 10 kicks from 1 to
 5.5 deg and an impact at 7 deg; gamma* = 20 deg cold and 10 and 30 deg warm within
-3e-6 rad (a Plan-mode deviation, see Noise floor) (the warm solves in fewer flights; delta(10) > delta(20) > delta(30)); the
+3e-7 rad (the 2 s planar cap, three times the 1e-7 rad capped jitter bound; see
+Noise floor) (the warm solves in fewer flights; delta(10) > delta(20) > delta(30)); the
 hand-over is the flight at delta* and re-flies bit for bit; gamma* = -45 deg in the
 impact gap is a false root; on a toy map with a timeout below delta = 0.01 and impacts
 from 0.2, the roots from cold and three warm starts (two of them on sentinels), false
@@ -1376,7 +1411,9 @@ starts fail, largely for reasons the estimator does not model (the measured tabl
 the options are in "Screening-beat rule (2-D)"). Redefining the estimator or dropping
 the check is the user's decision before the pre-registration commit. The result
 undercuts the plan's expectation of a large stage-1 gravity-loss gain from a 77 m/s
-vertical assist; it is recorded here, not tuned around.
+vertical assist; it is recorded here, not tuned around. The user's decision of
+2026-09-30 keeps the estimator unchanged and makes M2 diagnostic only
+(`checks.m2_role`, "Screening-beat rule (2-D)").
 
 ## Stage 2 and insertion (planar)
 
@@ -1617,8 +1654,9 @@ spread is 20 to 100 times smaller. Of 40 seeded random guesses (a in
 into the ground on their first shot (the plan's prototype had 18 of 40). With 30 t of
 payload the physics rung's first shot dives (impact at 511.6 s) and the steep rung
 converges: the ladder is in use, not decoration. The search-setting finite-difference
-step and the rung cap stay as shipped until the stage-1 noise floor decision ("gamma*
-inner solve", Noise floor); on the gate pad every grid point after the cold midpoint
+step and the rung cap stay as shipped (pre-registered; the user decision of 2026-09-30
+capped the planar step at 2 s and left the search tolerances unchanged, "gamma* inner
+solve", Noise floor); on the gate pad every grid point after the cold midpoint
 converges from the warm rung ("Payload and gamma* search", Measured).
 
 **Direct-root boundary** (measured; the rule is pre-registered, and whether to keep
@@ -2150,25 +2188,56 @@ silo_cold_lag needs about 2.5x the pad's RHS calls (1.9 million; 25 to 26 s of
 search, 27 to 28 s wall, measured in the step-23 reviews), 86 to 92 % of the 30 s
 budget (capping the lag step over the first few tau only, a Plan-mode integrator
 change, was left open in build step 25: "Performance (measured)"). Every other searched variant of silo_screening_2d takes 10 to 14
-s of search, status ok, no flags (step-23 review).
+s of search, status ok, no flags (step-23 review). The numbers above are uncapped.
 
-**Noise floor and the budget** ("gamma* inner solve", Noise floor). The search
-tolerances are not re-sized here: whether the planar flight phases get a max_step cap
-is still the user's decision. With the uncapped floor, tightening the whole budget
-10x moves P* by at most 3.4e-3 kg and gamma* by at most 6.3e-3 deg on the pad,
-silo_cold and silo_cold_lag (build step 25), but the margins at P0 and the
-gravity/steering split follow the noise in gamma*_ref: a variant difference in m_res
-at P0 below about 0.4 kg, or in the split below about 0.15 m/s per term, is not
-resolved ("Convergence (planar)", Finding). The
-final-mode evaluation noise (above, "Virtual propellant": std 3e-5 to 2.3e-4 kg, no
-outliers) is two orders of magnitude below its 0.05 kg xtol. The search mode is
-noisier than the +/-0.5 kg scan suggested: outliers up to 0.09 kg in m_res(P) (about
-5x below the 0.5 kg xtol) and 0.02 kg in m_res(gamma*), so gamma_xatol (0.01 deg) lies
-below the search noise floor and the refine resolves gamma* to about 0.01 to 0.07 deg.
-That is harmless at the 0.1 deg resolution gamma* is reported to (amendment 3) and
-moves P* by at most about 0.1 kg, but it belongs to the pending decision on the planar
-max_step cap and the search tolerances: a tighter search rtol or a coarser gamma_xatol
-would make the refine tolerance-limited rather than noise-limited.
+**With the 2 s planar cap** (build step 26a; the same search flown capped and uncapped
+in one serial session, whose machine ran the uncapped pad search in 7.1 s against 8.3
+to 9.5 s above, so compare ratios, not seconds):
+
+| Run | Search, capped (uncapped) | RHS calls | Phases | Stage-1 flights |
+|---|---|---|---|---|
+| pad | 12.0 s (7.1 s) | 1,302,115 (773,164) | 1,594 (1,780) | 314 (376) |
+| silo_cold | 13.9 s (9.3 s) | 1,516,991 (1,019,035) | 1,988 (2,452) | 318 (434) |
+| silo_cold_lag | 24.6 s (18.0 s) | 2,679,694 (1,941,817) | 1,423 (1,423) | 236 (236) |
+
+The uncapped counts are bit-identical to build steps 23 and 25. The cleaner map lets
+the delta solve converge in fewer flights (the pad's GRAVITY_TURN RHS calls fall from
+619,531 to 493,859), but every LTG shot now flies at most 2 s steps: LTG_BURN takes
+739,986 RHS calls against 94,383 on the pad (1,163 against 148 per shot) and 828,416
+against 98,840 on silo_cold, so a search costs 1.68x (pad), 1.49x (silo_cold) and
+1.38x (silo_cold_lag, whose lag cap already bounds the stage-1 steps) the RHS calls,
+and about the same ratio in wall time. Every search ends ok with no flags. The cap
+moves the figures of merit (capped minus uncapped) by: P* -1e-4 kg on the pad and less
+than 5e-5 kg on silo_cold and silo_cold_lag (the plan expected < 0.1 kg);
+gamma*_ref -1.0e-4, -3.5e-5 and +2.7e-6 deg; m_res at P0 +2.6e-3, +1.4e-3 and -1e-4
+kg; dv_margin at P0 +2.9e-4, +1.5e-4 and -1.2e-5 m/s.
+
+**Noise floor and the budget** ("gamma* inner solve", Noise floor). The user decision
+of 2026-09-30 put a 2 s max_step cap on the planar flight phases and kept the search
+tolerances as pre-registered; they are not re-sized here. Uncapped (build step 25),
+tightening the whole budget 10x moved P* by at most 3.4e-3 kg and gamma* by at most
+6.3e-3 deg on the pad, silo_cold and silo_cold_lag, but the margins at P0 and the
+gravity/steering split followed the noise in gamma*_ref: shipped draws that differed
+only in `first_step_s` spread by up to 9.6e-3 deg in gamma*_ref and 0.38 kg in m_res at
+P0 on silo_cold, so a variant difference in m_res at P0 below about 0.4 kg, or in the
+split below about 0.15 m/s per term, was not resolved ("Convergence (planar)",
+Finding). With the cap (build step 26a; the same five first_step draws, 0.8e-3 to
+1.3e-3 s, against the tightened search): on silo_cold the draws agree to 4.8e-5 deg in
+gamma*_ref, 0.002 kg in m_res at P0 and 7.7e-6 in the relative steering term, and all
+sit at the systematic offset of the LTG acceptance box (gamma*_ref +5.2e-3 deg, m_res
+at P0 -0.21 kg, steering -8.4e-4 relative against the tightened search); on the pad
+they fall on two points, three draws at +3.5e-3 to +3.7e-3 deg (m_res at P0 -0.091 to
+-0.095 kg, steering -5.5e-4 to -5.7e-4 relative) and two, the shipped 1e-3 s among
+them, at +2.2e-4 to +2.4e-4 deg (-0.006 kg, -3.5e-5 to -3.7e-5), a spread of 3.4e-3
+deg, 0.089 kg and 5.4e-4 relative in steering (about 0.05 m/s). P* moves by at most
+2.9e-3 kg over all ten draws. The noise-limited resolution is therefore about 0.1 kg in
+m_res at P0 and 0.05 m/s per loss term (from 0.4 kg and 0.15 m/s uncapped), and the
+0.2 kg that the shipped budget under-states the silo runs' margin at P0 against the
+pad's is now the resolved, systematic LTG-box offset (a bias against the assist), not
+noise. The final-mode evaluation noise ("Virtual propellant": std 3e-5 to 2.3e-4 kg,
+no outliers, uncapped) is two orders of magnitude below its 0.05 kg xtol. The search
+mode's m_res(P) and m_res(gamma*) outliers (up to 0.09 and 0.02 kg uncapped) were not
+re-measured with the cap; gamma_xatol (0.01 deg) is kept as pre-registered.
 
 **Validation.** The planar tests fly the test budget: the shared search block with
 search_rtol 1e-9 (CLAUDE.md: rtol <= 1e-9 in tests; the plan's test_budget), final
@@ -2249,28 +2318,33 @@ budget by `tighten_factor` (10): search rtol 1e-8 -> 1e-9 and final 1e-10 -> 1e-
 every atol (search and final), the LTG acceptance (1 m -> 0.1 m, 1e-3 -> 1e-4 m/s),
 the delta xtol (1e-10 -> 1e-11 rad), the payload xtols (0.5 -> 0.05 kg, 0.05 -> 0.005
 kg) and gamma_xatol (0.01 -> 0.001 deg); it multiplies the max_step caps by
-`max_step_factor` (0.5: ramp, lag and push step counts doubled; the planar flight
-phases have no other cap, "gamma* inner solve", Noise floor); the LTG
+`max_step_factor` (0.5: ramp, lag and push step counts doubled, and the planar
+flight-phase cap `planar_max_step_s` 2 s -> 1 s, "Integrator"); the LTG
 finite-difference steps, the brackets, the penalties and the false-root guard stay.
 Values must agree within `rel_tol` (1e-3), with the absolute floors `loss_floor_mps`
 (1e-3 m/s) for a loss term and `margin_floor_kg` (0.5 kg, or its dv equivalent c2 x
 0.5 kg / m_c for dv_margin) for a margin; gamma* only to `gamma_resolution_deg` (0.1
-deg). Every reported figure comes from the final-tolerance runs. The halved max_step
-caps change nothing on the pad: its 2 s startup ramp runs in the closed-form hold (lit
-at -2 s) and MVac starts at a step, so no ramp, lag or push step count is used (the
-step-23 review measured m_res bit-identical; on silo_cold the halving alone moves m_res
-by 1.6e-5 kg, on silo_cold_lag by 2.7e-6 kg). The fixed-gamma tests (gamma* = 20
-deg) fly the pad and silo_cold (the push cap on the track and the ramp cap of its 2 s
-ramp lit 0.5 s after release) in the fast tier and silo_cold_lag (the push cap and the
-lag cap of its first-order startup, which caps the whole stage-1 burn) in the slow
-tier; they apply amendment 3's per-term rule to every loss term one by one. The slow
-re-optimised test (build step 25) repeats the whole search of the same three runs.
-Both assert that the recorded run pushes on the track exactly on the silo runs, and
-that the recorded traces fly a finite max_step in exactly the expected phase kinds
-(the pad none; silo_cold ASSIST and KICK, the push and ramp caps; silo_cold_lag
-ASSIST, KICK and GRAVITY_TURN, the push and lag caps), each tightened cap half the
-shipped one (measured: ASSIST 0.052146 -> 0.026073 s, the ramp KICK 0.2 -> 0.1 s,
-the lag KICK and GRAVITY_TURN 0.25 -> 0.125 s). These tests fly the shipped search
+deg). Every reported figure comes from the final-tolerance runs. On the pad only the
+planar cap is halved: its 2 s startup ramp runs in the closed-form hold (lit at -2 s)
+and MVac starts at a step, so no ramp, lag or push step count is used (before the
+planar cap the step-23 review measured the pad's m_res bit-identical under the
+halving; on silo_cold the ramp and push halving alone moved m_res by 1.6e-5 kg, on
+silo_cold_lag by 2.7e-6 kg). The fixed-gamma tests (gamma* = 20 deg) fly the pad,
+silo_cold (the push cap on the track and the ramp cap of its 2 s ramp lit 0.5 s after
+release) and silo_cold_lag (the push cap and the lag cap of its first-order startup,
+which caps the whole stage-1 burn); all three are slow since build step 26a (with the
+planar cap the first test of each pair takes 5.0 s on the pad and 5.2 s on silo_cold,
+above the 5 s fast-test limit). They apply amendment 3's per-term rule to every loss
+term one by one. The slow re-optimised test (build step 25) repeats the whole search of
+the same three runs. Both assert that the recorded run pushes on the track exactly on
+the silo runs, and that the recorded traces fly a finite max_step in exactly the
+expected phase kinds (every planar flight phase, the planar cap; ASSIST on the silo
+runs, the push cap), that the smallest cap of a kind lies below the planar cap exactly
+where a ramp, lag or push cap applies (silo_cold ASSIST and KICK; silo_cold_lag
+ASSIST, KICK and GRAVITY_TURN) and equals it elsewhere, and that each tightened cap is
+half the shipped one (measured: ASSIST 0.052146 -> 0.026073 s, the ramp KICK 0.2 ->
+0.1 s, the lag KICK and GRAVITY_TURN 0.25 -> 0.125 s, every other flight phase 2 ->
+1 s). These tests fly the shipped search
 rtol of 1e-8 on the baseline side of each comparison (the budget itself is what
 amendment 3 asks to converge); every other planar test flies the test budget (search
 rtol 1e-9). The re-optimised test also compares the signed rung-2 figures at P0
@@ -2279,8 +2353,9 @@ rtol 1e-9). The re-optimised test also compares the signed rung-2 figures at P0
 loss_floor_mps, about 0.09 m/s), not at 1e-3 of the sum (about 1.5 m/s), so the
 steering term is not checked more loosely than the per-term rule would check it.
 
-**Measured** (build step 25; tightened minus shipped; the pad, silo_cold and
-silo_cold_lag of silo_screening_2d, gate fork, P0 = 22.8 t).
+**Measured** (build step 25, before the planar cap; tightened minus shipped; the pad,
+silo_cold and silo_cold_lag of silo_screening_2d, gate fork, P0 = 22.8 t; the build
+step 26a measurement with the cap follows these tables).
 
 At a fixed gamma* = 20 deg (final verification from the same start payload):
 
@@ -2322,6 +2397,53 @@ shipped-against-tightened offsets use at most 0.05 of it, and over 13 first_step
 gamma_xatol draws of the step-25 review at most 0.07. Of every re-optimised
 assertion, the largest share used in those draws is gamma* (0.077 of 0.1 deg), then
 the joint gravity plus steering at the steering tolerance (0.07).
+
+**Measured with the 2 s planar cap** (build step 26a; tightened minus shipped, the
+tightened budget flying a 1 s planar cap; same runs). At gamma* = 20 deg:
+
+| quantity | pad | silo_cold | silo_cold_lag |
+|---|---|---|---|
+| P* | -7.9e-4 kg | -1.0e-3 kg | -1.0e-3 kg |
+| m_res at P0 | -5.8e-4 kg | -1.6e-6 kg | +2.8e-7 kg |
+| dv_margin at P0 | -6.6e-5 m/s | -1.7e-7 m/s | +3.0e-8 m/s |
+| loss terms one by one (recorded run) | at most 4.7e-5 m/s (gravity; J_vac 3.4e-5, steering 1.8e-5, drag 2.9e-7, back-pressure 3.4e-8) | at most 4.1e-5 m/s (gravity; J_vac 2.7e-5, steering 1.3e-5, drag 1.2e-6) | at most 4.1e-5 m/s (gravity; J_vac 2.5e-5, steering 1.1e-5) |
+| max-Q | 3.8e-9 relative (time 1.9e-9) | 5.1e-9 (time 1.4e-9) | 5.1e-9 (time 1.6e-9) |
+
+Re-optimised:
+
+| quantity | pad | silo_cold | silo_cold_lag |
+|---|---|---|---|
+| P* | -7.2e-4 kg | -2.8e-3 kg | -2.8e-3 kg |
+| m_res at P0 (at the shifted gamma*_ref) | +0.006 kg | +0.209 kg | +0.209 kg |
+| dv_margin at P0 | +6.5e-4 m/s | +0.023 m/s | +0.023 m/s |
+| gamma*_ref | -2.2e-4 deg | -5.23e-3 deg | -5.24e-3 deg |
+| gravity plus steering (asserted) | -1.3e-4 m/s | -3.5e-3 m/s | -3.6e-3 m/s |
+| gravity, steering (not asserted) | -3.2e-3, +3.1e-3 m/s (steering 3.5e-5 relative) | -0.080, +0.076 m/s (steering 8.4e-4 relative) | -0.080, +0.076 m/s (steering 8.4e-4 relative) |
+| J_vac, drag, back-pressure | -6.1e-5, +7.9e-5, +2.1e-5 m/s | -1.8e-3, +1.4e-3, +3.8e-4 m/s | -1.8e-3, +1.4e-3, +3.8e-4 m/s |
+| max-Q | 1.9e-6 relative (time 2.4e-7) | 3.6e-5 (time 4.7e-6) | 3.6e-5 (time 4.7e-6) |
+
+Wall time of the whole search, shipped / tightened (this session's machine, about 1.3x
+faster than build step 25's): pad 11.8 / 24.5 s, silo_cold 13.9 / 28.4 s,
+silo_cold_lag 24.7 / 54.4 s; of the fixed-gamma pair, pad 1.9 / 2.9 s, silo_cold 1.9 /
+3.2 s, silo_cold_lag 3.6 / 6.6 s. At a fixed gamma* the deltas are those of build step
+25 to within their own size: the integration was already converged there. After a
+re-optimisation the
+pad's offsets shrank 3.5x (m_res at P0 0.021 -> 0.006 kg, gamma*_ref 8.1e-4 -> 2.2e-4
+deg, steering 1.3e-4 -> 3.5e-5 relative), and silo_cold now matches silo_cold_lag to
+three figures (m_res at P0 0.25 -> 0.209 kg, gamma*_ref 6.3e-3 -> 5.23e-3 deg,
+steering 1.01e-3 -> 8.4e-4 relative, so the per-term steering rule, not asserted,
+would now pass on all three runs): what remains on the silo runs is the systematic
+offset of the LTG acceptance box that the Finding below identified on silo_cold_lag,
+not integration noise. The shipped budget still under-states the silo runs' margin at
+P0 by about 0.2 kg more than the pad's (a bias against the assist, below the 0.4 kg
+interpretation threshold). CLAUDE.md's rule holds on all three runs.
+
+Test tiers: with the cap the fixed-gamma pairs of the pad and silo_cold take 5.0 and
+5.2 s, over the 5 s fast-test limit, so every planar convergence test
+(`test_convergence_2d.py`, fixed-gamma and re-optimised, all three runs) is now
+slow-marked: CLAUDE.md's convergence check for the planar model runs only in the full
+suite (`uv run pytest -q`), not in the fast tier. Accepted as is; splitting a
+fixed-gamma pair to bring one half under 5 s would restore fast coverage.
 
 **Finding (build step 25; a user decision): after a re-optimisation the margins at P0
 and the gravity/steering split are limited by search-mode noise in gamma*_ref.** At a
@@ -2367,13 +2489,32 @@ split finer than about 0.15 m/s per term are not resolved by the shipped budget 
 not interpreted. Tightening gamma_xatol would not change this on any of the three
 runs: the remedy is a planar max_step cap or a tighter search rtol for the noise (the
 pad, silo_cold), then a tighter LTG acceptance for the systematic offset that remains
-once the noise is gone (silo_cold_lag), not gamma_xatol; it belongs to the pending
-decision on the planar max_step cap and the search tolerances
-("gamma* inner solve", Noise floor), which is the user's.
+once the noise is gone (silo_cold_lag), not gamma_xatol; it belonged to the decision
+on the planar max_step cap and the search tolerances ("gamma* inner solve", Noise
+floor), which is the user's.
+
+**Update (build step 26a; the user decision of 2026-09-30).** The planar flight phases
+now fly a 2 s max_step cap and the search tolerances stay as pre-registered. As
+predicted, the cap removes the noise part of the Finding: silo_cold's first_step draws
+now agree to 4.8e-5 deg in gamma*_ref and 0.002 kg in m_res at P0 (from 9.6e-3 deg and
+0.38 kg), and its offset from the tightened search equals silo_cold_lag's (5.2e-3 deg,
+0.21 kg, steering 8.4e-4 relative), the systematic LTG-acceptance offset. The pad keeps
+a two-valued spread of 3.4e-3 deg and 0.089 kg between draws ("Payload and gamma*
+search", Noise floor and the budget). Revised consequences: a variant difference in
+m_res at P0 below about 0.1 kg or in a loss term below about 0.05 m/s is not resolved;
+the systematic 0.2 kg under-statement of the silo runs' margin at P0 remains (a
+tighter LTG acceptance would remove it; not changed, pre-registered). The re-optimised
+test still asserts gravity plus steering jointly and not the split; with the cap the
+split would pass the per-term rule on all three runs (steering at most 8.4e-4
+relative); whether to assert it again is left to the user (the margin is thin: 0.84
+of the per-term tolerance on the silo runs).
 
 ## Performance (measured)
 
-Build step 25, against the budgets of plan section 9. Measured on the development
+Build step 25, against the budgets of plan section 9, with the planar flight phases
+uncapped; build step 26a re-measured the searched runs and the test tiers with the 2 s
+planar cap (user decision of 2026-09-30), in "With the 2 s planar cap" below, which
+supersedes the tables of this section where they differ. Measured on the development
 machine (Windows 11, Intel64 family 6 model 183, 32 logical CPUs; Python 3.12.11,
 numpy 2.5.3, scipy 1.18.1), serial, one process, nothing else running. Timings move by
 about 5 % between repeats; RHS counts (`PhaseResult.nfev`, `RunTrace.nfev_total`) are
@@ -2495,10 +2636,43 @@ changes the search path (the pad flew 1,852 instead of 1,780 phases). It is not
 implemented: the engine's first step stays `first_step_s` = 1e-3 s (or half the span),
 the Integrator and Event-rules sections are unchanged, and the 1-D golden is untouched.
 
-**What remains open** (none needed for a budget): the planar-only lag cap above; the
-stage-1 flight count of the inner solve (8.7 to 10.4 flights per evaluation against
-about 6 planned, which the pending max_step-cap and gamma* acceptance decision may
-change, "gamma* inner solve", Noise floor); `--jobs` stays deferred (plan decision 7).
+**With the 2 s planar cap** (build step 26a). The same machine ran faster in this
+session: the uncapped pad search took 7.1 s against 9.2 s in build step 25 and the
+uncapped silo_cold_lag search 18.0 s against 24.5 s (about 1.3x), so each capped figure
+is given beside the uncapped one of the same session; RHS counts are
+machine-independent (the uncapped ones bit-identical to build step 25).
+
+| Item | Budget | Measured (build step 26a) |
+|---|---|---|
+| Fast tier | < 60 s | 875 tests in 45.3 s (pytest), 47.0 s wall, exact golden tier on (876 in 45.8 s after the review fixes) |
+| Any fast test | < 5 s | the slowest is 3.4 s (`test_search.py::test_swapped_run_order_gives_identical_evaluations`); the fixed-gamma pairs of `test_convergence_2d.py` (5.0 s pad, 5.2 s silo_cold with the cap) are now slow-marked |
+| Slow tier and whole suite | < 10 min (slow tier) | whole suite 898 passed in 370.9 s (6 min 13 s wall; 899 in 366.0 s after the review fixes), so the 23 slow tests take about 5.4 min; the longest is the re-optimised convergence of silo_cold_lag (80.7 s), then silo_cold (42.8 s) and the pad (37.8 s) |
+| One searched run | < 30 s | `sim.run_resolved`: pad 12.1 s, silo_cold 14.1 s, silo_cold_lag 24.7 s (82 % of the budget; uncapped search 18.0 s in the same session); the step-26a review measured 26.5 s serial (88 %; its uncapped pad search 7.49 s). **Scaled to build step 25's machine speed silo_cold_lag would take about 33 s (x 1.33 here) or 32.6 s (26.5 x 9.2 / 7.49), over the budget**: the budget holds only narrowly and only at this session's speed; open user decision, see open issues below |
+| Any shipped experiment, serial | < 30 min | at most about 11 min per command (the dry estimate below scaled by the measured per-run ratios) |
+
+Per searched run the cap costs 1.68x the RHS calls on the pad (1,302,115 against
+773,164), 1.49x on silo_cold (1,516,991 against 1,019,035) and 1.38x on silo_cold_lag
+(2,679,694 against 1,941,817), with wall time in the same ratio. By phase kind on the
+pad: LTG_BURN 739,986 RHS calls (636 shots, 1,163 each; uncapped 94,383, 148 each),
+GRAVITY_TURN 493,859 (314 flights; uncapped 619,531 over 376: the smoother map cuts
+the delta solve's flights by 16 %), KICK 28,674, COAST_STAGING 37,286, VERTICAL_RISE
+2,310. The stage-2 burn, which DOP853 otherwise integrates in steps well above 2 s in
+near-vacuum, is where the cap costs; a stage-1 flight costs the same capped or not
+("gamma* inner solve", Noise floor). Scaling the dry estimate of the shipped
+experiments by these ratios (the pad-like calibration runs x 1.68, the silo runs about
+x 1.5): calibration_f9_2d about 4.7 min, silo_screening_2d run about 11 min and sweep
+about 9.5 min (together about 20.5 min, above amendment 17's 16 min, inside the 30 min
+budget per command), silo_bridge_2d_readme about 1.4 min, guidance_trigger_2d about 2.9
+min. These are estimates, not runs.
+
+**What remains open** (none needed for a budget before build step 26a): the
+planar-only lag cap above, which with the planar cap in place would also buy back the
+margin of the one-searched-run budget on silo_cold_lag; the cost of the planar cap in
+LTG_BURN (exempting the stage-2 burn, or a larger cap there, would recover most of it,
+but the user decision names every planar flight phase, so it is not done); the
+stage-1 flight count of the inner solve (with the cap 314 stage-1 flights per pad
+search against 376 uncapped, still above the plan's about 6 per evaluation); `--jobs` stays deferred
+(plan decision 7).
 The probe scripts are not kept (they were step-25 scratch, not part of the package or
 the tests); the method, to redo them: time `sim.run_resolved` with
 `time.perf_counter`; wrap `SearchContext.evaluate` to tag the current mode (grid,
@@ -2524,9 +2698,11 @@ CLAUDE.md: an assisted run that beats the README's ideal screening estimate for 
 release speed must be explained by its loss breakdown, else it is treated as a bug. The
 1-D bound `unexplained_gain_mps <= 0` does not carry over (the 2-D gravity mechanism is a
 time shift, "Time-shift mechanism"), and the plan's earlier linear 5 %/15 % check was
-rejected as tautological. The 2-D rule has four parts; a failure of any gives status
-`bug_suspect` and blocks findings until it is investigated (the summary's Checks
-section says so).
+rejected as tautological. The 2-D rule has four parts; a failure of any blocking
+check gives status `bug_suspect` and blocks findings until it is investigated (the
+summary's Checks section says so). Every check is blocking except M2, which is
+diagnostic by the user's decision of 2026-09-30 (`checks.m2_role`, below): it is
+computed and reported but blocks nothing.
 
 **(a) Per-run checks** (`simulate_planar`): the rocket-equation closure residual below
 `checks.closure_tol_mps` (1e-5 m/s, "Rocket-equation closure (planar)"), the loss
@@ -2568,24 +2744,24 @@ landed, not only on the physics. The attribution therefore also carries the join
 `attr_gravity_steering_mps` (and `_kg`), and the summary prints it and the caveat with
 every attribution: only that sum is interpreted, never the split between gravity and
 steering. The gamma*-sensitivity diagnostic: a searched variant's matched run is also
-evaluated at gamma*_ref -/+ h (`compare.gamma_sensitivity_step_rad` of the pre-registered `checks.gamma_sensitivity_step_deg`, h = 0.5 deg;
+evaluated at gamma*_ref -/+ h (`compare.gamma_sensitivity_step_rad` of the
+pre-registered `checks.gamma_sensitivity_step_deg`, h = 0.5 deg;
 `MatchedRun.neighbours`, two more final-mode evaluations per variant; none for the
 baseline or for fixed guidance, whose fixed LTG pair would miss the target), giving
 `attr_<term>_dgamma_mps_per_rad` (central difference) and the contributions at -h and
 +h (`attr_neighbours`). The M2, M3 and M4 records carry the ratio (or share) at the
 three points (`value_range`), the verdicts at -h and +h (`neighbour_status`) and
 `gamma_robust` (all three verdicts agree). This is a diagnostic: the verdict at
-gamma*_ref stays the pre-registered one; the summary marks a non-robust verdict and the
-Checks section lists them. h is a module constant pending a `checks` field (the
-config's owner). Measured (methods check, not a finding; searched pad and silo_cold on
-the fast test's small grid, 20 to 24 deg, refine half-width 1 deg and 3 iterations, P0
-26 t, P_ref = 26,050.39 kg, gamma*_ref = 21.764 deg): gravity -867 m/s per rad (-15.1
-m/s per deg), steering +718 m/s per rad (+12.5 m/s per deg), the sum -149 m/s per rad
-(-2.6 m/s per deg). M2's ratio is 0.363 at gamma*_ref and ranges 0.292 to 0.434 over
-+/- 0.5 deg: it fails at +0.5 deg (not robust); M3 (0.673 to 0.677) and M4 (share 0.161
-to 0.311) are robust. With the wider grid of the M2 table below (16 to 28 deg, refine
-half-width 2 deg, 6 iterations) the same variant's ratio is 0.448: the search window
-alone moves the verdict's margin.
+gamma*_ref stays the pre-registered one; the summary marks a non-robust verdict and
+the Checks section lists them. Measured (methods check, not a finding; searched pad
+and silo_cold on the fast test's small grid, 20 to 24 deg, refine half-width 1 deg and
+3 iterations, P0 26 t, P_ref = 26,050.39 kg, gamma*_ref = 21.764 deg): gravity -867
+m/s per rad (-15.1 m/s per deg), steering +718 m/s per rad (+12.5 m/s per deg), the
+sum -149 m/s per rad (-2.6 m/s per deg). M2's ratio is 0.363 at gamma*_ref and ranges
+0.292 to 0.434 over +/- 0.5 deg: it fails at +0.5 deg (not robust); M3 (0.673 to
+0.677) and M4 (share 0.161 to 0.311) are robust. With the wider grid of the M2 table
+below (16 to 28 deg, refine half-width 2 deg, 6 iterations) the same variant's ratio
+is 0.448: the search window alone moves the verdict's margin.
 
 **Screening yardstick.** `vehicle.payload_gain_kg` of the run's release speed, on the
 vehicle at P0 (`ideal_screening_payload_at_release_speed_kg`) and on the vehicle at the
@@ -2625,7 +2801,11 @@ check.
   `attr_gravity_stage1_mps`) and its ratio to the same estimate (`ratio_stage1`): the
   estimate models stage 1 only. With the attribution's neighbours it also carries the
   ratio's range over gamma* +/- h (the baseline and its estimate fixed) and
-  `gamma_robust`.
+  `gamma_robust`. Its role is `checks.m2_role` (recorded as `role` in the M2 record):
+  `diagnostic`, the default and the shipped value since 2026-09-30, or `blocking`, the
+  pre-registered rule. The role changes nothing in how M2 is computed or recorded
+  (ratio, bounds, verdict, stage-1 diagnostic, gamma*-sensitivity range); it decides
+  only whether a fail counts towards `bug_suspect`.
 - M3 (back-pressure): the same with J_bp and `bp_ratio_bounds`, applied when |d J_bp| >
   `min_term_mps` (1 m/s) and the variant releases faster.
 - M4 (drag and steering): -(d J_drag + d J_steer) at most `max_drag_steer_share` (0.5)
@@ -2640,8 +2820,10 @@ dP*(silo_instant vs pad_instant) + the ideal-screening payload equivalent of the
 baseline pad's pre-flight term c1 ln(m0/m_fs) (on the vehicle at P*_base) +
 `anchor_margin_kg` (1.5 kg); n/a otherwise.
 
-`screening_status` is `bug_suspect` when any applicable check fails (listed in
-`screening_failed`); `not_checked` when there is no attribution and nothing failed (a
+`screening_status` is `bug_suspect` when any applicable blocking check fails (listed
+in `screening_failed`; a failed diagnostic check, M2 with `m2_role: diagnostic`, is
+listed in `screening_diagnostic_failed` instead and changes no status); `not_checked`
+when there is no attribution and no blocking check failed (a
 comparison across two vehicles, by design: `attribution_required` False, namely a
 vehicle-parameter sensitivity case or a bound against the unchanged baseline; a
 variant without a rung-2 run at P_ref that does not beat the yardstick, such as a
@@ -2657,13 +2839,25 @@ within one sensitivity call; a case with the baseline's own trajectory key, such
 case of the baseline itself, is not re-flown: dP* = 0). The sensitivity and bounds
 tables print, for that comparison, whether it beats the yardstick and its status, and
 the Checks section gives each such comparison a line (dP*, the yardstick used, beats,
-failed checks, gamma*-sensitive checks, status) and counts its bug_suspect among the
-blocked findings. Sweep points are compared with their own baseline (the experiment's,
-or the paired baseline of a paired sweep) with the attribution and M2-M4 (no anchor
-pair in a sweep: M5 n/a); the top-level sweep summary has its own Checks section
-(`summary.sweep_checks_section`: per-run checks of the baseline, every point and every
-paired baseline, each point's screening status, failed and gamma*-sensitive checks,
-and the blocked-findings line).
+failed blocking checks, failed diagnostic checks, gamma*-sensitive checks, status) and
+counts its bug_suspect among the blocked findings. The summary prints a diagnostic
+check's verdict marked "(diagnostic)" (in the screening line, and among the
+gamma*-sensitive checks), ends a screening line whose diagnostic check failed with the
+failed diagnostic checks "which block no finding", counts only blocking checks in the
+blocked-findings line and lists the comparisons with a failed diagnostic check on a
+separate line (`summary.DIAGNOSTIC_FAILED_TEXT`). The per-variant table's row is
+"screening status (closure, attribution, M3 to M5; M2 only when blocking; a failed
+diagnostic check in brackets)", and its cell, like the screening-status cells of the
+sensitivity and bounds tables (`summary.screening_cell`), reads e.g. "ok (diagnostic
+fail: M2)", so a reader who stops at a table still sees the fail. Sweep points are
+compared with their own baseline (the experiment's, or the paired baseline of a paired
+sweep) with the attribution and M2-M4 (no anchor pair in a sweep: M5 n/a); the
+top-level sweep summary has its own Checks section (`summary.sweep_checks_section`:
+per-run checks of the baseline, every point and every paired baseline, each point's
+screening status, failed blocking, failed diagnostic and gamma*-sensitive checks
+(`summary.sweep_point_check_line`), and the blocked-findings line), and
+sweep_index.csv carries each point's `screening_diagnostic_failed` beside its
+`screening_status`.
 
 **M2 as pre-registered: measured behaviour (the user's decision before the
 pre-registration commit).** It is implemented as pre-registered and reported, not
@@ -2724,6 +2918,35 @@ indeterminate when its gamma* range spans a bound (the `gamma_robust` field alre
 records it); build a mass-consistent estimator from the variant's own trajectory that
 also books the cold start's unpowered and ramp time; or drop M2 and rely on the closing
 attribution (the attribution check), M3, M4 and M5.
+
+**M2 is diagnostic only (user decision of 2026-09-30).** After the calibration run
+from the pre-registration commit (c2849b7), the user chose to keep M2 computed and
+reported but to take it out of `bug_suspect`: `checks.m2_role: diagnostic`, written
+out in all four planar experiments and committed as a pre-registration amendment
+before any research run. Why: the time-shift estimator M2 compares against is about 4x
+optimistic on stage 1 (at equal gamma* the matched stage-1 d J_grav is about 0.25 of
+the estimate for runs lit at release, whatever the kick speed, drag or rotation, and
+about 0 for the cold start: "Time-shift mechanism"; the leading explanation is that
+the variant carries the propellant the baseline burned to reach V0), and M2 fails the
+low-speed cold starts of the shipped sweep with no bug (the table above: every
+attribution there closes and M3, M4 and M5 pass). A check that fails correct runs
+would block findings for a reason that is a known limit of its own yardstick, not a
+defect in the run. The measured table above stays as recorded; M2's ratio, bounds
+verdict, stage-1 diagnostic and gamma* range are still in every M2 record and summary,
+marked "(diagnostic)", so a reader can still see where the gravity term and the
+estimate disagree. What still blocks findings (status `bug_suspect`): the per-run
+checks of part (a) (the rocket-equation closure, the loss identity, the insertion
+eccentricity); in each comparison the closure check, the attribution check (an
+attribution must close, and a beat with no attribution where one is required is an
+unexplained beat); M3; M4; and the anchor bound M5. What this gives up: M2 was the
+only check on the gravity term. M3 bounds the back-pressure term, M4 the drag plus
+steering share, and the attribution check only verifies that the accounting closes, so
+with M2 diagnostic no blocking check bounds the gravity term of a beat; a larger
+gravity gain even lowers M4's share. A gravity-driven beat is then explained by the
+closing attribution alone, and its M2 ratio (printed, marked diagnostic) is the only
+mechanism evidence for it. `m2_role: blocking` restores the pre-registered rule
+exactly (a test keeps that path). This is a change of what blocks a finding, not of
+any figure of merit; no parameter was tuned.
 
 ## Reporting definitions (planar)
 
@@ -2815,7 +3038,9 @@ angle-of-attack aerodynamics, so a fast kick costs nothing it would cost in flig
 `payload_delta_upper_bound` is True when any of the three is, and the dP* is then an
 unthrottled, unconstrained upper bound (the summary's dP* row and screening line say so
 and why); the attribution, the checks of the screening-beat rule and
-`screening_status` (ok, not_checked, bug_suspect).
+`screening_status` (ok, not_checked, bug_suspect; `screening_failed` lists the failed
+blocking checks, `screening_diagnostic_failed` the failed diagnostic ones, M2 with
+`checks.m2_role: diagnostic`).
 
 **Sensitivity** (`compare.run_sensitivity` on a planar experiment): every
 trajectory-changing case is a full searched run, compared with the unchanged baseline
@@ -2847,7 +3072,9 @@ it); the planar sweep index adds the paired baseline, P*, dP*, the screening yar
 gamma*, |v_rel| at the kick, q-alpha and max-Q with their deltas, the kick regime per
 point (plan decision 5), `unconstrained_kick` and `payload_delta_upper_bound` per point
 (the label plan section 13 asks for above about 120 m/s), the search and screening
-statuses.
+statuses and the failed diagnostic checks (`screening_diagnostic_failed`, joined with
+"; ", "none" when none failed: `results_io.index_text`), so a point whose status is ok
+still shows a diagnostic M2 fail.
 
 **Summary** (`planar_experiment_summary`): the CALIBRATION banner (label calibration),
 the comparison basis (`compare.planar_comparison_basis` of the shared figure of merit:
@@ -2893,7 +3120,8 @@ lag is a step. `fails: true` makes T_vac identically zero. Cutoff is instantaneo
 (assumption). The kinks of the thrust curve, t_ign and t_ign + t_ramp
 (`ThrustSchedule.kink_times()`), are phase boundaries so the integrator never steps
 across a derivative discontinuity; the planner also caps `max_step` at t_ramp /
-`ramp_steps` inside a ramp and tau / `lag_steps_per_tau` inside a lag.
+`ramp_steps` inside a ramp and tau / `lag_steps_per_tau` inside a lag (a planar flight
+phase at no more than `planar_max_step_s` either, "Integrator").
 
 ## Integrator
 
@@ -2967,7 +3195,33 @@ phase:
 - `max_step` is per phase and the planner sets it in `PhaseSpec.max_step`
   from the settings: t_ramp / ramp_steps (10) in a ramp, tau / lag_steps_per_tau (4)
   in a lag, t_push / push_steps (50) on the track, unbounded (`math.inf`, the default)
-  elsewhere. The engine only consumes the value.
+  elsewhere in the 1-D planner and the prelude (HOLD, ASSIST). The engine only
+  consumes the value.
+- **Planar step cap** (user decision of 2026-09-30, build step 26a; a Plan-mode
+  integrator change). Every planar flight phase (COAST_PRE_IGN, VERTICAL_RISE, KICK,
+  GRAVITY_TURN, COAST_STAGING, LTG_BURN, COAST) integrates with max_step = min(its
+  ramp or lag cap, `planar_max_step_s`) (`PlanarPlanner._step_cap`; YAML
+  `integrator.planar_max_step_s`, finite and > 0, default 2 s, stated explicitly as 2 s
+  in the four shipped planar experiments). Why: without it DOP853 sometimes accepts one
+  long step (up to 3.6 s) across the clustered C1 knots of the transonic PCHIP C_D table
+  (M 0.95, 1.0, 1.05), and whether it does changes with the kick angle, so
+  gamma_MECO(delta) carried a noise floor of up to 6.7e-7 rad at rtol 1e-10 and 1.8e-5
+  rad at the search setting; at the search setting that noise set gamma*_ref and so the
+  margins at P0 and the gravity/steering split of a re-optimised run ("gamma* inner
+  solve", Noise floor; "Convergence (planar)", Finding). With the 2 s cap what remains is
+  a heavy-tailed flight-to-flight jitter, sensitive at the ulp level: at rtol 1e-10 a
+  median of 3e-10 rad, a 99th percentile of 8e-9 rad and single flights up to about 8e-8
+  rad (peak-to-peak up to about 1e-7 rad), and up to about 1e-7 rad at the search
+  setting (about 90 % and 99 % below the uncapped floor). The cap is planar-only: `VerticalPlanner` never reads it (the
+  1-D golden is byte-identical, `test_planar_step_cap.py` flies a 1-D run at three caps
+  bit for bit), and the prelude's HOLD and track push keep their own caps. It is one
+  integrator setting of the experiment (the lock below), and `SearchContext.tightened`
+  multiplies it by `max_step_factor` like the other caps (2 s -> 1 s). Cost: a stage-1
+  flight costs the same (22.9 against 23.0 ms to MECO at rtol 1e-10, 13.0 against
+  13.6 ms at the search setting), but the stage-2 burn, which DOP853 otherwise crosses in
+  steps well above 2 s (148 RHS calls per shot on the pad), takes about 1,160 RHS calls
+  per shot, so a searched run costs 1.4 to 1.7 times the RHS calls and wall time
+  ("Performance (measured)").
 - Open-ended phases (`t_end = None`) are guarded by `t_max_s` (3600 s): reaching it
   without a terminal event raises `RuntimeError` naming the phase kind. An integrator
   failure raises too. A run that must stop cleanly (no liftoff, drive limit) does so
@@ -2985,7 +3239,8 @@ phase:
   with `atol_scale = search.search_atol_scale`; `final_rtol` may not be looser than
   `search_rtol`, and `search_atol_scale` may not be below 1 (a search is never
   integrated more tightly than the final run). On planar_2d every integrator setting
-  (method, rtol, first step, max_step caps, t_max and `sample_dt_s`) is the baseline's
+  (method, rtol, first step, max_step caps including `planar_max_step_s`, t_max and
+  `sample_dt_s`) is the baseline's
   in every compared run: variants, sweeps, sensitivity cases and bounds may not address
   `integrator` at all, so no two compared runs integrate differently while claiming
   one budget, and no peak read from the sampled time series (the 1-D felt-g peaks are)
@@ -3122,7 +3377,11 @@ which flatters the pad baseline.
    monotone between them); a burn's v need not be monotone (a TWR < 1 burn), and the
    burns rely on the ramp and lag `max_step` caps and on the slow change of thrust
    and mass for their events. Planners that add events (Phase 2) carry this as a
-   design rule for every event they list.
+   design rule for every event they list. The planar flight phases also carry the
+   2 s `planar_max_step_s` cap ("Integrator"), which bounds every step there; the
+   planar events' monotonicity arguments ("Stage-1 guidance and events (planar)",
+   "Stage 2 and insertion (planar)") do not rely on it, and the cap moved no event
+   rule.
 
 Validation (`test_events.py`): the propellant event lands with |m - m_dry| < 1e-6 kg;
 the apex event does not re-fire at the start of a fall from v = 0 (engine robustness
@@ -3275,7 +3534,8 @@ the identity would still close, so this is the only check).
 
 **Per-phase tolerances.** atol from the state layout (`atol_for`); max_step =
 t_ramp/ramp_steps in a ramp sub-phase, tau/lag_steps_per_tau in a lag burn, unbounded on
-coasts and step burns; open-ended phases carry the t_max guard.
+coasts and step burns (1-D; the planar cap `planar_max_step_s` is never read here,
+"Integrator"); open-ended phases carry the t_max guard.
 
 **Result content.** The time series samples every phase at `sample_dt_s` on the
 absolute clock (multiples of the interval, so phases share the grid) plus every phase
@@ -4144,7 +4404,7 @@ declares none; variants may no longer move it.
 | `target_orbit` | `kind: circular` (only), `altitude_km`; `radius_m` = R_E + altitude (spherical Earth) |
 | `guidance` | `kick: {v_kick_mps, mode: hold_to_alignment, max_duration_s, deadline_s}`, `stage1: gravity_turn`, `stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}` |
 | `search` | `figure_of_merit` (payload, residual, none); gamma* grid `[start, stop, step]` deg (a whole number of steps, inside (-90, 90) deg, as is a fixed gamma*), refine half-width, xatol and maxiter, false-root guard `gamma_root_tol_deg` (amendment 7); delta bracket (inside (0, 90) deg), step and xtol; payload half-bracket (t), expansions, back-offs, xtol, brentq rtol (>= 4 eps); final xtol and bracket; `search_rtol`, `search_atol_scale` (>= 1), `final_rtol`; `penalty: {base_kg, per_deg_kg}`; `ltg:` acceptance, residual scales, finite-difference steps, iteration and halving limits, rungs per grid point, guess-ladder angles, direct-root pitch window (every LTG angle inside (-90, 90) deg, where tan p is finite), `tau_max_factor`, `mass_floor_factor`. `budget_id()` is the sha256 of its canonical JSON |
-| `checks` | closure tolerance; the 2-D loss-identity tolerance `identity_tol_mps` (1e-5 m/s) and the insertion eccentricity limit `insertion_e_max` (1e-6), the per-run acceptance numbers of plan section 11; M2 and M3 ratio bounds and the M3 floor; the M4 share; the M5 anchor margin; the search-vs-final flag; max-Q scan points and xatol; `unconstrained_kick_mps`, `vk_margin_kg` (amendment 13); `convergence:` the amendment-3 rules (relative tolerance, absolute floors for loss terms and margins, gamma* resolution, tightening factor, max_step factor). The tightening divides the search and final rtol, atol, the LTG acceptance thresholds and the delta, payload and gamma xtols by the factor; the finite-difference steps stay |
+| `checks` | closure tolerance; the 2-D loss-identity tolerance `identity_tol_mps` (1e-5 m/s) and the insertion eccentricity limit `insertion_e_max` (1e-6), the per-run acceptance numbers of plan section 11; M2 and M3 ratio bounds and the M3 floor; the M4 share; the M5 anchor margin; the search-vs-final flag; max-Q scan points and xatol; `unconstrained_kick_mps`, `vk_margin_kg` (amendment 13); `gamma_sensitivity_step_deg`; `m2_role` (`diagnostic` or `blocking`; default and shipped `diagnostic`, the user decision of 2026-09-30: whether an M2 fail sets bug_suspect, "Screening-beat rule (2-D)"); `convergence:` the amendment-3 rules (relative tolerance, absolute floors for loss terms and margins, gamma* resolution, tightening factor, max_step factor). The tightening divides the search and final rtol, atol, the LTG acceptance thresholds and the delta, payload and gamma xtols by the factor; the finite-difference steps stay |
 
 Every threshold of plan section 7, the per-run acceptance numbers of section 11
 (loss identity, eccentricity; the radius and residual-propellant acceptance are
@@ -4186,6 +4446,18 @@ time; the 1-D planner also refuses it at run time), so no variant can shorten th
 pre-registered staging coast by a negative stage-2 ignition. Every per-run integrator
 setting, `sample_dt_s` included, is locked on planar_2d ("Integrator").
 `integrator.method` (DOP853 or RK45, default DOP853) is new for both models.
+`integrator.planar_max_step_s` (finite, > 0, default 2 s; build step 26a, user
+decision of 2026-09-30) is the planar flight-phase step cap: stated explicitly (2 s)
+in the four shipped planar experiments, one value for every run of an experiment by
+the same lock (a variant, sweep axis, sensitivity parameter or bound that addresses it
+is refused, naming it; a calibration case cannot address the integrator), and accepted
+but never read on vertical_1d ("Integrator"): a 1-D experiment that sets it validates
+without comment and flies exactly as without it, so no 1-D run is capped by it. That
+the four shipped planar experiments state it is enforced by
+`test_config_planar.py::test_shipped_planar_cap_is_explicit_and_shared`, as the other
+shipped thresholds are by `::test_shipped_blocks_state_every_threshold`, not by
+validation: a new planar experiment that leaves it out validates and takes the 2 s
+default (still one shared value), so a new experiment must be added to that test.
 
 **Search skip (amendment 4).** A planar run with `end: impact` (which every failed
 ignition already requires) skips the search: `RunConfig.search_skip_reason` names why
@@ -4541,7 +4813,8 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_aero.py::test_fork_numbers_all_have_provenance`, `::test_fork_masses_and_launch_mass_closure`, `::test_readme_fork_masses_are_the_one_d_files`, `::test_forks_differ_only_in_masses`, `::test_gate_fork_inputs` | the three 2-D forks: every number sourced or assumed; masses and launch mass without payload (546.3 / 519.77 / 549.9 t) from the YAML numbers; set A = the 1-D file's masses and provenance; identical apart from the five masses; the gate's Braeunig table, A_ref = pi 3.66^2/4 (0.01 m^2), heating rule 1,135 W/m^2, 11 s coast, stage-2 A_e 8.6 m^2 | exact; 1e-12 relative |
 | `test_config.py::test_f9_converts_to_si`, `::test_engine_exit_area_rules`, `::test_constant_accel_units` | unit conversion at the boundary: 542,570 kg, 9 x 914.1 kN, A_e = (T_vac - T_sl)/P_SL, 3 g0 = 29.41995 m/s^2 | 1e-12 relative |
 | `test_config.py` (every other test) | config rules: bare numbers and provenance in vehicle files, unknown keys, Phase 2 and Phase 3 gates, `fails` requires `end: impact`, `push_start` needs an assist, merge and override semantics, the shipped and tiny experiments resolve | structural / raises |
-| `test_config_planar.py::test_shipped_planar_experiments_resolve`, `::test_shared_blocks_are_identical_across_the_planar_experiments`, `::test_calibration_and_silo_baselines_differ_only_in_sample_dt`, `::test_shipped_blocks_state_every_threshold` | "Experiment schema (planar)": the four shipped planar experiments resolve (cases through a CLI-style vehicle loader); identical shared blocks and one `budget_id`; amendment 15 baseline identity; every search, LTG, checks and guidance field written out | exact / structural |
+| `test_config_planar.py::test_shipped_planar_experiments_resolve`, `::test_shared_blocks_are_identical_across_the_planar_experiments`, `::test_calibration_and_silo_baselines_differ_only_in_sample_dt`, `::test_shipped_blocks_state_every_threshold`, `::test_every_shipped_planar_experiment_is_checked`, `::test_shipped_planar_cap_is_explicit_and_shared`, `::test_planar_cap_may_not_differ_between_runs`, `::test_planar_cap_is_finite_and_positive` | "Experiment schema (planar)": the four shipped planar experiments resolve (cases through a CLI-style vehicle loader); identical shared blocks and one `budget_id`; amendment 15 baseline identity; every search, LTG, checks and guidance field written out; every planar_2d experiment in experiments/ is one of the four checked; `integrator.planar_max_step_s` stated as 2 s in all four and carried by every run (baseline, variants, sweep points and paired baselines, sensitivity cases, bounds, calibration cases); a per-run value refused in a variant, sweep, sensitivity parameter or bound (a message naming the setting) and unreachable from a case; the cap finite and > 0 ("Integrator") | exact / structural |
+| `test_config_planar.py::test_m2_role_defaults_to_diagnostic_and_is_explicit`, `::test_m2_role_may_not_differ_between_runs` | `checks.m2_role`: default diagnostic, blocking accepted, any other value refused; written out as diagnostic in all four shipped planar experiments and carried by every resolved run; a variant's own `checks` refused as a shared block ("Screening-beat rule (2-D)", "Experiment schema (planar)") | exact / raises |
 | `test_config_planar.py::test_phase1_resolved_run_dicts_are_byte_identical`, `::test_inject_shared_is_a_plain_copy_when_nothing_is_declared` | no injection for a 1-D experiment: every run, sweep-point and sensitivity run dict of both 1-D golden sets equals the golden, key order included | exact (JSON text) |
 | `test_config_planar.py` (model rules) | rotation only on planar_2d; explicit site; guidance, search, checks and target; aero and two stages; `integrator.rtol == search.final_rtol`; insertion and planar ends; `integrator.method` round trip; Phase 3 track message; heating refusal on vertical_1d only; shared blocks refused in baselines, variants, sweeps, sensitivity and bounds; paired sweeps (guidance_study only); cases (calibration only); search skip (amendment 4); sensitivity paths perturb the vehicle numbers (amendment 5, expected values from the vehicle file); the aero bound and its paired baseline (amendment 6); search and checks validators; radian and kg properties; `budget_id`; planar variants, sweeps, sensitivity and bounds may not change the integrator block, `sample_dt_s` included (1-D keeps its freedom); paired sweeps planar_2d only, planar vehicle sweeps paired (1-D unchanged); later-stage `t_ign_s >= 0`; gamma*, fixed gamma*, delta and LTG pitch ranges; `search_atol_scale >= 1`; omega_p against omega_E cos(lat) sin(az) at four sites (465.1 m/s at the equator, negative westward); the section-11 checks fields; raw-form-only experiments; `sim.run` runs the shipped silo_failed in the planar model (the former strict-xfail tripwire of the step-19 gap) | exact / raises / 1e-12 relative |
 | `test_thrust_schedule.py::test_thrust_fraction_shapes`, `::test_zero_duration_is_a_step` | f for step, ramp, lag ("Thrust startup") | 1e-12 relative |
@@ -4659,7 +4932,8 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_planar_events.py::test_no_phase_lists_the_event_that_ended_the_previous_one`, `::test_search_mode_flies_the_same_stage1`, `::test_planar_modules_have_docstrings` | the event-list discipline ("Event rules"); dense-off hand-overs and event records equal to dense-on ones; docstrings of `guidance.py`, `phases/planar.py` and `phases/engine.py` | exact |
 | `test_gravity_turn.py::test_culler_fried_gravity_turn` | the gravity turn against Culler-Fried: v, t, h, x, J_grav = (C/2)[z^(n-1)/(n-1) - z^(n+1)/(n+1)], J_vac = n g t, J_steer = 0 ("Stage-1 guidance and events (planar)") | 1e-6 relative (measured <= 1.7e-7); J_steer 1e-12 |
 | `test_guidance.py::test_steering_laws`, `::test_guidance_spec_and_failures`, `::test_delta_settings_from_config` | Radial, FixedTilt, AlongVrel directions and pitches; the spec's rules; typed, picklable failures; the settings from the search block | 1e-15; exact |
-| `test_guidance.py::test_gamma_meco_is_monotone_in_delta`, `::test_inner_solve_cold`, `::test_inner_solve_warm`, `::test_impact_gap_false_root_is_rejected`, `::test_timeout_sentinel_lies_above_every_real_gamma`, `::test_toy_inner_solve_roots_gaps_and_propagation` | gamma_MECO(delta) decreasing; gamma_rel(MECO; delta(gamma*)) = gamma* for 20 (cold) and 10, 30 deg (warm); the impact-gap false root; the +pi timeout sentinel above aligned flights steeper than pi/2; the toy map's sentinels, false roots, unattainable targets and propagation ("gamma* inner solve") | 3e-6 rad (Plan-mode deviation: the plan's 1e-9 is below the uncapped noise floor, up to 6.7e-7 rad); exact on the toy |
+| `test_guidance.py::test_gamma_meco_is_monotone_in_delta`, `::test_inner_solve_cold`, `::test_inner_solve_warm`, `::test_impact_gap_false_root_is_rejected`, `::test_timeout_sentinel_lies_above_every_real_gamma`, `::test_toy_inner_solve_roots_gaps_and_propagation` | gamma_MECO(delta) decreasing; gamma_rel(MECO; delta(gamma*)) = gamma* for 20 (cold) and 10, 30 deg (warm); the impact-gap false root; the +pi timeout sentinel above aligned flights steeper than pi/2; the toy map's sentinels, false roots, unattainable targets and propagation ("gamma* inner solve") | 3e-7 rad with the 2 s planar cap (user decision of 2026-09-30; 3x the 1e-7 rad capped jitter bound, about 3.5x the largest capped step jump measured, 8.6e-8 rad; the plan's 1e-9 is below the capped floor and brentq's xtol alone exceeds it); exact on the toy |
+| `test_planar_step_cap.py` | every planar flight phase (COAST_PRE_IGN, VERTICAL_RISE, KICK, GRAVITY_TURN, COAST_STAGING, LTG_BURN, COAST) of the pad, silo_cold and silo_failed carries exactly max_step = min(`max_step_cap` of its own schedule at its start, planar_max_step_s) (2 s shipped, 0.5 s set), so it is the planar cap wherever no ramp or lag cap is smaller (silo_cold's ramp KICK: t_ramp / ramp_steps) and never a smaller cap by mistake; HOLD and ASSIST keep their caps and fly bit for bit the same at either planar cap; a 1-D F9 pad run flies identical specs and end states at planar caps 2 s, 0.05 s and none; the setting is shipped as 2 s in every run and refused <= 0 or NaN ("Integrator") | exact |
 | `test_ltg.py::test_flat_linear_tangent_closed_form`, `::test_linear_tangent_law` | tan p = tan p0 - c t with constant A and g_test: v_x = (A/c) ln[(tan p0 + sec p0)/(tan p + sec p)], v_y = (A/c)(sec p0 - sec p) - g t; the law's direction (s, 1)/sqrt(1 + s^2) and pitch atan(s) ("LTG shooting") | 1e-6 relative (measured 1.4e-9, 3.6e-8); 1e-15 |
 | `test_ltg.py::test_linear_tangent_is_optimal_on_a_flat_earth` (slow) | amendment 11: with eps tau^2 added and (a, b) re-solved for the same h_f and v_y,f = 0, d v_x,f/d eps = 0 by central difference, v_x,f largest at eps = 0 | 1e-6 relative and 1 % of the second-order drop (measured 5e-9 against 2.4e-6) |
 | `test_ltg.py::test_ltg_ladder_and_physics_guess`, `::test_shooting_converges_from_every_rung`, `::test_shooting_failures_are_typed`, `::test_direct_root_window` | the physics guess a = tan(gamma_in + 5 deg), b = (a - tan(-1 deg))/tau_b and the ladder; warm, physics and steep rungs reach the same direct root with E = E*, abs(r - r_t) < 1 m, abs(v_r) < 1e-3 m/s, e < 1e-6; typed impact, nonconverged and not_direct_root; the direct-root window | 1e-14; 1e-9 relative, the acceptance, a and b within the acceptance box's image 2 abs(J^-1) (accept_r, accept_vr) (measured 1.34e-5 and 5.5e-8 1/s); typed |
@@ -4678,6 +4952,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_closure.py::test_gamma_sensitivity_bookkeeping` | with the pad's run as the -h neighbour and silo_cold's as the +h one: each d(term)/d(gamma*) equals the silo_cold contribution written in the test over 2 h, the neighbours' contributions are 0 and silo_cold's, beyond_release their sum without the release speed ("Screening-beat rule (2-D)") | 1e-9 relative |
 | `test_planar_pipeline.py` (fast: fixed guidance) | pad, silo_cold and silo_failed end to end through `sim.run_experiment`: every PLANAR_REQUIRED_METRICS key non-null but P* (no search); planar statuses and columns; gamma_rel and pitch unwrapped past pi in the fall-back with every step below pi; every PLANAR_VARIANT_ROWS label and required key in the summary, the fixed-guidance basis and label (not the sweep-optimized ones, no search assumption), the gamma* caveat, the screening line of every variant, blocked findings iff bug_suspect; the attribution closes (1e-5 m/s) with the release-speed term equal to the release speed; energy-only and screening sensitivity cases reuse the trajectory, electrical energy E/(1 + f), each attributed against its own vehicle's baseline (a screening case against the unchanged baseline not_checked); every pinned PLANAR_ASSUMPTIONS item (plan section 5, amendment 14), the search-only items in SEARCH_ASSUMPTIONS, FIXED_GUIDANCE_ASSUMPTIONS on the fixed-guidance runs; azimuth 80 deg gives the flag and PLANAR_AZIMUTH_ASSUMPTION; v_k 5000 m/s gives status guidance_failed (kind no_kick) with the summary written; the track's actual g_eff = mu/R_E^2 - omega_p^2 R_E (written here) and Coriolis neglected in the planar silo's assumptions; no planar or atmosphere assumption in a 1-D summary ("Reporting definitions (planar)") | exact; 1e-5 m/s; 1e-12 relative |
 | `test_planar_pipeline.py` (fast: the screening-beat machinery) | on the recorded pad: t_v0 is the first instant hypot(v_r, v_theta - omega_p r) reaches silo_cold's release speed, and the time-shift estimate equals the integral of (mu/r^2 - omega_p^2 r) v_r/abs(v_rel) by scipy quad phase by phase (written in the test); `_ratio_check` passes inside the bounds and fails for the opposite sign, below and above, and for an estimate of 0 with d != 0; M4 at and above its share and n/a below min_term_mps; M5's bound direction, n/a for the anchor runs, other release speeds and no anchor; `anchor_from` wiring; a per-run check failure (tolerances 1e-15) gives status bug_suspect with trace_status inserted, three reasons and three flags; an injected beat without an attribution is bug_suspect when one is required and not_checked when not; a sub-yardstick run without one and a failed ignition are not_checked, the latter with closure n/a; a matched run with a vehicle 100 kg off its trace fails the attribution check; M2's d equals J_grav(silo_cold end) - J_grav(pad end) read off the recorded traces (variant minus baseline) and its ratio d/estimate; the M2 stage-1 diagnostic equals the J_grav difference at the two burnouts; M3 n/a at and applied below its floor; beats_screening uses the smaller of payload_gain_kg at P0 and at P*_base (written in the test) for P*_base above and below P0; neighbours equal to the centre give a robust M2 with a zero rate, the pad as the -h neighbour makes M2's verdict change there (not robust, named in the Checks text) while the verdict at gamma*_ref is unchanged; the trajectory key drops drive_efficiency for constant_accel only; an unconstrained kick labels the dP* an upper bound; `unwrap_rad` takes an exact -pi step, and one within ATOL_RAD of it, as +pi ("Screening-beat rule (2-D)", "Reporting definitions (planar)") | 1e-7 relative (quad); 1e-9 relative (t_v0); exact |
+| `test_planar_pipeline.py::test_m2_diagnostic_fail_is_reported_but_blocks_nothing`, `::test_m2_blocking_fail_is_bug_suspect_as_pre_registered`, `::test_m2_role_leaves_the_other_checks_alone`, `::test_blocking_m2_role_end_to_end`, `::test_summary_rows_label_and_screening_line`, `::test_sweep_check_lines_and_the_blocked_branch`, `::test_sweep_index_text_cells` (fast), `::test_bounds_cases_and_paired_sweeps` (slow) | M2 made the only failing check (ratio bounds moved above the recorded ratio, min_term_mps 1e9 so M3 and M4 are n/a, no anchor so M5 is n/a): with role diagnostic the M2 record equals the blocking one apart from `role`, screening_failed is empty, screening_diagnostic_failed is [m2], status ok, the screening line marks "M2 (diagnostic) fail" and names the diagnostic fail, the blocked-findings line says none is bug_suspect and lists the diagnostic fail apart; with role blocking status bug_suspect, [m2] in screening_failed, findings blocked; under the shipped checks every other record is identical under both roles; end to end with `m2_role: blocking` the fixed-guidance silo_cold (whose M2 fails) is bug_suspect and summary.md says findings are blocked, while the shipped diagnostic run prints M2 marked, is ok, shows "ok (diagnostic fail: M2)" in the table and blocks nothing on it; the sweep Checks line format of a diagnostic and a blocking point, the blocked-findings branch, the "M2 (diagnostic)" gamma*-sensitive tag and `summary.screening_cell` on synthetic comparisons; `results_io.index_text`; in the paired fixed-guidance sweep both cold-start points are ok with `m2` in sweep_index.csv's `screening_diagnostic_failed` and in the sweep Checks lines ("Screening-beat rule (2-D)") | exact |
 | `test_planar_pipeline.py::test_searched_runs_fill_every_required_metric`, `::test_bounds_cases_and_paired_sweeps` (slow) | searched pad and silo_cold on a small grid: every PLANAR_REQUIRED_METRICS key non-null, inserted, dP* the difference of the P*, the attribution at the pad's P* closes and its kg split adds up to dP*, the gamma* neighbours' rates finite and M2's gamma_robust set, the sweep-optimized basis, label and search assumptions, the planar plots; with fixed guidance, a bound (pair written, drag grows with A_ref, attributed against the pair, not_checked against the baseline), a calibration case (independent, CALIBRATION banner) and a paired v_k sweep (paired baselines written and indexed, kick regime per point, the fixed-guidance label and a Checks section with blocked findings iff a point is bug_suspect) | exact; 1e-5 m/s; 1e-6 kg |
 | `test_closure.py` | D_id(P) = J_vac + c1 ln(m0/m_fs) + c2 ln[(1 + F2/m_f+)/(1 + F2/m2)] + dv_margin, with J_vac per stage = c ln(m_start/m_end) from the logged masses; heating rule, rules staging and never (flagged), silo_hot_full's track burn in closed form; a payload mismatch is caught; a fairing still on is empty mass (m_empty = m_d2 + P + F; the final-mode depletion at that mass after tau_b) ("Rocket-equation closure (planar)") | 1e-5 m/s (measured 8e-8 to 9e-8); 1e-9 relative; 1e-6 kg |
 | `test_insertion.py::test_apex_and_impact_ends_stop_at_the_cutoff_after_insertion` | after an insertion, ends apex and impact stop at the cutoff like insertion (status inserted, the same end record, no COAST, one flag) ("Stage 2 and insertion (planar)", Recorded run) | exact |
@@ -4696,5 +4971,5 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_search.py::test_grid_retry_repeats_until_no_new_point_solves`, `::test_refine_capped_by_the_shifted_window_is_flagged`, `::test_payload_search_backoffs_are_flagged`, `::test_final_verification_backs_off_toward_the_hint_and_flags`, `::test_final_verification_failures_are_typed`, `::test_final_bisection_keeps_the_residual_rule`, `::test_whole_toy_searches_do_not_depend_on_the_run_order`, `::test_a_warm_store_serves_one_problem` | on the toy: a grid point whose neighbours converge only in a retry is retried in a second pass; an optimum drifting above P0 caps the refine at its shifted window (refine_capped, the shift flag with both results); P1 backoffs flagged with the failed payload and kind; the final verification's low end backs off toward the hint (final_backoff), expansions flag search_final_mismatch and search_vs_final_payload; final_bracket, and final_run for an off_target recorded run, m_res >= 0.05 kg, a short run with m_res >= 0 and a no_orbit run reaching the cutoff; a steep local slope bisected until 0 <= m_res < 0.05 kg (flagged); whole toy searches identical as plain data in both run orders; on the gate fork a WarmStore bound to its first context raises ValueError for another context or the same context tightened ("Payload and gamma* search", "Shared budget") | exact; 0.05 kg / slope; typed |
 | `test_search.py::test_residual_figure_short_of_orbit_is_signed` (slow) | figure_of_merit residual on the gate pad at a 30 t vehicle payload: no P1 or P2, the refine at P0, one final evaluation at P0 with m_res < 0: status short_of_orbit, the recorded run short of the cutoff with the evaluation's signed m_res and dv_margin ("Payload and gamma* search", Whole search) | exact |
 | `test_search.py::test_swapped_run_order_gives_identical_evaluations`; `::test_swapped_order_whole_searches_are_identical` (slow) | pad and silo_cold evaluated (and, slow, searched on a three-point grid) in both orders give bitwise-identical results ("Shared budget") | exact |
-| `test_convergence_2d.py::test_fixed_gamma_payload_and_margins_converge`, `::test_fixed_gamma_losses_and_max_q_converge` (pad, silo_cold; silo_cold_lag slow); `::test_reoptimised_search_converges` (slow; pad, silo_cold, silo_cold_lag) | CLAUDE.md's convergence rule with amendment 3's floors: the shipped budget (search rtol 1e-8, the only planar tests at it) against its 10x tightening (the ramp, lag and push step counts doubled) at fixed gamma* 20 deg (P*, m_res and dv_margin at 22.8 t, every loss term one by one, max-Q value and time) and re-optimised (P*, m_res and dv_margin at P0, gamma*, J_vac, drag, back-pressure, gravity plus steering jointly, max-Q value and time); the recorded run pushes exactly on the silo runs, and the recorded traces fly finite max_step caps in exactly the expected kinds, halved when tightened; after a re-optimisation gravity plus steering is compared jointly at the steering term's tolerance and the split is not asserted ("Convergence (planar)", Finding) | rel 1e-3 with floors 0.5 kg and 1e-3 m/s; gamma* 0.1 deg (measured: fixed gamma* every term within 4.6e-5 m/s, P* within 1.0e-3 kg; re-optimised P* at most 3.4e-3 kg, gamma* at most 6.3e-3 deg, m_res at P0 at most 0.25 kg) |
+| `test_convergence_2d.py::test_fixed_gamma_payload_and_margins_converge`, `::test_fixed_gamma_losses_and_max_q_converge` (slow since build step 26a; pad, silo_cold, silo_cold_lag); `::test_reoptimised_search_converges` (slow; pad, silo_cold, silo_cold_lag) | CLAUDE.md's convergence rule with amendment 3's floors: the shipped budget (search rtol 1e-8, the only planar tests at it) against its 10x tightening (the ramp, lag and push step counts doubled, the planar cap 2 s -> 1 s) at fixed gamma* 20 deg (P*, m_res and dv_margin at 22.8 t, every loss term one by one, max-Q value and time) and re-optimised (P*, m_res and dv_margin at P0, gamma*, J_vac, drag, back-pressure, gravity plus steering jointly, max-Q value and time); the recorded run pushes exactly on the silo runs, and the recorded traces fly finite max_step caps in exactly the expected kinds, halved when tightened; after a re-optimisation gravity plus steering is compared jointly at the steering term's tolerance and the split is not asserted ("Convergence (planar)", Finding) | rel 1e-3 with floors 0.5 kg and 1e-3 m/s; gamma* 0.1 deg (measured: fixed gamma* every term within 4.6e-5 m/s, P* within 1.0e-3 kg; re-optimised P* at most 3.4e-3 kg, gamma* at most 6.3e-3 deg, m_res at P0 at most 0.25 kg) |
 | `test_calibration.py::test_record_matches_the_shipped_experiment`; `::test_calibration_payload_reproduces` (slow: pad, readme_loads, recorded_scope) | calibration regression (not validation): the record matches the shipped experiment and its clean pre-registration; P* reproduces tests/data/calibration_record.json and gamma*_ref within the 0.1 deg resolution; no band is asserted | P* 1e-3 relative |

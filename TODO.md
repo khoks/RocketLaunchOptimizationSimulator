@@ -53,7 +53,8 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | 24 | Pipeline: dispatch, planar metrics, compare with closure/attribution/checks, summary, plots | [x] | full suite + golden |
 | 25 | Convergence and performance gate; slow marks | [x] | every CLAUDE.md Phase 2 required test green; fast tier 43 s, full 230 s |
 | 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [x] | frozen at c2849b7; run 20260930T100100Z; gate C misses high (M7 [!]); every numerical check passes; slow regression test without a band |
-| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [!] | blocked: needs your call on the calibration miss and on mechanism check M2 |
+| 26a | Step cap (2 s, planar) and M2 as diagnostic; pre-registration amendment; calibration re-run | [~] | implemented and gated (908 tests, golden byte-identical); amendment committed; calibration re-run next |
+| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [ ] | unblocked by the user's decisions; after 26a |
 | 28 | Close Phase 2 | [ ] | |
 
 ## Priorities
@@ -89,9 +90,16 @@ Phase 2 pre-registration (2026-09-29; defaults from the plan, each open to objec
 - Layout: phases/ package; sim.py split into sim, metrics, compare, summary, results_io, plots; new guidance.py, orbit.py, search.py; optimize.py stays for Phase 5.
 - Output angles in _rad; degrees only in summary cells and plot labels. Nothing in results/ is deleted.
 
+User decisions, 2026-09-30 (answers to the step-26 questions):
+
+- Calibration miss accepted as documented: the research experiments run on the gate vehicle (set C) as is, and every finding carries the miss (+14.3%).
+- Mechanism check M2 becomes diagnostic only: still computed and reported, no longer sets bug_suspect; the rocket-equation closure, the loss identity and M3-M5 still block findings. Recorded as checks.m2_role: diagnostic in the planar experiments.
+- Planar max_step cap of 2 s adopted (planar flight phases only; 1-D untouched); the inner-solve acceptance tightens accordingly. Recorded as an explicit shared setting; the calibration is re-run from the amended commit so its record matches.
+- These change pre-registered experiment blocks, so they are committed as a pre-registration amendment before any research run; the original freeze (c2849b7) and its calibration run stay on record.
+
 Phase 2 build (2026-09-30), deviations from the plan recorded as built (none changes a figure of merit beyond search noise; details in docs/physics.md):
 
-- gamma* inner-solve acceptance is 3e-6 rad, not 1e-9 rad: the uncapped planar integration has a noise floor (transonic C_D knots) above 1e-9. A 2 s max_step cap on planar flight phases would remove it at no measurable cost and move P* by < 0.1 kg; it is an integrator change, so it is not adopted without your go-ahead (open question below).
+- gamma* inner-solve acceptance: 3e-6 rad as first built (uncapped noise floor from the transonic C_D knots), tightened to 3e-7 rad with the 2 s planar step cap the user approved on 2026-09-30 (capped floor about 1e-7 rad; the plan's 1e-9 rad is below any floor). The cap moved the gate pad's P* by -0.0001 kg.
 - A kick that times out inside the delta inner solve maps to a sentinel instead of failing the grid point (with rotation, the bracket's 0.1 deg low end never aligns).
 - refine_capped is reported as a flag, not a search failure.
 - The lag startup's step cap holds for the whole lag-lit burn (silo_cold_lag costs about 2.5x the pad's RHS calls); a cap over the first few tau only is left open.
@@ -123,11 +131,12 @@ Phase 0-1:
 
 ## Open questions for you (Phase 2)
 
-- Calibration miss (M7 [!]): accept the documented miss and run the research experiments on the gate vehicle as is, or pre-register a new two-sided fork (resolving the Merlin Isp_SL inconsistency and the 2.75 t launch-mass gap from sources, and carrying effects that raise P* as well as those that lower it) and re-run the calibration from a new commit. Any new fork is designed knowing this miss and must say so.
-- Planar max_step cap (2 s): adopt it (and tighten the inner-solve acceptance to about 1e-7 rad), or keep the uncapped, noisier integration as built.
-- Mechanism check M2 (screening-beat rule): the pre-registered time-shift estimator is about 4x optimistic on stage 1 and fails the low-speed cold-start sweep points with no bug (false bug_suspect). Options in physics.md: keep as pre-registered, stage-1 only, the joint gravity + steering term, P_ref-optimal gamma*, or indeterminate when not robust. Needed before the research experiments (step 27), not before calibration.
+- None open. Answered 2026-09-30 (see the decisions log).
 
 ## Known issues and observations
+
+- silo_cold_lag's searched run takes about 25 s at normal machine speed, close to the 30 s per-run budget, because the lag's step cap holds for the whole lag-lit burn; options (a planar lag cap over the first few tau) are open, not needed for correctness.
+- Planar convergence tests now run in the slow tier only (with the cap each takes just over 5 s).
 
 - summary.md labels +/-10% vehicle-perturbation sensitivity cases of a pad baseline as 'Unexplained beats'; the screening rule should not apply when the baseline is a pad without an assist (cosmetic).
 - Literature sizing of flight-performance reserve, unusable residuals and payload adapter mass is not in the calibration note (it uses the run's own conversions and says so); add it with citations if the calibration is revisited.

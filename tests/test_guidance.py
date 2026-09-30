@@ -6,7 +6,9 @@ amendment 7.
 The inner-solve tests fly the gate fork (generic_f9_class_2d.yaml) from the pad: 28.5
 deg east, rotation, ICAO atmosphere, Braeunig drag, v_k = 50 m/s, rtol 1e-10 (the
 recorded-run tolerance) with dense output off (the search mode; event states come
-from y_events), and the shipped delta settings.
+from y_events), the shipped 2 s planar max_step cap (IntegratorSettings default,
+integrator.planar_max_step_s of the shipped experiments) and the shipped delta
+settings.
 """
 
 from __future__ import annotations
@@ -51,26 +53,34 @@ P2 = PLANAR_LAYOUT
 LAT_RAD = math.radians(28.5)
 V_KICK_MPS = 50.0
 RTOL = 1e-10
-GAMMA_TOL_RAD = 3e-6
-"""|gamma_rel(MECO; delta*) - gamma*| allowed [rad]; the plan asks 1e-9 rad (a Plan-mode
-deviation awaiting the user's decision). With the planner's current step control
-gamma_MECO(delta) carries a noise floor (docs/physics.md, "gamma* inner solve", Noise
-floor): DOP853 sometimes accepts one long step (up to 3.6 s) across the clustered C1
-knots of the transonic PCHIP C_D table (M 0.95, 1.0, 1.05), and whether it does
-changes with delta, so the global error jumps. At rtol 1e-10 the map deviates from its
-local linear fit by up to NOISE_MAX_RAD over delta steps of 2e-10 rad, and brentq can
-only land on a sign change of that map; the tolerance is about four times the largest
-measured jump, still 1.7e-4 deg, below the 0.01 deg root guard. The floor is not
-intrinsic: a max_step cap of 1 to 2 s on the planar flight phases removes 99 % of it
-(an integrator setting, so the user's decision), after which about 1e-7 rad would do.
-Even a noise-free map could not meet 1e-9 rad: brentq stops at delta_xtol 1e-10 rad,
-and the slope of about 15 rad/rad leaves up to 1.5e-9 rad. Measured residuals: about
-1e-9 rad."""
-NOISE_MAX_RAD = 7e-7
-"""The largest deviation of gamma_MECO(delta) from its local linear fit measured on the
-gate pad at rtol 1e-10 without a step cap, over 66 kick angles from 2.5 to 4 deg
-(6.7e-7 rad at 3.25 deg; median 2.2e-8 rad; docs/physics.md); GAMMA_TOL_RAD keeps a
-margin above it."""
+PLANAR_MAX_STEP_S = 2.0
+"""The shipped integrator.planar_max_step_s [s] (test_config_planar pins it in every
+planar experiment)."""
+GAMMA_TOL_RAD = 3e-7
+"""|gamma_rel(MECO; delta*) - gamma*| allowed [rad] (1.7e-5 deg); the plan asks 1e-9 rad.
+User decision of 2026-09-30: the planar flight phases fly a 2 s max_step cap and this
+acceptance is tightened from 3e-6 rad (the uncapped floor) to three times the capped
+jitter bound NOISE_MAX_RAD (docs/physics.md, "gamma* inner solve", Noise floor).
+Without a cap DOP853 sometimes accepts one long step (up to 3.6 s) across the clustered
+C1 knots of the transonic PCHIP C_D table (M 0.95, 1.0, 1.05), and whether it does
+changes with delta, so the global error jumps (6.7e-7 rad at rtol 1e-10). With the 2 s
+cap gamma_MECO(delta) still jitters from flight to flight by up to NOISE_MAX_RAD, and
+brentq can only land on a sign change of that map, so its residual is bounded by about
+the single-flight jitter; the tolerance is about 3.5x the largest capped step jump
+measured (8.6e-8 rad), far below the 0.01 deg root guard. Even a noise-free map could
+not meet 1e-9 rad: brentq stops at delta_xtol 1e-10 rad, and the slope of about 14
+rad/rad leaves up to 1.4e-9 rad. Measured residuals at the three roots: 1.0e-10 to
+3.3e-10 rad; at 12 more gamma* (6 to 34 deg) at most 1.4e-9 rad (rtol 1e-10) and 5.7e-9
+rad (search setting)."""
+NOISE_MAX_RAD = 1e-7
+"""Bound [rad] on the flight-to-flight jitter of gamma_MECO(delta) on the gate pad at
+rtol 1e-10 with the 2 s cap (docs/physics.md, "gamma* inner solve", Noise floor). The
+jitter is heavy-tailed and sensitive at the ulp level, so a window maximum depends on
+where it is sampled: the largest values measured are 8.1e-8 rad deviation from a local
+linear fit and 8.6e-8 rad step jump (at 3.8375 deg, 60 half-step angles), 7.9e-8 rad
+single-flight |gamma - median| over 2,250 flights, and 9.9e-8 rad spread over 120
+flights 1 ulp apart (median single-flight deviation about 3e-10 rad, 99th percentile
+about 8e-9 rad). GAMMA_TOL_RAD keeps a margin of three above this bound."""
 XTOL_RAD = 1e-10
 """delta tolerance [rad]: the shipped search.delta_xtol_rad."""
 ROOT_TOL_RAD = math.radians(0.01)
@@ -102,7 +112,7 @@ def pad_kick(gate_vehicle: Vehicle) -> tuple[PlanarPlanner, KickPoint]:
         GuidanceSpec(V_KICK_MPS, 60.0, 60.0),
         env,
         "insertion",
-        IntegratorSettings(rtol=RTOL, dense_output=False),
+        IntegratorSettings(rtol=RTOL, dense_output=False, planar_max_step_s=PLANAR_MAX_STEP_S),
     )
     return planner, planner.to_kick(planner.start())
 
@@ -214,7 +224,7 @@ def test_inner_solve_cold(
     planner, kick = pad_kick
     assert abs(cold_20.gamma_meco_rad - math.radians(20.0)) < GAMMA_TOL_RAD
     assert cold_20.bracket_rad == BRACKET_RAD
-    assert GAMMA_TOL_RAD > 4.0 * NOISE_MAX_RAD
+    assert GAMMA_TOL_RAD >= 3.0 * NOISE_MAX_RAD
     ho = cold_20.handover
     assert ho.delta_rad == cold_20.delta_rad
     assert ho.t_ign2_s == pytest.approx(ho.meco["t_s"] + 11.0, abs=1e-12)

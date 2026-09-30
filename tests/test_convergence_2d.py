@@ -7,18 +7,21 @@ The shipped budget of experiments/silo_screening_2d.yaml (search rtol 1e-8 with 
 10, final rtol 1e-10, LTG acceptance 1 m and 1e-3 m/s, delta xtol 1e-10 rad, payload
 xtols 0.5 and 0.05 kg, gamma xatol 0.01 deg) is compared with the same budget tightened
 by ``checks.convergence`` (``SearchContext.tightened``: every tolerance divided by
-tighten_factor = 10, the max_step caps multiplied by max_step_factor = 0.5; the LTG
-finite-difference steps unchanged). Each compared value must agree within rel_tol =
+tighten_factor = 10, the max_step caps multiplied by max_step_factor = 0.5, the shared
+2 s planar flight-phase cap planar_max_step_s included; the LTG finite-difference steps
+unchanged). Each compared value must agree within rel_tol =
 1e-3, with the absolute floors of amendment 3 for near-zero terms: loss_floor_mps =
 1e-3 m/s for any loss term and margin_floor_kg = 0.5 kg-equivalent for margins; gamma*
 is compared only to gamma_resolution_deg = 0.1 deg. The fixed-gamma tests fly the pad
-of the gate fork (P0 = 22.8 t) at a fixed gamma*. On the pad the halved max_step caps change
-nothing: its 2 s startup ramp runs in the closed-form hold (lit at -2 s) and MVac starts
-at a step, so the ramp, lag and push step counts are not used (the step-23 review
-measured bit-identical m_res). The fixed-gamma tests therefore also fly silo_cold (the
-push cap on the track and the ramp cap of its 2 s ramp lit 0.5 s after release) and
+of the gate fork (P0 = 22.8 t) at a fixed gamma*. On the pad only the planar cap acts
+(2 s -> 1 s on every flight phase): its 2 s startup ramp runs in the closed-form hold
+(lit at -2 s) and MVac starts at a step, so the ramp, lag and push step counts are not
+used. The fixed-gamma tests therefore also fly silo_cold (the push cap on the track and
+the ramp cap of its 2 s ramp lit 0.5 s after release, below the planar cap) and
 silo_cold_lag (the push cap and the lag cap of its first-order startup, which caps the
-whole stage-1 burn), where the halving acts (build step 25); silo_cold_lag is slow.
+whole stage-1 burn below the planar cap), where the other halvings act (build step 25).
+Every test here is slow: with the 2 s planar cap (build step 26a) each fixed-gamma pair
+takes 5 s or more, above the fast-test limit.
 Amendment 3's per-term loss rule is checked there, at a common gamma*, where it isolates
 the convergence of the integration. The slow re-optimised test repeats the whole search
 of the same three runs and compares gravity plus steering jointly: after a
@@ -50,7 +53,14 @@ from launchsim.dynamics import PLANAR_LAYOUT, PlanarDynamics2D
 from launchsim.losses import LossBudget, loss_budget
 from launchsim.metrics_planar import MaxQ, max_q
 from launchsim.phases import ASSIST_KIND, RunTrace
-from launchsim.phases.planar import GRAVITY_TURN, KICK
+from launchsim.phases.planar import (
+    COAST_PRE_IGN,
+    COAST_STAGING,
+    GRAVITY_TURN,
+    KICK,
+    LTG_BURN,
+    VERTICAL_RISE,
+)
 from launchsim.search import (
     FINAL_MODE,
     FinalResult,
@@ -84,24 +94,32 @@ class Shipped:
 
 REOPTIMISED_RUNS = ("pad", "silo_cold", "silo_cold_lag")
 """Runs of experiments/silo_screening_2d.yaml whose whole search the slow test repeats
-tightened: the pad (no step cap in use), silo_cold (push and ramp caps) and
+tightened: the pad (the planar cap only), silo_cold (push and ramp caps) and
 silo_cold_lag (push and lag caps)."""
-FIXED_RUNS = (
-    "pad",
-    "silo_cold",
-    pytest.param("silo_cold_lag", marks=pytest.mark.slow),
-)
-"""The same runs flown at the fixed gamma*; silo_cold_lag (about 9 s, its lag cap spans
-the whole stage-1 burn) is slow."""
+FIXED_RUNS = tuple(pytest.param(n, marks=pytest.mark.slow) for n in REOPTIMISED_RUNS)
+"""The same runs flown at the fixed gamma*, all slow since the 2 s planar cap (build
+step 26a: the first test of each pair flies both searches, 5.0 s on the pad and 5.2 s
+on silo_cold, above the 5 s fast-test limit; silo_cold_lag about 9 s, its lag cap spans
+the whole stage-1 burn)."""
+_SILO_KINDS = frozenset({ASSIST_KIND, COAST_PRE_IGN, KICK, GRAVITY_TURN, COAST_STAGING, LTG_BURN})
 CAPPED_KINDS = {
+    "pad": frozenset({VERTICAL_RISE, KICK, GRAVITY_TURN, COAST_STAGING, LTG_BURN}),
+    "silo_cold": _SILO_KINDS,
+    "silo_cold_lag": _SILO_KINDS,
+}
+"""The phase kinds of each run's recorded trace that fly a finite max_step: every planar
+flight phase (the planar cap planar_max_step_s, user decision of 2026-09-30) and the
+push cap on the track (ASSIST); only the pad's HOLD (its ramp runs in the closed-form
+hold) flies uncapped."""
+BELOW_PLANAR_CAP = {
     "pad": frozenset(),
     "silo_cold": frozenset({ASSIST_KIND, KICK}),
     "silo_cold_lag": frozenset({ASSIST_KIND, KICK, GRAVITY_TURN}),
 }
-"""The phase kinds of each run's recorded trace that fly a finite max_step: the push cap
-on the track (ASSIST), the ramp cap of silo_cold's 2 s ramp (KICK) and the lag cap of
-silo_cold_lag's first-order startup (KICK and the whole GRAVITY_TURN); the pad has none
-(its ramp runs in the closed-form hold)."""
+"""The kinds whose smallest cap lies below the planar cap: the push cap on the track
+(ASSIST), the ramp cap of silo_cold's 2 s ramp (KICK) and the lag cap of
+silo_cold_lag's first-order startup (KICK and the whole GRAVITY_TURN); every other
+capped kind flies exactly planar_max_step_s."""
 CAP_RATIO_RTOL = 1e-12
 """Relative tolerance [-] on the tightened/shipped max_step ratio (both are the same
 quotient t / n with n doubled exactly)."""
@@ -206,15 +224,21 @@ def _caps(trace: RunTrace) -> dict[str, float]:
 
 
 def _assert_capped_where_pushed(
-    ta: RunTrace, tb: RunTrace, conv: ConvergenceConfig, name: str
+    ta: RunTrace, tb: RunTrace, conv: ConvergenceConfig, name: str, planar_cap_s: float
 ) -> None:
     """The run pushes on the track exactly when it is not the pad; the recorded shipped
     (ta) and tightened (tb) traces fly a finite max_step in exactly the kinds of
-    CAPPED_KINDS[name], and each tightened cap is max_step_factor times the shipped one
-    (the halving really reaches the flown phases)."""
+    CAPPED_KINDS[name], the smallest cap of a kind lies below the shipped planar cap
+    planar_cap_s [s] exactly for BELOW_PLANAR_CAP[name] and equals it otherwise, and
+    each tightened cap is
+    max_step_factor times the shipped one (the halving really reaches the flown
+    phases)."""
     assert any(p.spec.kind == ASSIST_KIND for p in ta.phases) == (name != "pad")
     ca, cb = _caps(ta), _caps(tb)
     assert set(ca) == set(cb) == CAPPED_KINDS[name]
+    below = {kind for kind, cap in ca.items() if cap < planar_cap_s}
+    assert below == BELOW_PLANAR_CAP[name]
+    assert all(ca[kind] == planar_cap_s for kind in set(ca) - below)
     for kind, cap in ca.items():
         ratio = cb[kind] / cap
         assert ratio == pytest.approx(conv.max_step_factor, rel=CAP_RATIO_RTOL), kind
@@ -267,7 +291,7 @@ def test_fixed_gamma_losses_and_max_q_converge(
     qa, qb = _max_q(ta, shipped.checks), _max_q(tb, shipped.checks)
     assert _close(qa.q_pa, qb.q_pa, conv.rel_tol, 0.0)
     assert _close(qa.t_s, qb.t_s, conv.rel_tol, 0.0)
-    _assert_capped_where_pushed(ta, tb, conv, name)
+    _assert_capped_where_pushed(ta, tb, conv, name, shipped.ctx.settings.planar_max_step_s)
 
 
 @dataclass(frozen=True)
@@ -348,4 +372,6 @@ def test_reoptimised_search_converges(reoptimised: Callable[[str], Reoptimised],
     qa, qb = _max_q(ra.trace, r.shipped.checks), _max_q(rb.trace, r.shipped.checks)
     assert _close(qa.q_pa, qb.q_pa, conv.rel_tol, 0.0)
     assert _close(qa.t_s, qb.t_s, conv.rel_tol, 0.0)
-    _assert_capped_where_pushed(ra.trace, rb.trace, conv, name)
+    _assert_capped_where_pushed(
+        ra.trace, rb.trace, conv, name, r.shipped.ctx.settings.planar_max_step_s
+    )

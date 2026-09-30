@@ -1311,6 +1311,15 @@ class PlanarPlanner:
             tr.add_event(name, te, spec.kind, spec.stage_index, event_state(res, name, te))
         return res
 
+    def _step_cap(self, schedule: ThrustSchedule | None, t: float) -> float:
+        """The max_step [s] of a planar flight phase starting at t [s]: the ramp or lag
+        cap of ``prelude.max_step_cap`` (math.inf for a coast, schedule None, or a
+        burn at full thrust) capped at ``settings.planar_max_step_s`` (docs/physics.md,
+        "Integrator": the cap keeps DOP853 from stepping across the clustered transonic
+        C_D knots in one step, the noise floor of the gamma* inner solve). The HOLD and
+        the track push (``prelude``) do not use it."""
+        return min(max_step_cap(schedule, t, self.settings), self.settings.planar_max_step_s)
+
     def _unpowered(self) -> PlanarParams:
         """PlanarParams of an unpowered phase."""
         return self.env.params(None, None, self.vehicle)
@@ -1349,7 +1358,8 @@ class PlanarPlanner:
         ground. Returns (t, y, how), how in {"time", "apex", "impact"}; an apex
         continues falling unless stop_at_apex; an impact sets tr.status. A falling
         phase that starts on the ground (within ATOL_M, moving down) is the impact
-        itself (a zero-length pass-through), as in the 1-D planner."""
+        itself (a zero-length pass-through), as in the 1-D planner. Every sub-phase
+        integrates with max_step = planar_max_step_s (``_step_cap``)."""
         params = self._unpowered()
         while True:
             rising = self._rising(t, y, params, hint)
@@ -1357,7 +1367,9 @@ class PlanarPlanner:
             events: tuple[EventSpec, ...] = (
                 (ev_radial_apex(),) if rising else (ev_ground(self.model, self.z_ground_m),)
             )
-            spec = PhaseSpec(kind, k, t, t_end, rhs_planar, params, events, self.atol)
+            spec = PhaseSpec(
+                kind, k, t, t_end, rhs_planar, params, events, self.atol, self._step_cap(None, t)
+            )
             if not rising and self._on_ground_falling(y):
                 note = (
                     f"{kind} starts on the ground (alt within {ATOL_M:.3g} m of "
@@ -1395,7 +1407,8 @@ class PlanarPlanner:
     ) -> tuple[str, float, np.ndarray]:
         """One lit mode of stage k from t [s]: sub-phases of kind ``kind`` split at the
         thrust kinks (the ramp end is logged as ``ramp_end``), each with the step cap
-        of ``prelude.max_step_cap`` and the events propellant (m - m_empty_kg, with
+        ``_step_cap`` (``prelude.max_step_cap``, capped at planar_max_step_s) and the
+        events propellant (m - m_empty_kg, with
         m_empty_kg defaulting to stage 1's burnout mass ``stack_dry_mass_kg(k)``; NaN
         leaves the event out: stage 2's virtual propellant in a search), the ground
         (unless ground is False: a rising rise, which its apex split ends before it can
@@ -1420,7 +1433,7 @@ class PlanarPlanner:
                 params,
                 (*base, *extra),
                 self.atol,
-                max_step_cap(schedule, t, self.settings),
+                self._step_cap(schedule, t),
             )
             res = self._integrate(tr, spec, y)
             t, y = res.t_end, res.y_end

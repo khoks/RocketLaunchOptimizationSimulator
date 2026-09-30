@@ -21,7 +21,9 @@ from pydantic import ValidationError
 
 from launchsim import cli, sim
 from launchsim.config import (
+    BLOCKING_ROLE,
     BRENTQ_MIN_RTOL,
+    DIAGNOSTIC_ROLE,
     PLANAR_SHARED_KEYS,
     SHARED_KEYS,
     ChecksConfig,
@@ -796,6 +798,88 @@ def test_planar_per_run_paths_may_not_move_the_integrator(
         ExperimentConfig.model_validate(exp)
 
 
+PLANAR_MAX_STEP_S = 2.0
+"""The shipped planar flight-phase step cap [s] (user decision of 2026-09-30)."""
+
+
+def test_every_shipped_planar_experiment_is_checked(repo_root: Path) -> None:
+    """PLANAR_EXPERIMENTS lists every planar_2d experiment in experiments/, so the
+    explicit-field checks (the planar cap and every shared threshold) cannot miss a new
+    one: validation lets an omitted planar_max_step_s take its 2 s default, and only
+    these tests require it to be written out."""
+    planar = {
+        path.stem
+        for path in (repo_root / "experiments").glob("*.yaml")
+        if _load(path).get("dynamics") == "planar_2d"
+    }
+    assert planar == set(PLANAR_EXPERIMENTS)
+
+
+def test_shipped_planar_cap_is_explicit_and_shared(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """Every shipped planar experiment states integrator.planar_max_step_s explicitly
+    (2 s; no silent default), and every run it resolves (baseline, variants, sweep
+    points, sensitivity cases, bounds and calibration cases) carries that one value, down
+    to the IntegratorSettings the planner reads."""
+    for name in PLANAR_EXPERIMENTS:
+        assert raw[name]["baseline"]["integrator"]["planar_max_step_s"] == PLANAR_MAX_STEP_S
+        r = resolved[name]
+        runs = [*r.runs.values()]
+        for sweep in r.sweeps:
+            for point in sweep:
+                runs.append(point.run)
+                if point.paired_baseline is not None:
+                    runs.append(point.paired_baseline)
+        runs += [c.run for c in r.sensitivity]
+        for bound in r.bounds:
+            runs += [*bound.runs.values(), bound.baseline]
+        runs += list(r.cases.values())
+        assert len(runs) > 1, name
+        caps = {run.run.integrator.planar_max_step_s for run in runs}
+        assert caps == {PLANAR_MAX_STEP_S}, name
+        settings = IntegratorSettings.from_config(r.baseline.run.integrator)
+        assert settings.planar_max_step_s == PLANAR_MAX_STEP_S
+
+
+@pytest.mark.parametrize("where", ["variant", "sweep", "sensitivity", "bound", "case"])
+def test_planar_cap_may_not_differ_between_runs(
+    raw: dict[str, dict[str, Any]], silo2d: dict[str, Any], where: str
+) -> None:
+    """A per-run planar_max_step_s (any value, the shipped one included) is refused with
+    a message naming the setting: the cap is one integrator setting of the whole
+    experiment. A calibration case cannot address the integrator at all."""
+    path = "integrator.planar_max_step_s"
+    exp = _small(silo2d)
+    message = r"no integrator setting may differ.*planar_max_step_s"
+    if where == "variant":
+        exp["variants"] = {
+            "silo_cold": {**exp["variants"]["silo_cold"], "integrator": {"planar_max_step_s": 1.0}}
+        }
+    elif where == "sweep":
+        exp["sweeps"] = [{"of": "silo_cold", "axes": {path: [1.0, 2.0]}}]
+    elif where == "sensitivity":
+        exp["sensitivity"] = {"of": ["silo_cold"], "params": {path: 0.1}}
+    elif where == "bound":
+        exp["bounds"] = [{"name": "b", "of": ["silo_cold"], "overrides": {path: 1.0}}]
+    else:
+        exp = copy.deepcopy(raw["calibration_f9_2d"])
+        exp["cases"] = {"c": {"overrides": {path: 1.0}}}
+        message = "vehicle. paths only"
+    with pytest.raises(ValidationError, match=message):
+        ExperimentConfig.model_validate(exp)
+
+
+@pytest.mark.parametrize("bad", [0.0, -2.0, math.inf, math.nan])
+def test_planar_cap_is_finite_and_positive(bad: float) -> None:
+    """integrator.planar_max_step_s must be finite and > 0 [s]; the default is the shipped
+    2 s, and IntegratorSettings copies it from the config."""
+    with pytest.raises(ValidationError, match="planar_max_step_s"):
+        IntegratorConfig.model_validate({"planar_max_step_s": bad})
+    assert IntegratorConfig().planar_max_step_s == PLANAR_MAX_STEP_S
+    assert IntegratorSettings.from_config(IntegratorConfig()) == IntegratorSettings()
+
+
 def test_one_d_variants_keep_their_integrator_freedom(
     repo_root: Path, f9_vehicle_dict: dict[str, Any]
 ) -> None:
@@ -879,6 +963,35 @@ def test_checks_carry_the_section_11_run_thresholds() -> None:
     assert (c.identity_tol_mps, c.insertion_e_max) == (1.0e-5, 1.0e-6)
     with pytest.raises(ValidationError):
         ChecksConfig(insertion_e_max=1.0)
+
+
+def test_m2_role_defaults_to_diagnostic_and_is_explicit(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """checks.m2_role (user decision of 2026-09-30): diagnostic by default, blocking
+    accepted, anything else refused; every shipped planar experiment writes it out as
+    diagnostic, and every resolved run carries it in its planar checks."""
+    assert ChecksConfig().m2_role == DIAGNOSTIC_ROLE == "diagnostic"
+    assert ChecksConfig(m2_role="blocking").m2_role == BLOCKING_ROLE == "blocking"
+    with pytest.raises(ValidationError, match="m2_role"):
+        ChecksConfig.model_validate({"m2_role": "advisory"})
+    for name in PLANAR_EXPERIMENTS:
+        assert raw[name]["checks"]["m2_role"] == DIAGNOSTIC_ROLE, name
+        roles = {run.run.planar.checks.m2_role for run in resolved[name].runs.values()}
+        assert roles == {DIAGNOSTIC_ROLE}, name
+
+
+def test_m2_role_may_not_differ_between_runs(
+    silo2d: dict[str, Any], gate_vehicle: dict[str, Any]
+) -> None:
+    """The M2 role is part of the experiment-level checks block: a variant may not set
+    its own."""
+    exp = _small(silo2d)
+    exp["variants"] = {
+        "silo_cold": {**exp["variants"]["silo_cold"], "checks": {"m2_role": "blocking"}}
+    }
+    with pytest.raises(ValidationError, match="experiment-level shared block"):
+        resolve_experiment(exp, gate_vehicle)
 
 
 def test_convergence_block_defaults() -> None:

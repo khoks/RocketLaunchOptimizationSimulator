@@ -106,6 +106,12 @@ FigureOfMerit = Literal["payload", "residual", "none"]
 SEARCHED_FIGURES: tuple[str, ...] = ("payload", "residual")
 """Figures of merit that run the guidance search (payload capacity, residual at P)."""
 NO_SEARCH: FigureOfMerit = "none"
+CheckRole = Literal["diagnostic", "blocking"]
+"""Role of a screening-beat check: a blocking check's fail gives status bug_suspect and
+blocks findings; a diagnostic check's is computed and reported only (docs/physics.md,
+"Screening-beat rule (2-D)")."""
+DIAGNOSTIC_ROLE: CheckRole = "diagnostic"
+BLOCKING_ROLE: CheckRole = "blocking"
 PLANAR_STAGE_COUNT = 2
 """planar_2d guidance has one law per stage: stage1 (kick, gravity turn), stage2 (LTG)."""
 LTG_GUESS_RUNGS = ("warm", "physics", "steep", "shallow")
@@ -637,8 +643,16 @@ IntegratorMethod = Literal["DOP853", "RK45"]
 class IntegratorConfig(_Model):
     """solve_ivp settings and the output sampling interval: method (DOP853 or RK45),
     rtol, first step [s], max_step caps (steps per ramp, per lag tau, per push), the
-    open-phase guard t_max [s] and the time-series interval sample_dt [s]. On a
-    planar_2d run rtol must equal ``search.final_rtol`` (RunConfig checks it)."""
+    planar flight-phase step cap planar_max_step_s [s] (finite, > 0; every planar
+    flight phase integrates with max_step = min(its ramp or lag cap, this); the HOLD,
+    the track push and every vertical_1d phase ignore it, so a value set on a
+    vertical_1d run is accepted and has no effect; omitted, it takes the 2 s default,
+    and the shipped planar experiments state it explicitly (a test, not this model,
+    enforces that): user decision of 2026-09-30),
+    the open-phase guard t_max [s] and the time-series interval sample_dt [s]. On a
+    planar_2d run rtol must equal ``search.final_rtol`` (RunConfig checks it), and no
+    integrator setting, planar_max_step_s included, may differ between the runs of an
+    experiment (ExperimentConfig refuses it)."""
 
     method: IntegratorMethod = "DOP853"
     rtol: float = Field(default=1e-10, gt=0.0)
@@ -646,6 +660,7 @@ class IntegratorConfig(_Model):
     ramp_steps: int = Field(default=10, ge=1)
     lag_steps_per_tau: int = Field(default=4, ge=1)
     push_steps: int = Field(default=50, ge=1)
+    planar_max_step_s: float = Field(default=2.0, gt=0.0, allow_inf_nan=False)
     t_max_s: float = Field(default=3600.0, gt=0.0)
     sample_dt_s: float = Field(default=0.05, gt=0.0)
 
@@ -975,7 +990,8 @@ class ConvergenceConfig(_Model):
     convergence row): dividing every tolerance by tighten_factor (search and final
     rtol, atol, the LTG acceptance thresholds ltg.accept_r_m and ltg.accept_vr_mps, and
     the delta, payload and gamma xtols; the LTG finite-difference steps unchanged) and
-    multiplying the max_step caps by max_step_factor must move each figure of merit by
+    multiplying the max_step caps by max_step_factor (the ramp, lag and push caps and
+    the planar flight-phase cap planar_max_step_s) must move each figure of merit by
     less than rel_tol, with absolute
     floors for near-zero terms: loss_floor_mps [m/s] for any loss term and
     margin_floor_kg [kg-equivalent] for margins. gamma* is interpreted only to
@@ -996,7 +1012,8 @@ class ConvergenceConfig(_Model):
 
 class ChecksConfig(_Model):
     """Bug and flag thresholds of the planar pipeline (plan sections 5 and 7, amendments
-    3 and 13); a failed check gives status bug_suspect or a flag, never a warning.
+    3 and 13); a failed blocking check gives status bug_suspect or a flag, never a
+    warning (M2 blocks only with m2_role blocking).
 
     closure_tol_mps [m/s]: rocket-equation closure. identity_tol_mps [m/s]: the 2-D
     loss-identity residual of a run. insertion_e_max: the largest eccentricity an
@@ -1010,7 +1027,11 @@ class ChecksConfig(_Model):
     unconstrained. vk_margin_kg [kg]: the v_k fairness rule (decision 5).
     gamma_sensitivity_step_deg [deg]: the gamma* step h of the gamma*-sensitivity
     diagnostic (a matched run is also evaluated at gamma*_ref -/+ h; a diagnostic that
-    never changes a check's verdict). convergence: amendment 3."""
+    never changes a check's verdict). m2_role: ``diagnostic`` (the default, the user's
+    decision of 2026-09-30) or ``blocking`` (the pre-registered rule): with diagnostic an
+    M2 fail is still computed and reported but gives no bug_suspect and blocks no
+    finding; the closure, the loss identity, the attribution check and M3 to M5 block
+    findings either way. convergence: amendment 3."""
 
     closure_tol_mps: float = Field(default=1.0e-5, gt=0.0)
     identity_tol_mps: float = Field(default=1.0e-5, gt=0.0)
@@ -1026,6 +1047,7 @@ class ChecksConfig(_Model):
     unconstrained_kick_mps: float = Field(default=120.0, gt=0.0)
     vk_margin_kg: float = Field(default=5.0, ge=0.0)
     gamma_sensitivity_step_deg: float = Field(default=0.5, gt=0.0, le=5.0)
+    m2_role: CheckRole = DIAGNOSTIC_ROLE
     convergence: ConvergenceConfig = ConvergenceConfig()
 
     @field_validator("grav_ratio_bounds", "bp_ratio_bounds")
@@ -1472,8 +1494,8 @@ def _refuse_integrator(what: str) -> None:
     """Raise ValueError for a per-run integrator change on planar_2d."""
     raise ValueError(
         f"{what}: on planar_2d no integrator setting may differ between runs (method, "
-        "rtol, steps, caps and sample_dt_s are the baseline's, so compared runs integrate "
-        "and sample alike)"
+        "rtol, steps, the max_step caps including the shared planar_max_step_s, and "
+        "sample_dt_s are the baseline's, so compared runs integrate and sample alike)"
     )
 
 

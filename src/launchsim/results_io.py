@@ -819,11 +819,32 @@ PLANAR_SWEEP_INDEX_TEXT: tuple[str, ...] = (
     "payload_delta_upper_bound",
     "search_status",
     "screening_status",
+    "screening_diagnostic_failed",
 )
 """Text columns of a planar sweep_index.csv: the kick regime per point (plan decision 5),
 whether the kick is faster than checks.unconstrained_kick_mps and whether the dP* is an
-unthrottled/unconstrained upper bound (True/False), the search status and the screening
-status (bug_suspect blocks findings; not_checked has no attribution)."""
+unthrottled/unconstrained upper bound (True/False), the search status, the screening
+status (bug_suspect blocks findings; not_checked has no attribution) and the failed
+diagnostic checks (M2 with checks.m2_role diagnostic: reported, blocking nothing, so a
+point whose status is ok still shows its M2 fail; ``none`` when none failed; a list is
+written by ``index_text``)."""
+INDEX_LIST_SEPARATOR = "; "
+"""Separator of a list-valued text cell of sweep_index.csv (``index_text``)."""
+INDEX_EMPTY_LIST_TEXT = "none"
+"""Text cell of an empty list in sweep_index.csv (``index_text``)."""
+
+
+def index_text(value: Any) -> str | None:
+    """One text cell of a planar sweep_index.csv: None stays None (an empty cell), a list
+    or tuple is joined with INDEX_LIST_SEPARATOR (INDEX_EMPTY_LIST_TEXT when empty), any
+    other value is ``str(value)``."""
+    if value is None:
+        return None
+    if isinstance(value, list | tuple):
+        return INDEX_LIST_SEPARATOR.join(str(v) for v in value) or INDEX_EMPTY_LIST_TEXT
+    return str(value)
+
+
 PLANAR_SWEEP_PAIRED_COLUMN = "paired_baseline"
 """Column naming each point's paired baseline (empty for an unpaired sweep)."""
 
@@ -999,7 +1020,7 @@ def planar_sweep_index_frame(sweep: SweepResult, root: Path) -> pd.DataFrame:
             row[key] = value if _is_finite_number(value) else None
         for key in PLANAR_SWEEP_INDEX_TEXT:
             value = comp.get(key) if key in comp else rr.result.metrics.get(key)
-            row[key] = None if value is None else str(value)
+            row[key] = index_text(value)
         row["status"] = rr.result.status
         rows.append(row)
     columns = [
