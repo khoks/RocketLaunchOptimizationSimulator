@@ -1,0 +1,31 @@
+P_ref 26054.396243494975 own gamma* deg {'pad': 22.9891, 'pad_instant': 22.9119, 'silo_instant': 21.3776, 'silo_cold': 21.6465}
+
+== gamma* 22.9891 deg
+pad           margin     0.0001  Jgrav_meco  1091.1065  Jgrav  1491.9754 Jsteer  88.9880 Jsteer_meco   0.0259 Jbp  63.1439 Jdrag 26.0363 pre  14.4078 V0   0.0000 | MECO t 151.328 alt 69485.8 v_rel 2665.032 m 161454.4 gmeco 22.9891
+pad_instant   margin     9.4145  Jgrav_meco  1099.6584  Jgrav  1498.8394 Jsteer  87.3675 Jsteer_meco   0.0243 Jbp  63.2434 Jdrag 25.7531 pre   0.0000 V0   0.0000 | MECO t 152.328 alt 69939.9 v_rel 2671.071 m 161454.4 gmeco 22.9891
+silo_instant  margin   191.6181  Jgrav_meco  1074.1964  Jgrav  1439.7526 Jsteer  62.7666 Jsteer_meco   0.0558 Jbp  46.4003 Jdrag 22.0216 pre   0.0000 V0  76.7072 | MECO t 154.936 alt 79357.1 v_rel 2793.757 m 161454.4 gmeco 22.9891
+silo_cold     margin   159.5042  Jgrav_meco  1093.6292  Jgrav  1465.0962 Jsteer  66.0951 Jsteer_meco   0.0205 Jbp  49.4762 Jdrag 22.1851 pre   0.0000 V0  76.7072 | MECO t 156.436 alt 77676.9 v_rel 2771.123 m 161454.4 gmeco 22.9891
+  pad_instant - pad: d margin +9.4145  d Jgrav_meco +8.5519 post-MECO g+s gain +3.3069 d MECO alt +454.1 m, d MECO v_rel +6.039
+  silo_instant - pad: d margin +191.6180  d Jgrav_meco -16.9101 post-MECO g+s gain +61.5641 d MECO alt +9871.3 m, d MECO v_rel +128.726
+  silo_cold - pad: d margin +159.5041  d Jgrav_meco +2.5228 post-MECO g+s gain +52.2896 d MECO alt +8191.1 m, d MECO v_rel +106.091
+  silo_instant - pad_instant d Jgrav_meco -25.4620; silo_cold - silo_instant +19.4329; pad_instant - pad +8.5519
+
+== gamma* 21.6465 deg
+pad           margin    -3.9351  Jgrav_meco  1075.0628  Jgrav  1472.1378 Jsteer 111.5377 Jsteer_meco   0.0274 Jbp  63.2738 Jdrag 26.5403 pre  14.4078 V0   0.0000 | MECO t 151.328 alt 67599.2 v_rel 2680.455 m 161454.4 gmeco 21.6465
+pad_instant   margin     6.0280  Jgrav_meco  1083.5644  Jgrav  1478.9781 Jsteer 109.4130 Jsteer_meco   0.0257 Jbp  63.3708 Jdrag 26.2459 pre   0.0000 V0   0.0000 | MECO t 152.328 alt 68043.9 v_rel 2686.557 m 161454.4 gmeco 21.6465
+silo_instant  margin   199.3778  Jgrav_meco  1057.0527  Jgrav  1419.3714 Jsteer  74.5119 Jsteer_meco   0.0592 Jbp  46.4902 Jdrag 22.3470 pre   0.0000 V0  76.7072 | MECO t 154.936 alt 77260.3 v_rel 2810.486 m 161454.4 gmeco 21.6465
+silo_cold     margin   165.2476  Jgrav_meco  1076.6833  Jgrav  1444.8155 Jsteer  79.7151 Jsteer_meco   0.0217 Jbp  49.5697 Jdrag 22.5291 pre   0.0000 V0  76.7072 | MECO t 156.436 alt 75618.8 v_rel 2787.635 m 161454.4 gmeco 21.6465
+  pad_instant - pad: d margin +9.9630  d Jgrav_meco +8.5016 post-MECO g+s gain +3.7844 d MECO alt +444.7 m, d MECO v_rel +6.102
+  silo_instant - pad: d margin +203.3129  d Jgrav_meco -18.0101 post-MECO g+s gain +71.8140 d MECO alt +9661.1 m, d MECO v_rel +130.032
+  silo_cold - pad: d margin +169.1826  d Jgrav_meco +1.6205 post-MECO g+s gain +60.7599 d MECO alt +8019.6 m, d MECO v_rel +107.180
+  silo_instant - pad_instant d Jgrav_meco -26.5117; silo_cold - silo_instant +19.6306; pad_instant - pad +8.5016
+
+== gamma* 21.3776 deg
+pad           margin    -5.7115  Jgrav_meco  1071.8029  Jgrav  1468.1530 Jsteer 117.0321 Jsteer_meco   0.0277 Jbp  63.3011 Jdrag 26.6481 pre  14.4078 V0   0.0000 | MECO t 151.328 alt 67214.7 v_rel 2683.583 m 161454.4 gmeco 21.3776
+pad_instant   margin     4.3638  Jgrav_meco  1080.2942  Jgrav  1474.9886 Jsteer 114.8044 Jsteer_meco   0.0260 Jbp  63.3975 Jdrag 26.3512 pre   0.0000 V0   0.0000 | MECO t 152.328 alt 67657.5 v_rel 2689.698 m 161454.4 gmeco 21.3776
+silo_instant  margin   199.9899  Jgrav_meco  1053.5682  Jgrav  1415.2792 Jsteer  77.8013 Jsteer_meco   0.0599 Jbp  46.5091 Jdrag 22.4162 pre   0.0000 V0  76.7072 | MECO t 154.936 alt 76832.8 v_rel 2813.883 m 161454.4 gmeco 21.3776
+silo_cold     margin   165.4491  Jgrav_meco  1073.2392  Jgrav  1440.7430 Jsteer  83.3861 Jsteer_meco   0.0220 Jbp  49.5893 Jdrag 22.6024 pre   0.0000 V0  76.7072 | MECO t 156.436 alt 75199.3 v_rel 2790.987 m 161454.4 gmeco 21.3776
+  pad_instant - pad: d margin +10.0753  d Jgrav_meco +8.4913 post-MECO g+s gain +3.8818 d MECO alt +442.8 m, d MECO v_rel +6.115
+  silo_instant - pad: d margin +205.7014  d Jgrav_meco -18.2347 post-MECO g+s gain +73.9022 d MECO alt +9618.1 m, d MECO v_rel +130.300
+  silo_cold - pad: d margin +171.1606  d Jgrav_meco +1.4363 post-MECO g+s gain +62.4866 d MECO alt +7984.5 m, d MECO v_rel +107.404
+  silo_instant - pad_instant d Jgrav_meco -26.7261; silo_cold - silo_instant +19.6710; pad_instant - pad +8.4913

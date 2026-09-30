@@ -15,8 +15,9 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 - [x] M5 Findings RQ2 and RQ3 (preliminary) in docs/findings/, status lines updated, commit (2026-09-29)
 - [x] M6 Phase 2 plan (2-D ascent, rotation, drag, guidance, payload search, calibration): written 2026-09-29 from 3 designs, 9 reviews and a critique; defaults below apply unless the user objects
 - [x] M7 Phase 2 gate (closed as a documented miss, accepted by the user 2026-09-30): validation tests pass; the pre-registered gate vehicle (set C) MISSES HIGH: P* 26,054 kg, +14.3%, 974 kg above the 25,080 kg band edge (set A 24,700 kg +8.3% inside; set B 25,416 kg +11.5% outside). Stopped for your decision (2026-09-30); docs/findings/CAL-f9-leo-2d.md
-- [ ] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary
-- [ ] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO
+- [x] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary (2026-09-30)
+- [x] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO (2026-09-30)
+- [ ] M10 Phase 3 plan (assist models: linear_motor, curved track, cable winch, air column, braking, tilted exit) and the structural-mass question the 2-D results raised
 
 ## Build steps (plan, "Build sequence")
 
@@ -54,8 +55,8 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | 25 | Convergence and performance gate; slow marks | [x] | every CLAUDE.md Phase 2 required test green; fast tier 43 s, full 230 s |
 | 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [x] | frozen at c2849b7; run 20260930T100100Z; gate C misses high (M7 [!]); every numerical check passes; slow regression test without a band |
 | 26a | Step cap (2 s, planar) and M2 as diagnostic; pre-registration amendment; calibration re-run | [x] | amendment 7ad381f; calibration re-run 20260930T173928Z reproduces every case within 0.002 kg |
-| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [~] | runs done from clean 7ad381f (trigger 20260930T174950Z, screening run 175743Z and sweep 182453Z, bridge 185034Z); findings in progress |
-| 28 | Close Phase 2 | [ ] | |
+| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [x] | runs from clean 7ad381f; v_k rule did not fire (pad best v_k 30, +0.72 kg); every screening beat explained by the matched attribution (no bug_suspect); findings RQ2-2d, RQ3-2d, RQ6 with physics, honesty and compliance reviews |
+| 28 | Close Phase 2 | [x] | physics.md research notes, probe records kept in docs/findings/probes, status lines |
 
 ## Priorities
 
@@ -129,11 +130,22 @@ Phase 0-1:
 
 - Stage-1 measurement, not a finding (physics.md, Time-shift mechanism): at equal gamma* at MECO, a 77 m/s vertical silo release saves about a quarter of the gravity loss the plan's time-shift estimate predicted when both runs light at release, and about none for the cold start (0.5 s + 2 s ramp in the air); the silo leaves about 9% heavier than the pad at the same speed.
 
+- 2-D, gate vehicle, sweep-optimized and unthrottled: silo_cold (3 g0, 100 m, cold start) carries +1,498.8 kg more to 200 km than the pad (+5.75%; +1,345 to +1,667 kg under +/-10% vehicle and drive perturbations), about 2.0x the 765 kg ideal-screening estimate at its release speed. The loss breakdown explains it: release speed, the pad's clamped-ramp burn (130.7 kg gross, 83.1 kg net), and a trajectory gain that for the cold start appears after MECO. Against the unphysical pad_instant the gain is +1,415.8 kg.
+- The costs not yet charged are large: no structural mass is modelled for the 4.0 g0 full-stack load (22.5 MN); about 8.1 t of silo-only stage-1 strengthening would cancel the gain (184 kg of payload per tonne of stage-1 dry mass, derived). The drive is prescribed-acceleration, the carriage is 0 t, the shaft has no air drag, and the kick has no alpha aero.
+- Ignition timing in 2-D costs more than 1-D predicted: the 0.5 s + 2 s cold-start loss is 2.14x the 1-D value on the same masses (301 kg on README masses, 327 kg on the gate vehicle). The hot ramp ending at release beats cold by about 235 kg; a full hot start ties cold (-18.5 to +0.1 kg under +/-10%).
+- Unthrottled max-Q falls about 16% for every silo variant (a faster, higher trajectory through the transonic region), while q-alpha is above the pad's in every silo variant.
+
 ## Open questions for you (Phase 2)
 
 - None open. Answered 2026-09-30 (see the decisions log).
 
 ## Known issues and observations
+
+- Probe citations in RQ3-2d rest on labelled probes kept in docs/findings/probes/RQ3-2d/ (launchsim equal-gamma* probe, a low-v_k probe, and a reviewer's independent stage-2 swap probe); none is a shipped run.
+- Sensitivity was pre-registered only for silo_cold and silo_hot_full; silo_hot_ramp_on_track, the ignition-timing points and silo_instant carry no +/-10% range.
+- M4 (blocking) is not robust over gamma* +/- 0.5 deg at some sweep points and at pad_instant; M2 (diagnostic) likewise at several points. The verdicts at gamma*_ref stand and the notes disclose all.
+- A reviewer's richer stage-1 guidance probe (untested integrator) suggests both runs gain about 0.9 t with better guidance and the gap widens; worth a launchsim check as a Phase 5 pre-study.
+- summary.md also lists cross-vehicle sensitivity comparisons (a perturbed variant against the unperturbed baseline, not_checked by design) as 'Unexplained beats'; the same-perturbation comparisons are attributed and ok.
 
 - silo_cold_lag's searched run takes about 25 s at normal machine speed, close to the 30 s per-run budget, because the lag's step cap holds for the whole lag-lit burn; options (a planar lag cap over the first few tau) are open, not needed for correctness.
 - Planar convergence tests now run in the slow tier only (with the cap each takes just over 5 s).

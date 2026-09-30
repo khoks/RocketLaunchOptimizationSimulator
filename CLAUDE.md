@@ -6,7 +6,7 @@ launch-assist-sim is a research simulator for ground-powered launch assist. A ro
 
 - Background, prior art, first-order numbers and research questions: README.md. Read it before planning experiments.
 - Report findings plainly, including ones that undercut the hypothesis that every m/s of assist helps.
-- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 (2-D ascent to orbit): model, guidance, searches and pipeline built and validated; the labelled calibration ran and the pre-registered gate vehicle missed high (+14.3%, docs/findings/CAL-f9-leo-2d.md), so M7 awaits the user's decision; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
+- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Phase 3 (assist models) is next; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
 
 ## Commands
 
@@ -113,6 +113,7 @@ No physics feature is used in an experiment until its test passes. Required test
 Calibration is separate from validation; label it as such:
 
 - configs/vehicles/generic_f9_class.yaml reaches ~22,800 kg to low Earth orbit (28.5°, expendable) within ±10% after a guidance sweep. SpaceX doesn't publish the reference altitude, so fix one (e.g., 200 km circular) and state it. Record every fitted parameter.
+  - Phase 2 result: the pre-registered 2-D gate fork generic_f9_class_2d.yaml reached 26,054 kg to 200 km circular (+14.3%, a miss high); the user accepted the documented miss on 2026-09-30 (docs/findings/CAL-f9-leo-2d.md).
 - Published claims (e.g., NASA's "over 20%" propellant saving) are benchmarks to explain, never targets to tune toward.
 - The hobby-scale case matches RocketPy apogee within ±5% (Phase 6).
 

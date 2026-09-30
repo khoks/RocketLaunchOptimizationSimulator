@@ -4772,6 +4772,27 @@ validation). Three observations from it belong with the model description:
   its location is set by the atmosphere model's derivative discontinuity. The value is
   above the flown range, as the unthrottled bias predicts.
 
+## Phase 2 research notes (build step 27)
+
+Details and numbers are in docs/findings/RQ3-silo-screening-2d.md, RQ2-ignition-timing-2d.md
+and RQ6-aero-2d-preliminary.md. Three observations belong with the model description:
+
+- **Max-Q is a corner maximum at the ICAO tropopause** (11,019.07 m geometric) in every
+  shipped orbital run except the fastest release of the accel x stroke sweep (171.5 m/s).
+  The dq/dt jump there comes from the atmosphere model's derivative discontinuity, so the
+  max-Q location is a property of the model, and max-Q values are unthrottled.
+- **The attribution's kg shares depend on the basis.** On the matched-payload basis
+  (every run flown at the pad's P*) the release-speed term of silo_cold is 695.8 kg; on the
+  capacity basis it is 770.0 kg, against the 765 kg ideal-screening yardstick. The m/s
+  terms are basis-independent; quote kg shares with their basis.
+- **The stage-1 gravity effect of a vertical release is a cancellation for a cold start.**
+  At the gate P_ref and equal gamma* (22.99 deg), the release alone saves 25.46 m/s of
+  stage-1 gravity loss (silo_instant vs pad_instant); the cold start's unpowered 0.5 s and
+  in-air 2 s ramp give back 19.43 m/s, and the pad's lighter liftoff (it burns about 2.7 t
+  clamped) another 8.55 m/s, so silo_cold ends 2.52 m/s worse to MECO. Its trajectory gain
+  appears after MECO, from a higher, faster MECO state at the same mass (labelled launchsim
+  probe, docs/findings/probes/RQ3-2d/probe_eqgamma/).
+
 ## Test-to-equation map
 
 Every expected value in a test is computed there from constants and closed forms,

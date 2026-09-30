@@ -30,7 +30,7 @@ build-backend = "uv_build"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["*.md", "notebooks"]
+extend-exclude = ["*.md", "notebooks", "docs/findings/probes"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "NPY", "RUF"]

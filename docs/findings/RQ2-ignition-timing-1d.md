@@ -226,3 +226,20 @@ Copied from results/silo_screening_1d/20260929T103623Z/plots/:
   F_drive and F_int coincide here too.
 - RQ2-silo_hot_full_drive_power.png and RQ2-silo_cold_drive_power.png: drive power,
   0.97 GW peak hot versus 1.63 GW cold.
+
+## Superseded by 2-D
+
+The payload questions of this note are superseded by RQ2-ignition-timing-2d.md
+(planar 2-D model, payload capacity to a 200 km orbit; runs
+results/silo_screening_2d/20260930T175743Z and 20260930T182453Z, git 7ad381f). The
+text above is kept unchanged as the record of the 1-D model. In short
+(sweep-optimized, unthrottled, on the gate vehicle that calibrates +14.3 % high): the
+structure of the ignition loss found here holds in 2-D (it depends on t_d + t_r/2 or
+t_d + tau, and a lag of tau costs as much as a ramp of 2 tau), but its payload cost is
+larger. On these README masses the shipped 0.5 s + 2 s start costs 32.30 m/s of
+margin (301.3 kg; bridge, results/silo_bridge_2d_readme/20260930T185034Z), 2.14 times
+this note's 15.12 m/s; on the gate vehicle it costs 34.7 m/s (327 kg), 2.29 to 2.45
+times the constant-g formula across the 2-D ignition sweeps (none of these has a
++/-10 % run). Lighting on the carriage with the ramp ending at release beats the cold
+start by 235 kg (no sensitivity run), and the full hot start ties the cold one
+(-10.2 kg nominal, -18.5 to +0.1 kg under the +/-10 % cases).

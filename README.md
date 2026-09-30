@@ -2,7 +2,7 @@
 
 A research simulator for giving rockets a ground-powered head start, and for finding out what that head start is really worth.
 
-**Status:** Phases 0 and 1 done: scaffold, atmosphere, vehicle and experiment configs, CLI, results I/O, the 1-D vertical model with staging, and the constant-acceleration vertical silo push (concept A) with first numbers in `docs/findings/`. Phase 2 (2-D ascent to orbit) is next; `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
+**Status:** Phases 0-2 done: the 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%, documented in `docs/findings/CAL-f9-leo-2d.md`), and the first 2-D concept-A findings are in `docs/findings/`. Phase 3 (assist models) is next; `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
 
 ## Why this exists
 

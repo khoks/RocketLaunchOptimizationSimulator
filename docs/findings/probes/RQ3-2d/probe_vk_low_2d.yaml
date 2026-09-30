@@ -1,0 +1,79 @@
+# PROBE (step 27 findings, not a shipped experiment): guidance_trigger_2d with v_k below the tested range.
+# Methods check for RQ3-2d (label guidance_study): is the shared kick trigger v_k = 50 m/s
+# fair to both the pad and the silo? A paired sweep of guidance.kick.v_kick_mps re-runs the
+# pad baseline at every point with the same trigger, so each silo_cold point is compared
+# with its own pad. Output: dP* per matched pair, and best-vs-best (each run at its own
+# best tested v_k). Pre-registered rule (decision 5): if the pad's P* at any tested v_k
+# beats its v_k = 50 value by more than checks.vk_margin_kg, every headline dP* is quoted
+# against the pad's best v_k. Runs first in step 27.
+#
+# Shared blocks: identical to experiments/calibration_f9_2d.yaml (a test pins that);
+# only a paired sweep of a guidance_study may vary guidance.* paths.
+name: probe_vk_low_2d
+label: guidance_study
+vehicle: D:/DEV/ClaudeProjects/SpaceRocketOptimization/configs/vehicles/generic_f9_class_2d.yaml
+dynamics: planar_2d
+site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: true}
+target_orbit: {kind: circular, altitude_km: 200}
+guidance:
+  kick: {v_kick_mps: 50, mode: hold_to_alignment, max_duration_s: 60, deadline_s: 60}
+  stage1: gravity_turn
+  stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}
+search:
+  figure_of_merit: payload
+  gamma_grid_deg: [8, 36, 2]
+  gamma_refine_halfwidth_deg: 4
+  gamma_xatol_deg: 0.01
+  gamma_refine_maxiter: 30
+  gamma_root_tol_deg: 0.01
+  delta_bracket_deg: [0.1, 45]
+  delta_step_deg: 0.25
+  delta_xtol_rad: 1.0e-10
+  payload_half_bracket_t: 2.0
+  payload_max_expand: 6
+  payload_backoff_max: 4
+  payload_xtol_kg: 0.5
+  brentq_rtol: 8.881784197001252e-16         # 4 eps, scipy brentq's floor
+  final_payload_xtol_kg: 0.05
+  final_bracket_kg: [20, 1000]
+  search_rtol: 1.0e-8
+  search_atol_scale: 10
+  final_rtol: 1.0e-10
+  penalty: {base_kg: 1.0e6, per_deg_kg: 1.0e4}
+  ltg: {accept_r_m: 1.0, accept_vr_mps: 1.0e-3, r_scale_m: 1.0e4, vr_scale_mps: 100,
+        fd_step_search: 1.0e-4, fd_step_final: 1.0e-5, max_iters: 25, max_halvings: 6,
+        grid_max_rungs: 2, p0_offset_deg: 5, pf_deg: -1, steep_p0_deg: 35,
+        shallow_guess: [0.3, 0.3], pitch_bounds_deg: [-45, 75], tau_max_factor: 2.0,
+        mass_floor_factor: 0.5}
+checks:
+  closure_tol_mps: 1.0e-5
+  identity_tol_mps: 1.0e-5                 # 2-D loss-identity residual (plan section 11)
+  insertion_e_max: 1.0e-6                  # insertion eccentricity (plan section 11)
+  grav_ratio_bounds: [0.33, 3.0]
+  bp_ratio_bounds: [0.33, 3.0]
+  min_term_mps: 1.0
+  max_drag_steer_share: 0.5
+  anchor_margin_kg: 1.5
+  search_final_flag_rel: 1.0e-4
+  maxq_scan_points: 256
+  maxq_xatol_s: 1.0e-6
+  unconstrained_kick_mps: 120
+  vk_margin_kg: 5
+  convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
+                gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
+  gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+  m2_role: diagnostic                      # M2 reported, never bug_suspect (user decision 2026-09-30)
+baseline:                                  # pad: held down, full thrust exactly at release
+  name: pad
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: insertion
+  integrator: {method: DOP853, rtol: 1.0e-10, planar_max_step_s: 2.0, sample_dt_s: 0.05}
+variants:
+  silo_cold: {assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100,
+                       carriage_mass_t: 0, brake_decel_g: 5, drive_efficiency: 0.5,
+                       exhaust_impingement_fraction: 0.0, shaft: vented,
+                       track: {angle_deg: 90, exit_altitude_m: 0}},
+              ignition: {stage1: {t_ign_s: 0.5}}}                                    # 0.5 s delay + 2 s ramp
+sweeps:
+  - {of: silo_cold, paired: true, axes: {guidance.kick.v_kick_mps: [10, 20, 40]}}

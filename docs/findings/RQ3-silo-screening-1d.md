@@ -208,3 +208,22 @@ Copied from results/silo_screening_1d/20260929T103623Z/plots/:
   apex 300.27 m at 7.83 s, back at the mouth at 15.66 s at 76.7 m/s.
 - RQ3-silo_sled_22t_track_forces.png: the 22 t carriage raises the drive force to
   22.14 MN while the interface force stays at 21.28 MN.
+
+## Superseded by 2-D
+
+The payload questions of this note are superseded by RQ3-silo-screening-2d.md (planar
+2-D model, payload capacity to a 200 km orbit; runs results/silo_screening_2d/
+20260930T175743Z and 20260930T182453Z, results/silo_bridge_2d_readme/20260930T185034Z
+and results/guidance_trigger_2d/20260930T174950Z, git 7ad381f) and, for max-Q and
+q-alpha, RQ6-aero-2d-preliminary.md. The text above is kept unchanged as the record of
+the 1-D model. In short (preliminary: sweep-optimized, unthrottled, free kick with no
+alpha aerodynamics, no structural mass charged for the 4 g0 track load): the reference
+cold-start silo gains +1,498.8 kg on the gate vehicle (+1,345 to +1,667 kg under the
++/-10 % cases; the vehicle calibrates +14.3 % high; 83.1 kg net, 130.7 kg gross, of it
+is the pad's clamped-ramp convention) and +1,394.4 kg on these README masses (bridge
+experiment), against this note's 621 kg ideal-screening equivalent of the burnout
+delta. The difference is partly a change of figure of merit and of the fork's inputs,
+and partly lower gravity and steering loss after release, back-pressure, drag and the
+pad's hold-down burn (RQ3-silo-screening-2d.md, Bridge). Exit speed, track loads,
+drive energy and power, facility length and the failed-ignition coast carry over,
+scaled by the heavier 2-D stack.
