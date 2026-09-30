@@ -1,29 +1,66 @@
 """Validated configuration: pydantic v2 models for vehicle and experiment YAML.
 
 No file I/O here: cli.py reads the YAML and hands plain dicts to these models. Vehicle
-files are all-Quantity (every number is ``{value, source}`` or ``{value, assumed: true}``;
-a bare number raises). Experiment files use bare numbers. Units are carried by field
-suffixes (``_t``, ``_kN``, ``_s``, ``_m``, ``_deg``, ``_g``) and converted to SI here and
-nowhere else, through launchsim.units.
+files are all-Quantity (every number is ``{value, source}`` or ``{value, assumed: true}``,
+or an entry of a QuantityList table such as the C_D(M) table, which carries one
+provenance for all its lists; a bare number raises). Experiment files use bare numbers.
+Units are carried by field suffixes (``_t``, ``_kN``, ``_s``, ``_m``, ``_m2``, ``_W_m2``,
+``_deg``, ``_g``) and converted to SI here and nowhere else, through launchsim.units.
 
-Phase 1 limits are enforced as validation errors: no Earth rotation ("Phase 2"), vertical
-tracks only ("Phase 2"), and only the ``none`` and ``constant_accel`` assist models
-(``linear_motor`` and ``cable_winch`` are "planned for Phase 3").
+Model selector and shared blocks (Phase 2). An experiment picks its model once with the
+experiment-level ``dynamics`` (``vertical_1d``, the default, or ``planar_2d``). The
+experiment-level shared blocks ``dynamics``, ``site``, ``guidance``, ``search``,
+``target_orbit`` and ``checks`` are injected into every run dict by resolve_experiment
+(``dynamics`` and ``site`` as run keys; the last four under ``RunConfig.planar``), only
+when the experiment declares them, so a 1-D experiment that declares none resolves to
+the same run dicts as before. Variants, sweeps (except a paired guidance sweep of a
+``guidance_study``), sensitivity cases and bounds may not touch them; calibration
+``cases`` may change ``site``, ``target_orbit`` and the vehicle, and are never compared.
+
+Limits enforced as validation errors: Earth rotation only on planar_2d runs (the 1-D
+model keeps omega_p = 0: "a Phase 2 feature"), vertical tracks only ("a Phase 3
+feature"), only the ``none`` and ``constant_accel`` assist models (``linear_motor`` and
+``cable_winch`` are "planned for Phase 3"), no heating-rule fairing on a vertical_1d run
+("a planar_2d feature"), and ``end: insertion`` only on planar_2d runs.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import itertools
+import json
 import math
-from dataclasses import dataclass
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from launchsim import units
-from launchsim.constants import OMEGA_EARTH_RADS, P_SEA_LEVEL_PA
-from launchsim.vehicle import Engine, Stage, Startup, StartupKind, Vehicle
+from launchsim.constants import OMEGA_EARTH_RADS, P_SEA_LEVEL_PA, R_EARTH_M
+from launchsim.vehicle import (
+    HEATING_TRIGGER,
+    CdTable,
+    DragModel,
+    Engine,
+    FairingDrop,
+    FairingDropKind,
+    FairingTrigger,
+    Stage,
+    Startup,
+    StartupKind,
+    Vehicle,
+)
 
 VEHICLE_PREFIX = "vehicle."
 OVERRIDE_NOTE = "override"
@@ -37,6 +74,59 @@ survive (assist ``model``; startup ``kind``)."""
 LATITUDE_RANGE_DEG = (-90.0, 90.0)
 AZIMUTH_RANGE_DEG = (0.0, 360.0)
 VERTICAL_TRACK_DEG = 90.0
+
+DynamicsKind = Literal["vertical_1d", "planar_2d"]
+VERTICAL_1D: DynamicsKind = "vertical_1d"
+PLANAR_2D: DynamicsKind = "planar_2d"
+ExperimentLabel = Literal["calibration", "guidance_study"]
+CALIBRATION_LABEL: ExperimentLabel = "calibration"
+GUIDANCE_STUDY_LABEL: ExperimentLabel = "guidance_study"
+PLANAR_KEY = "planar"
+"""Run-dict key that holds the injected planar shared blocks (``RunConfig.planar``)."""
+PLANAR_SHARED_KEYS = ("guidance", "search", "target_orbit", "checks")
+"""Experiment-level blocks injected under ``RunConfig.planar``, in this order."""
+RUN_SHARED_KEYS = ("dynamics", "site")
+"""Experiment-level blocks injected as run keys of the same name, in this order."""
+SHARED_KEYS = (*RUN_SHARED_KEYS, *PLANAR_SHARED_KEYS)
+"""Every experiment-level shared block (identical for every run of an experiment)."""
+SHARED_PATH_ROOTS = frozenset({*SHARED_KEYS, PLANAR_KEY})
+"""First segments of the run paths a variant, sweep, sensitivity case or bound may not
+address (the shared blocks, under either their experiment or their run-dict name)."""
+PAIRED_SWEEP_ROOT = "guidance"
+"""The one shared block a paired sweep of a guidance_study may vary."""
+VEHICLE_ROOT = "vehicle"
+"""First segment of a vehicle path: on planar_2d a sweep may vary it only when paired."""
+PAIRED_SWEEP_ROOTS = frozenset({PAIRED_SWEEP_ROOT, VEHICLE_ROOT})
+"""The path roots a paired sweep may vary: both are re-applied to the paired baseline."""
+INSERTION_END = "insertion"
+IMPACT_END = "impact"
+PLANAR_ENDS = ("stage1_burnout", "insertion", "apex", "impact")
+"""Ends a planar_2d run supports in Phase 2 (all_burnout is deferred)."""
+FigureOfMerit = Literal["payload", "residual", "none"]
+SEARCHED_FIGURES: tuple[str, ...] = ("payload", "residual")
+"""Figures of merit that run the guidance search (payload capacity, residual at P)."""
+NO_SEARCH: FigureOfMerit = "none"
+PLANAR_STAGE_COUNT = 2
+"""planar_2d guidance has one law per stage: stage1 (kick, gravity turn), stage2 (LTG)."""
+LTG_GUESS_RUNGS = ("warm", "physics", "steep", "shallow")
+"""The LTG guess ladder, in the order solve_ltg tries it (plan section 6)."""
+BRENTQ_MIN_RTOL = 4.0 * sys.float_info.epsilon
+"""scipy.optimize.brentq's smallest accepted rtol (also its default), 8.88e-16."""
+GRID_STEP_REL_TOL = 1e-9
+"""Relative slack when checking that a grid's span is a whole number of steps."""
+FLIGHT_PATH_RANGE_DEG = (-90.0, 90.0)
+"""Open interval a flight-path angle (gamma* grid points, fixed gamma*) must lie in."""
+PITCH_RANGE_DEG = (-90.0, 90.0)
+"""Open interval an LTG pitch angle must lie in (tan p finite, no sign flip past vertical)."""
+KICK_RANGE_DEG = (0.0, 90.0)
+"""Open interval the kick-angle bracket must lie in (0: no turn; 90: horizontal)."""
+INTEGRATOR_KEY = "integrator"
+"""Run-dict key of the integrator block; on planar_2d no per-run path may address it."""
+ROTATION_REFUSAL = (
+    "include_rotation: true is a Phase 2 feature: it needs dynamics: planar_2d "
+    "(vertical_1d keeps omega_p = 0)"
+)
+"""Refusal text for Earth rotation on a vertical_1d site (SiteConfig and RunConfig)."""
 
 
 class _Model(BaseModel):
@@ -53,6 +143,14 @@ def _is_number(x: object) -> bool:
 # --------------------------------------------------------------------------- vehicle file
 
 
+def _check_provenance(source: str | None, assumed: bool) -> None:
+    """Raise ValueError unless exactly one of a non-blank source or assumed: true is given."""
+    if source is not None and not source.strip():
+        raise ValueError("source must not be blank")
+    if (source is not None) == assumed:
+        raise ValueError("give exactly one of source or assumed: true")
+
+
 class Quantity(_Model):
     """A sourced number from a vehicle file: exactly one of ``source`` or ``assumed``.
 
@@ -62,13 +160,6 @@ class Quantity(_Model):
     source: str | None = None
     assumed: bool = False
     note: str | None = None
-
-    @field_validator("source")
-    @classmethod
-    def _source_not_blank(cls, v: str | None) -> str | None:
-        if v is not None and not v.strip():
-            raise ValueError("source must not be blank")
-        return v
 
     @model_validator(mode="before")
     @classmethod
@@ -85,9 +176,103 @@ class Quantity(_Model):
 
     @model_validator(mode="after")
     def _one_provenance(self) -> Quantity:
-        if (self.source is not None) == self.assumed:
-            raise ValueError("give exactly one of source or assumed: true")
+        _check_provenance(self.source, self.assumed)  # the rule QuantityList shares
         return self
+
+
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
+
+
+class QuantityList(_Model):
+    """Sourced list data from a vehicle file: one provenance for a whole table.
+
+    Base for vehicle-file tables whose numbers come as lists (the C_D(M) table): exactly
+    one of ``source`` or ``assumed: true`` (plus an optional ``note``), checked by the
+    same ``_check_provenance`` as Quantity, covers every number in the table.
+    Subclasses declare the list fields; every entry of every list field must be a finite
+    number (a bool, a string or NaN raises instead of being coerced). A bare list where a
+    QuantityList is expected raises.
+    """
+
+    source: str | None = None
+    assumed: bool = False
+    note: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _numbers_only(cls, data: Any) -> Any:
+        if isinstance(data, QuantityList):
+            return data
+        if not isinstance(data, dict):
+            raise ValueError(
+                "bare value; vehicle-file tables need their lists plus a source or assumed: true"
+            )
+        for key in cls.model_fields.keys() - {"source", "assumed", "note"}:
+            values = data.get(key)
+            if isinstance(values, list) and not all(_is_number(v) for v in values):
+                raise ValueError(f"{key}: every entry must be a number")
+        return data
+
+    @model_validator(mode="after")
+    def _one_provenance(self) -> QuantityList:
+        _check_provenance(self.source, self.assumed)
+        return self
+
+
+class CdMachConfig(QuantityList):
+    """The C_D(M) table of a vehicle file: knot Mach numbers and C_D values (both
+    dimensionless), equal length, Mach strictly increasing from >= 0, C_D >= 0."""
+
+    mach: list[FiniteFloat]
+    cd: list[FiniteFloat]
+
+    @model_validator(mode="after")
+    def _valid_table(self) -> CdMachConfig:
+        self.to_table()  # CdTable raises ValueError with the rule that failed
+        return self
+
+    def to_table(self) -> CdTable:
+        """The frozen PCHIP CdTable through the knots."""
+        return CdTable.pchip(self.mach, self.cd)
+
+
+class AeroConfig(_Model):
+    """Vehicle aerodynamics: reference area [m^2], C_D(M) table, interpolation and the
+    cd_scale knob (a required Quantity, 1.0 nominal, so that a ``vehicle.aero.cd_scale``
+    sensitivity case always finds its nominal value). SI already; nothing is converted."""
+
+    reference_area_m2: Quantity
+    cd_scale: Quantity
+    interpolation: Literal["pchip"] = "pchip"
+    cd_mach: CdMachConfig
+
+    def to_drag_model(self) -> DragModel:
+        """The frozen DragModel (DragModel checks A_ref > 0 and cd_scale > 0)."""
+        return DragModel(
+            table=self.cd_mach.to_table(),
+            reference_area_m2=self.reference_area_m2.value,
+            cd_scale=self.cd_scale.value,
+        )
+
+
+class FairingDropConfig(_Model):
+    """Vehicle-file fairing rule as a block: ``trigger`` (staging, never or
+    free_molecular_heating) and, for the heating trigger only, ``limit_W_m2`` [W/m^2] as
+    a Quantity. The plain strings ``staging`` and ``never`` remain accepted in place of
+    the block."""
+
+    trigger: FairingTrigger
+    limit_W_m2: Quantity | None = None
+
+    @model_validator(mode="after")
+    def _limit_matches_trigger(self) -> FairingDropConfig:
+        self.to_fairing_drop()  # FairingDrop raises ValueError with the rule that failed
+        return self
+
+    def to_fairing_drop(self) -> FairingDrop:
+        """The frozen FairingDrop."""
+        limit = None if self.limit_W_m2 is None else self.limit_W_m2.value
+        return FairingDrop(trigger=self.trigger, limit_W_m2=limit)
 
 
 class StartupConfig(_Model):
@@ -195,19 +380,24 @@ class ScreeningConfig(_Model):
 
 
 class VehicleConfig(_Model):
-    """A vehicle file: stages in firing order, fairing and payload, fairing drop rule.
+    """A vehicle file: stages in firing order, fairing and payload, fairing drop rule,
+    screening Isp and (optional) aerodynamics.
 
-    Validation builds the Vehicle dataclass once, so the physical checks that live there
-    (thrust and Isp > 0, dry mass >= 0, propellant > 0, coast and startup durations >= 0,
-    payload and fairing >= 0, screening Isp > 0) fail at load with the vehicle named."""
+    fairing_drop is the string ``staging`` or ``never`` (Phase 1 form) or a
+    FairingDropConfig block (needed for the heating trigger). Validation builds the
+    Vehicle dataclass once, so the physical checks that live there (thrust and Isp > 0,
+    dry mass >= 0, propellant > 0, coast and startup durations >= 0, payload and fairing
+    >= 0, screening Isp > 0, A_ref and cd_scale > 0) fail at load with the vehicle
+    named."""
 
     name: str
     description: str | None = None
     stages: list[StageConfig]
     fairing_mass_t: Quantity
     payload_mass_t: Quantity
-    fairing_drop: Literal["staging", "never"] = "staging"
+    fairing_drop: FairingDropKind | FairingDropConfig = "staging"
     screening: ScreeningConfig | None = None
+    aero: AeroConfig | None = None
 
     @model_validator(mode="after")
     def _checks(self) -> VehicleConfig:
@@ -229,12 +419,14 @@ class VehicleConfig(_Model):
         isps = (
             () if self.screening is None else tuple(q.value for q in self.screening.stage_isp_eff_s)
         )
+        fairing = self.fairing_drop
         return Vehicle(
             stages=tuple(s.to_stage() for s in self.stages),
             fairing_mass_kg=units.t_to_kg(self.fairing_mass_t.value),
             payload_mass_kg=units.t_to_kg(self.payload_mass_t.value),
-            fairing_drop=self.fairing_drop,
+            fairing_drop=fairing if isinstance(fairing, str) else fairing.to_fairing_drop(),
             screening_isp_s=isps,
+            aero=None if self.aero is None else self.aero.to_drag_model(),
         )
 
 
@@ -242,8 +434,9 @@ class VehicleConfig(_Model):
 
 
 class SiteConfig(_Model):
-    """Launch site: latitude [-90, 90] and azimuth [0, 360] in degrees (clockwise from
-    north); Earth rotation is a Phase 2 feature."""
+    """Launch site of a vertical_1d run: latitude [-90, 90] and azimuth [0, 360] in
+    degrees (clockwise from north). Earth rotation is refused here (the 1-D model keeps
+    omega_p = 0); a planar_2d run's site is a PlanarSiteConfig, which allows it."""
 
     latitude_deg: float = Field(default=28.5, ge=LATITUDE_RANGE_DEG[0], le=LATITUDE_RANGE_DEG[1])
     azimuth_deg: float = Field(default=90.0, ge=AZIMUTH_RANGE_DEG[0], le=AZIMUTH_RANGE_DEG[1])
@@ -253,7 +446,7 @@ class SiteConfig(_Model):
     @classmethod
     def _no_rotation_yet(cls, v: bool) -> bool:
         if v:
-            raise ValueError("include_rotation: true is a Phase 2 feature (omega_p = 0 now)")
+            raise ValueError(ROTATION_REFUSAL)
         return v
 
     @property
@@ -274,9 +467,41 @@ class SiteConfig(_Model):
         return OMEGA_EARTH_RADS * math.cos(self.latitude_rad) * math.sin(self.azimuth_rad)
 
 
+class PlanarSiteConfig(SiteConfig):
+    """Launch site of a planar_2d run: the SiteConfig fields, every one explicit (no
+    defaults, so rotation is always a stated choice), and Earth rotation allowed.
+
+    omega_p_rads is omega_E cos(lat) sin(az) [rad/s] with rotation on, 0 with it off:
+    the orbit-normal component of Earth rotation. At azimuth 90 deg the site velocity
+    omega_p R_E and the inclination are exact, but the air's out-of-plane velocity
+    omega_E sin(lat) r sin(theta) is neglected, so the planar model is exact only for an
+    equatorial east launch (an approximation otherwise)."""
+
+    latitude_deg: float = Field(ge=LATITUDE_RANGE_DEG[0], le=LATITUDE_RANGE_DEG[1])
+    azimuth_deg: float = Field(ge=AZIMUTH_RANGE_DEG[0], le=AZIMUTH_RANGE_DEG[1])
+    include_rotation: bool
+
+    @field_validator("include_rotation")
+    @classmethod
+    def _no_rotation_yet(cls, v: bool) -> bool:
+        return v  # overrides SiteConfig's refusal: rotation is a planar_2d feature
+
+
+def planar_site(site: dict[str, Any]) -> PlanarSiteConfig:
+    """Validate a raw site dict as a planar_2d site; raises ValueError naming the rule
+    (every field explicit) and pydantic's error."""
+    try:
+        return PlanarSiteConfig.model_validate(site)
+    except ValidationError as exc:
+        raise ValueError(
+            "a planar_2d site needs latitude_deg, azimuth_deg and include_rotation, each "
+            f"given explicitly: {exc}"
+        ) from exc
+
+
 class TrackConfig(_Model):
-    """Straight track: angle above horizontal [deg] (90 only in Phase 1) and the altitude
-    of its exit [m] relative to the pad datum z = 0."""
+    """Straight track: angle above horizontal [deg] (90 only until Phase 3) and the
+    altitude of its exit [m] relative to the pad datum z = 0."""
 
     angle_deg: float = VERTICAL_TRACK_DEG
     exit_altitude_m: float = 0.0
@@ -285,7 +510,10 @@ class TrackConfig(_Model):
     @classmethod
     def _vertical_only(cls, v: float) -> float:
         if v != VERTICAL_TRACK_DEG:
-            raise ValueError("track angle_deg other than 90 is a Phase 2 feature")
+            raise ValueError(
+                "track angle_deg other than 90 is a Phase 3 feature (Phase 2 releases "
+                "from vertical tracks only)"
+            )
         return v
 
     @property
@@ -402,9 +630,17 @@ class IgnitionConfig(_Model):
         return base if self.startup is None else self.startup.resolve(base)
 
 
-class IntegratorConfig(_Model):
-    """solve_ivp settings and the output sampling interval."""
+IntegratorMethod = Literal["DOP853", "RK45"]
+"""solve_ivp methods CLAUDE.md allows."""
 
+
+class IntegratorConfig(_Model):
+    """solve_ivp settings and the output sampling interval: method (DOP853 or RK45),
+    rtol, first step [s], max_step caps (steps per ramp, per lag tau, per push), the
+    open-phase guard t_max [s] and the time-series interval sample_dt [s]. On a
+    planar_2d run rtol must equal ``search.final_rtol`` (RunConfig checks it)."""
+
+    method: IntegratorMethod = "DOP853"
     rtol: float = Field(default=1e-10, gt=0.0)
     first_step_s: float = Field(default=1e-3, gt=0.0)
     ramp_steps: int = Field(default=10, ge=1)
@@ -414,18 +650,502 @@ class IntegratorConfig(_Model):
     sample_dt_s: float = Field(default=0.05, gt=0.0)
 
 
-RunEnd = Literal["stage1_burnout", "all_burnout", "apex", "impact"]
+# ------------------------------------------------ planar shared blocks (experiment level)
+
+
+def _ordered_pair(v: tuple[float, float], what: str) -> tuple[float, float]:
+    """Raise ValueError unless a (low, high) pair has low < high."""
+    if not v[0] < v[1]:
+        raise ValueError(f"{what} must be [low, high] with low < high, got {list(v)}")
+    return v
+
+
+def _check_pitch(v: float, what: str) -> float:
+    """Raise ValueError unless an LTG pitch angle [deg] lies inside PITCH_RANGE_DEG."""
+    lo, hi = PITCH_RANGE_DEG
+    if not lo < v < hi:
+        raise ValueError(f"{what} must lie inside ({lo:g}, {hi:g}) deg (tan p finite), got {v}")
+    return v
+
+
+class KickConfig(_Model):
+    """Stage-1 pitch kick (hold-to-alignment): trigger speed v_kick [m/s] (|v_rel| with
+    v_r > 0; a vehicle already faster at its first lit instant kicks at ignition), the
+    kick law, the kick's time limit max_duration [s] (kick_timeout beyond it) and the
+    deadline [s] after stage-1 ignition by which v_kick must be reached with v_r > 0
+    (no_kick otherwise). Both limits are guidance failures, never warnings."""
+
+    v_kick_mps: float = Field(default=50.0, gt=0.0)
+    mode: Literal["hold_to_alignment"] = "hold_to_alignment"
+    max_duration_s: float = Field(default=60.0, gt=0.0)
+    deadline_s: float = Field(default=60.0, gt=0.0)
+
+
+class Stage2GuidanceConfig(_Model):
+    """Stage-2 steering: linear-tangent law tan p = a - b tau in the local-horizontal
+    frame (tau from stage-2 ignition), cut off on the orbital energy E = E*."""
+
+    law: Literal["linear_tangent"] = "linear_tangent"
+    frame: Literal["local_horizontal"] = "local_horizontal"
+    cutoff: Literal["energy"] = "energy"
+
+
+class GuidanceConfig(_Model):
+    """The shared guidance parametrisation: stage-1 kick then gravity turn along v_rel,
+    stage-2 linear-tangent steering. Free parameters (gamma*, delta, a, b) are solved or
+    sweep-optimized per run, never set here (except the fixed guidance of
+    ``search.figure_of_merit: none``)."""
+
+    kick: KickConfig = KickConfig()
+    stage1: Literal["gravity_turn"] = "gravity_turn"
+    stage2: Stage2GuidanceConfig = Stage2GuidanceConfig()
+
+
+class TargetOrbitConfig(_Model):
+    """Target orbit: circular (the only kind in Phase 2) at altitude_km [km] above the
+    R_E sphere (geometric, spherical Earth)."""
+
+    kind: Literal["circular"] = "circular"
+    altitude_km: float = Field(gt=0.0)
+
+    @property
+    def altitude_m(self) -> float:
+        """Target altitude above the R_E sphere [m]."""
+        return units.km_to_m(self.altitude_km)
+
+    @property
+    def radius_m(self) -> float:
+        """Target radius r_t = R_E + altitude [m] (ECI, spherical Earth)."""
+        return R_EARTH_M + self.altitude_m
+
+
+class PenaltyConfig(_Model):
+    """Finite objective for an infeasible gamma* grid point [kg]: -(base_kg + per_deg_kg x
+    the distance in degrees to the nearest feasible grid point). Finite and monotone, so
+    a bounded Brent refine never sees -inf (which would warn, and warnings fail tests)."""
+
+    base_kg: float = Field(default=1.0e6, gt=0.0)
+    per_deg_kg: float = Field(default=1.0e4, ge=0.0)
+
+    @property
+    def per_rad_kg(self) -> float:
+        """The distance slope per radian [kg/rad]."""
+        return self.per_deg_kg * units.rad_to_deg(1.0)
+
+
+class LtgConfig(_Model):
+    """LTG shooting settings (``solve_ltg``, plan section 6).
+
+    Acceptance: |r_c - r_t| < accept_r_m [m] and |v_r,c| < accept_vr_mps [m/s].
+    Residual scaling: F = ((r_c - r_t)/r_scale_m, v_r,c/vr_scale_mps). Damped Newton on
+    x = (a, 100 b): forward-difference steps fd_step_search / fd_step_final (in x units),
+    at most max_iters iterations and max_halvings step halvings. Guess ladder (warm,
+    physics, steep, shallow), at most grid_max_rungs rungs per grid point: physics
+    p0 = gamma_in + p0_offset_deg, p_f = pf_deg; steep p0 = steep_p0_deg; shallow x =
+    shallow_guess. Direct root: b > 0 and pitch inside pitch_bounds_deg over the burn.
+    no_cutoff when tau exceeds tau_max_factor x tau_b; the search mass floor is
+    mass_floor_factor x (m_d2 + P). Every angle (p0_offset_deg, pf_deg, steep_p0_deg and
+    both pitch bounds) lies inside the open interval (-90, 90) deg (PITCH_RANGE_DEG),
+    where tan p is finite. Degrees here, radians through the ``_rad`` properties."""
+
+    accept_r_m: float = Field(default=1.0, gt=0.0)
+    accept_vr_mps: float = Field(default=1.0e-3, gt=0.0)
+    r_scale_m: float = Field(default=1.0e4, gt=0.0)
+    vr_scale_mps: float = Field(default=100.0, gt=0.0)
+    fd_step_search: float = Field(default=1.0e-4, gt=0.0)
+    fd_step_final: float = Field(default=1.0e-5, gt=0.0)
+    max_iters: int = Field(default=25, ge=1)
+    max_halvings: int = Field(default=6, ge=0)
+    grid_max_rungs: int = Field(default=2, ge=1, le=len(LTG_GUESS_RUNGS))
+    p0_offset_deg: float = 5.0
+    pf_deg: float = -1.0
+    steep_p0_deg: float = 35.0
+    shallow_guess: tuple[float, float] = (0.3, 0.3)
+    pitch_bounds_deg: tuple[float, float] = (-45.0, 75.0)
+    tau_max_factor: float = Field(default=2.0, gt=1.0)
+    mass_floor_factor: float = Field(default=0.5, gt=0.0, lt=1.0)
+
+    @field_validator("pitch_bounds_deg")
+    @classmethod
+    def _bounds(cls, v: tuple[float, float]) -> tuple[float, float]:
+        _ordered_pair(v, "ltg.pitch_bounds_deg")
+        for x in v:
+            _check_pitch(x, "ltg.pitch_bounds_deg")
+        return v
+
+    @field_validator("p0_offset_deg", "pf_deg", "steep_p0_deg")
+    @classmethod
+    def _pitch_angles(cls, v: float, info: ValidationInfo) -> float:
+        return _check_pitch(v, f"ltg.{info.field_name}")
+
+    @property
+    def p0_offset_rad(self) -> float:
+        """Physics-guess initial pitch offset above gamma_in [rad]."""
+        return units.deg_to_rad(self.p0_offset_deg)
+
+    @property
+    def pf_rad(self) -> float:
+        """Physics-guess final pitch [rad]."""
+        return units.deg_to_rad(self.pf_deg)
+
+    @property
+    def steep_p0_rad(self) -> float:
+        """Steep-guess initial pitch [rad]."""
+        return units.deg_to_rad(self.steep_p0_deg)
+
+    @property
+    def pitch_bounds_rad(self) -> tuple[float, float]:
+        """Direct-root pitch window (low, high) [rad]."""
+        return (
+            units.deg_to_rad(self.pitch_bounds_deg[0]),
+            units.deg_to_rad(self.pitch_bounds_deg[1]),
+        )
+
+
+class SearchConfig(_Model):
+    """The shared search budget (plan section 6 and amendments 7, 13): identical for
+    every run of an experiment; ``budget_id`` hashes it.
+
+    figure_of_merit: payload (P* by the gamma* sweep), residual (m_res at the vehicle
+    payload) or none (no search: fixed_gamma_star_deg, fixed_ltg_a and fixed_ltg_b_per_s
+    [1/s] are then required, and allowed only then). gamma* grid [start, stop, step] in
+    degrees, refined by bounded Brent over +/- gamma_refine_halfwidth_deg to
+    gamma_xatol_deg in at most gamma_refine_maxiter evaluations; a delta root counts only
+    when |gamma_MECO - gamma*| <= gamma_root_tol_deg (false-root guard). Inner delta
+    solve: bracket delta_bracket_deg, stepping delta_step_deg (doubling), brentq to
+    delta_xtol_rad [rad]. Payload: bracket P_hint +/- payload_half_bracket_t [t],
+    expanded x2 at most payload_max_expand times, backed off at most payload_backoff_max
+    times, brentq to payload_xtol_kg [kg] with rtol brentq_rtol (>= 4 eps). Final
+    verification: bracket final_bracket_kg [kg] (start, maximum), brentq to
+    final_payload_xtol_kg [kg]. Integration: search_rtol with atol x search_atol_scale,
+    final_rtol (also the run's integrator.rtol) for the reported numbers; search_atol_scale
+    >= 1, so a search is never integrated more tightly than the final run. Penalty and
+    LTG settings in their blocks."""
+
+    figure_of_merit: FigureOfMerit = "payload"
+    gamma_grid_deg: tuple[float, float, float] = (8.0, 36.0, 2.0)
+    gamma_refine_halfwidth_deg: float = Field(default=4.0, gt=0.0)
+    gamma_xatol_deg: float = Field(default=0.01, gt=0.0)
+    gamma_refine_maxiter: int = Field(default=30, ge=1)
+    gamma_root_tol_deg: float = Field(default=0.01, gt=0.0)
+    delta_bracket_deg: tuple[float, float] = (0.1, 45.0)
+    delta_step_deg: float = Field(default=0.25, gt=0.0)
+    delta_xtol_rad: float = Field(default=1.0e-10, gt=0.0)
+    payload_half_bracket_t: float = Field(default=2.0, gt=0.0)
+    payload_max_expand: int = Field(default=6, ge=0)
+    payload_backoff_max: int = Field(default=4, ge=0)
+    payload_xtol_kg: float = Field(default=0.5, gt=0.0)
+    brentq_rtol: float = Field(default=BRENTQ_MIN_RTOL, ge=BRENTQ_MIN_RTOL)
+    final_payload_xtol_kg: float = Field(default=0.05, gt=0.0)
+    final_bracket_kg: tuple[float, float] = (20.0, 1000.0)
+    search_rtol: float = Field(default=1.0e-8, gt=0.0)
+    search_atol_scale: float = Field(default=10.0, ge=1.0)
+    final_rtol: float = Field(default=1.0e-10, gt=0.0)
+    penalty: PenaltyConfig = PenaltyConfig()
+    ltg: LtgConfig = LtgConfig()
+    fixed_gamma_star_deg: float | None = None
+    fixed_ltg_a: float | None = None
+    fixed_ltg_b_per_s: float | None = None
+
+    @field_validator("gamma_grid_deg")
+    @classmethod
+    def _grid(cls, v: tuple[float, float, float]) -> tuple[float, float, float]:
+        start, stop, step = v
+        if not (start < stop and step > 0.0):
+            raise ValueError(
+                "gamma_grid_deg must be [start, stop, step] with start < stop and step > 0, "
+                f"got {list(v)}"
+            )
+        n = round((stop - start) / step)
+        if not math.isclose(n * step, stop - start, rel_tol=GRID_STEP_REL_TOL):
+            raise ValueError(
+                f"gamma_grid_deg: stop - start must be a whole number of steps, got {list(v)}"
+            )
+        lo, hi = FLIGHT_PATH_RANGE_DEG
+        if not (lo < start and stop < hi):
+            raise ValueError(
+                f"gamma_grid_deg must lie inside ({lo:g}, {hi:g}) deg (a flight-path angle), "
+                f"got {list(v)}"
+            )
+        return v
+
+    @field_validator("delta_bracket_deg")
+    @classmethod
+    def _delta_bracket(cls, v: tuple[float, float]) -> tuple[float, float]:
+        lo, hi = KICK_RANGE_DEG
+        if v[0] <= lo:
+            raise ValueError("delta_bracket_deg must start above 0 (a zero kick never turns)")
+        if v[1] >= hi:
+            raise ValueError(
+                f"delta_bracket_deg must end below {hi:g} deg (a kick past horizontal dives)"
+            )
+        return _ordered_pair(v, "delta_bracket_deg")
+
+    @field_validator("final_bracket_kg")
+    @classmethod
+    def _final_bracket(cls, v: tuple[float, float]) -> tuple[float, float]:
+        if v[0] <= 0.0:
+            raise ValueError("final_bracket_kg must start above 0")
+        return _ordered_pair(v, "final_bracket_kg")
+
+    @model_validator(mode="after")
+    def _budget_rules(self) -> SearchConfig:
+        if self.final_rtol > self.search_rtol:
+            raise ValueError("search.final_rtol must not be looser than search.search_rtol")
+        if self.final_payload_xtol_kg > self.payload_xtol_kg:
+            raise ValueError("search.final_payload_xtol_kg must not exceed payload_xtol_kg")
+        fixed = (self.fixed_gamma_star_deg, self.fixed_ltg_a, self.fixed_ltg_b_per_s)
+        given = [x is not None for x in fixed]
+        if self.figure_of_merit == NO_SEARCH and not all(given):
+            raise ValueError(
+                "search.figure_of_merit: none needs fixed_gamma_star_deg, fixed_ltg_a and "
+                "fixed_ltg_b_per_s (the guidance a run flies without a search)"
+            )
+        if self.figure_of_merit != NO_SEARCH and any(given):
+            raise ValueError(
+                "fixed_gamma_star_deg, fixed_ltg_a and fixed_ltg_b_per_s are only for "
+                "search.figure_of_merit: none (a search solves them)"
+            )
+        lo, hi = FLIGHT_PATH_RANGE_DEG
+        g = self.fixed_gamma_star_deg
+        if g is not None and not lo < g < hi:
+            raise ValueError(f"fixed_gamma_star_deg must lie inside ({lo:g}, {hi:g}), got {g}")
+        return self
+
+    @property
+    def gamma_grid_points_deg(self) -> tuple[float, ...]:
+        """The gamma* grid points [deg], start + i step for i = 0..n (stop included)."""
+        start, stop, step = self.gamma_grid_deg
+        n = round((stop - start) / step)
+        return tuple(start + i * step for i in range(n + 1))
+
+    @property
+    def gamma_grid_points_rad(self) -> tuple[float, ...]:
+        """The gamma* grid points [rad]."""
+        return tuple(units.deg_to_rad(g) for g in self.gamma_grid_points_deg)
+
+    @property
+    def gamma_refine_halfwidth_rad(self) -> float:
+        """Half-width of the refine window [rad]."""
+        return units.deg_to_rad(self.gamma_refine_halfwidth_deg)
+
+    @property
+    def gamma_xatol_rad(self) -> float:
+        """Refine tolerance on gamma* [rad]."""
+        return units.deg_to_rad(self.gamma_xatol_deg)
+
+    @property
+    def gamma_root_tol_rad(self) -> float:
+        """False-root guard on |gamma_MECO(delta*) - gamma*| [rad]."""
+        return units.deg_to_rad(self.gamma_root_tol_deg)
+
+    @property
+    def delta_bracket_rad(self) -> tuple[float, float]:
+        """Kick-angle bracket (low, high) [rad]."""
+        return (
+            units.deg_to_rad(self.delta_bracket_deg[0]),
+            units.deg_to_rad(self.delta_bracket_deg[1]),
+        )
+
+    @property
+    def delta_step_rad(self) -> float:
+        """Initial kick-angle bracketing step [rad]."""
+        return units.deg_to_rad(self.delta_step_deg)
+
+    @property
+    def payload_half_bracket_kg(self) -> float:
+        """Initial payload half-bracket [kg]."""
+        return units.t_to_kg(self.payload_half_bracket_t)
+
+    @property
+    def fixed_gamma_star_rad(self) -> float | None:
+        """The fixed gamma* of figure_of_merit none [rad], else None."""
+        g = self.fixed_gamma_star_deg
+        return None if g is None else units.deg_to_rad(g)
+
+    def budget_id(self) -> str:
+        """sha256 hex digest of this block's canonical JSON (sorted keys, every field,
+        defaults included): equal budgets give equal ids, for ``search_budget_id``."""
+        text = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class ConvergenceConfig(_Model):
+    """Convergence of the shipped budget (amendment 3 and the plan's section-8
+    convergence row): dividing every tolerance by tighten_factor (search and final
+    rtol, atol, the LTG acceptance thresholds ltg.accept_r_m and ltg.accept_vr_mps, and
+    the delta, payload and gamma xtols; the LTG finite-difference steps unchanged) and
+    multiplying the max_step caps by max_step_factor must move each figure of merit by
+    less than rel_tol, with absolute
+    floors for near-zero terms: loss_floor_mps [m/s] for any loss term and
+    margin_floor_kg [kg-equivalent] for margins. gamma* is interpreted only to
+    gamma_resolution_deg [deg]."""
+
+    rel_tol: float = Field(default=1.0e-3, gt=0.0)
+    loss_floor_mps: float = Field(default=1.0e-3, gt=0.0)
+    margin_floor_kg: float = Field(default=0.5, gt=0.0)
+    gamma_resolution_deg: float = Field(default=0.1, gt=0.0)
+    tighten_factor: float = Field(default=10.0, gt=1.0)
+    max_step_factor: float = Field(default=0.5, gt=0.0, lt=1.0)
+
+    @property
+    def gamma_resolution_rad(self) -> float:
+        """gamma* reporting resolution [rad]."""
+        return units.deg_to_rad(self.gamma_resolution_deg)
+
+
+class ChecksConfig(_Model):
+    """Bug and flag thresholds of the planar pipeline (plan sections 5 and 7, amendments
+    3 and 13); a failed check gives status bug_suspect or a flag, never a warning.
+
+    closure_tol_mps [m/s]: rocket-equation closure. identity_tol_mps [m/s]: the 2-D
+    loss-identity residual of a run. insertion_e_max: the largest eccentricity an
+    inserted run may have (plan section 11). grav_ratio_bounds and
+    bp_ratio_bounds: (low, high) of d J / estimate for mechanism checks M2 and M3, the
+    latter only when |d J_bp| > min_term_mps [m/s]. max_drag_steer_share: M4, the
+    largest share of the beyond-screening part d(J_drag + J_steer) may carry.
+    anchor_margin_kg [kg]: M5 slack. search_final_flag_rel: flag |P_search - P_final| /
+    P above it. maxq_scan_points per phase and maxq_xatol_s [s]: the max-Q scan and
+    refine. unconstrained_kick_mps [m/s]: kicks faster than this are labelled
+    unconstrained. vk_margin_kg [kg]: the v_k fairness rule (decision 5).
+    gamma_sensitivity_step_deg [deg]: the gamma* step h of the gamma*-sensitivity
+    diagnostic (a matched run is also evaluated at gamma*_ref -/+ h; a diagnostic that
+    never changes a check's verdict). convergence: amendment 3."""
+
+    closure_tol_mps: float = Field(default=1.0e-5, gt=0.0)
+    identity_tol_mps: float = Field(default=1.0e-5, gt=0.0)
+    insertion_e_max: float = Field(default=1.0e-6, gt=0.0, lt=1.0)
+    grav_ratio_bounds: tuple[float, float] = (0.33, 3.0)
+    bp_ratio_bounds: tuple[float, float] = (0.33, 3.0)
+    min_term_mps: float = Field(default=1.0, ge=0.0)
+    max_drag_steer_share: float = Field(default=0.5, gt=0.0, le=1.0)
+    anchor_margin_kg: float = Field(default=1.5, ge=0.0)
+    search_final_flag_rel: float = Field(default=1.0e-4, gt=0.0)
+    maxq_scan_points: int = Field(default=256, ge=2)
+    maxq_xatol_s: float = Field(default=1.0e-6, gt=0.0)
+    unconstrained_kick_mps: float = Field(default=120.0, gt=0.0)
+    vk_margin_kg: float = Field(default=5.0, ge=0.0)
+    gamma_sensitivity_step_deg: float = Field(default=0.5, gt=0.0, le=5.0)
+    convergence: ConvergenceConfig = ConvergenceConfig()
+
+    @field_validator("grav_ratio_bounds", "bp_ratio_bounds")
+    @classmethod
+    def _ratio_bounds(cls, v: tuple[float, float]) -> tuple[float, float]:
+        if v[0] <= 0.0:
+            raise ValueError("ratio bounds must be positive")
+        return _ordered_pair(v, "ratio bounds")
+
+
+class PlanarShared(_Model):
+    """The planar shared blocks of one run (``RunConfig.planar``), filled only by
+    injection from the experiment level: guidance, search and checks (required) and the
+    target orbit (required for end: insertion and for a searched figure of merit)."""
+
+    guidance: GuidanceConfig
+    search: SearchConfig
+    target_orbit: TargetOrbitConfig | None = None
+    checks: ChecksConfig
+
+
+RunEnd = Literal["stage1_burnout", "all_burnout", "apex", "impact", "insertion"]
 
 
 class RunConfig(_Model):
-    """One run: site, assist, per-stage ignition (keyed by stage name) and where to stop."""
+    """One run: model, site, assist, per-stage ignition (keyed by stage name), where to
+    stop, integrator settings and, on a planar_2d run, the planar shared blocks.
+
+    ``dynamics``, ``site`` and ``planar`` come from the experiment level by injection
+    (resolve_experiment); a vertical_1d run may still carry its own ``site`` in the
+    baseline (the Phase 1 form). Rules: a vertical_1d run has no planar block, no Earth
+    rotation (SiteConfig) and no end: insertion; a planar_2d run needs an explicit
+    PlanarSiteConfig, the planar block, an end in PLANAR_ENDS, integrator.rtol equal to
+    search.final_rtol, end: insertion for a searched figure of merit, and a target
+    orbit for end: insertion or a search. end: impact (which every failed ignition
+    requires) skips the search automatically (``search_skip_reason``)."""
 
     name: str
+    dynamics: DynamicsKind = VERTICAL_1D
     site: SiteConfig = SiteConfig()
     assist: AssistConfig = Field(default_factory=NoAssistConfig)
     ignition: dict[str, IgnitionConfig] = Field(default_factory=dict)
     end: RunEnd = "stage1_burnout"
     integrator: IntegratorConfig = IntegratorConfig()
+    planar: PlanarShared | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _planar_site(cls, data: Any) -> Any:
+        """On a planar_2d run dict, validate ``site`` as a PlanarSiteConfig (every field
+        explicit, rotation allowed); a vertical_1d site stays a SiteConfig."""
+        if not (isinstance(data, dict) and data.get("dynamics") == PLANAR_2D):
+            return data
+        site = data.get("site")
+        if not isinstance(site, dict):
+            return data
+        return {**data, "site": planar_site(site)}
+
+    @model_validator(mode="after")
+    def _dynamics_rules(self) -> RunConfig:
+        if self.dynamics == VERTICAL_1D:
+            if self.planar is not None:
+                raise ValueError(
+                    "guidance, search, target_orbit and checks are planar_2d blocks "
+                    "(this run's dynamics is vertical_1d)"
+                )
+            if self.end == INSERTION_END:
+                raise ValueError("end: insertion needs dynamics: planar_2d")
+            if self.site.include_rotation:  # a PlanarSiteConfig instance slips past SiteConfig
+                raise ValueError(ROTATION_REFUSAL)
+            return self
+        if not isinstance(self.site, PlanarSiteConfig):
+            raise ValueError(
+                "a planar_2d run needs an explicit experiment-level site "
+                "{latitude_deg, azimuth_deg, include_rotation}"
+            )
+        if self.planar is None:
+            raise ValueError(
+                "a planar_2d run needs the experiment-level guidance, search and checks blocks"
+            )
+        if self.end not in PLANAR_ENDS:
+            raise ValueError(f"end: {self.end} is not a planar_2d end (one of {PLANAR_ENDS})")
+        search = self.planar.search
+        if self.integrator.rtol != search.final_rtol:
+            raise ValueError(
+                f"planar_2d: integrator.rtol ({self.integrator.rtol:g}) must equal "
+                f"search.final_rtol ({search.final_rtol:g}); the recorded run is flown at "
+                "the final verification's tolerance"
+            )
+        searched = self.figure_of_merit in SEARCHED_FIGURES
+        if searched and self.end != INSERTION_END:
+            raise ValueError(
+                f"search.figure_of_merit: {search.figure_of_merit} needs end: insertion "
+                f"(end: {self.end} runs only with figure_of_merit: none, or end: impact, "
+                "which skips the search)"
+            )
+        if (searched or self.end == INSERTION_END) and self.planar.target_orbit is None:
+            raise ValueError("a planar_2d run that inserts or searches needs target_orbit")
+        return self
+
+    @property
+    def search_skip_reason(self) -> str | None:
+        """Why a planar_2d run skips the search (amendment 4): ``end: impact`` (which
+        every failed ignition requires); None when it does not skip or on vertical_1d."""
+        if self.dynamics != PLANAR_2D or self.end != IMPACT_END:
+            return None
+        failed = [name for name, ign in self.ignition.items() if ign.fails]
+        if failed:
+            return f"end: impact (ignition {failed[0]} fails)"
+        return "end: impact"
+
+    @property
+    def figure_of_merit(self) -> FigureOfMerit | None:
+        """The figure of merit this run is searched for: the shared
+        search.figure_of_merit, ``none`` when the search is skipped, None on vertical_1d."""
+        if self.planar is None:
+            return None
+        if self.search_skip_reason is not None:
+            return NO_SEARCH
+        return self.planar.search.figure_of_merit
 
     @model_validator(mode="after")
     def _ignition_rules(self) -> RunConfig:
@@ -445,10 +1165,17 @@ class RunConfig(_Model):
 
 
 class SweepConfig(_Model):
-    """A full grid over dotted-path axes applied to the run named ``of``."""
+    """A full grid over dotted-path axes applied to the run named ``of``.
+
+    ``paired: true`` (planar_2d only; axes on ``guidance.*``, which address the shared
+    guidance block and need label ``guidance_study``, and on ``vehicle.*``) also re-runs
+    the baseline at every point with the same overrides, so each point is compared with
+    its own pair. On planar_2d a ``vehicle.*`` axis must be paired, so a vehicle change
+    is never booked as an assist gain."""
 
     of: str
     axes: dict[str, list[Any]]
+    paired: bool = False
 
     @field_validator("axes")
     @classmethod
@@ -472,16 +1199,155 @@ class SensitivityConfig(_Model):
         return v
 
 
+class BoundConfig(_Model):
+    """A named bound (amendment 6): each run in ``of`` (not the baseline) re-run with
+    ``overrides`` (dotted paths; ``vehicle.`` paths go to the vehicle), compared with
+    the baseline re-run under the same overrides (``paired_baseline``, always true),
+    like a paired sensitivity case. Shared-block paths are refused."""
+
+    name: str
+    of: list[str] = Field(min_length=1)
+    overrides: dict[str, Any] = Field(min_length=1)
+    paired_baseline: Literal[True] = True
+
+
+class CaseConfig(_Model):
+    """A calibration case (label calibration only): an independent run of the baseline,
+    never compared, with another vehicle file (``vehicle``, a path the caller's loader
+    reads), a partial ``site`` or ``target_orbit`` merged over the experiment's, and
+    ``overrides`` on ``vehicle.`` paths only. It must change at least one of them."""
+
+    vehicle: str | None = None
+    site: dict[str, Any] | None = None
+    target_orbit: dict[str, Any] | None = None
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _changes_something(self) -> CaseConfig:
+        given = (self.vehicle, self.site, self.target_orbit)
+        if all(x is None for x in given) and not self.overrides:
+            raise ValueError(
+                "a case must change the vehicle, site, target_orbit or a vehicle. path"
+            )
+        bad = sorted(p for p in self.overrides if not p.startswith(VEHICLE_PREFIX))
+        if bad:
+            raise ValueError(f"case overrides take vehicle. paths only, got {bad}")
+        return self
+
+
+def _path_root(path: str) -> str:
+    """First segment of a dotted path."""
+    return path.split(".", 1)[0]
+
+
+def _refuse_shared_path(path: str, what: str, paired: bool = False) -> None:
+    """Raise ValueError when a per-run path addresses an experiment-level shared block
+    (a ``guidance.*`` path is allowed only in a paired sweep)."""
+    root = _path_root(path)
+    if root in SHARED_PATH_ROOTS and not (paired and root == PAIRED_SWEEP_ROOT):
+        raise ValueError(
+            f"{what} {path!r}: {root} is an experiment-level shared block, identical for "
+            "every run (only a paired sweep of a guidance_study may vary guidance.*)"
+        )
+
+
+def _check_baseline_shared(exp: dict[str, Any]) -> None:
+    """Raise ValueError when the baseline declares a shared block itself. The one
+    exception is the Phase 1 form: a vertical_1d baseline's own ``site`` when the
+    experiment declares no site."""
+    base = exp["baseline"]
+    phase1_site = exp.get("site") is None and exp.get("dynamics") in (None, VERTICAL_1D)
+    for key in (*SHARED_KEYS, PLANAR_KEY):
+        if key not in base or (key == "site" and phase1_site):
+            continue
+        raise ValueError(
+            f"baseline sets {key!r}: {key} is an experiment-level shared block; declare it "
+            "once at the top of the experiment file"
+        )
+
+
+def shared_run_blocks(exp_dict: dict[str, Any]) -> dict[str, Any]:
+    """The run-dict entries an experiment injects into every run: ``dynamics`` and
+    ``site`` as declared, and ``planar`` holding the declared guidance, search,
+    target_orbit and checks (in that order). Only what the experiment declares (not
+    None); an empty dict for a Phase 1 experiment. Deep copies of the raw blocks."""
+    out = {k: copy.deepcopy(exp_dict[k]) for k in RUN_SHARED_KEYS if exp_dict.get(k) is not None}
+    planar = {
+        k: copy.deepcopy(exp_dict[k]) for k in PLANAR_SHARED_KEYS if exp_dict.get(k) is not None
+    }
+    if planar:
+        out[PLANAR_KEY] = planar
+    return out
+
+
+def inject_shared(run_dict: dict[str, Any], shared: dict[str, Any]) -> dict[str, Any]:
+    """A deep copy of ``run_dict`` with the ``shared`` entries placed right after
+    ``name``. With nothing to inject it is an equal copy with the key order kept, so a
+    Phase 1 run dict resolves byte-identically."""
+    if not shared:
+        return copy.deepcopy(run_dict)
+    out: dict[str, Any] = {}
+    if "name" in run_dict:
+        out["name"] = copy.deepcopy(run_dict["name"])
+    out.update(copy.deepcopy(shared))
+    out.update({k: copy.deepcopy(v) for k, v in run_dict.items() if k not in out})
+    return out
+
+
+def _run_path(path: str) -> str:
+    """The run-dict path of a dotted path: ``guidance.*`` (a planar shared block) lives
+    under ``planar.`` in the run dict; every other path is unchanged."""
+    return f"{PLANAR_KEY}.{path}" if _path_root(path) in PLANAR_SHARED_KEYS else path
+
+
 class ExperimentConfig(_Model):
-    """An experiment file: vehicle path, baseline run, variant overrides, sweeps and
-    sensitivity. Variant values are partial run dicts merged over the baseline."""
+    """An experiment file: vehicle path, optional label, the shared blocks, baseline run,
+    variant overrides, sweeps, sensitivity, bounds and calibration cases.
+
+    Shared blocks (experiment level, identical for every run): ``dynamics``
+    (vertical_1d when absent), ``site`` (a PlanarSiteConfig on planar_2d, where it is
+    required), and the planar_2d-only ``guidance``, ``search``, ``target_orbit`` and
+    ``checks``. They are injected into the baseline before it is validated (so
+    ``baseline`` is the injected run) and refused in the baseline itself (except a
+    Phase 1 site), in variants, sweeps, sensitivity parameters and bounds. Variant
+    values are partial run dicts merged over the baseline. ``label: calibration`` allows
+    ``cases``; ``label: guidance_study`` allows paired ``guidance.*`` sweeps. On
+    planar_2d a sweep of ``vehicle.*`` paths must be paired, and no per-run path may
+    change the ``integrator`` block (sample_dt_s included), so every compared run
+    integrates and samples alike.
+
+    Input is the raw experiment dict (as read from YAML). ``model_dump()`` of a
+    validated experiment does not validate again: its baseline already holds the
+    injected blocks, which the raw form refuses; re-resolve from the raw dict instead."""
 
     name: str
     vehicle: str
+    label: ExperimentLabel | None = None
+    dynamics: DynamicsKind | None = None
+    site: SiteConfig | None = None
+    guidance: GuidanceConfig | None = None
+    search: SearchConfig | None = None
+    target_orbit: TargetOrbitConfig | None = None
+    checks: ChecksConfig | None = None
     baseline: RunConfig
     variants: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sweeps: list[SweepConfig] = Field(default_factory=list)
     sensitivity: SensitivityConfig | None = None
+    bounds: list[BoundConfig] = Field(default_factory=list)
+    cases: dict[str, CaseConfig] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _inject_into_baseline(cls, data: Any) -> Any:
+        """Refuse shared blocks in the raw baseline, then inject the declared ones; a
+        planar_2d experiment's site is validated as a PlanarSiteConfig."""
+        if not (isinstance(data, dict) and isinstance(data.get("baseline"), dict)):
+            return data
+        _check_baseline_shared(data)
+        out = {**data, "baseline": inject_shared(data["baseline"], shared_run_blocks(data))}
+        if data.get("dynamics") == PLANAR_2D and isinstance(data.get("site"), dict):
+            out["site"] = planar_site(data["site"])
+        return out
 
     @model_validator(mode="after")
     def _names(self) -> ExperimentConfig:
@@ -496,6 +1362,129 @@ class ExperimentConfig(_Model):
                 if of not in known:
                     raise ValueError(f"sensitivity of {of!r}: no such run")
         return self
+
+    @model_validator(mode="after")
+    def _shared_blocks_stay_shared(self) -> ExperimentConfig:
+        if self.dynamics != PLANAR_2D:
+            declared = [k for k in PLANAR_SHARED_KEYS if getattr(self, k) is not None]
+            if declared:
+                raise ValueError(
+                    f"{', '.join(declared)}: planar_2d blocks; declare dynamics: planar_2d"
+                )
+        for vname, override in self.variants.items():
+            for key in override:
+                _refuse_shared_path(key, f"variant {vname!r} sets")
+        for k, sweep in enumerate(self.sweeps, start=1):
+            for path in sweep.axes:
+                _refuse_shared_path(path, f"sweep {k} axis", paired=sweep.paired)
+        if self.sensitivity is not None:
+            for param in self.sensitivity.params:
+                _refuse_shared_path(param, "sensitivity parameter")
+        for bound in self.bounds:
+            for path in bound.overrides:
+                _refuse_shared_path(path, f"bound {bound.name!r} override")
+        if self.dynamics == PLANAR_2D:
+            self._lock_integrator()
+        return self
+
+    def _lock_integrator(self) -> None:
+        """planar_2d: refuse every per-run integrator change (sample_dt_s included)."""
+        for vname, override in self.variants.items():
+            block = override.get(INTEGRATOR_KEY)
+            if block is None:
+                continue
+            keys = sorted(block) if isinstance(block, dict) else [repr(block)]
+            if keys:
+                _refuse_integrator(f"variant {vname!r} sets integrator {keys}")
+        paths = [(p, f"sweep {k} axis") for k, sw in enumerate(self.sweeps, 1) for p in sw.axes]
+        if self.sensitivity is not None:
+            paths += [(p, "sensitivity parameter") for p in self.sensitivity.params]
+        paths += [(p, f"bound {b.name!r} override") for b in self.bounds for p in b.overrides]
+        for path, what in paths:
+            if _path_root(path) == INTEGRATOR_KEY:
+                _refuse_integrator(f"{what} {path!r}")
+
+    @model_validator(mode="after")
+    def _labelled_features(self) -> ExperimentConfig:
+        for k, sweep in enumerate(self.sweeps, start=1):
+            roots = {_path_root(p) for p in sweep.axes}
+            if not sweep.paired:
+                if self.dynamics == PLANAR_2D and VEHICLE_ROOT in roots:
+                    raise ValueError(
+                        f"sweep {k}: on planar_2d a sweep of {VEHICLE_ROOT}.* paths needs "
+                        "paired: true (the baseline is re-run with the same vehicle, as in "
+                        "a sensitivity case or a bound)"
+                    )
+                continue
+            if self.dynamics != PLANAR_2D:
+                raise ValueError(
+                    f"sweep {k}: a paired sweep re-runs the baseline under the planar shared "
+                    "blocks: it needs dynamics: planar_2d"
+                )
+            if not roots <= PAIRED_SWEEP_ROOTS:
+                raise ValueError(
+                    f"sweep {k}: a paired sweep varies guidance.* and vehicle.* paths only"
+                )
+            if PAIRED_SWEEP_ROOT in roots and self.label != GUIDANCE_STUDY_LABEL:
+                raise ValueError(
+                    f"sweep {k}: paired sweeps need label: {GUIDANCE_STUDY_LABEL} to vary "
+                    "guidance.*"
+                )
+            if sweep.of == self.baseline.name:
+                raise ValueError(
+                    f"sweep {k}: a paired sweep of the baseline has no pair; sweep a variant"
+                )
+        if self.cases and self.label != CALIBRATION_LABEL:
+            raise ValueError(f"cases need label: {CALIBRATION_LABEL}")
+        for cname, case in self.cases.items():
+            if case.site is not None and self.site is None:
+                raise ValueError(f"case {cname!r} changes site, but the experiment declares none")
+            if case.target_orbit is not None and self.target_orbit is None:
+                raise ValueError(
+                    f"case {cname!r} changes target_orbit, but the experiment declares none"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _bound_and_case_names(self) -> ExperimentConfig:
+        known = {self.baseline.name, *self.variants}
+        names = [*known]
+        for bound in self.bounds:
+            for of in bound.of:
+                if of not in known:
+                    raise ValueError(f"bound {bound.name!r} of {of!r}: no such run")
+                if of == self.baseline.name:
+                    raise ValueError(
+                        f"bound {bound.name!r}: the baseline is re-run with the bound's "
+                        "overrides automatically; list variants only"
+                    )
+            names += [bound_run_name(of, bound.name) for of in (self.baseline.name, *bound.of)]
+        names += list(self.cases)
+        seen: set[str] = set()
+        for name in names:
+            if name in seen:
+                raise ValueError(f"run name {name!r} is used twice (runs, bounds and cases)")
+            seen.add(name)
+        return self
+
+
+def _refuse_integrator(what: str) -> None:
+    """Raise ValueError for a per-run integrator change on planar_2d."""
+    raise ValueError(
+        f"{what}: on planar_2d no integrator setting may differ between runs (method, "
+        "rtol, steps, caps and sample_dt_s are the baseline's, so compared runs integrate "
+        "and sample alike)"
+    )
+
+
+def bound_run_name(of: str, bound: str) -> str:
+    """Name of the run ``of`` re-run under the bound ``bound``: ``<of>__<bound>``."""
+    return f"{of}__{bound}"
+
+
+def paired_baseline_name(point_name: str, baseline: str) -> str:
+    """Name of the baseline re-run paired with a sweep point: ``<point>__<baseline>``."""
+    return f"{point_name}__{baseline}"
 
 
 # ---------------------------------------------------------------- overrides and merging
@@ -649,6 +1638,11 @@ class SweepPoint:
     own sweep, so it is unique only per sweep: results must be namespaced by sweep_index
     as well (for example ``sweep_1/run_0001``) or the sweeps of one experiment would
     collide.
+
+    ``overrides`` are the axis paths as declared (a paired ``guidance.*`` path is
+    applied under ``planar.`` in the run dict). ``paired_baseline`` is the baseline
+    re-run with the same overrides for a paired sweep (named ``<run>__<baseline>``),
+    else None.
     """
 
     sweep_index: int
@@ -656,6 +1650,7 @@ class SweepPoint:
     of: str
     overrides: dict[str, Any]
     run: ResolvedRun
+    paired_baseline: ResolvedRun | None = None
 
 
 @dataclass(frozen=True)
@@ -669,14 +1664,30 @@ class SensitivityCase:
 
 
 @dataclass(frozen=True)
+class BoundCase:
+    """One resolved bound (amendment 6): ``runs`` maps each run named in the bound's
+    ``of`` to its re-run under ``overrides`` (named ``<of>__<bound>``), and
+    ``baseline`` is the baseline re-run under the same overrides (its pair)."""
+
+    name: str
+    overrides: dict[str, Any]
+    runs: dict[str, ResolvedRun]
+    baseline: ResolvedRun
+
+
+@dataclass(frozen=True)
 class ResolvedExperiment:
-    """Everything an experiment declares, validated, nothing run."""
+    """Everything an experiment declares, validated, nothing run. ``bounds`` and
+    ``cases`` (calibration only; independent runs, never compared) are empty unless
+    declared; neither is part of ``runs``."""
 
     experiment: ExperimentConfig
     baseline: ResolvedRun
     variants: dict[str, ResolvedRun]
     sweeps: list[list[SweepPoint]]
     sensitivity: list[SensitivityCase]
+    bounds: list[BoundCase] = field(default_factory=list)
+    cases: dict[str, ResolvedRun] = field(default_factory=dict)
 
     @property
     def runs(self) -> dict[str, ResolvedRun]:
@@ -684,11 +1695,47 @@ class ResolvedExperiment:
         return {self.baseline.name: self.baseline, **self.variants}
 
 
+VehicleLoader = Callable[[str], dict[str, Any]]
+"""Reads a vehicle file named in an experiment (a calibration case's ``vehicle``) and
+returns its raw dict; supplied by the caller, since config.py does no file I/O."""
+
+
+def _check_planar_vehicle(name: str, run: RunConfig, vehicle: VehicleConfig) -> None:
+    """planar_2d rules that need the vehicle: an aero block, two stages (one guidance
+    law each), and no lit stage 1 on a run whose search is skipped unless the shared
+    search flies fixed guidance (figure_of_merit none)."""
+    if vehicle.aero is None:
+        raise ValueError(f"run {name!r}: planar_2d needs the vehicle's aero block (drag)")
+    if len(vehicle.stages) != PLANAR_STAGE_COUNT:
+        raise ValueError(
+            f"run {name!r}: planar_2d guidance needs a {PLANAR_STAGE_COUNT}-stage vehicle, "
+            f"got {len(vehicle.stages)}"
+        )
+    reason = run.search_skip_reason
+    first = vehicle.stages[0].name
+    fixed = run.planar is not None and run.planar.search.figure_of_merit == NO_SEARCH
+    if reason is not None and not run.ignition_for(first).fails and not fixed:
+        raise ValueError(
+            f"run {name!r}: {reason} skips the search, but stage {first} lights and its "
+            "guidance would come from the search; fail its ignition, or use "
+            "search.figure_of_merit: none with fixed guidance"
+        )
+
+
 def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any]) -> ResolvedRun:
-    """Validate one run dict and its vehicle dict together."""
+    """Validate one run dict and its vehicle dict together (vertical_1d: no heating-rule
+    fairing; planar_2d: see _check_planar_vehicle)."""
     run_dict = {**copy.deepcopy(run_dict), "name": name}
     run = RunConfig.model_validate(run_dict)
     vehicle = VehicleConfig.model_validate(vehicle_dict)
+    heating = vehicle.to_vehicle().fairing_rule.trigger == HEATING_TRIGGER
+    if run.dynamics == VERTICAL_1D and heating:
+        raise ValueError(
+            f"run {name!r}: fairing_drop trigger {HEATING_TRIGGER} is a planar_2d feature "
+            "(Phase 2); the 1-D model supports only the staging and never rules"
+        )
+    if run.dynamics == PLANAR_2D:
+        _check_planar_vehicle(name, run, vehicle)
     unknown = set(run.ignition) - {s.name for s in vehicle.stages}
     if unknown:
         raise ValueError(f"run {name!r}: ignition names unknown stages {sorted(unknown)}")
@@ -698,6 +1745,11 @@ def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any
             raise ValueError(
                 f"run {name!r}, ignition {stage.name}: reference push_start is only for "
                 "the first stage"
+            )
+        if i > 0 and ignition.t_ign_s < 0.0:
+            raise ValueError(
+                f"run {name!r}, ignition {stage.name}: a later stage ignites at t_ign_s "
+                ">= 0 after its staging coast"
             )
         try:  # startup overrides must resolve against this vehicle
             ignition.resolved_startup(stage.startup.to_startup())
@@ -735,16 +1787,69 @@ def _nominal_value(parent: ResolvedRun, param: str) -> float:
     return float(nominal)
 
 
-def resolve_experiment(
-    exp_dict: dict[str, Any], vehicle_dict: dict[str, Any]
-) -> ResolvedExperiment:
-    """Validate the baseline, every variant, every sweep point and every sensitivity case
-    of an experiment against one vehicle dict, without running anything.
+def _resolve_bound(
+    bound: BoundConfig, baseline: ResolvedRun, runs: dict[str, ResolvedRun]
+) -> BoundCase:
+    """Resolve a bound: each ``of`` run and the baseline re-run with its overrides."""
+    what = f"bound {bound.name!r}"
+    r, v = _perturb(baseline, bound.overrides, what)
+    paired = resolve_run(bound_run_name(baseline.name, bound.name), r, v)
+    resolved: dict[str, ResolvedRun] = {}
+    for of in bound.of:
+        r, v = _perturb(runs[of], bound.overrides, what)
+        resolved[of] = resolve_run(bound_run_name(of, bound.name), r, v)
+    return BoundCase(bound.name, dict(bound.overrides), resolved, paired)
 
-    Raises pydantic ValidationError, ConfigPathError or ValueError (all ValueError
-    subclasses) with the run and path named; nothing else escapes for a bad file."""
+
+def _resolve_case(
+    cname: str,
+    case: CaseConfig,
+    exp_dict: dict[str, Any],
+    vehicle_dict: dict[str, Any],
+    load_vehicle: VehicleLoader | None,
+) -> ResolvedRun:
+    """Resolve a calibration case: the raw baseline with the experiment's shared blocks,
+    the case's site and target_orbit merged over them, its vehicle file (read through
+    ``load_vehicle``) or the experiment's vehicle, then its vehicle. overrides."""
+    shared = shared_run_blocks(exp_dict)
+    if case.site is not None:
+        shared["site"] = merge_run_dicts(shared["site"], case.site)
+    if case.target_orbit is not None:
+        planar = shared[PLANAR_KEY]
+        planar["target_orbit"] = merge_run_dicts(planar["target_orbit"], case.target_orbit)
+    run_dict = inject_shared(exp_dict["baseline"], shared)
+    vdict = vehicle_dict
+    if case.vehicle is not None:
+        if load_vehicle is None:
+            raise ValueError(
+                f"case {cname!r} names vehicle file {case.vehicle!r}; resolve_experiment "
+                "needs load_vehicle to read it (config.py does no file I/O)"
+            )
+        vdict = load_vehicle(case.vehicle)
+    try:
+        r, v = apply_overrides(run_dict, case.overrides, vdict)
+    except ConfigPathError as exc:
+        raise ConfigPathError(f"case {cname!r}: {exc}") from exc
+    return resolve_run(cname, r, v)
+
+
+def resolve_experiment(
+    exp_dict: dict[str, Any],
+    vehicle_dict: dict[str, Any],
+    load_vehicle: VehicleLoader | None = None,
+) -> ResolvedExperiment:
+    """Validate the baseline, every variant, every sweep point (and its paired baseline),
+    every sensitivity case, every bound and every calibration case of an experiment
+    against its vehicle dict, without running anything.
+
+    The experiment's declared shared blocks are injected into every run dict
+    (shared_run_blocks, inject_shared); a Phase 1 experiment that declares none gets
+    run dicts identical to the ones it got before Phase 2. ``load_vehicle`` reads the
+    vehicle file a calibration case names (None: such a case raises). Raises pydantic
+    ValidationError, ConfigPathError or ValueError (all ValueError subclasses) with the
+    run and path named; nothing else escapes for a bad file."""
     experiment = ExperimentConfig.model_validate(exp_dict)
-    base_dict = exp_dict["baseline"]
+    base_dict = inject_shared(exp_dict["baseline"], shared_run_blocks(exp_dict))
     baseline = resolve_run(experiment.baseline.name, base_dict, vehicle_dict)
     variants: dict[str, ResolvedRun] = {}
     for vname, override in experiment.variants.items():
@@ -758,9 +1863,14 @@ def resolve_experiment(
         paths = list(sweep.axes)
         for i, values in enumerate(itertools.product(*(sweep.axes[p] for p in paths)), start=1):
             overrides = dict(zip(paths, values, strict=True))
-            r, v = _perturb(parent, overrides, f"sweep {k}")
+            run_overrides = {_run_path(p): x for p, x in overrides.items()}
+            r, v = _perturb(parent, run_overrides, f"sweep {k}")
             point = resolve_run(f"run_{i:04d}", r, v)
-            points.append(SweepPoint(k, i, sweep.of, overrides, point))
+            paired = None
+            if sweep.paired:
+                rb, vb = _perturb(baseline, run_overrides, f"sweep {k}")
+                paired = resolve_run(paired_baseline_name(point.name, baseline.name), rb, vb)
+            points.append(SweepPoint(k, i, sweep.of, overrides, point, paired))
         sweeps.append(points)
 
     cases: list[SensitivityCase] = []
@@ -776,4 +1886,11 @@ def resolve_experiment(
                     cases.append(
                         SensitivityCase(of, param, sign * fraction, resolve_run(label, r, v))
                     )
-    return ResolvedExperiment(experiment, baseline, variants, sweeps, cases)
+    bounds = [_resolve_bound(b, baseline, runs) for b in experiment.bounds]
+    calibration = {
+        cname: _resolve_case(cname, case, exp_dict, vehicle_dict, load_vehicle)
+        for cname, case in experiment.cases.items()
+    }
+    return ResolvedExperiment(
+        experiment, baseline, variants, sweeps, cases, bounds=bounds, cases=calibration
+    )

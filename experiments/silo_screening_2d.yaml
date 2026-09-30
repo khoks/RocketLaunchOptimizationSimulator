@@ -1,0 +1,102 @@
+# Concept A (vertical constant-acceleration silo) against a pad baseline in the planar_2d
+# model: rotating spherical Earth, ICAO atmosphere, drag, back-pressure, stage-1 kick and
+# gravity turn, stage-2 linear-tangent steering to 200 km circular; payload capacity P*
+# per run (sweep-optimized guidance, shared budget). Mirrors experiments/silo_screening_1d
+# (same variants, silo settings, sweeps) and replaces its preliminary numbers. Adds the
+# stage-2 Isp sensitivity (amendment 5) and the fairing-area aero bound (amendment 6).
+#
+# Shared blocks (experiment level; injected into every run and refused in variants,
+# sweeps, sensitivity and bounds): identical to experiments/calibration_f9_2d.yaml (a
+# test pins that). Bare numbers here; the vehicle file carries the sources. silo_failed
+# (end: impact) skips the search automatically. Bounds re-run each listed run and the
+# baseline with the same overrides and compare the pair.
+name: silo_screening_2d
+vehicle: configs/vehicles/generic_f9_class_2d.yaml
+dynamics: planar_2d
+site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: true}
+target_orbit: {kind: circular, altitude_km: 200}
+guidance:
+  kick: {v_kick_mps: 50, mode: hold_to_alignment, max_duration_s: 60, deadline_s: 60}
+  stage1: gravity_turn
+  stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}
+search:
+  figure_of_merit: payload
+  gamma_grid_deg: [8, 36, 2]
+  gamma_refine_halfwidth_deg: 4
+  gamma_xatol_deg: 0.01
+  gamma_refine_maxiter: 30
+  gamma_root_tol_deg: 0.01
+  delta_bracket_deg: [0.1, 45]
+  delta_step_deg: 0.25
+  delta_xtol_rad: 1.0e-10
+  payload_half_bracket_t: 2.0
+  payload_max_expand: 6
+  payload_backoff_max: 4
+  payload_xtol_kg: 0.5
+  brentq_rtol: 8.881784197001252e-16         # 4 eps, scipy brentq's floor
+  final_payload_xtol_kg: 0.05
+  final_bracket_kg: [20, 1000]
+  search_rtol: 1.0e-8
+  search_atol_scale: 10
+  final_rtol: 1.0e-10
+  penalty: {base_kg: 1.0e6, per_deg_kg: 1.0e4}
+  ltg: {accept_r_m: 1.0, accept_vr_mps: 1.0e-3, r_scale_m: 1.0e4, vr_scale_mps: 100,
+        fd_step_search: 1.0e-4, fd_step_final: 1.0e-5, max_iters: 25, max_halvings: 6,
+        grid_max_rungs: 2, p0_offset_deg: 5, pf_deg: -1, steep_p0_deg: 35,
+        shallow_guess: [0.3, 0.3], pitch_bounds_deg: [-45, 75], tau_max_factor: 2.0,
+        mass_floor_factor: 0.5}
+checks:
+  closure_tol_mps: 1.0e-5
+  identity_tol_mps: 1.0e-5                 # 2-D loss-identity residual (plan section 11)
+  insertion_e_max: 1.0e-6                  # insertion eccentricity (plan section 11)
+  grav_ratio_bounds: [0.33, 3.0]
+  bp_ratio_bounds: [0.33, 3.0]
+  min_term_mps: 1.0
+  max_drag_steer_share: 0.5
+  anchor_margin_kg: 1.5
+  search_final_flag_rel: 1.0e-4
+  maxq_scan_points: 256
+  maxq_xatol_s: 1.0e-6
+  unconstrained_kick_mps: 120
+  vk_margin_kg: 5
+  convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
+                gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
+  gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+baseline:                                  # pad: held down, full thrust exactly at release
+  name: pad
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: insertion
+  integrator: {method: DOP853, rtol: 1.0e-10, sample_dt_s: 0.05}
+variants:
+  pad_instant:  {ignition: {stage1: {t_ign_s: 0.0, startup: {kind: step}}}}          # yardstick, unphysical
+  silo_instant: {assist: &silo {model: constant_accel, net_accel_g: 3.0, stroke_m: 100,
+                  carriage_mass_t: 0, brake_decel_g: 5, drive_efficiency: 0.5,
+                  exhaust_impingement_fraction: 0.0, shaft: vented,
+                  track: {angle_deg: 90, exit_altitude_m: 0}},
+                 ignition: {stage1: {t_ign_s: 0.0, startup: {kind: step}}}}          # yardstick, unphysical
+  silo_cold:        {assist: *silo, ignition: {stage1: {t_ign_s: 0.5}}}                 # 0.5 s delay + 2 s ramp
+  silo_cold_lag:    {assist: *silo, ignition: {stage1: {t_ign_s: 0.5, startup: {kind: lag, tau_s: 1.0}}}}
+  silo_hot_ramp_on_track: {assist: *silo, ignition: {stage1: {t_ign_s: -2.0, reference: release}}}  # lit on the carriage
+  silo_hot_full:    {assist: *silo, ignition: {stage1: {t_ign_s: -2.0, reference: push_start}}}     # full thrust for the whole push
+  silo_hot_full_impinged: {assist: {<<: *silo, exhaust_impingement_fraction: 1.0},
+                           ignition: {stage1: {t_ign_s: -2.0, reference: push_start}}}
+  silo_failed:      {assist: *silo, ignition: {stage1: {fails: true, t_ign_s: 0.0}}, end: impact}  # no search
+  silo_sled_22t:    {assist: {<<: *silo, carriage_mass_t: 22}, ignition: {stage1: {t_ign_s: 0.5}}}  # MagLifter ~4% of liftoff
+sweeps:
+  - {of: silo_cold, axes: {assist.net_accel_g: [0.5, 1, 3, 5], assist.stroke_m: [50, 100, 300]}}
+  # RQ2 in 2-D. The pad keeps its 2 s ramp at every point of the t_ramp axis, so a
+  # point's dP* also holds an engine-startup change the pad does not get (the pad's
+  # hold-down cost scales with t_ramp): it favours the silo at 1 s and penalises it
+  # at 3 s. Report that axis with this caveat; only t_ramp = 2 s is like for like. The
+  # lag axis (next sweep) likewise differs from the pad's 2 s ramp in startup shape.
+  - {of: silo_cold, axes: {ignition.stage1.t_ign_s: [0, 0.5, 1.0], ignition.stage1.startup.t_ramp_s: [1, 2, 3]}}
+  - {of: silo_cold_lag, axes: {ignition.stage1.startup.tau_s: [1, 2, 3]}}                                       # RQ2 in 2-D
+sensitivity:
+  of: [silo_cold, silo_hot_full]
+  params: {vehicle.stages.stage1.dry_mass_t: 0.10, vehicle.stages.stage1.engine.isp_vac_s: 0.10,
+           vehicle.stages.stage2.engine.isp_vac_s: 0.10, vehicle.aero.cd_scale: 0.10,
+           vehicle.screening.stage_isp_eff_s.0: 0.10, assist.drive_efficiency: 0.10}
+bounds:
+  - {name: aero_bound, of: [silo_cold], overrides: {vehicle.aero.reference_area_m2: 21.24},
+     paired_baseline: true}                # A_ref of the 5.2 m fairing section; pad re-run too

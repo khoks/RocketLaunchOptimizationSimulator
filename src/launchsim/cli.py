@@ -26,6 +26,7 @@ import yaml
 
 from launchsim import __version__, sim
 from launchsim.config import ResolvedExperiment, resolve_experiment
+from launchsim.units import rad_to_deg
 
 REPO_MARKER = "pyproject.toml"
 RESULTS_DIR_NAME = "results"
@@ -156,14 +157,20 @@ def resolve_vehicle_path(experiment_path: Path, vehicle: str) -> Path:
 
 
 def load_experiment(experiment_path: Path) -> ResolvedExperiment:
-    """Read and validate an experiment file and its vehicle; raises CliError on any problem."""
+    """Read and validate an experiment file and its vehicle; raises CliError on any
+    problem. A calibration case that names its own vehicle file is read through the
+    same lookup as the experiment's vehicle (``resolve_vehicle_path``)."""
     exp_dict = load_yaml(experiment_path)
     vehicle = exp_dict.get("vehicle")
     if not isinstance(vehicle, str):
         raise CliError(f"{experiment_path}: 'vehicle' must be a path string")
     vehicle_dict = load_yaml(resolve_vehicle_path(experiment_path, vehicle))
+
+    def load_vehicle(path: str) -> dict[str, Any]:
+        return load_yaml(resolve_vehicle_path(experiment_path, path))
+
     try:
-        resolved = resolve_experiment(exp_dict, vehicle_dict)
+        resolved = resolve_experiment(exp_dict, vehicle_dict, load_vehicle)
         sim.check_result_names(resolved)  # names become directories: reject before writing
     except ValueError as exc:  # pydantic ValidationError, ConfigPathError, InvalidNameError
         raise CliError(f"invalid configuration in {experiment_path}:\n{exc}") from exc
@@ -181,6 +188,23 @@ def results_root(args: argparse.Namespace, experiment_path: Path) -> Path:
     if args.results_root is not None:
         return Path(args.results_root)
     return repo_root_or_cwd(experiment_path) / RESULTS_DIR_NAME
+
+
+def run_line(name: str, result: sim.Result, baseline: bool) -> str:
+    """The console line of one run: its status and flags; a planar run also prints
+    P* [kg], gamma*_ref [deg] and max-Q [Pa] (the headline, ASCII only)."""
+    tag = " (baseline)" if baseline else ""
+    flags = f" flags: {', '.join(result.flags)}" if result.flags else ""
+    if result.model != sim.PLANAR_MODEL:
+        return f"  {name}{tag}: {result.status}{flags}"
+    m = result.metrics
+    gamma = m.get("gamma_star_rad")
+    gamma_deg = None if gamma is None else float(rad_to_deg(gamma))
+    head = (
+        f"P* {sim._fmt(m.get('payload_kg'))} kg, gamma* {sim._fmt(gamma_deg)} deg, "
+        f"max-Q {sim._fmt(m.get('max_q_pa'))} Pa"
+    )
+    return f"  {name}{tag}: {result.status} ({head}){flags}"
 
 
 def command_run(args: argparse.Namespace) -> int:
@@ -202,9 +226,18 @@ def command_run(args: argparse.Namespace) -> int:
     )
     say(f"results: {out_dir}")
     for name, rr in er.runs.items():
-        tag = " (baseline)" if name == er.baseline.name else ""
-        flags = f" flags: {', '.join(rr.result.flags)}" if rr.result.flags else ""
-        say(f"  {name}{tag}: {rr.result.status}{flags}")
+        say(run_line(name, rr.result, name == er.baseline.name))
+    for name, rr in er.cases.items():
+        say(run_line(f"case {name}", rr.result, False))
+    if er.preregistration is not None:
+        state = er.preregistration
+        if state.get("dirty") is False:
+            say(f"  pre-registered inputs clean at {state.get('inputs_commit')}")
+        else:
+            say(
+                "  PREREGISTRATION DIRTY: configs/ or experiments/ not committed;"
+                " not a valid calibration record"
+            )
     if er.sensitivity:
         say(f"  sensitivity: {len(er.sensitivity)} cases")
     return 0

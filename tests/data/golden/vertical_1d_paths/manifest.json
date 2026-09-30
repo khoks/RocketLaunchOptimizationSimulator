@@ -1,0 +1,156 @@
+{
+ "experiment_file": "tests/data/golden/inputs/vertical_1d_paths.yaml",
+ "experiment_sha256": "1f0b332f2c95d72ecba5c4597b4a1126b6c165f4452832a25f6a1843e8264029",
+ "source_commit": "d8d6951d8069f5fc90128fa18cb7b4eb28df47a0",
+ "reference_commit": "104ea07",
+ "guarded_paths": [
+  "src",
+  "configs",
+  "experiments",
+  "pyproject.toml",
+  "uv.lock"
+ ],
+ "source_note": "src, configs, experiments, pyproject.toml, uv.lock identical to 104ea07 (the Phase 1 commit; checked with git diff --quiet 104ea07 and git status at capture); captured before any Phase 2 source change",
+ "captured_utc": "2026-09-29T20:45:03Z",
+ "commands": [
+  "python -m launchsim run tests/data/golden/inputs/vertical_1d_paths.yaml --results-root <S>"
+ ],
+ "normalisation": "metrics.json and resolved_config.yaml: top-level timestamp_utc and git dropped (golden copies stored as parsed JSON) or, for the digests, replaced by placeholder lines; summary.md: title provenance replaced, Timestamp/Git/Git error bullets dropped; CSV: verbatim; LF line endings",
+ "tolerances": {
+  "rel": 1e-12,
+  "abs": 1e-09,
+  "signed_columns": [
+   "v_mps"
+  ],
+  "exact_subtrees": [
+   "overrides",
+   "run_dict",
+   "vehicle_dict"
+  ]
+ },
+ "tier_note": "tolerant tier: rel/abs on JSON floats only; CSV (%.12g) and summary cells are effectively exact at their printed precision, and integrated results move by more than rel 1e-12 under any 1-ulp change of the floating-point path (rtol 1e-10), so both tiers are expected to fail after a dependency or platform change that alters floating-point results; never loosen the tolerances. Exact tier: runs only when exact_env_keys match, skips otherwise unless LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 (then it fails).",
+ "environment": {
+  "python": "3.12.11",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1",
+  "pandas": "3.0.6",
+  "pyyaml": "6.0.3",
+  "system": "Windows",
+  "machine": "AMD64",
+  "platform": "Windows-11-10.0.26200-SP0"
+ },
+ "exact_env_keys": [
+  "python",
+  "numpy",
+  "scipy",
+  "pandas",
+  "pyyaml",
+  "system",
+  "machine"
+ ],
+ "files": {
+  "experiment": {
+   "metrics.json": {
+    "kind": "json",
+    "output": "metrics.json"
+   },
+   "resolved_config.json": {
+    "kind": "yaml",
+    "output": "resolved_config.yaml"
+   },
+   "summary.md": {
+    "kind": "summary",
+    "output": "summary.md"
+   },
+   "pad/events.csv": {
+    "kind": "csv",
+    "output": "pad/events.csv"
+   },
+   "pad_apex/events.csv": {
+    "kind": "csv",
+    "output": "pad_apex/events.csv"
+   },
+   "pad_no_liftoff/events.csv": {
+    "kind": "csv",
+    "output": "pad_no_liftoff/events.csv"
+   },
+   "silo_drive_limit/events.csv": {
+    "kind": "csv",
+    "output": "silo_drive_limit/events.csv"
+   },
+   "silo_coast_ign/events.csv": {
+    "kind": "csv",
+    "output": "silo_coast_ign/events.csv"
+   },
+   "silo_fallback_ign/events.csv": {
+    "kind": "csv",
+    "output": "silo_fallback_ign/events.csv"
+   },
+   "pad_no_liftoff/timeseries.csv": {
+    "kind": "csv",
+    "output": "pad_no_liftoff/timeseries.csv"
+   },
+   "silo_drive_limit/timeseries.csv": {
+    "kind": "csv",
+    "output": "silo_drive_limit/timeseries.csv"
+   },
+   "silo_fallback_ign/timeseries.csv": {
+    "kind": "csv",
+    "output": "silo_fallback_ign/timeseries.csv"
+   }
+  }
+ },
+ "digests": {
+  "experiment": {
+   "metrics.json": "7265a6900f2dc8a92301a892211f517b2bd00f70fd644821dc553ebe7352253b",
+   "pad/events.csv": "33b24409a8fe19eafdad2efc8fdb600365b0108a0fda12d27fd055a944a94eaf",
+   "pad/timeseries.csv": "b16bdb5e286177055d294d4f29763a0f5e4afce97bbddcb0f384024d8ecefa6a",
+   "pad_apex/events.csv": "9bcea6fd4d133b3a89f72d64d098dd58a9387acaf4287b825d8408f75f919a43",
+   "pad_apex/timeseries.csv": "fd17485b8b8aa7e8e0c10e827489e2ea69ff02427329726cfe280d463fd65006",
+   "pad_no_liftoff/events.csv": "7dfc7e09fda58f68993aa5182d73323132f1a584589eab9948a1e27a9feb4a8c",
+   "pad_no_liftoff/timeseries.csv": "bdc3d7cd52a4a47481b450179c86b8f9dab9d5dc8e0f387ca76ba15ae8997825",
+   "resolved_config.yaml": "e6ff75538dac70d592017c2894bd76bd284b828161af3e9fcd5bca2a35883da6",
+   "silo_coast_ign/events.csv": "4f6977340eab4d5a9d57cd71ca1057c8116ac7340eb44e4316f814943f5b9c7f",
+   "silo_coast_ign/timeseries.csv": "eb6952653fc2a701d45668ed3ac2afd6aa689038e683651d613b7a05ba05e343",
+   "silo_drive_limit/events.csv": "36b2c9ff1f95f0db214bdca451b44448802a1d682ad24e2faad98b1808da0ec1",
+   "silo_drive_limit/timeseries.csv": "d26e6cbfc26146ffc7b63f353969546260081828854fbe14b2cc115f086589c2",
+   "silo_fallback_ign/events.csv": "e1887dc098d85c9b89cb249624ea01c5fab9f78b3de2cad1407fce51c3b7972f",
+   "silo_fallback_ign/timeseries.csv": "ad31d2bbb2699e2fbb119f7a4c9ecacfa88ee4dd75b2e84e0f6a7b740197f485",
+   "summary.md": "fdbe31b63cb00bce55a92e9e6f7986cad638f924286b48a8c24dd10ad56f3406"
+  }
+ },
+ "png_files": {
+  "experiment": [
+   "plots/pad_altitude.png",
+   "plots/pad_apex_altitude.png",
+   "plots/pad_apex_felt_g.png",
+   "plots/pad_apex_mass_thrust.png",
+   "plots/pad_apex_speed.png",
+   "plots/pad_felt_g.png",
+   "plots/pad_mass_thrust.png",
+   "plots/pad_no_liftoff_altitude.png",
+   "plots/pad_no_liftoff_felt_g.png",
+   "plots/pad_no_liftoff_mass_thrust.png",
+   "plots/pad_no_liftoff_speed.png",
+   "plots/pad_speed.png",
+   "plots/silo_coast_ign_altitude.png",
+   "plots/silo_coast_ign_drive_power.png",
+   "plots/silo_coast_ign_felt_g.png",
+   "plots/silo_coast_ign_mass_thrust.png",
+   "plots/silo_coast_ign_speed.png",
+   "plots/silo_coast_ign_track_forces.png",
+   "plots/silo_drive_limit_altitude.png",
+   "plots/silo_drive_limit_drive_power.png",
+   "plots/silo_drive_limit_felt_g.png",
+   "plots/silo_drive_limit_mass_thrust.png",
+   "plots/silo_drive_limit_speed.png",
+   "plots/silo_drive_limit_track_forces.png",
+   "plots/silo_fallback_ign_altitude.png",
+   "plots/silo_fallback_ign_drive_power.png",
+   "plots/silo_fallback_ign_felt_g.png",
+   "plots/silo_fallback_ign_mass_thrust.png",
+   "plots/silo_fallback_ign_speed.png",
+   "plots/silo_fallback_ign_track_forces.png"
+  ]
+ }
+}

@@ -1,0 +1,5 @@
+t_s,event,phase,stage,z_m,v_mps,m_kg
+-2,ignition,HOLD,stage1,0,0,542570
+0,release,HOLD,stage1,0,0,539872.539128
+145.693508728,propellant,BURN,stage1,124667.068291,2557.6460306,146870
+145.693508728,end,BURN,stage1,124667.068291,2557.6460306,146870

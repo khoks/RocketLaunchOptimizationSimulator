@@ -35,7 +35,10 @@ class ConstantAccelAssist:
     impingement fraction in [0, 1]; allow_negative_drive: whether a negative drive
     force (the drive braking the engine) is allowed rather than ending the run with
     status ``drive_limit``; g_eff_mps2: the track's effective gravity [m/s^2], quoted in
-    the assumptions only (the dynamics receive g_eff through ``state_rate``). name and
+    the assumptions only (the dynamics receive g_eff through ``state_rate``);
+    omega_p_rads: the planar rotation rate [rad/s] folded into that g_eff (g_eff =
+    mu/R_E^2 - omega_p^2 R_E), quoted in the assumptions only (0 in the 1-D model; the
+    planar pipeline sets the site's value). name and
     extra_state_names are class constants (the registry key and the track state layout
     cannot change per instance). At each instant, with M = m_v + m_c and T the
     vehicle's delivered thrust along the track,
@@ -56,6 +59,7 @@ class ConstantAccelAssist:
     f_imp: float = 0.0
     allow_negative_drive: bool = False
     g_eff_mps2: float | None = None
+    omega_p_rads: float = 0.0
 
     @classmethod
     def from_config(
@@ -94,6 +98,8 @@ class ConstantAccelAssist:
             raise ValueError("efficiency must lie in (0, 1]")
         if not 0.0 <= self.f_imp <= 1.0:
             raise ValueError("f_imp must lie in [0, 1]")
+        if not math.isfinite(self.omega_p_rads):
+            raise ValueError("omega_p_rads must be finite")
 
     def initial_extra(self) -> np.ndarray:
         """No extra states."""
@@ -146,13 +152,29 @@ class ConstantAccelAssist:
         """Track length plus the braking distance [m] from the exit speed v_exit_mps."""
         return track.length_m + self.braking_distance_m(v_exit_mps)
 
-    def assumptions(self) -> tuple[str, ...]:
-        """The drive's assumptions, every parameter being an assumption in Phase 1."""
+    def track_gravity_assumption(self) -> str:
+        """The track-gravity assumption line: the constant g_eff the track used [m/s^2]
+        and the rotation behind it. With omega_p = 0 (the 1-D model) the Phase 1 text,
+        unchanged; with rotation (planar_2d) the value, its formula mu/R_E^2 - omega_p^2
+        R_E with the omega_p [rad/s] actually folded in, and Coriolis neglected on the
+        track (about 2 omega_p v, 0.01 m/s^2 at 77 m/s)."""
         g_eff = (
             "constant g_eff = mu/R_E^2 - omega_p^2 R_E on the track"
             if self.g_eff_mps2 is None
             else f"constant g_eff = {self.g_eff_mps2:.7g} m/s^2 on the track"
         )
+        if self.omega_p_rads == 0.0:
+            return f"constant_accel: {g_eff}, omega_p = 0, Coriolis neglected"
+        return (
+            f"constant_accel: {g_eff} (mu/R_E^2 - omega_p^2 R_E with omega_p = "
+            f"{self.omega_p_rads:.7g} rad/s, the planar rotation rate of the site), flat "
+            "1-DOF track frame, Coriolis neglected"
+        )
+
+    def assumptions(self) -> tuple[str, ...]:
+        """The drive's assumptions, every parameter being an assumption in Phase 1; the
+        track-gravity line from ``track_gravity_assumption`` (unchanged for omega_p =
+        0)."""
         return (
             f"constant_accel: prescribed net acceleration {units.to_g(self.net_accel_mps2):g} g0 "
             "(assumed); drive force unconstrained, solved from the track equation",
@@ -163,7 +185,7 @@ class ConstantAccelAssist:
             f"constant_accel: exhaust impingement fraction {self.f_imp:g} (assumed); the "
             "system keeps (1 - f_imp) T of the on-track thrust",
             "constant_accel: shaft vented (no air column), no friction",
-            f"constant_accel: {g_eff}, omega_p = 0, Coriolis neglected",
+            self.track_gravity_assumption(),
             "constant_accel: infinite jerk at push start and release",
             "constant_accel: vehicle clamped to the carriage during any hold before the push",
         )

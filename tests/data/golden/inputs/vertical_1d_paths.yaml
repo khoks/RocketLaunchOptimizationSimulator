@@ -1,0 +1,30 @@
+# Supplementary 1-D golden input (tests/test_golden_1d.py): the vertical_1d code paths that
+# experiments/silo_screening_1d.yaml does not reach. Staging and stage 2 (end all_burnout),
+# the post-burnout coast to apex, a pad no_liftoff, a drive_limit stop on the track, and
+# ignition after release (an upward pre-ignition coast, and a fall-back through apex).
+# Never edit: the golden in tests/data/golden/vertical_1d_paths was captured from it.
+name: vertical_1d_paths
+vehicle: configs/vehicles/generic_f9_class.yaml
+baseline:
+  name: pad
+  site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: false}
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: all_burnout
+  integrator: {rtol: 1.0e-10, sample_dt_s: 0.5}
+variants:
+  pad_apex: {end: apex}
+  pad_no_liftoff: {ignition: {stage1: {fails: true, t_ign_s: 0.0}}, end: impact,
+                   integrator: {t_max_s: 60.0}}
+  silo_drive_limit: {assist: {model: constant_accel, net_accel_g: 0.5, stroke_m: 100,
+                      carriage_mass_t: 0, brake_decel_g: 5, drive_efficiency: 0.5,
+                      exhaust_impingement_fraction: 0.0, shaft: vented,
+                      track: {angle_deg: 90, exit_altitude_m: 0}},
+                     ignition: {stage1: {t_ign_s: 2.0, reference: push_start,
+                                         startup: {kind: ramp, t_ramp_s: 2.0}}}}
+  silo_coast_ign: {assist: &silo {model: constant_accel, net_accel_g: 3.0, stroke_m: 100,
+                    carriage_mass_t: 0, brake_decel_g: 5, drive_efficiency: 0.5,
+                    exhaust_impingement_fraction: 0.0, shaft: vented,
+                    track: {angle_deg: 90, exit_altitude_m: 0}},
+                   ignition: {stage1: {t_ign_s: 3.0}}}
+  silo_fallback_ign: {assist: *silo, ignition: {stage1: {t_ign_s: 10.0}}}

@@ -1,0 +1,754 @@
+{
+ "experiment_file": "experiments/silo_screening_1d.yaml",
+ "experiment_sha256": "ab6d2598a3b36108dbebf8845e17a51fc0d78c8faa65722b363e93899525892a",
+ "source_commit": "d8d6951d8069f5fc90128fa18cb7b4eb28df47a0",
+ "reference_commit": "104ea07",
+ "guarded_paths": [
+  "src",
+  "configs",
+  "experiments",
+  "pyproject.toml",
+  "uv.lock"
+ ],
+ "source_note": "src, configs, experiments, pyproject.toml, uv.lock identical to 104ea07 (the Phase 1 commit; checked with git diff --quiet 104ea07 and git status at capture); captured before any Phase 2 source change",
+ "captured_utc": "2026-09-29T20:45:01Z",
+ "commands": [
+  "python -m launchsim run experiments/silo_screening_1d.yaml --results-root <S>",
+  "python -m launchsim sweep experiments/silo_screening_1d.yaml --results-root <S>"
+ ],
+ "normalisation": "metrics.json and resolved_config.yaml: top-level timestamp_utc and git dropped (golden copies stored as parsed JSON) or, for the digests, replaced by placeholder lines; summary.md: title provenance replaced, Timestamp/Git/Git error bullets dropped; CSV: verbatim; LF line endings",
+ "tolerances": {
+  "rel": 1e-12,
+  "abs": 1e-09,
+  "signed_columns": [
+   "v_mps"
+  ],
+  "exact_subtrees": [
+   "overrides",
+   "run_dict",
+   "vehicle_dict"
+  ]
+ },
+ "tier_note": "tolerant tier: rel/abs on JSON floats only; CSV (%.12g) and summary cells are effectively exact at their printed precision, and integrated results move by more than rel 1e-12 under any 1-ulp change of the floating-point path (rtol 1e-10), so both tiers are expected to fail after a dependency or platform change that alters floating-point results; never loosen the tolerances. Exact tier: runs only when exact_env_keys match, skips otherwise unless LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 (then it fails).",
+ "environment": {
+  "python": "3.12.11",
+  "numpy": "2.5.3",
+  "scipy": "1.18.1",
+  "pandas": "3.0.6",
+  "pyyaml": "6.0.3",
+  "system": "Windows",
+  "machine": "AMD64",
+  "platform": "Windows-11-10.0.26200-SP0"
+ },
+ "exact_env_keys": [
+  "python",
+  "numpy",
+  "scipy",
+  "pandas",
+  "pyyaml",
+  "system",
+  "machine"
+ ],
+ "files": {
+  "experiment": {
+   "metrics.json": {
+    "kind": "json",
+    "output": "metrics.json"
+   },
+   "resolved_config.json": {
+    "kind": "yaml",
+    "output": "resolved_config.yaml"
+   },
+   "summary.md": {
+    "kind": "summary",
+    "output": "summary.md"
+   },
+   "pad/events.csv": {
+    "kind": "csv",
+    "output": "pad/events.csv"
+   },
+   "pad_instant/events.csv": {
+    "kind": "csv",
+    "output": "pad_instant/events.csv"
+   },
+   "silo_instant/events.csv": {
+    "kind": "csv",
+    "output": "silo_instant/events.csv"
+   },
+   "silo_cold/events.csv": {
+    "kind": "csv",
+    "output": "silo_cold/events.csv"
+   },
+   "silo_cold_lag/events.csv": {
+    "kind": "csv",
+    "output": "silo_cold_lag/events.csv"
+   },
+   "silo_hot_ramp_on_track/events.csv": {
+    "kind": "csv",
+    "output": "silo_hot_ramp_on_track/events.csv"
+   },
+   "silo_hot_full/events.csv": {
+    "kind": "csv",
+    "output": "silo_hot_full/events.csv"
+   },
+   "silo_hot_full_impinged/events.csv": {
+    "kind": "csv",
+    "output": "silo_hot_full_impinged/events.csv"
+   },
+   "silo_failed/events.csv": {
+    "kind": "csv",
+    "output": "silo_failed/events.csv"
+   },
+   "silo_sled_22t/events.csv": {
+    "kind": "csv",
+    "output": "silo_sled_22t/events.csv"
+   },
+   "silo_cold/timeseries.csv": {
+    "kind": "csv",
+    "output": "silo_cold/timeseries.csv"
+   },
+   "silo_failed/timeseries.csv": {
+    "kind": "csv",
+    "output": "silo_failed/timeseries.csv"
+   }
+  },
+  "sweep": {
+   "summary.md": {
+    "kind": "summary",
+    "output": "summary.md"
+   },
+   "baseline/metrics.json": {
+    "kind": "json",
+    "output": "baseline/metrics.json"
+   },
+   "baseline/summary.md": {
+    "kind": "summary",
+    "output": "baseline/summary.md"
+   },
+   "baseline/events.csv": {
+    "kind": "csv",
+    "output": "baseline/events.csv"
+   },
+   "sweep_1/sweep_index.csv": {
+    "kind": "csv",
+    "output": "sweep_1/sweep_index.csv"
+   },
+   "sweep_1/run_0001/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0001/metrics.json"
+   },
+   "sweep_1/run_0001/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0001/events.csv"
+   },
+   "sweep_1/run_0001/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0001/summary.md"
+   },
+   "sweep_1/run_0002/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0002/metrics.json"
+   },
+   "sweep_1/run_0002/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0002/events.csv"
+   },
+   "sweep_1/run_0002/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0002/summary.md"
+   },
+   "sweep_1/run_0003/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0003/metrics.json"
+   },
+   "sweep_1/run_0003/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0003/events.csv"
+   },
+   "sweep_1/run_0003/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0003/summary.md"
+   },
+   "sweep_1/run_0004/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0004/metrics.json"
+   },
+   "sweep_1/run_0004/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0004/events.csv"
+   },
+   "sweep_1/run_0004/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0004/summary.md"
+   },
+   "sweep_1/run_0005/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0005/metrics.json"
+   },
+   "sweep_1/run_0005/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0005/events.csv"
+   },
+   "sweep_1/run_0005/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0005/summary.md"
+   },
+   "sweep_1/run_0006/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0006/metrics.json"
+   },
+   "sweep_1/run_0006/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0006/events.csv"
+   },
+   "sweep_1/run_0006/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0006/summary.md"
+   },
+   "sweep_1/run_0007/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0007/metrics.json"
+   },
+   "sweep_1/run_0007/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0007/events.csv"
+   },
+   "sweep_1/run_0007/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0007/summary.md"
+   },
+   "sweep_1/run_0008/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0008/metrics.json"
+   },
+   "sweep_1/run_0008/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0008/events.csv"
+   },
+   "sweep_1/run_0008/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0008/summary.md"
+   },
+   "sweep_1/run_0009/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0009/metrics.json"
+   },
+   "sweep_1/run_0009/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0009/events.csv"
+   },
+   "sweep_1/run_0009/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0009/summary.md"
+   },
+   "sweep_1/run_0010/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0010/metrics.json"
+   },
+   "sweep_1/run_0010/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0010/events.csv"
+   },
+   "sweep_1/run_0010/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0010/summary.md"
+   },
+   "sweep_1/run_0011/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0011/metrics.json"
+   },
+   "sweep_1/run_0011/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0011/events.csv"
+   },
+   "sweep_1/run_0011/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0011/summary.md"
+   },
+   "sweep_1/run_0012/metrics.json": {
+    "kind": "json",
+    "output": "sweep_1/run_0012/metrics.json"
+   },
+   "sweep_1/run_0012/events.csv": {
+    "kind": "csv",
+    "output": "sweep_1/run_0012/events.csv"
+   },
+   "sweep_1/run_0012/summary.md": {
+    "kind": "summary",
+    "output": "sweep_1/run_0012/summary.md"
+   },
+   "sweep_2/sweep_index.csv": {
+    "kind": "csv",
+    "output": "sweep_2/sweep_index.csv"
+   },
+   "sweep_2/run_0001/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0001/metrics.json"
+   },
+   "sweep_2/run_0001/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0001/events.csv"
+   },
+   "sweep_2/run_0002/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0002/metrics.json"
+   },
+   "sweep_2/run_0002/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0002/events.csv"
+   },
+   "sweep_2/run_0003/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0003/metrics.json"
+   },
+   "sweep_2/run_0003/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0003/events.csv"
+   },
+   "sweep_2/run_0004/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0004/metrics.json"
+   },
+   "sweep_2/run_0004/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0004/events.csv"
+   },
+   "sweep_2/run_0005/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0005/metrics.json"
+   },
+   "sweep_2/run_0005/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0005/events.csv"
+   },
+   "sweep_2/run_0006/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0006/metrics.json"
+   },
+   "sweep_2/run_0006/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0006/events.csv"
+   },
+   "sweep_2/run_0007/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0007/metrics.json"
+   },
+   "sweep_2/run_0007/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0007/events.csv"
+   },
+   "sweep_2/run_0008/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0008/metrics.json"
+   },
+   "sweep_2/run_0008/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0008/events.csv"
+   },
+   "sweep_2/run_0009/metrics.json": {
+    "kind": "json",
+    "output": "sweep_2/run_0009/metrics.json"
+   },
+   "sweep_2/run_0009/events.csv": {
+    "kind": "csv",
+    "output": "sweep_2/run_0009/events.csv"
+   },
+   "sweep_3/sweep_index.csv": {
+    "kind": "csv",
+    "output": "sweep_3/sweep_index.csv"
+   },
+   "sweep_3/run_0001/metrics.json": {
+    "kind": "json",
+    "output": "sweep_3/run_0001/metrics.json"
+   },
+   "sweep_3/run_0001/events.csv": {
+    "kind": "csv",
+    "output": "sweep_3/run_0001/events.csv"
+   },
+   "sweep_3/run_0002/metrics.json": {
+    "kind": "json",
+    "output": "sweep_3/run_0002/metrics.json"
+   },
+   "sweep_3/run_0002/events.csv": {
+    "kind": "csv",
+    "output": "sweep_3/run_0002/events.csv"
+   },
+   "sweep_3/run_0003/metrics.json": {
+    "kind": "json",
+    "output": "sweep_3/run_0003/metrics.json"
+   },
+   "sweep_3/run_0003/events.csv": {
+    "kind": "csv",
+    "output": "sweep_3/run_0003/events.csv"
+   }
+  }
+ },
+ "digests": {
+  "experiment": {
+   "metrics.json": "9bbd98d90d6f6aec6f83b48b1fc2149cd6e741d3133768257947c185d0b0f3e8",
+   "pad/events.csv": "416a5859067136377cf8f0c708f117492ed8d887b550041e180a3b77c41602ed",
+   "pad/timeseries.csv": "b266fd6ba954159aa78d1256a409b39f2ca4c0f5339f669b58d59a66e80f1ef5",
+   "pad_instant/events.csv": "568547c9c91f8efb9e303d9e1498271bed88817c87eaa18f3147f76ffccacf63",
+   "pad_instant/timeseries.csv": "99f767d7e3e44455604d1712f4171c9c30d14ae5671ae0de4fcaef9beaeb2d03",
+   "resolved_config.yaml": "1e94665bcb742d3789d8bf5e4caf6cc75bc44459500c2ec8ee8b35cc14b708c3",
+   "silo_cold/events.csv": "1c4223d9e23df99de03208d445c165edd88d5acc358cb9b6bdffa9efdfdd0051",
+   "silo_cold/timeseries.csv": "568279246a0df2fd56122ac391b3b1b12407430d74703435c55dc12033b932ad",
+   "silo_cold_lag/events.csv": "81d63da047d1521846d95bede1838c1e88c3413720bd09cb8b191817cb2d5d05",
+   "silo_cold_lag/timeseries.csv": "57e1d49f8bad82641e568dd6e7fbda2f37e73ea023f9e51706243531243954f3",
+   "silo_failed/events.csv": "3b53b2b62a510725c48c0ecfd44e843b403ddd90e6a7e5850503426864d01f7c",
+   "silo_failed/timeseries.csv": "82c6ba7052c83119705dadaba108322f0a9a03f10300141ec45491a3c3081b09",
+   "silo_hot_full/events.csv": "7f83f9996c84764f68e3ec71e16e0d8ffcf4f12d4e38f306f327613b14535b81",
+   "silo_hot_full/timeseries.csv": "f433b48b79d44ced1d7d70880dd942f9a00e04cb89d3162d217300c59b013f95",
+   "silo_hot_full_impinged/events.csv": "7f83f9996c84764f68e3ec71e16e0d8ffcf4f12d4e38f306f327613b14535b81",
+   "silo_hot_full_impinged/timeseries.csv": "6c28fa1b3c24dab32ec102bf9510b30c4305bef36fb8092a23d9389ad78a5846",
+   "silo_hot_ramp_on_track/events.csv": "a3ca1251029200df7c2d38eac605c2a76ec7c1b49ae0f4755df76b345a42d3de",
+   "silo_hot_ramp_on_track/timeseries.csv": "3966e968e3a411ed2b828d5d4366eccc079c3394f135aea3d2d220f776ec2126",
+   "silo_instant/events.csv": "2b33f6a733feacc0ec770e21937c482ec2df6d21cc30d8371398a91fcca1a7bf",
+   "silo_instant/timeseries.csv": "353e313bc1635de1ed0e0d693978a7a9cecdc4f10aa46febd235d33ea17bef5c",
+   "silo_sled_22t/events.csv": "1c4223d9e23df99de03208d445c165edd88d5acc358cb9b6bdffa9efdfdd0051",
+   "silo_sled_22t/timeseries.csv": "9c9db227677558547521bec20310d923ad92e0e50f39f696a94dafe49783ced0",
+   "summary.md": "8431613851b1e5aae830e4daf39374a0640553d2e64c9811f9d7bd59c3b045cb"
+  },
+  "sweep": {
+   "baseline/events.csv": "416a5859067136377cf8f0c708f117492ed8d887b550041e180a3b77c41602ed",
+   "baseline/metrics.json": "8a12924ad51a84c37a288122a637434a367ce5514176fe7ddbdedd71f8ecb564",
+   "baseline/resolved_config.yaml": "0bb8e2dcbd8471bf3ce1e102864f896feff45571e4f302fe5dc3898d032a6245",
+   "baseline/summary.md": "ede7f4786ccff6e87e1f693dbe0489f97171466c1df132446602c699723db772",
+   "baseline/timeseries.csv": "b266fd6ba954159aa78d1256a409b39f2ca4c0f5339f669b58d59a66e80f1ef5",
+   "summary.md": "c72760abddd68f464f2d78eba7ce93f44518fe0aedf1866c8cd662e48bce0716",
+   "sweep_1/run_0001/events.csv": "7040b338231126b4c6d1b4a5239185b31683e8dbe005ab0e9f5280aae3acbbf5",
+   "sweep_1/run_0001/metrics.json": "0c6a8d621648dad4524d074660f59af56eca5b7aa359110a5ddc3f325009ffb9",
+   "sweep_1/run_0001/resolved_config.yaml": "5afe9c47dfab76759e04b3b2acd321791155627d81456391a19484ac05249bf7",
+   "sweep_1/run_0001/summary.md": "5ca87e01865abb21540a46c2cba89fd658b51a6c6c812c6273f8e26405ad1cf3",
+   "sweep_1/run_0001/timeseries.csv": "24289ce6395351e8d971545798f4df0cd629327e192f2af11b692b568ca4b4b0",
+   "sweep_1/run_0002/events.csv": "ed48c00d8b93d327efc79650009955e91e1b1b382944952e0bc46a3c6953e127",
+   "sweep_1/run_0002/metrics.json": "0d7845fc59e31dde66d1d7f0fdc75824023f37063141cb3ded108bb8d41382ca",
+   "sweep_1/run_0002/resolved_config.yaml": "4256fac21819b21ef7d4c95c82959a542cc2876b5ff969e4dc764a3eb8ad10a7",
+   "sweep_1/run_0002/summary.md": "3f8c16142cdec3d8eb890029722ef850bd0c2e83e69851aa5f914845c8ad6f3e",
+   "sweep_1/run_0002/timeseries.csv": "81c6f1affd2314fe63d2e3a4371137ec14d9616622aa6dc0af8b7a04e8425318",
+   "sweep_1/run_0003/events.csv": "dd7d1443ad8ef942b1b42bb33b5fadfde85a19295fc9182b9b860e806d6fecc4",
+   "sweep_1/run_0003/metrics.json": "e7f1249ff17825d48805e8db00eb72bb1c0a27a119f6b65dab107a7333dd049f",
+   "sweep_1/run_0003/resolved_config.yaml": "60b82c0b6a458036b63882f9160b0fcab0dc9eb3aa42ed57deb0b2653a598592",
+   "sweep_1/run_0003/summary.md": "5bcddf3badb181b93bb1a3e528370e25250b36cdbc2b9d81b851f852679f062b",
+   "sweep_1/run_0003/timeseries.csv": "bebf3450f5cd3d6c0cc94117528c2fe9e745fe67cc0533d84ce4d40c84c257ca",
+   "sweep_1/run_0004/events.csv": "2111451ffd5908f962972029c4a4abbe7bdc66f66ce2fbe2a2e415e74b21985d",
+   "sweep_1/run_0004/metrics.json": "ace28fe996863d8c7222b43279b3185b5b6c819f7984e069b7379e68a7233456",
+   "sweep_1/run_0004/resolved_config.yaml": "2eff19f9ac902b02b0e46355289c2c397428672cfbc5f820f922923000bc73da",
+   "sweep_1/run_0004/summary.md": "27436041bcd673e2f3f15827a88358b8181a4f61c150c97de83633faaf4cc129",
+   "sweep_1/run_0004/timeseries.csv": "15c720210221ecfdc6c5e553008f401db66bccf3d75a8bd54e66f0d5f7ac6170",
+   "sweep_1/run_0005/events.csv": "8fa8db499a1d7a19fa16946d48a570b6cabe755ec1da07c5d39de22a5cb25f15",
+   "sweep_1/run_0005/metrics.json": "ca40f22b53ed91e0ec08fa3088d0140ca3460a7df5375965db6339ce220b0361",
+   "sweep_1/run_0005/resolved_config.yaml": "a5503a13a08f353b6b0bb8dacee3462d8c7f570042b86017d5e88c6d99fba598",
+   "sweep_1/run_0005/summary.md": "f4c9a00cd6f75016a3a76d9eb8e4cf1f9bb82bc88b4572cd0c3a0d48a1869923",
+   "sweep_1/run_0005/timeseries.csv": "ea29b7e63a636bba5156be877afe2365695be33135604aa1aeaa3dfa7e292e62",
+   "sweep_1/run_0006/events.csv": "ee6c49297678e7a0e8231c29a2f128d7c3e5c7916b82acf879fc5ca6c1fdcf64",
+   "sweep_1/run_0006/metrics.json": "67f93cf5fd275c230aff26472b3c6e59245ab00c697c04ffa0c57032ab28478b",
+   "sweep_1/run_0006/resolved_config.yaml": "81666217f942d5f2477d9af8688f1b8a509226eda7248a1eb39d9ceaaeaa1612",
+   "sweep_1/run_0006/summary.md": "72b3f99706869bfa1db33635d23b3f2db56e35c3ab555556030148af06112c75",
+   "sweep_1/run_0006/timeseries.csv": "7c11aedb1f3fafd7d580b246b586b72649a6a19110d33acaeb033541c9c39def",
+   "sweep_1/run_0007/events.csv": "d4166017e95a591edb58ed668df5bdfee2f2b0dece3005b913b22e89aed2d498",
+   "sweep_1/run_0007/metrics.json": "11f25f7576d0e0e7b1cb1db2c24465ca3931b57bb424b9a46b5ade1c600217db",
+   "sweep_1/run_0007/resolved_config.yaml": "4ed0528c3b5c23c8da0eaebe3c9fee8276e42bb420ec8a44e34305202cd59c86",
+   "sweep_1/run_0007/summary.md": "4c7995736ba2922dd933146ea5573167c66961ea7452d83fd9c5f70ab53c84ee",
+   "sweep_1/run_0007/timeseries.csv": "057ec5f27a55b99ab42d89e1312d9017ea441a3496d15623b3c6d16d60b4b4fa",
+   "sweep_1/run_0008/events.csv": "1c4223d9e23df99de03208d445c165edd88d5acc358cb9b6bdffa9efdfdd0051",
+   "sweep_1/run_0008/metrics.json": "45281611286e7da6ecc5aa9c544ecbfbda602a48e30b0000982769ac7e831390",
+   "sweep_1/run_0008/resolved_config.yaml": "807b85dfe6ca03bb08ff5426e67ebba75b7f60ee2c0b0aee6d7008a2e4ec53f3",
+   "sweep_1/run_0008/summary.md": "c1762284af30a9bbc79ee8cd8ee2ee5936ec8f8e47d21502e71c315c17105ff2",
+   "sweep_1/run_0008/timeseries.csv": "568279246a0df2fd56122ac391b3b1b12407430d74703435c55dc12033b932ad",
+   "sweep_1/run_0009/events.csv": "4ec6bf6ceb319c7e7989f8e2eaf75b1ec03a5fb8b9f73647ef2d744887964936",
+   "sweep_1/run_0009/metrics.json": "fed0d6a18e31ba4e0a4f6685298481ea4c4e721971b274f9bb5d7fbd560116e1",
+   "sweep_1/run_0009/resolved_config.yaml": "6c29770ddd6f32a0cac58febabde6324a2c705d124967e36c0c1c502e55f369d",
+   "sweep_1/run_0009/summary.md": "a9420eb575aabc290587654732d21de5584b280b848a297698eb99f59995d63a",
+   "sweep_1/run_0009/timeseries.csv": "7a5e6e16f3cfe81222188ab25fe9244a6f8deab75d51fa1fae3e26025580adf1",
+   "sweep_1/run_0010/events.csv": "0c8dc9040da33c96b3d3830a6ee7a0652351f306ab375d8d24af7cef3d9d27b0",
+   "sweep_1/run_0010/metrics.json": "1a318f3bea57a36b46ebd6b03ad3b43f7e2dfe363d970d34bf0637b7e63120c6",
+   "sweep_1/run_0010/resolved_config.yaml": "86139c29475da5963252cdd9d6470b67fc030ef3f4663225b0fd17455e09da1a",
+   "sweep_1/run_0010/summary.md": "fd3d9670d4549d20ba2ef5523068eec69d749fa8b7840a0c0f4ae41635b9936b",
+   "sweep_1/run_0010/timeseries.csv": "f08d5c76a628f32039eea2fadc9e10be71ed1acd89f85081a1a1f6f3a57559ec",
+   "sweep_1/run_0011/events.csv": "8151a3c21d3cdb83d894a79d6032dd2a7d0040ecefcf627d798cb700ebc43845",
+   "sweep_1/run_0011/metrics.json": "674eccb7d4970833ab31749dc63a3493e5fa9d3dea03547b98f1b6676d724050",
+   "sweep_1/run_0011/resolved_config.yaml": "d85c650fe3bd9c060747eb7e2b7658795995f9f1423d1f6c66bdd6be7a3f50dc",
+   "sweep_1/run_0011/summary.md": "c306d846cb79b6d627c078b14abf041812523cdebbc4633fbe5641db72521a10",
+   "sweep_1/run_0011/timeseries.csv": "d99ae0da31ec84c88a0a6b4018436b6ef9d86484fb504c0b698310a06b7e9024",
+   "sweep_1/run_0012/events.csv": "e375ed67c24fd206d59c12e03946ad9fc4635ca0ef0783fcaf459d277f29999c",
+   "sweep_1/run_0012/metrics.json": "6f61bce68c6c34bd1414b4e5dba92fac340a6a6d68008b03e81f95ec4ffc0d5c",
+   "sweep_1/run_0012/resolved_config.yaml": "03b196feea14756caa0391c8f9071367290dd2bf75f0ed7079c82ba63c3fed14",
+   "sweep_1/run_0012/summary.md": "157e156ab7d4a21eb0ee555bc94ace6ffae41957765301a2661a0bb91db127c7",
+   "sweep_1/run_0012/timeseries.csv": "e4fcfcceb5a8aaa9a76dbe0fddc276abc51ab39eb2d117f76b468da599815b1a",
+   "sweep_1/sweep_index.csv": "f78f8fb630edbb402766be048300f489d0fccaf3052351923bb1f203ace97d86",
+   "sweep_2/run_0001/events.csv": "78aabcb55c90d0e524532257c068e5f38019263ce43caf910590d33d7dc91695",
+   "sweep_2/run_0001/metrics.json": "cc45158c4af778d1134ee3d56e3d54c4d70744a6340b7cae930e7ea39ca6d963",
+   "sweep_2/run_0001/resolved_config.yaml": "aacc59b9aae4c2e0f10f50804975ad964da4e634fc404cb42bec980f3d4b6c67",
+   "sweep_2/run_0001/summary.md": "baf5cdfff3c0624c6517da508618e145a3faf4bf0b4341b412bb74cd2d08e251",
+   "sweep_2/run_0001/timeseries.csv": "4b5a80c36a6415bbae3b67b78703e4e74b802c501bb4d5fb435af27dc2be59e5",
+   "sweep_2/run_0002/events.csv": "24a38e384a083bf76c697210daa7443125e28552ad83ce04e6a5cc754b49fac8",
+   "sweep_2/run_0002/metrics.json": "deebf1ecbf6d7558102abb36102cd9beb8965c8b94ead359a80c654aad1548d6",
+   "sweep_2/run_0002/resolved_config.yaml": "5d5925ff70c06ded3ec2b5535da3af2744478538eaf7db716cbf4f865c5adf15",
+   "sweep_2/run_0002/summary.md": "68996099d31d15275b950a924cfb269812cc325417bf59758d4825fbe981c644",
+   "sweep_2/run_0002/timeseries.csv": "f01d604824fd5bda02d7a03ee926fa9b84b592eb0f00d6a1d0939f023a5bd286",
+   "sweep_2/run_0003/events.csv": "ff6352893e75ecb4297fce2dd66c3c63e087c59511eb8bea500b60c8739fd07c",
+   "sweep_2/run_0003/metrics.json": "3687801949212b220786e50a8f5a1f73734d254827be161c8a591eacfd3ba358",
+   "sweep_2/run_0003/resolved_config.yaml": "3c211183ae11937a30a54d18c50060abf7318dcd147d9be111bb759eb2b5132a",
+   "sweep_2/run_0003/summary.md": "3ca70dc4691755537634d3b2a0a4d44fcce15370f6c726f52f6da0e8cc881350",
+   "sweep_2/run_0003/timeseries.csv": "9335b7561ac6ef032d2736ef28997a9f81ed51e23a0cef14b43c98a5bd39d8b3",
+   "sweep_2/run_0004/events.csv": "8a7e6563960bb55b921f3480048aa321142fefc85695508c3b3c422ebdab5aad",
+   "sweep_2/run_0004/metrics.json": "9babb0749aaa556995ef53e13288b605c8cb668785749c4272a4b7e454a6ae26",
+   "sweep_2/run_0004/resolved_config.yaml": "802f24f448cdf4a1a38c8ab134ed268d4b5a27830280a0024d47ed83512cb33e",
+   "sweep_2/run_0004/summary.md": "603383199cd19fe64db3845d8b9cbd1e7da521ee49a6170984f1fe567d3ddfb1",
+   "sweep_2/run_0004/timeseries.csv": "7fff5ddc0d1d4edfa392341c3f344263a37c01c5d3f721f64ba53e5f2ed0b1cb",
+   "sweep_2/run_0005/events.csv": "1c4223d9e23df99de03208d445c165edd88d5acc358cb9b6bdffa9efdfdd0051",
+   "sweep_2/run_0005/metrics.json": "3813f44177b422fd35515abfae1d0c1fcdff5298c7fed8ab396c57a78f93e981",
+   "sweep_2/run_0005/resolved_config.yaml": "d68cff8c682821bd64ba7e85074a7a9b42dede8a52f1b2303a97a138ebf30892",
+   "sweep_2/run_0005/summary.md": "cd279184697959fcd59e827b5eef90e197f9e6e669f42c663f49adc7c6a7c816",
+   "sweep_2/run_0005/timeseries.csv": "568279246a0df2fd56122ac391b3b1b12407430d74703435c55dc12033b932ad",
+   "sweep_2/run_0006/events.csv": "c2c490e929a968397ba11988ffbe5cbbd9217a0d9875fa39078ed522ffccd025",
+   "sweep_2/run_0006/metrics.json": "977f41f01f4c9d0b2722ddf9ad661fca84efccc0694d1f44d5d194f500b42ecb",
+   "sweep_2/run_0006/resolved_config.yaml": "10bb3dc758cc9d55214cafc5f854ed1611a36f73f628935d3f9d002563c627a9",
+   "sweep_2/run_0006/summary.md": "6b7c0f0ce926f8f2f0c56dd022a2891b713cbc4b14db8397dc41fddfaec33aca",
+   "sweep_2/run_0006/timeseries.csv": "ca2c381d9710a17f0e4e01d1b2a647c3df4798a85a6992a8c9118e8341d02428",
+   "sweep_2/run_0007/events.csv": "dc135b99a0d35ff1c9061da932aaa1e5475e29900b3c222d690d4194bf1a14af",
+   "sweep_2/run_0007/metrics.json": "61e9322b215d4a9087bc09bb497bccff7dd41ed31310da425034a602259cc93d",
+   "sweep_2/run_0007/resolved_config.yaml": "55a25f81798d125aa43ac51e2756fd56e799af3c6767ac0e10de6df73f4939a7",
+   "sweep_2/run_0007/summary.md": "398a2d87a9a9e6ea14ffc65a15f9a567e815c1744255eb1edac2c44a0eafc688",
+   "sweep_2/run_0007/timeseries.csv": "374aa7f3516a49b115ada7073add5df5d0bd85f7b7f56b069c3598c8f5d654c1",
+   "sweep_2/run_0008/events.csv": "47294023d4e6ea7527213e9f163e1244c9005ae40416cf65c78a02dada2ffb46",
+   "sweep_2/run_0008/metrics.json": "3a9849c17614f1463ee2b284918dd321c07707370cd568da23c8006c50c06a98",
+   "sweep_2/run_0008/resolved_config.yaml": "d105b7f9eab2b880c526b199c406ed78538f2ae2e832644be86097eff9b01b28",
+   "sweep_2/run_0008/summary.md": "14443923ba4179472e71b856c4044ffc8b172e1b4ee56004fc647677ac9f35a8",
+   "sweep_2/run_0008/timeseries.csv": "c8e07c08331cd912124c1e262903c16a05250f778581bd66f99af9a6d333a3d3",
+   "sweep_2/run_0009/events.csv": "9b67753a47c70df0162a483fba2cf4ea2731aa38d3c46c32d774885d6753697e",
+   "sweep_2/run_0009/metrics.json": "ef7638a3a5108a771f85a231db243c89a4ee638a4a084eb6c50b0e8d2db1322e",
+   "sweep_2/run_0009/resolved_config.yaml": "fd401a844a48b5aea4933b14335450a6f9bf963b388aa7c52a150c3489ce986b",
+   "sweep_2/run_0009/summary.md": "9aae70e5568595047ff666f2dca1e433ce47629cdf283d8e5e6214bbb31cb8bc",
+   "sweep_2/run_0009/timeseries.csv": "c308e9665b89e3cd839b49b8505589086e5de4494b06c044e72425a3dbb780ab",
+   "sweep_2/sweep_index.csv": "2b858a34feed9ca044f1de3ba18f97cd73d138b00bf70c0dcb7dcb7762d93355",
+   "sweep_3/run_0001/events.csv": "81d63da047d1521846d95bede1838c1e88c3413720bd09cb8b191817cb2d5d05",
+   "sweep_3/run_0001/metrics.json": "3c022958b6ed97ea9784eb4acd16f55a51bf8bad9be12d9c821d6842e83b584c",
+   "sweep_3/run_0001/resolved_config.yaml": "e587d1b79436b58c43baadefe6eb208aca36d1bad2de29eb879d491cf82790d2",
+   "sweep_3/run_0001/summary.md": "eef42d770fe6e68e47e362336b96230986eac92dc0653d35935d84f8c16f3ff6",
+   "sweep_3/run_0001/timeseries.csv": "57e1d49f8bad82641e568dd6e7fbda2f37e73ea023f9e51706243531243954f3",
+   "sweep_3/run_0002/events.csv": "961f077578d0c71cc4fbc1243a87282101073239febe13aa9a9c13ae5b924ba2",
+   "sweep_3/run_0002/metrics.json": "1f16481845260ee8a792806f194035bdd7dbd9e40ab989d3a4866df6cc7d6158",
+   "sweep_3/run_0002/resolved_config.yaml": "6fdc6d3fea865671ccda59cdbd8c8988a7823e3c9bc1ae3d26156c050809e49a",
+   "sweep_3/run_0002/summary.md": "4346754786608265a1b822da77b9c946f04e521af3ab0f0867ca03ccc1f1d191",
+   "sweep_3/run_0002/timeseries.csv": "b51b58b0a17b89327cd144cf0ed6627d698860ce8649b56c2832bcc9e434452f",
+   "sweep_3/run_0003/events.csv": "1d5a8870dbf8401ea4477506c9d801ef4cf93a3493953a5904ed9a2a79cd0632",
+   "sweep_3/run_0003/metrics.json": "a1925dfdb4a0c1e060eff89d3632e04194df9730587adde02d4bdd53cc36f278",
+   "sweep_3/run_0003/resolved_config.yaml": "c12f02528f56a53a107afe9bff0124b3256261dfc66e2c3cfbd12fb288678ebc",
+   "sweep_3/run_0003/summary.md": "8e7407839245d0e651c47a3d8e7aa37ceff7533aefe4366ad0143581b5b0f266",
+   "sweep_3/run_0003/timeseries.csv": "2ce9b4beb2dcce9f5cc38cebfadb15dc26fd70f1a12c755b6ee3b43f0f0621ee",
+   "sweep_3/sweep_index.csv": "3de9bf647daeb3e3e3b9c11c9a125a907438643e2627bea204e488dd04c121ac"
+  }
+ },
+ "png_files": {
+  "experiment": [
+   "plots/pad_altitude.png",
+   "plots/pad_felt_g.png",
+   "plots/pad_instant_altitude.png",
+   "plots/pad_instant_felt_g.png",
+   "plots/pad_instant_mass_thrust.png",
+   "plots/pad_instant_speed.png",
+   "plots/pad_mass_thrust.png",
+   "plots/pad_speed.png",
+   "plots/silo_cold_altitude.png",
+   "plots/silo_cold_drive_power.png",
+   "plots/silo_cold_felt_g.png",
+   "plots/silo_cold_lag_altitude.png",
+   "plots/silo_cold_lag_drive_power.png",
+   "plots/silo_cold_lag_felt_g.png",
+   "plots/silo_cold_lag_mass_thrust.png",
+   "plots/silo_cold_lag_speed.png",
+   "plots/silo_cold_lag_track_forces.png",
+   "plots/silo_cold_mass_thrust.png",
+   "plots/silo_cold_speed.png",
+   "plots/silo_cold_track_forces.png",
+   "plots/silo_failed_altitude.png",
+   "plots/silo_failed_drive_power.png",
+   "plots/silo_failed_felt_g.png",
+   "plots/silo_failed_mass_thrust.png",
+   "plots/silo_failed_speed.png",
+   "plots/silo_failed_track_forces.png",
+   "plots/silo_hot_full_altitude.png",
+   "plots/silo_hot_full_drive_power.png",
+   "plots/silo_hot_full_felt_g.png",
+   "plots/silo_hot_full_impinged_altitude.png",
+   "plots/silo_hot_full_impinged_drive_power.png",
+   "plots/silo_hot_full_impinged_felt_g.png",
+   "plots/silo_hot_full_impinged_mass_thrust.png",
+   "plots/silo_hot_full_impinged_speed.png",
+   "plots/silo_hot_full_impinged_track_forces.png",
+   "plots/silo_hot_full_mass_thrust.png",
+   "plots/silo_hot_full_speed.png",
+   "plots/silo_hot_full_track_forces.png",
+   "plots/silo_hot_ramp_on_track_altitude.png",
+   "plots/silo_hot_ramp_on_track_drive_power.png",
+   "plots/silo_hot_ramp_on_track_felt_g.png",
+   "plots/silo_hot_ramp_on_track_mass_thrust.png",
+   "plots/silo_hot_ramp_on_track_speed.png",
+   "plots/silo_hot_ramp_on_track_track_forces.png",
+   "plots/silo_instant_altitude.png",
+   "plots/silo_instant_drive_power.png",
+   "plots/silo_instant_felt_g.png",
+   "plots/silo_instant_mass_thrust.png",
+   "plots/silo_instant_speed.png",
+   "plots/silo_instant_track_forces.png",
+   "plots/silo_sled_22t_altitude.png",
+   "plots/silo_sled_22t_drive_power.png",
+   "plots/silo_sled_22t_felt_g.png",
+   "plots/silo_sled_22t_mass_thrust.png",
+   "plots/silo_sled_22t_speed.png",
+   "plots/silo_sled_22t_track_forces.png"
+  ],
+  "sweep": [
+   "baseline/plots/pad_altitude.png",
+   "baseline/plots/pad_felt_g.png",
+   "baseline/plots/pad_mass_thrust.png",
+   "baseline/plots/pad_speed.png",
+   "sweep_1/run_0001/plots/run_0001_altitude.png",
+   "sweep_1/run_0001/plots/run_0001_drive_power.png",
+   "sweep_1/run_0001/plots/run_0001_felt_g.png",
+   "sweep_1/run_0001/plots/run_0001_mass_thrust.png",
+   "sweep_1/run_0001/plots/run_0001_speed.png",
+   "sweep_1/run_0001/plots/run_0001_track_forces.png",
+   "sweep_1/run_0002/plots/run_0002_altitude.png",
+   "sweep_1/run_0002/plots/run_0002_drive_power.png",
+   "sweep_1/run_0002/plots/run_0002_felt_g.png",
+   "sweep_1/run_0002/plots/run_0002_mass_thrust.png",
+   "sweep_1/run_0002/plots/run_0002_speed.png",
+   "sweep_1/run_0002/plots/run_0002_track_forces.png",
+   "sweep_1/run_0003/plots/run_0003_altitude.png",
+   "sweep_1/run_0003/plots/run_0003_drive_power.png",
+   "sweep_1/run_0003/plots/run_0003_felt_g.png",
+   "sweep_1/run_0003/plots/run_0003_mass_thrust.png",
+   "sweep_1/run_0003/plots/run_0003_speed.png",
+   "sweep_1/run_0003/plots/run_0003_track_forces.png",
+   "sweep_1/run_0004/plots/run_0004_altitude.png",
+   "sweep_1/run_0004/plots/run_0004_drive_power.png",
+   "sweep_1/run_0004/plots/run_0004_felt_g.png",
+   "sweep_1/run_0004/plots/run_0004_mass_thrust.png",
+   "sweep_1/run_0004/plots/run_0004_speed.png",
+   "sweep_1/run_0004/plots/run_0004_track_forces.png",
+   "sweep_1/run_0005/plots/run_0005_altitude.png",
+   "sweep_1/run_0005/plots/run_0005_drive_power.png",
+   "sweep_1/run_0005/plots/run_0005_felt_g.png",
+   "sweep_1/run_0005/plots/run_0005_mass_thrust.png",
+   "sweep_1/run_0005/plots/run_0005_speed.png",
+   "sweep_1/run_0005/plots/run_0005_track_forces.png",
+   "sweep_1/run_0006/plots/run_0006_altitude.png",
+   "sweep_1/run_0006/plots/run_0006_drive_power.png",
+   "sweep_1/run_0006/plots/run_0006_felt_g.png",
+   "sweep_1/run_0006/plots/run_0006_mass_thrust.png",
+   "sweep_1/run_0006/plots/run_0006_speed.png",
+   "sweep_1/run_0006/plots/run_0006_track_forces.png",
+   "sweep_1/run_0007/plots/run_0007_altitude.png",
+   "sweep_1/run_0007/plots/run_0007_drive_power.png",
+   "sweep_1/run_0007/plots/run_0007_felt_g.png",
+   "sweep_1/run_0007/plots/run_0007_mass_thrust.png",
+   "sweep_1/run_0007/plots/run_0007_speed.png",
+   "sweep_1/run_0007/plots/run_0007_track_forces.png",
+   "sweep_1/run_0008/plots/run_0008_altitude.png",
+   "sweep_1/run_0008/plots/run_0008_drive_power.png",
+   "sweep_1/run_0008/plots/run_0008_felt_g.png",
+   "sweep_1/run_0008/plots/run_0008_mass_thrust.png",
+   "sweep_1/run_0008/plots/run_0008_speed.png",
+   "sweep_1/run_0008/plots/run_0008_track_forces.png",
+   "sweep_1/run_0009/plots/run_0009_altitude.png",
+   "sweep_1/run_0009/plots/run_0009_drive_power.png",
+   "sweep_1/run_0009/plots/run_0009_felt_g.png",
+   "sweep_1/run_0009/plots/run_0009_mass_thrust.png",
+   "sweep_1/run_0009/plots/run_0009_speed.png",
+   "sweep_1/run_0009/plots/run_0009_track_forces.png",
+   "sweep_1/run_0010/plots/run_0010_altitude.png",
+   "sweep_1/run_0010/plots/run_0010_drive_power.png",
+   "sweep_1/run_0010/plots/run_0010_felt_g.png",
+   "sweep_1/run_0010/plots/run_0010_mass_thrust.png",
+   "sweep_1/run_0010/plots/run_0010_speed.png",
+   "sweep_1/run_0010/plots/run_0010_track_forces.png",
+   "sweep_1/run_0011/plots/run_0011_altitude.png",
+   "sweep_1/run_0011/plots/run_0011_drive_power.png",
+   "sweep_1/run_0011/plots/run_0011_felt_g.png",
+   "sweep_1/run_0011/plots/run_0011_mass_thrust.png",
+   "sweep_1/run_0011/plots/run_0011_speed.png",
+   "sweep_1/run_0011/plots/run_0011_track_forces.png",
+   "sweep_1/run_0012/plots/run_0012_altitude.png",
+   "sweep_1/run_0012/plots/run_0012_drive_power.png",
+   "sweep_1/run_0012/plots/run_0012_felt_g.png",
+   "sweep_1/run_0012/plots/run_0012_mass_thrust.png",
+   "sweep_1/run_0012/plots/run_0012_speed.png",
+   "sweep_1/run_0012/plots/run_0012_track_forces.png",
+   "sweep_2/run_0001/plots/run_0001_altitude.png",
+   "sweep_2/run_0001/plots/run_0001_drive_power.png",
+   "sweep_2/run_0001/plots/run_0001_felt_g.png",
+   "sweep_2/run_0001/plots/run_0001_mass_thrust.png",
+   "sweep_2/run_0001/plots/run_0001_speed.png",
+   "sweep_2/run_0001/plots/run_0001_track_forces.png",
+   "sweep_2/run_0002/plots/run_0002_altitude.png",
+   "sweep_2/run_0002/plots/run_0002_drive_power.png",
+   "sweep_2/run_0002/plots/run_0002_felt_g.png",
+   "sweep_2/run_0002/plots/run_0002_mass_thrust.png",
+   "sweep_2/run_0002/plots/run_0002_speed.png",
+   "sweep_2/run_0002/plots/run_0002_track_forces.png",
+   "sweep_2/run_0003/plots/run_0003_altitude.png",
+   "sweep_2/run_0003/plots/run_0003_drive_power.png",
+   "sweep_2/run_0003/plots/run_0003_felt_g.png",
+   "sweep_2/run_0003/plots/run_0003_mass_thrust.png",
+   "sweep_2/run_0003/plots/run_0003_speed.png",
+   "sweep_2/run_0003/plots/run_0003_track_forces.png",
+   "sweep_2/run_0004/plots/run_0004_altitude.png",
+   "sweep_2/run_0004/plots/run_0004_drive_power.png",
+   "sweep_2/run_0004/plots/run_0004_felt_g.png",
+   "sweep_2/run_0004/plots/run_0004_mass_thrust.png",
+   "sweep_2/run_0004/plots/run_0004_speed.png",
+   "sweep_2/run_0004/plots/run_0004_track_forces.png",
+   "sweep_2/run_0005/plots/run_0005_altitude.png",
+   "sweep_2/run_0005/plots/run_0005_drive_power.png",
+   "sweep_2/run_0005/plots/run_0005_felt_g.png",
+   "sweep_2/run_0005/plots/run_0005_mass_thrust.png",
+   "sweep_2/run_0005/plots/run_0005_speed.png",
+   "sweep_2/run_0005/plots/run_0005_track_forces.png",
+   "sweep_2/run_0006/plots/run_0006_altitude.png",
+   "sweep_2/run_0006/plots/run_0006_drive_power.png",
+   "sweep_2/run_0006/plots/run_0006_felt_g.png",
+   "sweep_2/run_0006/plots/run_0006_mass_thrust.png",
+   "sweep_2/run_0006/plots/run_0006_speed.png",
+   "sweep_2/run_0006/plots/run_0006_track_forces.png",
+   "sweep_2/run_0007/plots/run_0007_altitude.png",
+   "sweep_2/run_0007/plots/run_0007_drive_power.png",
+   "sweep_2/run_0007/plots/run_0007_felt_g.png",
+   "sweep_2/run_0007/plots/run_0007_mass_thrust.png",
+   "sweep_2/run_0007/plots/run_0007_speed.png",
+   "sweep_2/run_0007/plots/run_0007_track_forces.png",
+   "sweep_2/run_0008/plots/run_0008_altitude.png",
+   "sweep_2/run_0008/plots/run_0008_drive_power.png",
+   "sweep_2/run_0008/plots/run_0008_felt_g.png",
+   "sweep_2/run_0008/plots/run_0008_mass_thrust.png",
+   "sweep_2/run_0008/plots/run_0008_speed.png",
+   "sweep_2/run_0008/plots/run_0008_track_forces.png",
+   "sweep_2/run_0009/plots/run_0009_altitude.png",
+   "sweep_2/run_0009/plots/run_0009_drive_power.png",
+   "sweep_2/run_0009/plots/run_0009_felt_g.png",
+   "sweep_2/run_0009/plots/run_0009_mass_thrust.png",
+   "sweep_2/run_0009/plots/run_0009_speed.png",
+   "sweep_2/run_0009/plots/run_0009_track_forces.png",
+   "sweep_3/run_0001/plots/run_0001_altitude.png",
+   "sweep_3/run_0001/plots/run_0001_drive_power.png",
+   "sweep_3/run_0001/plots/run_0001_felt_g.png",
+   "sweep_3/run_0001/plots/run_0001_mass_thrust.png",
+   "sweep_3/run_0001/plots/run_0001_speed.png",
+   "sweep_3/run_0001/plots/run_0001_track_forces.png",
+   "sweep_3/run_0002/plots/run_0002_altitude.png",
+   "sweep_3/run_0002/plots/run_0002_drive_power.png",
+   "sweep_3/run_0002/plots/run_0002_felt_g.png",
+   "sweep_3/run_0002/plots/run_0002_mass_thrust.png",
+   "sweep_3/run_0002/plots/run_0002_speed.png",
+   "sweep_3/run_0002/plots/run_0002_track_forces.png",
+   "sweep_3/run_0003/plots/run_0003_altitude.png",
+   "sweep_3/run_0003/plots/run_0003_drive_power.png",
+   "sweep_3/run_0003/plots/run_0003_felt_g.png",
+   "sweep_3/run_0003/plots/run_0003_mass_thrust.png",
+   "sweep_3/run_0003/plots/run_0003_speed.png",
+   "sweep_3/run_0003/plots/run_0003_track_forces.png"
+  ]
+ }
+}

@@ -1,16 +1,19 @@
-"""Loss budgets and residuals (docs/physics.md, "Loss accounting" and "Ignition-after-
-release loss").
+"""Loss budgets and residuals (docs/physics.md, "Loss accounting", "2-D loss identity",
+"Rocket-equation closure (planar)" and "Ignition-after-release loss").
 
 Everything is SI and pure. The ascent budget is assembled from the loss quadrature
-states the ODE carries (J_vac, J_grav, J_alt, J_bp, J_steer in ``VERTICAL_LAYOUT``),
-summed over the free-flight phases from release onward, and checked against CLAUDE.md's
-identity
+states the ODE carries (J_vac, J_grav, J_alt, J_bp, J_steer, and J_drag in the planar
+layout), summed over the free-flight phases from the flight start onward, and checked
+against CLAUDE.md's identity
 
     |v_rel,f| - |v_rel,0| = dv_vac - gravity - drag - steering - back_pressure
 
-(drag = 0 in Phase 1; omega_p = 0 so v_rel = v). ``ignition_loss_analytic_mps`` is the
-constant-gravity closed form of the speed lost by lighting the engines late or slowly,
-against which the integrated runs are reported side by side.
+(1-D: drag = 0 and omega_p = 0, so v_rel = v; planar: the speed is |v_rel| from the
+model). ``pointwise_dVdt`` evaluates both sides of the identity's rate at one planar
+state; ``rocket_equation_closure`` checks a planar run's mass bookkeeping against the
+ideal rocket equation. ``ignition_loss_analytic_mps`` is the constant-gravity closed
+form of the speed lost by lighting the engines late or slowly, against which the
+integrated runs are reported side by side.
 """
 
 from __future__ import annotations
@@ -24,9 +27,18 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.special import lambertw
 
-from launchsim.dynamics import VERTICAL_LAYOUT, StateLayout
-from launchsim.phases import PhaseResult
-from launchsim.vehicle import Startup, startup_deficit_s
+from launchsim.constants import V_REL_EPS_MPS
+from launchsim.dynamics import (
+    PLANAR_LAYOUT,
+    VERTICAL_LAYOUT,
+    PlanarParams,
+    StateLayout,
+    planar_forces,
+    rhs_planar,
+)
+from launchsim.phases import PhaseResult, RunTrace
+from launchsim.phases.planar import COAST_STAGING, FAIRING_EVENT
+from launchsim.vehicle import Startup, Vehicle, startup_deficit_s
 
 RESIDUAL_FLOOR_J = 1.0
 """Denominator floor [J] of ``AssistEnergyBudget.residual_rel`` (a push that does no
@@ -47,14 +59,16 @@ class LossBudget:
     dv_vac: integral of T_vac/m dt from the flight start, c ln(m_flight_start/m_end)
     whenever the propellant is burned (the flight start is release, or the liftoff root
     of a hold extended past release; what burned before it is the ``before_flight``
-    pair of ``sim.run_metrics``); gravity: integral of g sigma dt (negative while
-    falling: speed regained);
+    pair of ``sim.run_metrics``); gravity: integral of g sigma dt in 1-D (negative while
+    falling: speed regained), of g_eff sin gamma_rel dt in the planar model;
     gravity_alt: the altitude part integral of (g - g_ref) sigma dt (<= 0 above the
     datum while rising), so ``gravity_duration`` = gravity - gravity_alt = g_ref times
-    the signed flight time; drag: 0 in Phase 1; steering: integral of (T/m)(1 - cos psi)
-    dt (2 T/m while thrusting against the velocity); back_pressure: integral of
-    (T_vac - T)/m dt (0 while p_amb = 0); speed_start and speed_end: |v| at release and
-    at the end. Frame: 1-D vertical, Earth-relative = inertial (omega_p = 0).
+    the signed flight time (1-D); drag: 0 in Phase 1, integral of D/m dt in the planar
+    model; steering: integral of (T/m)(1 - cos psi) dt (2 T/m while thrusting against
+    the velocity in 1-D); back_pressure: integral of (T_vac - T)/m dt (0 while
+    p_amb = 0); speed_start and speed_end: |v_rel| at the flight start and at the end.
+    Frame: 1-D vertical with Earth-relative = inertial (omega_p = 0), or planar with
+    v_rel relative to the co-rotating air.
     """
 
     dv_vac: float
@@ -277,17 +291,28 @@ def drive_power_extrema(
     return p_max, t_max, p_min, t_min
 
 
-def loss_budget(phases: Sequence[PhaseResult], layout: StateLayout = VERTICAL_LAYOUT) -> LossBudget:
-    """The LossBudget of a sequence of free-flight phases (release onward).
+def loss_budget(
+    phases: Sequence[PhaseResult],
+    layout: StateLayout = VERTICAL_LAYOUT,
+    speed: Callable[[np.ndarray], float] | None = None,
+) -> LossBudget:
+    """The LossBudget of a sequence of free-flight phases (the flight start onward).
 
     Inputs: the ascent PhaseResults in time order, each carrying the loss quadrature
-    states (``J_vac_mps``, ``J_grav_mps``, ``J_alt_mps``, ``J_bp_mps``, ``J_steer_mps``)
-    and the signed velocity ``v_mps``; the state layout. Output: the per-phase
-    increments of every quadrature summed (so a reset between phases would not be
-    hidden), speed_start = |v| at the start of the first phase and speed_end = |v| at
-    the end of the last one, all in m/s. An empty sequence gives an all-zero budget.
+    states (``J_vac_mps``, ``J_grav_mps``, ``J_alt_mps``, ``J_bp_mps``, ``J_steer_mps``,
+    and ``J_drag_mps`` when the layout has it: the planar model); the state layout;
+    speed, the model's Earth-relative speed of one state [m/s] (the planar
+    ``PlanarDynamics2D.speed``, |v_rel|); None reads |v_mps| (the 1-D layout's signed
+    velocity). Output: the per-phase increments of every quadrature summed (so a reset
+    between phases would not be hidden), drag from J_drag (0 without it),
+    speed_start at the start of the first phase and speed_end at the end of the last
+    one, all in m/s. An empty sequence gives an all-zero budget. The 1-D path is
+    unchanged bit for bit.
     """
     names = ("J_vac_mps", "J_grav_mps", "J_alt_mps", "J_bp_mps", "J_steer_mps")
+    has_drag = "J_drag_mps" in layout.names
+    if has_drag:
+        names += ("J_drag_mps",)
     sums = dict.fromkeys(names, 0.0)
     if not phases:
         return LossBudget(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -295,17 +320,137 @@ def loss_budget(phases: Sequence[PhaseResult], layout: StateLayout = VERTICAL_LA
         y0 = np.asarray(res.y[:, 0], dtype=float)
         for name in names:
             sums[name] += float(layout.get(res.y_end, name)) - float(layout.get(y0, name))
-    v_start = float(layout.get(np.asarray(phases[0].y[:, 0], dtype=float), "v_mps"))
-    v_end = float(layout.get(phases[-1].y_end, "v_mps"))
+    y_first = np.asarray(phases[0].y[:, 0], dtype=float)
+    y_last = phases[-1].y_end
+    if speed is None:
+        speed_start = abs(float(layout.get(y_first, "v_mps")))
+        speed_end = abs(float(layout.get(y_last, "v_mps")))
+    else:
+        speed_start = float(speed(y_first))
+        speed_end = float(speed(y_last))
     return LossBudget(
         dv_vac=sums["J_vac_mps"],
         gravity=sums["J_grav_mps"],
         gravity_alt=sums["J_alt_mps"],
-        drag=0.0,
+        drag=sums["J_drag_mps"] if has_drag else 0.0,
         steering=sums["J_steer_mps"],
         back_pressure=sums["J_bp_mps"],
-        speed_start=abs(v_start),
-        speed_end=abs(v_end),
+        speed_start=speed_start,
+        speed_end=speed_end,
+    )
+
+
+def pointwise_dVdt(t: float, y: np.ndarray, p: PlanarParams) -> tuple[float, float, float]:
+    """Both sides of the 2-D loss identity's rate at one planar state (docs/physics.md,
+    "2-D loss identity").
+
+    Inputs: t [s]; y (PLANAR_LAYOUT); p, the phase's PlanarParams. Output: (lhs, rhs,
+    scale) [m/s^2]: lhs = dV/dt = (w w' + u u')/V from the kinematic rows of
+    ``rhs_planar`` (w' = dv_r/dt, u' = dv_theta/dt - omega_p dr/dt), or, below
+    V_REL_EPS_MPS, the fallback T e_r/m - g_eff - D/m from ``planar_forces``; rhs = the
+    quadrature rates J_vac' - J_grav' - J_drag' - J_steer' - J_bp' from the same RHS
+    call; scale = max(T/m, T_vac/m, g_eff, D/m, |w w'|/V, |u u'|/V), the size against
+    which |lhs - rhs| is a rounding-level fraction. Frame: planar, v_rel relative to
+    the co-rotating air.
+    """
+    lay = PLANAR_LAYOUT
+    dy = rhs_planar(t, y, p)
+    f = planar_forces(t, y, p)
+    m = float(lay.get(y, "m_kg"))
+    rhs = float(
+        dy[lay.index("J_vac_mps")]
+        - dy[lay.index("J_grav_mps")]
+        - dy[lay.index("J_drag_mps")]
+        - dy[lay.index("J_steer_mps")]
+        - dy[lay.index("J_bp_mps")]
+    )
+    terms = [f.T_N / m, f.T_vac_N / m, abs(f.g_eff_mps2), f.D_N / m]
+    if f.V_mps < V_REL_EPS_MPS:
+        lhs = f.T_N * f.e_r / m - f.g_eff_mps2 - f.D_N / m
+        return lhs, rhs, max(terms)
+    w_dot = float(dy[lay.index("v_r_mps")])
+    u_dot = float(dy[lay.index("v_theta_mps")]) - p.omega_p_rads * float(dy[lay.index("r_m")])
+    ww = f.w_mps * w_dot / f.V_mps
+    uu = f.u_mps * u_dot / f.V_mps
+    return ww + uu, rhs, max(*terms, abs(ww), abs(uu))
+
+
+@dataclass(frozen=True)
+class ClosureTerms:
+    """The rocket-equation closure of a planar run at its payload P (docs/physics.md,
+    "Rocket-equation closure (planar)"), all in m/s.
+
+    d_id_mps: the ideal delta-v c1 ln(m0/m1) + c2 ln(m2/m3) with m0 the stack at
+    stage-1 ignition, m1 = m0 - m_p1, m2 = m1 - m_d1 - F (the fairing always counted
+    as dropped at staging) and m3 = m_d2 + P; j_vac_mps: the integral of T_vac/m dt
+    from the flight start (the run's quadrature); pre_mps: c1 ln(m0/m_fs), what stage
+    1 burned before the flight start (the hold, the track); fair_mps: c2 ln[(1 +
+    F2/m_f+)/(1 + F2/m2)], the cost of carrying the fairing F2 (F when it stayed on
+    past staging, else 0) into stage 2 until the mass m_f+ just after its drop (m3
+    when it is never dropped); dv_margin_mps: c2 ln(m_c/m_empty) with m_c the mass at
+    the cutoff and m_empty = m3 (+ F2 while still on). ``residual_mps`` = d_id -
+    (j_vac + pre + fair + dv_margin), zero up to the integration error when the mass
+    bookkeeping is right.
+    """
+
+    d_id_mps: float
+    j_vac_mps: float
+    pre_mps: float
+    fair_mps: float
+    dv_margin_mps: float
+
+    @property
+    def residual_mps(self) -> float:
+        """d_id - (j_vac + pre + fair + dv_margin) [m/s]."""
+        return self.d_id_mps - (self.j_vac_mps + self.pre_mps + self.fair_mps + self.dv_margin_mps)
+
+
+def rocket_equation_closure(
+    trace: RunTrace, vehicle: Vehicle, layout: StateLayout = PLANAR_LAYOUT
+) -> ClosureTerms:
+    """The ClosureTerms of a planar two-stage run that burned stage 2 (docs/physics.md,
+    "Rocket-equation closure (planar)").
+
+    Inputs: the RunTrace (its flight start; its stage burnouts: stage 1 at MECO, stage
+    2 at the cutoff or depletion; its ascent phases with the J_vac quadrature; and its
+    ``fairing`` event, logged with the mass just before the drop); the Vehicle it flew
+    (payload P = vehicle.payload_mass_kg, c = g0 Isp_vac per stage, the fairing rule);
+    the state layout. The fairing counts as dropped at staging under rule ``staging``
+    or when its event lies in COAST_STAGING (the heating criterion already met at
+    staging). Output: ClosureTerms. ValueError for a vehicle without exactly two
+    stages, or a run with no flight start or no stage-2 burnout.
+    """
+    if vehicle.n_stages != 2:
+        raise ValueError("the closure is written for a two-stage vehicle")
+    s1, s2 = vehicle.stages
+    if trace.y_flight_start is None or s2.name not in trace.burnouts:
+        raise ValueError("the closure needs a run that flew and burned stage 2")
+    fairing = vehicle.fairing_mass_kg
+    m0 = vehicle.liftoff_mass_kg()
+    m_fs = float(layout.get(trace.y_flight_start, "m_kg"))
+    m1 = m0 - s1.propellant_mass_kg
+    m2 = m1 - s1.dry_mass_kg - fairing
+    m3 = s2.dry_mass_kg + vehicle.payload_mass_kg
+    event = trace.first_event(FAIRING_EVENT)
+    staged = vehicle.fairing_rule.trigger == "staging" or (
+        event is not None and event.phase == COAST_STAGING
+    )
+    carried = 0.0 if staged else fairing
+    m_c = float(layout.get(trace.burnouts[s2.name][1], "m_kg"))
+    if carried > 0.0 and event is not None:
+        m_after, m_empty = event.m_kg - carried, m3
+    else:
+        m_after, m_empty = m3, m3 + carried
+    j_vac = sum(
+        float(layout.get(p.y_end, "J_vac_mps")) - float(layout.get(p.y[:, 0], "J_vac_mps"))
+        for p in trace.ascent_phases()
+    )
+    return ClosureTerms(
+        d_id_mps=s1.c_mps * math.log(m0 / m1) + s2.c_mps * math.log(m2 / m3),
+        j_vac_mps=j_vac,
+        pre_mps=s1.c_mps * math.log(m0 / m_fs),
+        fair_mps=s2.c_mps * math.log((1.0 + carried / m_after) / (1.0 + carried / m2)),
+        dv_margin_mps=s2.c_mps * math.log(m_c / m_empty),
     )
 
 

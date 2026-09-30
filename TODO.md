@@ -41,17 +41,17 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | # | Step | Status | Gate / notes |
 |---|---|---|---|
 | 14 | Pre-registration of decisions (no code); tracker rows | [x] | decisions logged below with defaults |
-| 15 | Golden capture of every 1-D output + test_golden_1d | [ ] | golden equal to HEAD |
-| 16 | Split sim.py into sim, metrics, compare, summary, results_io, plots | [ ] | unchanged suite + golden; byte-identical CLI outputs |
-| 17 | phases/ package (engine, trace, prelude, vertical); y_events, nfev, dense-off setting | [ ] | full suite + golden |
-| 18 | Aero data layer: ambient_scalar, C_D PCHIP, drag, fairing rule; three 2-D vehicle forks | [ ] | full suite + golden |
-| 19 | Config schema: dynamics, shared blocks, target orbit, search/ltg/checks, bounds, cases; four experiment YAMLs | [ ] | 1-D resolved dicts identical |
-| 20 | Planar EOM, orbit.py, H0 gravity; orbit/coast/rocket-eq/pointwise-identity/reduction tests | [ ] | CLAUDE.md elliptical-orbit test |
-| 21 | Stage-1 planner and guidance: hold, release map, rise, kick, gravity turn, staging, gamma* solve | [ ] | 465.1 m/s release test; Culler-Fried |
-| 22 | Stage 2: LTG law and shooting, energy cutoff, fairing, insertion, max-Q, loads | [ ] | full-ascent loss budget < 0.01 m/s |
-| 23 | search.py: residual, payload capacity, gamma* sweep, final verify | [ ] | one pad searched run < 30 s |
-| 24 | Pipeline: dispatch, planar metrics, compare with closure/attribution/checks, summary, plots | [ ] | full suite + golden |
-| 25 | Convergence and performance gate; slow marks | [ ] | every CLAUDE.md Phase 2 test green; budgets met |
+| 15 | Golden capture of every 1-D output + test_golden_1d | [x] | 121 golden tests (silo_screening_1d plus a paths set covering staging, apex, no-liftoff, drive-limit, fall-back ignition) |
+| 16 | Split sim.py into sim, metrics, compare, summary, results_io, plots | [x] | 1-D CLI outputs byte-identical (23/23 experiment, 129/129 sweep digests) |
+| 17 | phases/ package (engine, trace, prelude, vertical); y_events, nfev, dense-off setting | [x] | full suite + golden |
+| 18 | Aero data layer: ambient_scalar, C_D PCHIP, drag, fairing rule; three 2-D vehicle forks | [x] | full suite + golden |
+| 19 | Config schema: dynamics, shared blocks, target orbit, search/ltg/checks, bounds, cases; four experiment YAMLs | [x] | 1-D resolved dicts identical; all four YAMLs resolve |
+| 20 | Planar EOM, orbit.py, H0 gravity; orbit/coast/rocket-eq/pointwise-identity/reduction tests | [x] | elliptical orbit (DOP853 and RK45) drift < 1e-8 |
+| 21 | Stage-1 planner and guidance: hold, release map, rise, kick, gravity turn, staging, gamma* solve | [x] | 465.1 m/s release test; Culler-Fried gravity turn |
+| 22 | Stage 2: LTG law and shooting, energy cutoff, fairing, insertion, max-Q, loads | [x] | full-ascent loss budget closes < 1e-5 m/s (pad, silo, clamped thrust, fall-back) |
+| 23 | search.py: residual, payload capacity, gamma* sweep, final verify | [x] | searched pad run 7-10 s; lag variants 25-28 s |
+| 24 | Pipeline: dispatch, planar metrics, compare with closure/attribution/checks, summary, plots | [x] | full suite + golden |
+| 25 | Convergence and performance gate; slow marks | [x] | every CLAUDE.md Phase 2 required test green; fast tier 43 s, full 230 s |
 | 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [ ] | needs the pre-registration commit first |
 | 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [ ] | after M7 or an accepted miss |
 | 28 | Close Phase 2 | [ ] | |
@@ -89,6 +89,16 @@ Phase 2 pre-registration (2026-09-29; defaults from the plan, each open to objec
 - Layout: phases/ package; sim.py split into sim, metrics, compare, summary, results_io, plots; new guidance.py, orbit.py, search.py; optimize.py stays for Phase 5.
 - Output angles in _rad; degrees only in summary cells and plot labels. Nothing in results/ is deleted.
 
+Phase 2 build (2026-09-30), deviations from the plan recorded as built (none changes a figure of merit beyond search noise; details in docs/physics.md):
+
+- gamma* inner-solve acceptance is 3e-6 rad, not 1e-9 rad: the uncapped planar integration has a noise floor (transonic C_D knots) above 1e-9. A 2 s max_step cap on planar flight phases would remove it at no measurable cost and move P* by < 0.1 kg; it is an integrator change, so it is not adopted without your go-ahead (open question below).
+- A kick that times out inside the delta inner solve maps to a sentinel instead of failing the grid point (with rotation, the bracket's 0.1 deg low end never aligns).
+- refine_capped is reported as a flag, not a search failure.
+- The lag startup's step cap holds for the whole lag-lit burn (silo_cold_lag costs about 2.5x the pad's RHS calls); a cap over the first few tau only is left open.
+- First-step carry-over across planar phase boundaries was measured and not adopted.
+- The gamma*-sensitivity diagnostic step moved into the pre-registered checks block (gamma_sensitivity_step_deg: 0.5).
+- Calibration runs record the frozen-input state (last commit touching configs/ and experiments/, dirty paths); a dirty or unknown state is marked in summary.md and the CLI as not a valid calibration record.
+
 Phase 0-1:
 
 - 2026-09-28 constant_accel means prescribed net acceleration (drive force solved each instant); hot start therefore buys no exit speed and trades propellant for drive energy; report plainly.
@@ -108,6 +118,14 @@ Phase 0-1:
 - Lag startups cost more than the README's 5-25 m/s band: tau = 1/2/3 s gives 14.7/24.5/34.3 m/s with a 0.5 s delay.
 - Failed ignition: apex 300.3 m at 7.83 s; the vehicle meets a carriage parked 60 m up the shaft at 14.8 s at 68.6 m/s, or the mouth at 15.66 s at 76.7 m/s.
 - Sensitivity: the assist's benefit moves < 0.5 m/s under +/-10% stage-1 dry mass or Isp when compared against a baseline with the same perturbation.
+
+- Stage-1 measurement, not a finding (physics.md, Time-shift mechanism): at equal gamma* at MECO, a 77 m/s vertical silo release saves about a quarter of the gravity loss the plan's time-shift estimate predicted when both runs light at release, and about none for the cold start (0.5 s + 2 s ramp in the air); the silo leaves about 9% heavier than the pad at the same speed.
+
+## Open questions for you (Phase 2)
+
+- Calibration gate mass set (A README, B recorded scope, C full FT table; default C) freezes at the pre-registration commit.
+- Planar max_step cap (2 s): adopt it (and tighten the inner-solve acceptance to about 1e-7 rad), or keep the uncapped, noisier integration as built.
+- Mechanism check M2 (screening-beat rule): the pre-registered time-shift estimator is about 4x optimistic on stage 1 and fails the low-speed cold-start sweep points with no bug (false bug_suspect). Options in physics.md: keep as pre-registered, stage-1 only, the joint gravity + steering term, P_ref-optimal gamma*, or indeterminate when not robust. Needed before the research experiments (step 27), not before calibration.
 
 ## Known issues and observations
 

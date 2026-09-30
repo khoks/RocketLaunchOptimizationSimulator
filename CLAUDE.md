@@ -6,7 +6,7 @@ launch-assist-sim is a research simulator for ground-powered launch assist. A ro
 
 - Background, prior art, first-order numbers and research questions: README.md. Read it before planning experiments.
 - Report findings plainly, including ones that undercut the hypothesis that every m/s of assist helps.
-- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 (2-D ascent to orbit) is planned and in progress; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
+- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 (2-D ascent to orbit): model, guidance, searches and pipeline built (build steps 15-25); calibration and the 2-D experiments next; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
 
 ## Commands
 
@@ -30,10 +30,18 @@ src/launchsim/
   config.py      pydantic models that validate vehicle and experiment YAML and convert units; no file I/O
   assist/        swappable assist models: base (interfaces), none, constant_accel, linear_motor, track (geometry), cable_winch
   dynamics.py    equations of motion: 1-DOF track phase, 2-D planar ascent
-  phases.py      phase sequencing and events: ignition, release, staging, insertion, impact
-  guidance.py    pitch programs, gravity turn, linear-tangent steering
-  losses.py      loss integrals and the budget check
-  sim.py         run one configuration and return a Result
+  phases/        phase sequencing and events (ignition, release, staging, insertion, impact): engine (generic integrator, event rules), trace (StateView, event records), prelude (hold and track), vertical (1-D planner), planar (2-D planner)
+  guidance.py    steering laws (vertical rise, kick, gravity turn, linear-tangent), gamma* inner solve, LTG shooting
+  orbit.py       circular target orbit and orbital elements
+  search.py      figure-of-merit searches (residual, payload capacity, gamma* sweep, final verification); "sweep-optimized" until Phase 5
+  losses.py      loss integrals, the budget check and the planar rocket-equation closure
+  sim.py         run one configuration (vertical_1d or planar_2d dispatch) and return a Result; re-exports the split modules
+  metrics.py     1-D metrics and time series
+  metrics_planar.py  planar metrics, max-Q, q-alpha and felt loads
+  compare.py     comparison against the baseline, closure, attribution, screening checks, sensitivity
+  summary.py     summary.md text
+  results_io.py  run directories, provenance (git, pre-registration state), writers, experiment and sweep entry points
+  plots.py       plot writers (Agg)
   optimize.py    ascent optimization (Phase 5)
   cli.py
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
@@ -120,7 +128,7 @@ Calibration is separate from validation; label it as such:
 ## Code style
 
 - Python 3.12, type hints everywhere, frozen dataclasses for parameters, pydantic to validate YAML.
-- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py and sim.py.
+- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py and plots.py.
 - Small functions with docstrings. No magic numbers outside constants.py and configs.
 - ruff for lint and format. Mark tests slower than 5 s with `@pytest.mark.slow`.
 

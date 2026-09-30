@@ -1,0 +1,85 @@
+# Calibration (labelled; not validation) of the planar_2d model against the published
+# Falcon 9 figure of 22,800 kg to LEO (expendable). Pre-registered (plan decisions 1-5,
+# amendments 1-3): 200 km circular above the R_E sphere, 28.5 deg, due east, with the
+# gate vehicle generic_f9_class_2d.yaml (mass set C). Band 20,520-25,080 kg is a
+# benchmark to report against, never a target: on a miss, high or low, report, run the
+# same checklist, stop and ask. Only guidance outputs are solved or sweep-optimized
+# (gamma*_MECO, the kick angle delta, LTG a and b); every input below and in the vehicle
+# files is fixed before the run. Never edit after the pre-registration commit.
+#
+# Shared blocks (experiment level; injected into every run, identical for every run and
+# for every experiment of Phase 2; a test pins that): dynamics, site, target_orbit,
+# guidance, search, checks. Bare numbers; degrees, km and t only at this boundary.
+# Cases are independent runs that may change the vehicle file, the target orbit, the
+# site or vehicle paths; they are never compared with the baseline.
+name: calibration_f9_2d
+label: calibration
+vehicle: configs/vehicles/generic_f9_class_2d.yaml
+dynamics: planar_2d
+site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: true}
+target_orbit: {kind: circular, altitude_km: 200}
+guidance:
+  kick: {v_kick_mps: 50, mode: hold_to_alignment, max_duration_s: 60, deadline_s: 60}
+  stage1: gravity_turn
+  stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}
+search:
+  figure_of_merit: payload
+  gamma_grid_deg: [8, 36, 2]
+  gamma_refine_halfwidth_deg: 4
+  gamma_xatol_deg: 0.01
+  gamma_refine_maxiter: 30
+  gamma_root_tol_deg: 0.01
+  delta_bracket_deg: [0.1, 45]
+  delta_step_deg: 0.25
+  delta_xtol_rad: 1.0e-10
+  payload_half_bracket_t: 2.0
+  payload_max_expand: 6
+  payload_backoff_max: 4
+  payload_xtol_kg: 0.5
+  brentq_rtol: 8.881784197001252e-16         # 4 eps, scipy brentq's floor
+  final_payload_xtol_kg: 0.05
+  final_bracket_kg: [20, 1000]
+  search_rtol: 1.0e-8
+  search_atol_scale: 10
+  final_rtol: 1.0e-10
+  penalty: {base_kg: 1.0e6, per_deg_kg: 1.0e4}
+  ltg: {accept_r_m: 1.0, accept_vr_mps: 1.0e-3, r_scale_m: 1.0e4, vr_scale_mps: 100,
+        fd_step_search: 1.0e-4, fd_step_final: 1.0e-5, max_iters: 25, max_halvings: 6,
+        grid_max_rungs: 2, p0_offset_deg: 5, pf_deg: -1, steep_p0_deg: 35,
+        shallow_guess: [0.3, 0.3], pitch_bounds_deg: [-45, 75], tau_max_factor: 2.0,
+        mass_floor_factor: 0.5}
+checks:
+  closure_tol_mps: 1.0e-5
+  identity_tol_mps: 1.0e-5                 # 2-D loss-identity residual (plan section 11)
+  insertion_e_max: 1.0e-6                  # insertion eccentricity (plan section 11)
+  grav_ratio_bounds: [0.33, 3.0]
+  bp_ratio_bounds: [0.33, 3.0]
+  min_term_mps: 1.0
+  max_drag_steer_share: 0.5
+  anchor_margin_kg: 1.5
+  search_final_flag_rel: 1.0e-4
+  maxq_scan_points: 256
+  maxq_xatol_s: 1.0e-6
+  unconstrained_kick_mps: 120
+  vk_margin_kg: 5
+  convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
+                gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
+  gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+baseline:                                  # pad: held down, full thrust exactly at release
+  name: pad
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: insertion
+  integrator: {method: DOP853, rtol: 1.0e-10, sample_dt_s: 0.1}
+cases:                                     # independent runs, never compared
+  readme_loads: {vehicle: configs/vehicles/generic_f9_class_2d_readme_loads.yaml}      # set A
+  recorded_scope: {vehicle: configs/vehicles/generic_f9_class_2d_recorded_scope.yaml}  # set B
+  aref_fairing: {overrides: {vehicle.aero.reference_area_m2: 21.24}}   # 5.2 m fairing section
+  alt_185: {target_orbit: {altitude_km: 185}}                          # context only
+  alt_250: {target_orbit: {altitude_km: 250}}
+  alt_300: {target_orbit: {altitude_km: 300}}
+  no_rotation: {site: {include_rotation: false}}   # rotation-credit diagnostic, not quoted in advance
+sensitivity:
+  of: [pad]
+  params: {vehicle.stages.stage1.dry_mass_t: 0.10, vehicle.stages.stage1.engine.isp_vac_s: 0.10,
+           vehicle.stages.stage2.engine.isp_vac_s: 0.10, vehicle.aero.cd_scale: 0.10}

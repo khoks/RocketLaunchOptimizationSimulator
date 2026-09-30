@@ -53,6 +53,10 @@ Assumptions carried into every result that uses this module:
   by large factors and is strongly solar-activity dependent.
 - The atmosphere is spherically symmetric, static and co-rotating with Earth (the
   co-rotation enters through v_rel in the dynamics, not here).
+
+``ATMOSPHERE_ASSUMPTIONS`` carries these as strings, plus the in-flight clamp of
+``ambient_scalar``: the RHS fast path that returns a plain (p, rho, a) tuple and holds
+the floor state below ``ALT_AMBIANCE_MIN_M`` instead of raising.
 """
 
 from __future__ import annotations
@@ -184,6 +188,25 @@ def extension_scale_height_m() -> float:
     return R_AIR_JKGK * _top_state().T_K / g_top
 
 
+def _assumption_strings() -> tuple[str, ...]:
+    """The ATMOSPHERE_ASSUMPTIONS texts, with every number formatted from the constants."""
+    top = _top_state()
+    return (
+        f"atmosphere: ICAO standard atmosphere closed forms (layer table of ambiance.CONST) "
+        f"from {ALT_AMBIANCE_MIN_M:,.0f} m to {ALT_AMBIANCE_MAX_M:,.0f} m geometric altitude; "
+        f"the geometric to geopotential conversion uses the ICAO radius {_R0_ICAO_M:,.0f} m, "
+        "not R_E.",
+        f"atmosphere: above {ALT_AMBIANCE_MAX_M:,.0f} m an isothermal extension at "
+        f"{top.T_K:.3f} K with scale height {extension_scale_height_m():,.0f} m "
+        "(R_air T_top / g(h_top)); not US76 (denser near 110 km, far thinner above "
+        "150 km).",
+        "atmosphere: static, spherically symmetric, no wind; it co-rotates with Earth, so "
+        "drag and Mach use the Earth-relative velocity v_rel.",
+        f"atmosphere: in flight, an altitude below the {ALT_AMBIANCE_MIN_M:,.0f} m floor is "
+        "held at the floor state (ambient_scalar clamp; a dive ends at the ground event).",
+    )
+
+
 def _extension_scalar(alt_m: float) -> tuple[float, float, float, float]:
     """Isothermal extension (p, rho, T, a) at one geometric altitude above ALT_AMBIANCE_MAX_M."""
     top = _top_state()
@@ -277,6 +300,41 @@ def standard_atmosphere(alt_m: AltitudeInput) -> AtmosphereState:
     return _state_array(h)
 
 
+def ambient_scalar(alt_m: float) -> tuple[float, float, float]:
+    """Ambient (p [Pa], rho [kg/m^3], a [m/s]) at one geometric altitude [m]: the RHS fast path.
+
+    Input: alt_m, geometric altitude above mean sea level [m], a Python float or numpy
+    real scalar (what solve_ivp hands out); frame-free (a spherically symmetric, static
+    atmosphere). Output: a plain tuple (p_pa, rho_kgm3, a_mps) of Python floats, bit for
+    bit the fields of ``standard_atmosphere(alt_m)`` for any altitude at or above
+    ALT_AMBIANCE_MIN_M (same closed forms, same operations).
+
+    Differences from standard_atmosphere, both deliberate for use inside an ODE
+    right-hand side: an altitude below ALT_AMBIANCE_MIN_M is clamped to the floor (the
+    floor state is held, so a dive that overshoots the ground inside a trial step does
+    not raise before the ground event ends the phase), and no input is validated (a NaN
+    altitude gives NaN fields, +inf gives p = rho = 0). No dataclass is built. Cost:
+    under 1 us per call.
+    """
+    h = float(alt_m)
+    if h < ALT_AMBIANCE_MIN_M:
+        h = ALT_AMBIANCE_MIN_M
+    if h > ALT_AMBIANCE_MAX_M:  # written so that NaN takes the ICAO branch: all fields NaN
+        p, rho, _, a = _extension_scalar(h)
+    else:
+        p, rho, _, a = _icao_scalar(h)
+    return p, rho, a
+
+
+ATMOSPHERE_ASSUMPTIONS: tuple[str, ...] = _assumption_strings()
+"""Assumption strings every result that evaluates this atmosphere in flight carries.
+
+They restate the module docstring's assumptions (plus the ambient_scalar clamp) with the
+numbers formatted from the constants; the planar model appends them to its assumptions
+list. No 1-D result carries them: the 1-D model has no atmosphere in flight.
+"""
+
+
 def pressure_pa(alt_m: AltitudeInput) -> Quantity:
     """Ambient pressure [Pa] at a geometric altitude [m]; see standard_atmosphere."""
     return standard_atmosphere(alt_m).p_pa
@@ -293,8 +351,10 @@ def speed_of_sound_mps(alt_m: AltitudeInput) -> Quantity:
 
 
 __all__ = [
+    "ATMOSPHERE_ASSUMPTIONS",
     "AltitudeInput",
     "AtmosphereState",
+    "ambient_scalar",
     "density_kgm3",
     "extension_scale_height_m",
     "pressure_pa",

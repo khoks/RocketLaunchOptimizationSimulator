@@ -13,26 +13,35 @@ Everything is SI, radians and pure: no I/O, no globals, no printing. Frames:
   W_thrust, J_mass] (``track_layout``), the forces come from the assist model
   (``TrackParams.assist``) and the three energy quadratures feed the assist energy
   identity (``losses.assist_energy_budget``).
+- Ascent (2-D, Phase 2, ``planar_2d``): planar Earth-centred inertial frame in the plane
+  of the site and the launch azimuth, polar state [r, theta, v_r, v_theta, m] plus six
+  loss quadratures (``PLANAR_LAYOUT``), theta increasing downrange, h = r - R_E on a
+  spherical Earth. The atmosphere co-rotates at the planar rate omega_p = omega_E
+  cos(lat) sin(az), so drag, Mach and the loss identity use v_rel = (v_r, v_theta -
+  omega_p r); gravity mu/r^2 (``rhs_planar``, ``PlanarParams``, ``PlanarDynamics2D``).
+  ``H0Gravity`` is the test-only gravity of its exact 1-D reduction.
 
 The full derivation lives in docs/physics.md ("Frames and datum", "1-D ascent state and
-equations of motion", "Gravity", "Silo model", "Assist energy identity").
+equations of motion", "Gravity", "Planar ascent state and equations of motion", "Planar
+reductions", "2-D loss identity", "Silo model", "Assist energy identity").
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Protocol
 
 import numpy as np
 
 from launchsim.assist.base import normal_load_N
-from launchsim.constants import MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
+from launchsim.constants import MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M, V_REL_EPS_MPS
 from launchsim.units import to_g
 
 if TYPE_CHECKING:
     from launchsim.assist.base import AssistForces, AssistModel, TrackGeometry
-    from launchsim.vehicle import ThrustSchedule
+    from launchsim.vehicle import DragModel, ThrustSchedule
 
 
 # ----------------------------------------------------------------------------- gravity
@@ -183,7 +192,7 @@ class DynamicsModel(Protocol):
     state_names: the layout of the state vector; i_mass: index of the vehicle mass [kg];
     rhs(t, y, params): time derivative of y [SI per second]; altitude(y) [m] above the
     datum and speed(y) [m/s], both frame-specific to the model. ``VerticalDynamics1D``
-    implements it now; Phase 2 adds ``PlanarDynamics2D`` with the polar state.
+    and ``PlanarDynamics2D`` (the polar state, speed = |v_rel|) implement it.
     state_names and layout are class-level constants of a model (ClassVar here and in
     every implementation, so a static checker accepts the implementations).
     """
@@ -514,3 +523,410 @@ def track_to_vertical(
         v_mps=sdot * math.sin(p.track.phi(s)),
         m_kg=float(lay.get(y, "m_kg")),
     )
+
+
+# --------------------------------------------------------------------- planar 2-D model
+
+PLANAR_STATE_NAMES: tuple[str, ...] = (
+    "r_m",
+    "theta_rad",
+    "v_r_mps",
+    "v_theta_mps",
+    "m_kg",
+    "J_vac_mps",
+    "J_grav_mps",
+    "J_alt_mps",
+    "J_drag_mps",
+    "J_steer_mps",
+    "J_bp_mps",
+)
+"""State of the planar ascent (docs/physics.md, "Planar ascent state and equations of
+motion"): radius from Earth's centre, the downrange angle, the inertial radial and
+horizontal velocity components, the mass, and the six loss quadratures of the 2-D loss
+identity (vacuum delta-v, gravity, the altitude part of gravity, drag, steering,
+back-pressure)."""
+
+PLANAR_LAYOUT = StateLayout(PLANAR_STATE_NAMES)
+
+# Indices derived from the layout (never written as integers).
+_PR = PLANAR_LAYOUT.index("r_m")
+_PTH = PLANAR_LAYOUT.index("theta_rad")
+_PVR = PLANAR_LAYOUT.index("v_r_mps")
+_PVT = PLANAR_LAYOUT.index("v_theta_mps")
+_PM = PLANAR_LAYOUT.index("m_kg")
+_PJ_VAC = PLANAR_LAYOUT.index("J_vac_mps")
+_PJ_GRAV = PLANAR_LAYOUT.index("J_grav_mps")
+_PJ_ALT = PLANAR_LAYOUT.index("J_alt_mps")
+_PJ_DRAG = PLANAR_LAYOUT.index("J_drag_mps")
+_PJ_STEER = PLANAR_LAYOUT.index("J_steer_mps")
+_PJ_BP = PLANAR_LAYOUT.index("J_bp_mps")
+_N_PLANAR = len(PLANAR_STATE_NAMES)
+
+type AtmosphereFn = Callable[[float], tuple[float, float, float]]
+"""An ambient-state function: geometric altitude [m] -> (p [Pa], rho [kg/m^3], a [m/s]),
+the shape of ``atmosphere.ambient_scalar`` (the run model)."""
+
+
+@dataclass(frozen=True)
+class H0Gravity:
+    """Radial gravity with the centrifugal term of a conserved angular momentum folded
+    in: g(r) = mu / r^2 - h0^2 / r^3.
+
+    Analytic tests only; never constructed from configuration. It is the exact 1-D
+    reduction of the planar model under inertially radial thrust with no drag, where
+    r v_theta = h0 stays constant (docs/physics.md, "Planar reductions"). Inputs:
+    mu_m3s2 [m^3/s^2] (> 0) and h0_m2s, the specific angular momentum [m^2/s]; r_m [m].
+    Output: [m/s^2], positive downward (toward decreasing r).
+    """
+
+    mu_m3s2: float
+    h0_m2s: float
+
+    def __post_init__(self) -> None:
+        if self.mu_m3s2 <= 0.0:
+            raise ValueError("mu must be > 0")
+
+    def __call__(self, r_m: float) -> float:
+        """g = mu / r^2 - h0^2 / r^3 [m/s^2] at radius r_m [m]."""
+        return self.mu_m3s2 / (r_m * r_m) - self.h0_m2s * self.h0_m2s / (r_m * r_m * r_m)
+
+
+def vacuum_atmosphere(alt_m: float) -> tuple[float, float, float]:
+    """No atmosphere: (p, rho, a) = (0 Pa, 0 kg/m^3, inf m/s) at any altitude alt_m [m].
+
+    The infinite speed of sound is a convention that makes the Mach number exactly 0,
+    so a drag model evaluated in vacuum returns exactly 0 N (q = 0) and no NaN appears.
+    Frame-free. For analytic tests; runs use ``atmosphere.ambient_scalar``.
+    """
+    return 0.0, 0.0, math.inf
+
+
+class PlanarKinematics(NamedTuple):
+    """Earth-relative kinematics of a planar state (docs/physics.md, "Planar ascent
+    state and equations of motion").
+
+    w_mps = v_r, the radial (up) component, and u_mps = v_theta - omega_p r, the
+    horizontal (downrange) component of v_rel [m/s]; V_mps = hypot(w, u) = |v_rel|
+    [m/s]; sin_g = w / V and cos_g = u / V, the sine and cosine of the Earth-relative
+    flight-path angle gamma_rel above local horizontal. Below V_REL_EPS_MPS the angle
+    falls back to local vertical: sin_g = 1, cos_g = 0 (v_hat_rel = r_hat). Frame: the
+    local (radial, horizontal) frame, which is the same inertially and Earth-fixed.
+    """
+
+    w_mps: float
+    u_mps: float
+    V_mps: float
+    sin_g: float
+    cos_g: float
+
+
+def planar_kinematics(y: np.ndarray, omega_p_rads: float) -> PlanarKinematics:
+    """Earth-relative kinematics of one planar state vector.
+
+    Inputs: y in the PLANAR_LAYOUT order (r [m], theta [rad], v_r, v_theta [m/s], ...);
+    omega_p_rads, the planar rotation rate [rad/s]. Output: ``PlanarKinematics`` (w, u,
+    V [m/s], sin gamma_rel, cos gamma_rel), with the local-vertical fallback below
+    V_REL_EPS_MPS. Frame: planar ECI state; velocities relative to the co-rotating air.
+    """
+    return _kinematics(float(y[_PR]), float(y[_PVR]), float(y[_PVT]), omega_p_rads)
+
+
+def _kinematics(r: float, v_r: float, v_theta: float, omega_p: float) -> PlanarKinematics:
+    """``planar_kinematics`` on Python floats (the RHS path)."""
+    u = v_theta - omega_p * r
+    speed = math.hypot(v_r, u)
+    if speed < V_REL_EPS_MPS:
+        return PlanarKinematics(v_r, u, speed, 1.0, 0.0)
+    return PlanarKinematics(v_r, u, speed, v_r / speed, u / speed)
+
+
+class SteeringLaw(Protocol):
+    """A thrust-direction law of the planar model (the run laws live in guidance.py,
+    build step 21).
+
+    direction(t [s], y (PLANAR_LAYOUT), kin (the PlanarKinematics of y)) returns the
+    unit thrust direction (e_r, e_theta) in the local (radial up, horizontal downrange)
+    frame; the pitch above local horizontal is atan2(e_r, e_theta). along_vrel is True
+    exactly for a law that points the thrust along v_rel, e = (sin_g, cos_g) (the
+    gravity turn): the RHS then sets cos psi = 1 and the steering-loss rate to exactly
+    0 instead of evaluating (T/m)(1 - cos psi) from a rounding-level cos psi. The RHS
+    trusts |e| = 1 and does not renormalise.
+    """
+
+    @property
+    def along_vrel(self) -> bool:
+        """True when the law points the thrust along v_rel."""
+        ...
+
+    def direction(self, t: float, y: np.ndarray, kin: PlanarKinematics) -> tuple[float, float]:
+        """Unit thrust direction (e_r, e_theta) at time t [s] for the state y."""
+        ...
+
+
+@dataclass(frozen=True)
+class PlanarParams:
+    """Parameters of one planar flight phase.
+
+    gravity: the Gravity model g(r) [m/s^2] (mu/r^2 in runs; ConstantGravity or
+    H0Gravity only in analytic tests); omega_p_rads: planar Earth rotation rate [rad/s]
+    (0 with rotation off); g_ref_mps2: reference gravity [m/s^2] of the gravity-loss
+    split (g_eff at the datum in runs); schedule: the lit stage's ThrustSchedule on the
+    absolute run clock, or None for an unpowered phase; drag: the DragModel, or None
+    for no drag; atmosphere: altitude [m] -> (p [Pa], rho [kg/m^3], a [m/s])
+    (``ambient_scalar`` in runs; ``vacuum_atmosphere`` or a test profile otherwise),
+    evaluated at h = r - r_datum_m; steering: the SteeringLaw, required whenever there
+    is a schedule (None only for an unpowered phase, whose thrust direction is reported
+    along v_rel by convention); r_datum_m: radius [m] of the altitude datum (R_EARTH_M,
+    the spherical Earth; a large radius in flat-Earth tests).
+    """
+
+    gravity: Gravity
+    omega_p_rads: float
+    g_ref_mps2: float
+    schedule: ThrustSchedule | None
+    drag: DragModel | None
+    atmosphere: AtmosphereFn
+    steering: SteeringLaw | None
+    r_datum_m: float = R_EARTH_M
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.omega_p_rads):
+            raise ValueError("omega_p_rads must be finite")
+        if not (math.isfinite(self.r_datum_m) and self.r_datum_m > 0.0):
+            raise ValueError("r_datum_m must be finite and > 0")
+        if not (math.isfinite(self.g_ref_mps2) and self.g_ref_mps2 >= 0.0):
+            raise ValueError("g_ref_mps2 must be finite and >= 0")
+        if self.schedule is not None and self.steering is None:
+            raise ValueError("a planar phase with a thrust schedule needs a steering law")
+
+
+class PlanarForces(NamedTuple):
+    """Every force-level term of the planar RHS at one instant (SI).
+
+    T_vac_N and T_N: vacuum and delivered thrust [N], T = max(0, T_vac - p A_e);
+    mdot_kgps: mass flow [kg/s], which follows T_vac; e_r and e_theta: the unit thrust
+    direction in the local frame; D_N: drag magnitude [N], along -v_hat_rel; q_pa:
+    dynamic pressure 0.5 rho V^2 [Pa]; mach: V / a; V_mps: |v_rel| [m/s]; cos_psi: the
+    cosine of the angle psi between thrust and v_rel (exactly 1 for an along-v_rel law
+    and for an unpowered phase); sin_g: sin gamma_rel (1 below V_REL_EPS_MPS);
+    g_eff_mps2: g(r) - omega_p^2 r [m/s^2]; cos_g: cos gamma_rel (0 below
+    V_REL_EPS_MPS); g_mps2: g(r) [m/s^2]; w_mps and u_mps: the radial and horizontal
+    components of v_rel [m/s]; p_pa, rho_kgm3 and a_mps: the ambient state at
+    h = r - r_datum. Frame: local (radial up, horizontal downrange).
+    """
+
+    T_vac_N: float
+    T_N: float
+    mdot_kgps: float
+    e_r: float
+    e_theta: float
+    D_N: float
+    q_pa: float
+    mach: float
+    V_mps: float
+    cos_psi: float
+    sin_g: float
+    g_eff_mps2: float
+    cos_g: float
+    g_mps2: float
+    w_mps: float
+    u_mps: float
+    p_pa: float
+    rho_kgm3: float
+    a_mps: float
+
+
+def planar_forces(t: float, y: np.ndarray, p: PlanarParams) -> PlanarForces:
+    """The force-level terms of the planar RHS at one instant.
+
+    Inputs: t, absolute run time [s]; y in the PLANAR_LAYOUT order; p, the phase
+    parameters. Output: ``PlanarForces`` (thrust, mass flow, thrust direction, drag,
+    dynamic pressure, Mach, |v_rel|, cos psi, gamma_rel's sine and cosine, g and g_eff,
+    the components of v_rel and the ambient state): exactly the values ``rhs_planar``
+    uses. Frame: local (radial up, horizontal downrange); every aerodynamic term uses
+    the velocity relative to the co-rotating air.
+    """
+    r = float(y[_PR])
+    omega_p = p.omega_p_rads
+    kin = _kinematics(r, float(y[_PVR]), float(y[_PVT]), omega_p)
+    speed = kin.V_mps
+    p_amb, rho, a = p.atmosphere(r - p.r_datum_m)
+    t_vac, thrust, mdot = thrust_terms(p.schedule, t, p_amb)
+    steering = p.steering
+    if steering is None:
+        e_r, e_th, cos_psi = kin.sin_g, kin.cos_g, 1.0
+    else:
+        e_r, e_th = steering.direction(t, y, kin)
+        cos_psi = 1.0 if steering.along_vrel else e_r * kin.sin_g + e_th * kin.cos_g
+    q = 0.5 * rho * speed * speed
+    mach = speed / a
+    drag = 0.0 if p.drag is None else p.drag.force_N(q, mach)
+    g = p.gravity(r)
+    return PlanarForces(
+        t_vac,
+        thrust,
+        mdot,
+        e_r,
+        e_th,
+        drag,
+        q,
+        mach,
+        speed,
+        cos_psi,
+        kin.sin_g,
+        g - omega_p * omega_p * r,
+        kin.cos_g,
+        g,
+        kin.w_mps,
+        kin.u_mps,
+        p_amb,
+        rho,
+        a,
+    )
+
+
+def rhs_planar(t: float, y: np.ndarray, p: PlanarParams) -> np.ndarray:
+    """Time derivative of the planar state (docs/physics.md, "Planar ascent state and
+    equations of motion" and "2-D loss identity").
+
+    Inputs: t, absolute run time [s]; y in the PLANAR_LAYOUT order (r [m], theta [rad],
+    v_r, v_theta [m/s], m [kg], J_vac, J_grav, J_alt, J_drag, J_steer, J_bp [m/s]); p,
+    the phase parameters. Output: dy/dt in the same order. Frame: planar Earth-centred
+    inertial, polar (r, theta) with theta increasing downrange. Thrust T acts along the
+    steering law's unit e = (e_r, e_theta), drag D along -v_hat_rel with v_rel = (w, u)
+    = (v_r, v_theta - omega_p r). With sin_g = w/V and cos_g = u/V (1 and 0 when
+    V < V_REL_EPS_MPS), g = gravity(r), g_eff = g - omega_p^2 r and
+    cos psi = e_r sin_g + e_theta cos_g:
+
+        dr/dt        = v_r
+        dtheta/dt    = v_theta / r
+        dv_r/dt      = v_theta^2 / r - g + (T e_r - D sin_g) / m
+        dv_theta/dt  = -v_r v_theta / r + (T e_theta - D cos_g) / m
+        dm/dt        = -T_vac / c                    (mass flow follows T_vac)
+        dJ_vac/dt    = T_vac / m
+        dJ_grav/dt   = g_eff sin_g
+        dJ_alt/dt    = (g_eff - g_ref) sin_g
+        dJ_drag/dt   = D / m
+        dJ_steer/dt  = (T / m)(1 - cos psi)          exactly 0 along v_rel
+        dJ_bp/dt     = (T_vac - T) / m
+
+    so that dV/dt = dJ_vac - dJ_grav - dJ_drag - dJ_steer - dJ_bp at every instant with
+    V >= V_REL_EPS_MPS. Below it the sum is T e_r/m - g_eff - D/m (v_hat_rel = r_hat),
+    which is the one-sided limit of dV/dt from rest only when the relative acceleration
+    at rest is radial and upward (the pad with radial thrust and T e_r/m > g_eff + D/m,
+    which the liftoff root guarantees in runs). Otherwise, e.g. a start from rest that
+    sinks or a non-radial law at V = 0, it is a measure-zero convention whose closure
+    error is one RHS stage (docs/physics.md, "2-D loss identity").
+    """
+    f = planar_forces(t, y, p)
+    r = float(y[_PR])
+    v_r = float(y[_PVR])
+    v_theta = float(y[_PVT])
+    m = float(y[_PM])
+    thrust = f.T_N
+    drag = f.D_N
+    dy = np.empty(_N_PLANAR)
+    dy[_PR] = v_r
+    dy[_PTH] = v_theta / r
+    dy[_PVR] = v_theta * v_theta / r - f.g_mps2 + (thrust * f.e_r - drag * f.sin_g) / m
+    dy[_PVT] = -v_r * v_theta / r + (thrust * f.e_theta - drag * f.cos_g) / m
+    dy[_PM] = -f.mdot_kgps
+    dy[_PJ_VAC] = f.T_vac_N / m
+    dy[_PJ_GRAV] = f.g_eff_mps2 * f.sin_g
+    dy[_PJ_ALT] = (f.g_eff_mps2 - p.g_ref_mps2) * f.sin_g
+    dy[_PJ_DRAG] = drag / m
+    dy[_PJ_STEER] = thrust / m * (1.0 - f.cos_psi)
+    dy[_PJ_BP] = (f.T_vac_N - thrust) / m
+    return dy
+
+
+def planar_observables(t: float, y: np.ndarray, p: PlanarParams, t_fs: float) -> dict[str, float]:
+    """Reported quantities of a planar flight state at one instant (SI, radians).
+
+    Inputs: t, absolute run time [s]; y (PLANAR_LAYOUT); p, the phase parameters; t_fs,
+    the flight-start time [s] at which theta = 0 is the site meridian (release, or the
+    liftoff root when later). Output keys: alt_m (r - r_datum, geometric), downrange_m
+    (Earth-fixed arc along the datum sphere, r_datum (theta - omega_p (t - t_fs))),
+    speed_rel_mps (|v_rel|), speed_inertial_mps (hypot(v_r, v_theta)), gamma_rel_rad
+    (atan2(w, u) in (-pi, pi]; pi/2 below V_REL_EPS_MPS; not unwrapped), pitch_rad
+    (atan2(e_r, e_theta), the thrust direction above local horizontal), psi_rad (the
+    angle between thrust and v_rel, from cos psi clipped to [-1, 1]), q_pa, mach,
+    thrust_N, thrust_vac_N, drag_N and g_eff_mps2 (as in ``planar_forces``; orbital
+    elements are ``orbit.orbit_elements``). Frame: local (radial, horizontal);
+    gamma_rel and psi use the Earth-relative velocity.
+    """
+    f = planar_forces(t, y, p)
+    r = float(y[_PR])
+    theta = float(y[_PTH])
+    if f.V_mps < V_REL_EPS_MPS:
+        gamma_rel = 0.5 * math.pi
+    else:
+        gamma_rel = math.atan2(f.w_mps, f.u_mps)
+    return {
+        "alt_m": r - p.r_datum_m,
+        "downrange_m": p.r_datum_m * (theta - p.omega_p_rads * (t - t_fs)),
+        "speed_rel_mps": f.V_mps,
+        "speed_inertial_mps": math.hypot(float(y[_PVR]), float(y[_PVT])),
+        "gamma_rel_rad": gamma_rel,
+        "pitch_rad": math.atan2(f.e_r, f.e_theta),
+        "psi_rad": math.acos(min(1.0, max(-1.0, f.cos_psi))),
+        "q_pa": f.q_pa,
+        "mach": f.mach,
+        "thrust_N": f.T_N,
+        "thrust_vac_N": f.T_vac_N,
+        "drag_N": f.D_N,
+        "g_eff_mps2": f.g_eff_mps2,
+    }
+
+
+@dataclass(frozen=True)
+class PlanarDynamics2D:
+    """The planar ascent model (DynamicsModel implementation).
+
+    State: PLANAR_STATE_NAMES in the planar ECI frame (polar r, theta); parameters:
+    PlanarParams; rhs: ``rhs_planar``. omega_p_rads [rad/s] and r_datum_m [m] are the
+    model's rotation rate and altitude datum, which altitude and speed need:
+    altitude(y) = r - r_datum [m] and speed(y) = |v_rel| = hypot(v_r, v_theta -
+    omega_p r) [m/s] (the Earth-relative speed of the loss identity), for a state
+    vector or a (n, n_samples) series. Both are required (no default, so a model
+    without rotation is a deliberate omega_p_rads=0.0) and must equal the phase
+    parameters' values: build the model with ``for_params`` and check a phase once with
+    ``check_params`` (the RHS reads the params and does not compare them per call).
+    """
+
+    state_names: ClassVar[tuple[str, ...]] = PLANAR_STATE_NAMES
+    layout: ClassVar[StateLayout] = PLANAR_LAYOUT
+    omega_p_rads: float
+    r_datum_m: float
+
+    @classmethod
+    def for_params(cls, params: PlanarParams) -> PlanarDynamics2D:
+        """The model whose rotation rate [rad/s] and altitude datum [m] are those of
+        the phase parameters ``params``."""
+        return cls(omega_p_rads=params.omega_p_rads, r_datum_m=params.r_datum_m)
+
+    def check_params(self, params: PlanarParams) -> None:
+        """Raise ValueError unless params.omega_p_rads [rad/s] and params.r_datum_m [m]
+        equal the model's (once per phase; speed() and altitude() use the model's)."""
+        if params.omega_p_rads != self.omega_p_rads or params.r_datum_m != self.r_datum_m:
+            raise ValueError(
+                "PlanarDynamics2D and PlanarParams disagree on omega_p_rads or r_datum_m"
+            )
+
+    @property
+    def i_mass(self) -> int:
+        """Index of the vehicle mass [kg] in the state vector."""
+        return _PM
+
+    def rhs(self, t: float, y: np.ndarray, params: PlanarParams) -> np.ndarray:
+        """dy/dt at time t [s]; see ``rhs_planar``. params.omega_p_rads and r_datum_m
+        must equal the model's (the RHS reads the params; see ``check_params``)."""
+        return rhs_planar(t, y, params)
+
+    def altitude(self, y: np.ndarray) -> Any:
+        """Altitude r - r_datum [m] of a state vector or a (n, n_samples) series."""
+        return y[_PR] - self.r_datum_m
+
+    def speed(self, y: np.ndarray) -> Any:
+        """Earth-relative speed |v_rel| [m/s] of a state vector or a series."""
+        return np.hypot(y[_PVR], y[_PVT] - self.omega_p_rads * y[_PR])

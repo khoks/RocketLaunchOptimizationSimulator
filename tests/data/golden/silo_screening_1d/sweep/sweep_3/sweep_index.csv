@@ -1,0 +1,4 @@
+point,ignition.stage1.startup.tau_s,run_dir,of,exit_speed_mps,stage1_burnout_speed_mps,stage1_burnout_speed_delta_mps,ignition_loss_formula_mps,drive_energy_J,drive_power_peak_W,felt_g_track_peak,facility_length_m,status
+1,1,sweep_3/run_0001,silo_cold_lag,76.7071704601,2627.29037648,69.6443458775,14.6974282188,2127863802.39,1632224114.06,3.99914705625,160,nominal
+2,2,sweep_3/run_0002,silo_cold_lag,76.7071704601,2617.21134738,59.5653167821,24.495713698,2127863802.39,1632224114.06,3.99914705625,160,nominal
+3,3,sweep_3/run_0003,silo_cold_lag,76.7071704601,2607.13474119,49.4887105907,34.2939991772,2127863802.39,1632224114.06,3.99914705625,160,nominal

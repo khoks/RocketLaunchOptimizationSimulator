@@ -10,22 +10,39 @@ Startup shapes (f is the thrust fraction, dt = t - t_ign):
     ramp:  f = clip(dt / t_ramp, 0, 1)
     lag:   f = 1 - exp(-dt / tau)      for dt >= 0, else 0
 A ramp with t_ramp = 0 or a lag with tau = 0 is a step.
+
+Aerodynamics (docs/physics.md, "Atmosphere, drag and back-pressure in flight"): a
+``CdTable`` is C_D versus Mach, a C1 monotone piecewise cubic (PCHIP) through the knots
+whose coefficients are computed once by scipy and evaluated in pure Python (bisect plus
+Horner), held at the end values outside the knots. A ``DragModel`` combines the table
+with the reference area and a ``cd_scale`` sensitivity knob; drag acts along -v_rel,
+the velocity relative to the co-rotating air. ``FairingDrop`` says when the payload
+fairing separates. The 1-D model uses none of the aerodynamics.
 """
 
 from __future__ import annotations
 
+import bisect
 import dataclasses
+import itertools
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, get_args
 
+from scipy.interpolate import PchipInterpolator
 from scipy.optimize import brentq
 
 from launchsim.constants import G0_MPS2
 
 StartupKind = Literal["step", "ramp", "lag"]
-FairingDrop = Literal["staging", "never"]
+FairingDropKind = Literal["staging", "never"]
+"""The Phase 1 fairing rules, which ``Vehicle.fairing_drop`` stores as plain strings."""
+FairingTrigger = Literal["staging", "never", "free_molecular_heating"]
+FAIRING_TRIGGERS: tuple[str, ...] = get_args(FairingTrigger)
+HEATING_TRIGGER: FairingTrigger = "free_molecular_heating"
+CD_POLY_TERMS = 4
+"""Coefficients per PCHIP interval: (c3, c2, c1, c0) of a cubic in M - M_i."""
 
 # Root-finder settings for the ideal screening (solver tolerances, not physics).
 _BRENTQ_XTOL_KG = 1e-12
@@ -278,24 +295,214 @@ def propellant_burned_kg(schedule: ThrustSchedule, t: float) -> float:
     return max(0.0, mdot * (dt + tau * math.expm1(-dt / tau)))
 
 
+def _finite(values: Sequence[float]) -> bool:
+    """True when every entry is a finite real number."""
+    return all(math.isfinite(v) for v in values)
+
+
+def _float_tuple(values: Sequence[float], what: str) -> tuple[float, ...]:
+    """The entries of values as a tuple of floats; TypeError for a non-number or a bool."""
+    if any(isinstance(v, bool) or not isinstance(v, int | float) for v in values):
+        raise TypeError(f"{what} entries must be numbers")
+    return tuple(float(v) for v in values)
+
+
+def _check_knots(mach: Sequence[float], cd: Sequence[float]) -> None:
+    """Raise ValueError unless (mach, cd) are valid C_D table knots (see CdTable)."""
+    if len(mach) < 2 or len(cd) != len(mach):
+        raise ValueError("a C_D table needs >= 2 knots and one C_D per knot")
+    if not (_finite(mach) and _finite(cd)):
+        raise ValueError("C_D table knots must be finite")
+    if mach[0] < 0.0 or any(b <= a for a, b in itertools.pairwise(mach)):
+        raise ValueError("C_D table Mach knots must start at >= 0 and strictly increase")
+    if any(c < 0.0 for c in cd):
+        raise ValueError("C_D table values must be >= 0")
+
+
+@dataclass(frozen=True)
+class CdTable:
+    """Drag coefficient C_D versus Mach number M (both dimensionless): a C1 piecewise cubic.
+
+    mach: knot Mach numbers, strictly increasing, the first >= 0, at least two.
+    cd: C_D at the knots (finite, >= 0).
+    coeffs: for interval i, [mach[i], mach[i+1]], the cubic's coefficients (c3, c2, c1,
+    c0) in dM = M - mach[i], so that C_D = ((c3 dM + c2) dM + c1) dM + c0 with c0 =
+    cd[i] exactly. ``CdTable.pchip`` builds them; a hand-built table must satisfy the
+    same shape rules (checked here), and its smoothness is the caller's responsibility.
+    Any sequences of numbers are accepted and stored as tuples of floats, so every table
+    is immutable and hashable.
+
+    Calling the table evaluates it: bisect finds the interval and Horner's rule the
+    cubic. Outside [mach[0], mach[-1]] the end values are held (C_D constant), so the
+    curve is C0 at the end knots and C1 inside. Frame-free (a scalar coefficient).
+    """
+
+    mach: tuple[float, ...]
+    cd: tuple[float, ...]
+    coeffs: tuple[tuple[float, ...], ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mach", _float_tuple(self.mach, "C_D table Mach"))
+        object.__setattr__(self, "cd", _float_tuple(self.cd, "C_D table C_D"))
+        coeffs = tuple(_float_tuple(poly, "C_D cubic") for poly in self.coeffs)
+        object.__setattr__(self, "coeffs", coeffs)
+        _check_knots(self.mach, self.cd)
+        if len(self.coeffs) != len(self.mach) - 1:
+            raise ValueError("a C_D table needs one cubic per interval (n - 1 for n knots)")
+        for i, poly in enumerate(self.coeffs):
+            if len(poly) != CD_POLY_TERMS or not _finite(poly):
+                raise ValueError(f"C_D cubic {i} needs {CD_POLY_TERMS} finite coefficients")
+            if poly[-1] != self.cd[i]:
+                raise ValueError(f"C_D cubic {i} does not start at its knot value")
+
+    @classmethod
+    def pchip(cls, mach: Sequence[float], cd: Sequence[float]) -> CdTable:
+        """PCHIP table through (mach, cd): scipy's PchipInterpolator coefficients, frozen.
+
+        Inputs: knot Mach numbers (strictly increasing, >= 0) and C_D values (>= 0),
+        dimensionless. Output: a CdTable whose cubics are scipy's (weighted harmonic-mean
+        slopes at interior knots, zero at a local extremum; the three-point
+        shape-preserving rule at the two ends), so the curve is C1, passes through every
+        knot and does not overshoot between them.
+        """
+        m = tuple(float(x) for x in mach)
+        c = tuple(float(x) for x in cd)
+        _check_knots(m, c)
+        poly = PchipInterpolator(m, c).c
+        coeffs = tuple(
+            tuple(float(poly[k, i]) for k in range(CD_POLY_TERMS)) for i in range(len(m) - 1)
+        )
+        return cls(mach=m, cd=c, coeffs=coeffs)
+
+    def __call__(self, mach: float) -> float:
+        """C_D (dimensionless) at Mach number mach (dimensionless); end values held.
+
+        Pure Python (bisect plus Horner), about 0.3 us per call, for use inside an ODE
+        right-hand side. A NaN Mach number gives NaN.
+        """
+        knots = self.mach
+        if mach <= knots[0]:
+            return self.cd[0]
+        if mach >= knots[-1]:
+            return self.cd[-1]
+        i = min(bisect.bisect_right(knots, mach) - 1, len(knots) - 2)
+        dm = mach - knots[i]
+        c3, c2, c1, c0 = self.coeffs[i]
+        return ((c3 * dm + c2) * dm + c1) * dm + c0
+
+
+@dataclass(frozen=True)
+class DragModel:
+    """Aerodynamic drag of the whole stack: D = q cd_scale C_D(M) A_ref, along -v_rel.
+
+    table: C_D(M) (power-on, base drag included); reference_area_m2: A_ref [m^2], the
+    area the table is normalised by (finite, > 0); cd_scale: dimensionless multiplier on
+    every C_D (finite, > 0; 1 nominal; the sensitivity knob). q = 0.5 rho V^2 [Pa] and
+    M = V / a use the speed V relative to the co-rotating atmosphere. No lift and no
+    angle-of-attack dependence: the force is pure drag. One A_ref applies to every stage.
+    """
+
+    table: CdTable
+    reference_area_m2: float
+    cd_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.reference_area_m2) and self.reference_area_m2 > 0.0):
+            raise ValueError("drag reference area must be finite and > 0 m^2")
+        if not (math.isfinite(self.cd_scale) and self.cd_scale > 0.0):
+            raise ValueError("cd_scale must be finite and > 0")
+
+    def cd(self, mach: float) -> float:
+        """Scaled drag coefficient cd_scale * C_D(mach) (dimensionless) at Mach mach."""
+        return self.cd_scale * self.table(mach)
+
+    def force_N(self, q_pa: float, mach: float) -> float:
+        """Drag magnitude [N] at dynamic pressure q_pa [Pa] and Mach number mach
+        (dimensionless): q * cd_scale * C_D(M) * A_ref. Frame-free; the caller points it
+        along -v_rel."""
+        return q_pa * self.cd(mach) * self.reference_area_m2
+
+    def components_N(
+        self, rho_kgm3: float, a_mps: float, w_mps: float, u_mps: float
+    ) -> tuple[float, float]:
+        """Drag vector [N] in the local (radial, horizontal) frame of the planar ascent.
+
+        Inputs: air density rho [kg/m^3] and speed of sound a [m/s] at the vehicle; the
+        Earth-relative velocity components w = v_r (radial, up) and u = v_theta -
+        omega_p r (horizontal, downrange) [m/s]. Output: (D_r, D_theta) [N] =
+        -0.5 rho V cd_scale C_D(V/a) A_ref (w, u) with V = hypot(w, u): magnitude
+        0.5 rho V^2 cd_scale C_D A_ref along -v_rel. Written without dividing by V, so
+        V = 0 gives exactly (0, 0).
+        """
+        speed = math.hypot(w_mps, u_mps)
+        k = 0.5 * rho_kgm3 * speed * self.cd(speed / a_mps) * self.reference_area_m2
+        return -k * w_mps, -k * u_mps
+
+
+@dataclass(frozen=True)
+class FairingDrop:
+    """When the payload fairing separates.
+
+    trigger: "staging" (with stage 1, in the staging map), "never" (carried to the end)
+    or "free_molecular_heating" (the planar stage-2 burn drops it at the first instant
+    the free-molecular heating rate 0.5 rho V^3 [W/m^2], with V the speed relative to
+    the co-rotating air, falls below limit_W_m2). limit_W_m2: the heating limit [W/m^2],
+    finite and > 0 for the heating trigger, None for the other two. The ideal screening
+    treats the heating trigger as a drop at staging.
+    """
+
+    trigger: FairingTrigger = "staging"
+    limit_W_m2: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.trigger not in FAIRING_TRIGGERS:
+            raise ValueError(f"unknown fairing trigger {self.trigger!r}")
+        if self.trigger == HEATING_TRIGGER:
+            limit = self.limit_W_m2
+            if limit is None or not (math.isfinite(limit) and limit > 0.0):
+                raise ValueError("the heating fairing trigger needs a finite limit_W_m2 > 0")
+        elif self.limit_W_m2 is not None:
+            raise ValueError(f"fairing trigger {self.trigger!r} takes no limit_W_m2")
+
+    @property
+    def drops_at_staging_in_screening(self) -> bool:
+        """True when the ideal screening drops the fairing with stage 1 (every trigger but
+        never; the heating trigger counts as a drop at staging there)."""
+        return self.trigger != "never"
+
+
 @dataclass(frozen=True)
 class Vehicle:
     """A stack of stages (index 0 lit first), fairing and payload masses [kg], the fairing
-    drop rule, and the per-stage effective Isp [s] used only by the ideal screening."""
+    drop rule, the per-stage effective Isp [s] used only by the ideal screening, and the
+    aerodynamics (None: no drag model; the 1-D model ignores it either way).
+
+    fairing_drop keeps the Phase 1 string shim: "staging" and "never" are stored as
+    those strings (a FairingDrop with either trigger is normalised to its string, so the
+    1-D code that compares ``fairing_drop == "staging"`` keeps working), and only the
+    heating rule is stored as a FairingDrop. ``fairing_rule`` always returns a
+    FairingDrop.
+    """
 
     stages: tuple[Stage, ...]
     fairing_mass_kg: float = 0.0
     payload_mass_kg: float = 0.0
-    fairing_drop: FairingDrop = "staging"
+    fairing_drop: FairingDropKind | FairingDrop = "staging"
     screening_isp_s: tuple[float, ...] = ()
+    aero: DragModel | None = None
 
     def __post_init__(self) -> None:
         if not self.stages:
             raise ValueError("a vehicle needs at least one stage")
         if self.fairing_mass_kg < 0.0 or self.payload_mass_kg < 0.0:
             raise ValueError("fairing and payload masses must be >= 0")
-        if self.fairing_drop not in ("staging", "never"):
+        if isinstance(self.fairing_drop, FairingDrop):
+            if self.fairing_drop.trigger != HEATING_TRIGGER:
+                object.__setattr__(self, "fairing_drop", self.fairing_drop.trigger)
+        elif self.fairing_drop not in get_args(FairingDropKind):
             raise ValueError(f"unknown fairing_drop {self.fairing_drop!r}")
+        if self.aero is not None and not isinstance(self.aero, DragModel):
+            raise ValueError("aero must be a DragModel or None")
         names = [s.name for s in self.stages]
         if len(set(names)) != len(names):
             raise ValueError("stage names must be unique")
@@ -321,15 +528,30 @@ class Vehicle:
                 return i
         raise KeyError(f"no stage named {name!r}; stages are {self.stage_names}")
 
+    @property
+    def fairing_rule(self) -> FairingDrop:
+        """The fairing drop rule as a FairingDrop (the stored string or the heating rule)."""
+        if isinstance(self.fairing_drop, FairingDrop):
+            return self.fairing_drop
+        return FairingDrop(trigger=self.fairing_drop)
+
     def fairing_carried_kg(self, i: int) -> float:
-        """Fairing mass [kg] still attached while stage i burns."""
-        if self.fairing_drop == "never" or i == 0:
+        """Fairing mass [kg] still attached at ignition of stage i, as the ideal screening
+        counts it: always on stage 0; on later stages only when the rule is never (the
+        heating rule counts as a drop at staging here; the planar model drops it at the
+        heating event and keeps its own bookkeeping)."""
+        if not self.fairing_rule.drops_at_staging_in_screening or i == 0:
             return self.fairing_mass_kg
         return 0.0
 
     def stack_mass_kg(self, i: int) -> float:
         """Mass [kg] at ignition of stage i: stages i.. fully fuelled, payload, and the
-        fairing if not yet dropped."""
+        fairing if not yet dropped.
+
+        Screening semantics (see fairing_carried_kg): under the heating rule the fairing
+        is left out from stage 1 on, although the planar ascent still carries it then.
+        Trajectory mass bookkeeping must not use this helper or the two built on it.
+        """
         self._check_index(i)
         above = sum(s.wet_mass_kg for s in self.stages[i:])
         return above + self.payload_mass_kg + self.fairing_carried_kg(i)
@@ -340,8 +562,10 @@ class Vehicle:
 
     def mass_after_staging_kg(self, i: int) -> float:
         """Mass [kg] after stage i separates: its burnout mass minus its dry mass and, when
-        the fairing drops at staging and i == 0, minus the fairing."""
-        fairing = self.fairing_mass_kg if (self.fairing_drop == "staging" and i == 0) else 0.0
+        the fairing drops at staging (the heating rule counts, as in fairing_carried_kg)
+        and i == 0, minus the fairing."""
+        drops = self.fairing_rule.drops_at_staging_in_screening and i == 0
+        fairing = self.fairing_mass_kg if drops else 0.0
         return self.stack_dry_mass_kg(i) - self.stages[i].dry_mass_kg - fairing
 
     def liftoff_mass_kg(self) -> float:
@@ -354,8 +578,18 @@ class Vehicle:
 
 
 def with_payload(vehicle: Vehicle, payload_kg: float) -> Vehicle:
-    """Copy of vehicle with a different payload mass [kg]."""
+    """Copy of vehicle with a different payload mass [kg]; everything else, the
+    aerodynamics included, is kept."""
     return dataclasses.replace(vehicle, payload_mass_kg=payload_kg)
+
+
+def with_cd_scale(vehicle: Vehicle, cd_scale: float) -> Vehicle:
+    """Copy of vehicle whose drag model has cd_scale (dimensionless, > 0) instead of its
+    own; the C_D table and A_ref are kept. Raises ValueError when the vehicle has no
+    drag model (aero None)."""
+    if vehicle.aero is None:
+        raise ValueError("the vehicle has no drag model (aero is None); cd_scale needs one")
+    return dataclasses.replace(vehicle, aero=dataclasses.replace(vehicle.aero, cd_scale=cd_scale))
 
 
 def with_stage_propellant(vehicle: Vehicle, i: int, propellant_kg: float) -> Vehicle:
