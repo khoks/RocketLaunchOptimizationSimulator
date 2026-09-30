@@ -119,7 +119,7 @@ Calibration is separate from validation; label it as such:
 
 ## Experiments and reporting
 
-- Each experiment YAML defines a pad baseline with the same vehicle, plus variants. All of them share guidance settings and optimizer budget. Until Phase 5, call results "sweep-optimized".
+- Each experiment YAML defines a pad baseline with the same vehicle, plus variants. All of them share the guidance parametrisation, sweep grid and optimizer budget; free guidance parameters are sweep-optimized per run. Until Phase 5, call results "sweep-optimized".
 - Write each run to results/<experiment>/<UTC timestamp>/: resolved config, git hash, metrics.json, time series (parquet or CSV), plots, summary.md. Never overwrite a results directory.
 - Every summary reports, against baseline: payload or residual propellant; the gravity, drag, steering and back-pressure losses; max-Q; peak felt axial g and the peak interface force; peak track-normal g; assist energy (J and kWh); peak drive power; facility length including braking; and the list of assumptions.
 - Headline numbers get a sensitivity check: ±10% on stage-1 dry mass, Isp, C_D and drive efficiency.

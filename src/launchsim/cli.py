@@ -1,4 +1,6 @@
-"""Command-line interface: the only module that prints to stdout or reads YAML.
+"""Command-line interface: the only module that prints to stdout or reads configuration
+YAML (``animate`` hands a results directory to plots.write_ascent_animation, which reads
+that directory's metrics.json and resolved_config.yaml).
 
 Output is ASCII only so it renders on a cp1252 console. Configuration and file-system
 errors (unreadable or non-UTF-8 files, bad names, an unwritable results root) are
@@ -9,10 +11,16 @@ does. Anything else (a bug in the simulator) keeps its traceback.
     launchsim run   <experiment.yaml> [--results-root DIR] [--variant NAME] [--no-plots]
                     [--no-sensitivity]
     launchsim sweep <experiment.yaml> [--results-root DIR] [--no-plots]
+    launchsim animate <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--fps N]
+                      [--seconds S] [--width PX]
     launchsim --version
 
 ``--results-root`` defaults to ``<repo root>/results`` (the repository holding the
 experiment file, found by its pyproject.toml), so the layout is the same from any cwd.
+
+``animate`` replays planar_2d runs of one results directory (results/<experiment>/
+<timestamp>) as an .mp4 (ffmpeg) or .gif (Pillow); the default output is
+./<experiment>_<timestamp>_animation.mp4 (.gif without ffmpeg), never inside results/.
 """
 
 from __future__ import annotations
@@ -24,7 +32,7 @@ from typing import Any
 
 import yaml
 
-from launchsim import __version__, sim
+from launchsim import __version__, plots, sim
 from launchsim.config import ResolvedExperiment, resolve_experiment
 from launchsim.units import rad_to_deg
 
@@ -41,7 +49,7 @@ class CliError(Exception):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for ``launchsim run`` and ``launchsim sweep``."""
+    """Build the argument parser for ``launchsim run``, ``sweep`` and ``animate``."""
     parser = argparse.ArgumentParser(
         prog="launchsim", description="Ground-powered launch-assist simulator."
     )
@@ -63,6 +71,51 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("experiment", help="Path to an experiment YAML file.")
     sweep.add_argument("--results-root", default=None, help=RESULTS_ROOT_HELP)
     sweep.add_argument("--no-plots", action="store_true", help="Skip PNG plots.")
+
+    animate = sub.add_parser(
+        "animate",
+        help="Replay planar_2d runs of one results directory as an .mp4 or .gif.",
+    )
+    animate.add_argument(
+        "run_dir", help="A results directory of a planar_2d run: results/<experiment>/<timestamp>."
+    )
+    animate.add_argument(
+        "--runs",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help="Runs to show (default: the baseline plus up to three variants, summary order).",
+    )
+    animate.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="Output file; the extension picks the format: .mp4 (needs ffmpeg) or .gif. "
+        "Default: ./<experiment>_<timestamp>_animation.mp4 (.gif without ffmpeg), "
+        "never inside results/.",
+    )
+    animate.add_argument(
+        "--fps",
+        type=int,
+        default=plots.ANIMATION_DEFAULT_FPS,
+        metavar="N",
+        help="Frames per second (default: %(default)s; a .gif plays at 1000/delay fps, "
+        "its frame delays being whole 10 ms steps, at most 50 fps).",
+    )
+    animate.add_argument(
+        "--seconds",
+        type=float,
+        default=plots.ANIMATION_DEFAULT_SECONDS,
+        metavar="S",
+        help="Video length [s] (default: %(default)s).",
+    )
+    animate.add_argument(
+        "--width",
+        type=int,
+        default=plots.ANIMATION_DEFAULT_WIDTH_PX,
+        metavar="PX",
+        help="Frame width [px], even; the frame is 16:9 (default: %(default)s).",
+    )
     return parser
 
 
@@ -265,13 +318,48 @@ def command_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_animate(args: argparse.Namespace) -> int:
+    """Write the animation of a planar results directory and print its path."""
+    run_dir = Path(args.run_dir)
+    try:
+        runs, _ = plots.load_animation_runs(run_dir, args.runs)  # validate before rendering
+        out = (
+            plots.default_animation_path(run_dir, Path.cwd())
+            if args.out is None
+            else Path(args.out)
+        )
+        plots.check_animation_out(out, run_dir)
+        play_fps = plots.animation_playback_fps(args.fps, out.suffix)
+        n_frames = plots.animation_frame_count(play_fps, args.seconds)
+        _, _, (width_px, height_px) = plots.frame_geometry(args.width)
+        rate = f"{args.fps} fps"
+        if play_fps != args.fps:
+            rate += f" (a .gif plays at {play_fps:g} fps: its frame delays are 10 ms steps)"
+        say(
+            f"rendering {', '.join(r.name for r in runs)}: {n_frames} frames at {rate}, "
+            f"{width_px}x{height_px} px ..."
+        )
+        written = plots.write_ascent_animation(
+            run_dir,
+            args.runs,
+            out,
+            fps=args.fps,
+            seconds=args.seconds,
+            width=args.width,
+        )
+    except plots.AnimationError as exc:
+        raise CliError(str(exc)) from exc
+    say(f"animation: {written}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns the process exit code: 0 on success, 1 for a configuration or
     file-system error (CliError, OSError), printed as one ``error:`` line. argparse
     raises SystemExit(2) for a usage error and SystemExit(0) for ``--version``."""
     _configure_stdout()
     args = build_parser().parse_args(argv)
-    commands = {"run": command_run, "sweep": command_sweep}
+    commands = {"run": command_run, "sweep": command_sweep, "animate": command_animate}
     try:
         return commands[args.command](args)
     except CliError as exc:

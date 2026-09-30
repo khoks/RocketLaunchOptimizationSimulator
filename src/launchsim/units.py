@@ -75,3 +75,8 @@ def j_to_kwh(energy_j: Quantity) -> Quantity:
 def kwh_to_j(energy_kwh: Quantity) -> Quantity:
     """Kilowatt-hours to joules."""
     return energy_kwh * J_PER_KWH
+
+
+def pa_to_kpa(pressure_pa: Quantity) -> Quantity:
+    """Pascals to kilopascals (plot labels and reports)."""
+    return pressure_pa / 1000.0

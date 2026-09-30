@@ -115,6 +115,7 @@ Phase 0-1:
 - 2026-09-28 Pad baseline: engines lit at t = -2 s under hold-down, full thrust at release; pad_instant and silo_instant are unphysical yardsticks.
 - 2026-09-28 1-D figure of merit: stage-1 burnout speed and altitude deltas vs pad, decomposed by the loss identity; no residual-propellant metric in 1-D.
 - 2026-09-28 Vehicle YAML all-Quantity (source/assumed); experiment YAML bare numbers.
+- 2026-09-30 CLAUDE.md Experiments rule reworded (user request): runs share the guidance parametrisation, sweep grid and optimizer budget; free guidance parameters are sweep-optimized per run.
 - 2026-09-28 CSV time series, argparse CLI, uv_build backend, ambiance without a numpy pin.
 - 2026-09-28 atmosphere.py evaluates the ICAO layer closed forms directly from ambiance's constant table (450x faster in the ODE RHS); ambiance.Atmosphere stays the test oracle at 1e-12 relative.
 - 2026-09-28 results/: only the top-level summary.md of each run directory is tracked (nested sweep-point summaries are ignored).
@@ -134,6 +135,8 @@ Phase 0-1:
 - The costs not yet charged are large: no structural mass is modelled for the 4.0 g0 full-stack load (22.5 MN); about 8.1 t of silo-only stage-1 strengthening would cancel the gain (184 kg of payload per tonne of stage-1 dry mass, derived). The drive is prescribed-acceleration, the carriage is 0 t, the shaft has no air drag, and the kick has no alpha aero.
 - Ignition timing in 2-D costs more than 1-D predicted: the 0.5 s + 2 s cold-start loss is 2.14x the 1-D value on the same masses (301 kg on README masses, 327 kg on the gate vehicle). The hot ramp ending at release beats cold by about 235 kg; a full hot start ties cold (-18.5 to +0.1 kg under +/-10%).
 - Unthrottled max-Q falls about 16% for every silo variant (a faster, higher trajectory through the transonic region), while q-alpha is above the pad's in every silo variant.
+
+- Viewing results (2026-09-30): there is no GUI; `launchsim animate <run_dir>` renders a 2-D run as an MP4 or GIF (docs/media/ascent_pad_vs_silo_cold_2d.mp4 and .gif), and an interactive replay page of the same runs was published as a private claude.ai artifact (Ascent Replay).
 
 ## Open questions for you (Phase 2)
 

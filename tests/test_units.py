@@ -36,3 +36,8 @@ def test_array_inputs() -> None:
     a = np.array([0.0, 1.0, 3.0])
     np.testing.assert_allclose(units.from_g(a), a * G0_MPS2, rtol=1e-15)
     np.testing.assert_allclose(units.to_g(units.from_g(a)), a, rtol=1e-15)
+
+
+def test_pa_to_kpa() -> None:
+    assert units.pa_to_kpa(101_325.0) == 101.325
+    np.testing.assert_allclose(units.pa_to_kpa(np.array([0.0, 2500.0])), [0.0, 2.5], rtol=1e-15)
