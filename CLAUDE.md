@@ -6,7 +6,7 @@ launch-assist-sim is a research simulator for ground-powered launch assist. A ro
 
 - Background, prior art, first-order numbers and research questions: README.md. Read it before planning experiments.
 - Report findings plainly, including ones that undercut the hypothesis that every m/s of assist helps.
-- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 (2-D ascent to orbit): model, guidance, searches and pipeline built (build steps 15-25); calibration and the 2-D experiments next; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
+- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 (2-D ascent to orbit): model, guidance, searches and pipeline built and validated; the labelled calibration ran and the pre-registered gate vehicle missed high (+14.3%, docs/findings/CAL-f9-leo-2d.md), so M7 awaits the user's decision; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
 
 ## Commands
 

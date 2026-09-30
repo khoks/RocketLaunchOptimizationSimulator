@@ -14,7 +14,7 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 - [x] M4 First concept-A numbers: silo_screening_1d run + sweep, every identity line closes to ~1e-12 m/s, README-number smoke test passes (2026-09-29)
 - [x] M5 Findings RQ2 and RQ3 (preliminary) in docs/findings/, status lines updated, commit (2026-09-29)
 - [x] M6 Phase 2 plan (2-D ascent, rotation, drag, guidance, payload search, calibration): written 2026-09-29 from 3 designs, 9 reviews and a critique; defaults below apply unless the user objects
-- [ ] M7 Phase 2 gate: orbit, loss-budget and convergence tests pass; the pre-registered gate vehicle lands within +/-10% of 22.8 t to 200 km circular, 28.5 deg (band 20,520-25,080 kg)
+- [!] M7 Phase 2 gate: validation tests pass; the pre-registered gate vehicle (set C) MISSES HIGH: P* 26,054 kg, +14.3%, 974 kg above the 25,080 kg band edge (set A 24,700 kg +8.3% inside; set B 25,416 kg +11.5% outside). Stopped for your decision (2026-09-30); docs/findings/CAL-f9-leo-2d.md
 - [ ] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary
 - [ ] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO
 
@@ -52,8 +52,8 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | 23 | search.py: residual, payload capacity, gamma* sweep, final verify | [x] | searched pad run 7-10 s; lag variants 25-28 s |
 | 24 | Pipeline: dispatch, planar metrics, compare with closure/attribution/checks, summary, plots | [x] | full suite + golden |
 | 25 | Convergence and performance gate; slow marks | [x] | every CLAUDE.md Phase 2 required test green; fast tier 43 s, full 230 s |
-| 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [ ] | needs the pre-registration commit first |
-| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [ ] | after M7 or an accepted miss |
+| 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [x] | frozen at c2849b7; run 20260930T100100Z; gate C misses high (M7 [!]); every numerical check passes; slow regression test without a band |
+| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [!] | blocked: needs your call on the calibration miss and on mechanism check M2 |
 | 28 | Close Phase 2 | [ ] | |
 
 ## Priorities
@@ -123,11 +123,14 @@ Phase 0-1:
 
 ## Open questions for you (Phase 2)
 
-- Calibration gate mass set (A README, B recorded scope, C full FT table; default C) freezes at the pre-registration commit.
+- Calibration miss (M7 [!]): accept the documented miss and run the research experiments on the gate vehicle as is, or pre-register a new two-sided fork (resolving the Merlin Isp_SL inconsistency and the 2.75 t launch-mass gap from sources, and carrying effects that raise P* as well as those that lower it) and re-run the calibration from a new commit. Any new fork is designed knowing this miss and must say so.
 - Planar max_step cap (2 s): adopt it (and tighten the inner-solve acceptance to about 1e-7 rad), or keep the uncapped, noisier integration as built.
 - Mechanism check M2 (screening-beat rule): the pre-registered time-shift estimator is about 4x optimistic on stage 1 and fails the low-speed cold-start sweep points with no bug (false bug_suspect). Options in physics.md: keep as pre-registered, stage-1 only, the joint gravity + steering term, P_ref-optimal gamma*, or indeterminate when not robust. Needed before the research experiments (step 27), not before calibration.
 
 ## Known issues and observations
+
+- summary.md labels +/-10% vehicle-perturbation sensitivity cases of a pad baseline as 'Unexplained beats'; the screening rule should not apply when the baseline is a pad without an assist (cosmetic).
+- Literature sizing of flight-performance reserve, unusable residuals and payload adapter mass is not in the calibration note (it uses the run's own conversions and says so); add it with citations if the calibration is revisited.
 
 - README says one EMALS launch is 122 MJ; 45 t at 67 m/s is about 101 MJ (122 MJ is the rated maximum). Note in findings, do not edit silently.
 - README ignition-loss band (5-25 m/s) covers the linear ramp; a first-order lag with tau = 1-3 s gives 10-39 m/s.

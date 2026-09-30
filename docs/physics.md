@@ -4473,6 +4473,33 @@ notes, `no_liftoff`, `drive_limit`, `interface_tensile`, `drive_braking`,
 on the ground`) are listed under "Result content"; they mark what a run did, not what
 it assumes.
 
+## Calibration notes (build step 26)
+
+The labelled calibration is recorded in docs/findings/CAL-f9-leo-2d.md (calibration, not
+validation). Three observations from it belong with the model description:
+
+- **Stage-1 engine data are not mutually consistent.** The vehicle forks take 914.1 kN
+  vacuum and 845.2 kN sea-level thrust per Merlin (spacex.com) and Isp_vac 311 s, and
+  derive A_e from the thrust difference. That triplet implies Isp_SL = 311 x 845.2 /
+  914.1 = 287.6 s, against the 282 s published beside 311 s (a 2.0% mass-flow
+  difference). Review diagnostics (full searches with one input overridden in memory,
+  none applied) give dP* = -714.0 kg if Isp_vac is the wrong figure (305.0 s), -279.8 kg
+  if the sea-level thrust is (828.9 kN) and +41.3 kg if the vacuum thrust is (932.1 kN).
+  The FT mass table also closes the published 549 t launch mass only to 546.3 t without
+  payload (a 2.75 t gap). Neither is resolved; a future fork must settle both from
+  sources, not toward the calibration band.
+- **Per-term losses depend on the bookkeeping.** The model splits the loss identity in
+  the Earth-relative frame (CLAUDE.md). Published per-term ranges are usually inertial.
+  From a site moving at omega_p R_E = 408.7 m/s, a gravity turn along v_rel is far from
+  v_in early in flight, so on an inertial basis the same trajectory books less gravity
+  loss and more steering loss (gate pad: 902.9 and 669.1 m/s inertial against 1,492.0 and
+  89.0 m/s Earth-relative). Only the total is basis-independent, and it lies inside the
+  literature range. The two bases coincide without rotation.
+- **Max-Q sits on the tropopause kink.** In every planar run so far the unthrottled max-Q
+  falls where dq/dt jumps at the ICAO 11 km layer base (the temperature lapse ends), so
+  its location is set by the atmosphere model's derivative discontinuity. The value is
+  above the flown range, as the unthrottled bias predicts.
+
 ## Test-to-equation map
 
 Every expected value in a test is computed there from constants and closed forms,
@@ -4670,3 +4697,4 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_search.py::test_residual_figure_short_of_orbit_is_signed` (slow) | figure_of_merit residual on the gate pad at a 30 t vehicle payload: no P1 or P2, the refine at P0, one final evaluation at P0 with m_res < 0: status short_of_orbit, the recorded run short of the cutoff with the evaluation's signed m_res and dv_margin ("Payload and gamma* search", Whole search) | exact |
 | `test_search.py::test_swapped_run_order_gives_identical_evaluations`; `::test_swapped_order_whole_searches_are_identical` (slow) | pad and silo_cold evaluated (and, slow, searched on a three-point grid) in both orders give bitwise-identical results ("Shared budget") | exact |
 | `test_convergence_2d.py::test_fixed_gamma_payload_and_margins_converge`, `::test_fixed_gamma_losses_and_max_q_converge` (pad, silo_cold; silo_cold_lag slow); `::test_reoptimised_search_converges` (slow; pad, silo_cold, silo_cold_lag) | CLAUDE.md's convergence rule with amendment 3's floors: the shipped budget (search rtol 1e-8, the only planar tests at it) against its 10x tightening (the ramp, lag and push step counts doubled) at fixed gamma* 20 deg (P*, m_res and dv_margin at 22.8 t, every loss term one by one, max-Q value and time) and re-optimised (P*, m_res and dv_margin at P0, gamma*, J_vac, drag, back-pressure, gravity plus steering jointly, max-Q value and time); the recorded run pushes exactly on the silo runs, and the recorded traces fly finite max_step caps in exactly the expected kinds, halved when tightened; after a re-optimisation gravity plus steering is compared jointly at the steering term's tolerance and the split is not asserted ("Convergence (planar)", Finding) | rel 1e-3 with floors 0.5 kg and 1e-3 m/s; gamma* 0.1 deg (measured: fixed gamma* every term within 4.6e-5 m/s, P* within 1.0e-3 kg; re-optimised P* at most 3.4e-3 kg, gamma* at most 6.3e-3 deg, m_res at P0 at most 0.25 kg) |
+| `test_calibration.py::test_record_matches_the_shipped_experiment`; `::test_calibration_payload_reproduces` (slow: pad, readme_loads, recorded_scope) | calibration regression (not validation): the record matches the shipped experiment and its clean pre-registration; P* reproduces tests/data/calibration_record.json and gamma*_ref within the 0.1 deg resolution; no band is asserted | P* 1e-3 relative |
