@@ -14,7 +14,7 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 - [x] M4 First concept-A numbers: silo_screening_1d run + sweep, every identity line closes to ~1e-12 m/s, README-number smoke test passes (2026-09-29)
 - [x] M5 Findings RQ2 and RQ3 (preliminary) in docs/findings/, status lines updated, commit (2026-09-29)
 - [x] M6 Phase 2 plan (2-D ascent, rotation, drag, guidance, payload search, calibration): written 2026-09-29 from 3 designs, 9 reviews and a critique; defaults below apply unless the user objects
-- [!] M7 Phase 2 gate: validation tests pass; the pre-registered gate vehicle (set C) MISSES HIGH: P* 26,054 kg, +14.3%, 974 kg above the 25,080 kg band edge (set A 24,700 kg +8.3% inside; set B 25,416 kg +11.5% outside). Stopped for your decision (2026-09-30); docs/findings/CAL-f9-leo-2d.md
+- [x] M7 Phase 2 gate (closed as a documented miss, accepted by the user 2026-09-30): validation tests pass; the pre-registered gate vehicle (set C) MISSES HIGH: P* 26,054 kg, +14.3%, 974 kg above the 25,080 kg band edge (set A 24,700 kg +8.3% inside; set B 25,416 kg +11.5% outside). Stopped for your decision (2026-09-30); docs/findings/CAL-f9-leo-2d.md
 - [ ] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary
 - [ ] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO
 
@@ -53,8 +53,8 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | 24 | Pipeline: dispatch, planar metrics, compare with closure/attribution/checks, summary, plots | [x] | full suite + golden |
 | 25 | Convergence and performance gate; slow marks | [x] | every CLAUDE.md Phase 2 required test green; fast tier 43 s, full 230 s |
 | 26 | Calibration (labelled): three mass sets, checklist, CAL-f9-leo-2d.md | [x] | frozen at c2849b7; run 20260930T100100Z; gate C misses high (M7 [!]); every numerical check passes; slow regression test without a band |
-| 26a | Step cap (2 s, planar) and M2 as diagnostic; pre-registration amendment; calibration re-run | [~] | implemented and gated (908 tests, golden byte-identical); amendment committed; calibration re-run next |
-| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [ ] | unblocked by the user's decisions; after 26a |
+| 26a | Step cap (2 s, planar) and M2 as diagnostic; pre-registration amendment; calibration re-run | [x] | amendment 7ad381f; calibration re-run 20260930T173928Z reproduces every case within 0.002 kg |
+| 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [~] | runs done from clean 7ad381f (trigger 20260930T174950Z, screening run 175743Z and sweep 182453Z, bridge 185034Z); findings in progress |
 | 28 | Close Phase 2 | [ ] | |
 
 ## Priorities

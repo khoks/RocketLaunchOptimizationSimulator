@@ -262,6 +262,26 @@ P* moves by far less than 0.1%. Gravity and steering each move by about 0.012 m/
 - The GPS III MECO point, compared at matched payload, suggests the model's stage 1 out-performs the flown one (by at most 10.8-12.8% in MECO speed, ideal); that is consistent with the miss high but is not a measurement of its cause. The User's Guide sample MECO (T+145 s, A) is 6.3 s earlier than the model's, so the timing evidence does not point one way.
 - **M7 is [!]. The run is stopped for the user's decision.** Options belong to the user, for example: accept the documented miss and proceed to step 27 with the gate vehicle as is; or pre-register a new fork and re-run the calibration from a new commit. Any new fork would be designed with knowledge of this miss and must be labelled that way; to be a test rather than a re-fit it must be two-sided, carrying the items that raise P* (guidance optimality, atmosphere, altitude datum) as well as those that lower it (reserve, residuals, throttling), and resolving the engine-data inconsistency and the launch-mass closure gap from a source rather than toward the band. This note recommends none of them, adds no physics and changes no input.
 
+## Addendum: re-run after the pre-registration amendment (2026-09-30)
+
+After this record was written the user made three decisions (TODO.md decisions log, 2026-09-30): accept the documented miss and proceed to the research experiments on the gate vehicle as is; make mechanism check M2 diagnostic only; and adopt a 2 s max_step cap on planar flight phases, which removes the integration noise floor from the transonic drag-table knots. The cap and the M2 role changed pre-registered experiment blocks, so they were committed as a pre-registration amendment (commit 7ad381f) and this calibration was re-run from that clean commit before any research run.
+
+- Run directory: `results/calibration_f9_2d/20260930T173928Z/`; git 7ad381f227a9 (dirty: false); pre-registered inputs clean at commit 7ad381f227a9.
+- Every case reproduces the original run within 0.002 kg (largest change 0.0012 kg, aref_fairing). The verdict is unchanged: the gate (set C) misses high at 26,054.4 kg, +14.27% against 22,800 kg; set A stays inside and set B outside. The user accepted the miss; M7 is closed as a documented miss.
+
+| case | P* original run [kg] | P* amended re-run [kg] | change [kg] |
+|---|---|---|---|
+| `pad` | 26,054.4 | 26,054.4 | -0.0001 |
+| `readme_loads` | 24,700.0 | 24,700.0 | -0.0000 |
+| `recorded_scope` | 25,416.3 | 25,416.3 | -0.0004 |
+| `aref_fairing` | 25,663.5 | 25,663.5 | -0.0012 |
+| `alt_185` | 26,290.6 | 26,290.6 | +0.0001 |
+| `alt_250` | 25,188.9 | 25,188.9 | +0.0001 |
+| `alt_300` | 24,214.4 | 24,214.4 | +0.0000 |
+| `no_rotation` | 22,130.0 | 22,130.0 | -0.0000 |
+
+The original run and its numbers above remain the calibration record of the frozen pre-registration; the re-run shows the amendment does not move them.
+
 ## Plots (copied from the run directory)
 
 The three mass sets get the same seven plot kinds, side by side (set A, set B, set C = gate). The no-rotation diagnostic adds its loss plot.

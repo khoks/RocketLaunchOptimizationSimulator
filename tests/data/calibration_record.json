@@ -1,74 +1,106 @@
 {
-  "_note": "CALIBRATION record (not validation) of experiments/calibration_f9_2d.yaml, copied from the run's metrics.json (build step 26; docs/findings/CAL-f9-leo-2d.md). SI units, angles in rad. A regression reference only: tests/test_calibration.py re-runs the searches and compares P*; it asserts no band.",
-  "experiment": "experiments/calibration_f9_2d.yaml",
-  "run_dir": "results/calibration_f9_2d/20260930T100100Z",
-  "timestamp_utc": "20260930T100100Z",
-  "git": "c2849b72e01d",
+ "_note": "CALIBRATION record (not validation) of experiments/calibration_f9_2d.yaml, copied from the run's metrics.json (build step 26; docs/findings/CAL-f9-leo-2d.md). SI units, angles in rad. A regression reference only: tests/test_calibration.py re-runs the searches and compares P*; it asserts no band.",
+ "experiment": "experiments/calibration_f9_2d.yaml",
+ "run_dir": "results/calibration_f9_2d/20260930T100100Z",
+ "timestamp_utc": "20260930T100100Z",
+ "git": "c2849b72e01d",
+ "preregistration": {
+  "inputs_commit": "c2849b72e01d",
+  "dirty": false,
+  "dirty_paths": [],
+  "error": null
+ },
+ "search_budget_id": "a17a01601d0f4ae0c48cac48342127d5597e056e769da83503d7364c7d65a7df",
+ "gate_run": "pad",
+ "mass_sets": {
+  "C": "pad",
+  "A": "readme_loads",
+  "B": "recorded_scope"
+ },
+ "vehicles": {
+  "pad": "configs/vehicles/generic_f9_class_2d.yaml",
+  "readme_loads": "configs/vehicles/generic_f9_class_2d_readme_loads.yaml",
+  "recorded_scope": "configs/vehicles/generic_f9_class_2d_recorded_scope.yaml"
+ },
+ "payload_kg": {
+  "pad": 26054.396343682154,
+  "readme_loads": 24700.01306721804,
+  "recorded_scope": 25416.317742695286,
+  "aref_fairing": 25663.50668632572,
+  "alt_185": 26290.608707829633,
+  "alt_250": 25188.887552847267,
+  "alt_300": 24214.403355930157,
+  "no_rotation": 22129.981364487972
+ },
+ "gamma_star_rad": {
+  "pad": 0.40123808597551225,
+  "readme_loads": 0.3655465042624468,
+  "recorded_scope": 0.40859012705160597,
+  "aref_fairing": 0.4084698967956538,
+  "alt_185": 0.38600136968103715,
+  "alt_250": 0.4529463295479687,
+  "alt_300": 0.5054459023143604,
+  "no_rotation": 0.4051260576335915
+ },
+ "gate_pad": {
+  "payload_kg": 26054.396343682154,
+  "gamma_star_rad": 0.40123808597551225,
+  "delta_rad": 0.049468590731671,
+  "ltg_a": 0.6101864382189891,
+  "ltg_b_per_s": 0.0015608289992772824,
+  "meco": {
+   "t_s": 151.32843754451864,
+   "alt_m": 69485.9596770741,
+   "speed_rel_mps": 2665.030656504478,
+   "speed_inertial_mps": 3049.6785925217155,
+   "gamma_rel_rad": 0.4012380861917884,
+   "downrange_m": 99170.87246813861,
+   "mass_kg": 161454.3963436822
+  },
+  "losses_mps": {
+   "dv_vac": 9032.849799770776,
+   "gravity": 1491.9769165545622,
+   "drag": 26.036233072379872,
+   "steering": 88.98662645185343,
+   "back_pressure": 63.143910107834316,
+   "speed_start": 0.0,
+   "speed_end": 7362.706113590081
+  },
+  "residual_propellant_at_p0_kg": 3235.40131344341,
+  "dv_margin_at_p0_mps": 388.9635624950835,
+  "max_q_pa": 37191.35162815277,
+  "max_q_time_s": 65.75149585311146
+ },
+ "amended_rerun": {
+  "_note": "Re-run of the same experiment after the user-approved pre-registration amendment of 2026-09-30 (2 s planar max_step cap; M2 diagnostic only; commit 7ad381f). The regression test still compares against the original payload_kg above; the two runs agree within 0.002 kg on every case (largest change 0.0012 kg).",
+  "run_dir": "results/calibration_f9_2d/20260930T173928Z",
+  "timestamp_utc": "20260930T173928Z",
+  "git": "7ad381f227a9",
   "preregistration": {
-    "inputs_commit": "c2849b72e01d",
-    "dirty": false,
-    "dirty_paths": [],
-    "error": null
-  },
-  "search_budget_id": "a17a01601d0f4ae0c48cac48342127d5597e056e769da83503d7364c7d65a7df",
-  "gate_run": "pad",
-  "mass_sets": {
-    "C": "pad",
-    "A": "readme_loads",
-    "B": "recorded_scope"
-  },
-  "vehicles": {
-    "pad": "configs/vehicles/generic_f9_class_2d.yaml",
-    "readme_loads": "configs/vehicles/generic_f9_class_2d_readme_loads.yaml",
-    "recorded_scope": "configs/vehicles/generic_f9_class_2d_recorded_scope.yaml"
+   "inputs_commit": "7ad381f227a9",
+   "dirty": false,
+   "dirty_paths": [],
+   "error": null
   },
   "payload_kg": {
-    "pad": 26054.396343682154,
-    "readme_loads": 24700.01306721804,
-    "recorded_scope": 25416.317742695286,
-    "aref_fairing": 25663.50668632572,
-    "alt_185": 26290.608707829633,
-    "alt_250": 25188.887552847267,
-    "alt_300": 24214.403355930157,
-    "no_rotation": 22129.981364487972
+   "pad": 26054.396243494975,
+   "readme_loads": 24700.013061881455,
+   "recorded_scope": 25416.31738934175,
+   "aref_fairing": 25663.505461169065,
+   "alt_185": 26290.608824852032,
+   "alt_250": 25188.887653651524,
+   "alt_300": 24214.403371769546,
+   "no_rotation": 22129.9813553581
   },
   "gamma_star_rad": {
-    "pad": 0.40123808597551225,
-    "readme_loads": 0.3655465042624468,
-    "recorded_scope": 0.40859012705160597,
-    "aref_fairing": 0.4084698967956538,
-    "alt_185": 0.38600136968103715,
-    "alt_250": 0.4529463295479687,
-    "alt_300": 0.5054459023143604,
-    "no_rotation": 0.4051260576335915
-  },
-  "gate_pad": {
-    "payload_kg": 26054.396343682154,
-    "gamma_star_rad": 0.40123808597551225,
-    "delta_rad": 0.049468590731671,
-    "ltg_a": 0.6101864382189891,
-    "ltg_b_per_s": 0.0015608289992772824,
-    "meco": {
-      "t_s": 151.32843754451864,
-      "alt_m": 69485.9596770741,
-      "speed_rel_mps": 2665.030656504478,
-      "speed_inertial_mps": 3049.6785925217155,
-      "gamma_rel_rad": 0.4012380861917884,
-      "downrange_m": 99170.87246813861,
-      "mass_kg": 161454.3963436822
-    },
-    "losses_mps": {
-      "dv_vac": 9032.849799770776,
-      "gravity": 1491.9769165545622,
-      "drag": 26.036233072379872,
-      "steering": 88.98662645185343,
-      "back_pressure": 63.143910107834316,
-      "speed_start": 0.0,
-      "speed_end": 7362.706113590081
-    },
-    "residual_propellant_at_p0_kg": 3235.40131344341,
-    "dv_margin_at_p0_mps": 388.9635624950835,
-    "max_q_pa": 37191.35162815277,
-    "max_q_time_s": 65.75149585311146
+   "pad": 0.4012363454432839,
+   "readme_loads": 0.3655465042624468,
+   "recorded_scope": 0.4085699096676541,
+   "aref_fairing": 0.40841123911060767,
+   "alt_185": 0.38602456100289717,
+   "alt_250": 0.45299922688488453,
+   "alt_300": 0.5054483880258822,
+   "no_rotation": 0.40512973605868924
   }
+ }
 }
