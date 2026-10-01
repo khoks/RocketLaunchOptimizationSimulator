@@ -6,7 +6,7 @@ launch-assist-sim is a research simulator for ground-powered launch assist. A ro
 
 - Background, prior art, first-order numbers and research questions: README.md. Read it before planning experiments.
 - Report findings plainly, including ones that undercut the hypothesis that every m/s of assist helps.
-- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Phase 3 (assist models) is next; see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
+- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Next session starts from docs/handoff/NEXT_SESSION.md (visual launch scenes, launch-configuration knobs, fuel replacement at fixed payload); see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
 
 ## Commands
 
@@ -18,6 +18,8 @@ Create these in Phase 0 and keep this list accurate.
 - Lint and format: `uv run ruff check . && uv run ruff format .` (Windows PowerShell 5.1 has no `&&`: run the two commands separately, or use Git Bash)
 - One run: `uv run python -m launchsim run experiments/<name>.yaml`
 - Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml`
+- Animate a 2-D run (MP4/GIF): `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
+- Interactive replay page (HTML): `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 
 ## Layout
 
@@ -41,7 +43,8 @@ src/launchsim/
   compare.py     comparison against the baseline, closure, attribution, screening checks, sensitivity
   summary.py     summary.md text
   results_io.py  run directories, provenance (git, pre-registration state), writers, experiment and sweep entry points
-  plots.py       plot writers (Agg)
+  plots.py       plot writers (Agg) and the `animate` MP4/GIF replay
+  replay.py      the `replay` command: a self-contained interactive HTML replay page (template in templates/replay.html)
   optimize.py    ascent optimization (Phase 5)
   cli.py
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
@@ -129,7 +132,7 @@ Calibration is separate from validation; label it as such:
 ## Code style
 
 - Python 3.12, type hints everywhere, frozen dataclasses for parameters, pydantic to validate YAML.
-- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py and plots.py.
+- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py and replay.py.
 - Small functions with docstrings. No magic numbers outside constants.py and configs.
 - ruff for lint and format. Mark tests slower than 5 s with `@pytest.mark.slow`.
 

@@ -12,3 +12,8 @@ results/**
 !results/*/
 !results/*/*/
 !results/*/*/summary.md
+
+# default outputs of `launchsim animate` and `launchsim replay` (written to the current directory)
+*_animation.mp4
+*_animation.gif
+*_replay.html

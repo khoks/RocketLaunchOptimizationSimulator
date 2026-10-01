@@ -1,0 +1,516 @@
+<title>Ascent Replay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a flight-test console. Transport strip on top, trajectory plot beside live telemetry,
+   launch close-up and strip charts below, results and caveats last. Vellum paper by day, slate at night. */
+:root {
+  --bg: #f1f2ee;
+  --panel: #fbfbf8;
+  --ink: #1c2226;
+  --ink-2: #4c565c;
+  --ink-3: #7b858a;
+  --rule: #d6d9d1;
+  --grid: #e3e5de;
+  --ground: #8a7a62;
+  --shaft: #d9d2c4;
+  --run-pad: #2d5f8f;
+  --run-cold: #c2521a;
+  --run-hot: #177d6f;
+  --run-inst: #7a4c8e;
+  --caution: #9a6a00;
+  --caution-bg: #f6ecd2;
+  --focus: #2d5f8f;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #78828a;
+    --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+    --run-pad: #7fb0e0; --run-cold: #f08a4b; --run-hot: #4cc2ae; --run-inst: #c39ad6;
+    --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #78828a;
+  --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+  --run-pad: #7fb0e0; --run-cold: #f08a4b; --run-hot: #4cc2ae; --run-inst: #c39ad6;
+  --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 40px; display: grid; gap: 16px; }
+header { display: grid; gap: 4px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 2.3rem; letter-spacing: 0.02em; margin: 0; line-height: 1.05; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0; color: var(--ink-2); }
+.sub { color: var(--ink-2); max-width: 70ch; margin: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag { font-family: var(--font-data); font-size: 0.72rem; color: var(--ink-2); border: 1px solid var(--rule); padding: 1px 7px; border-radius: 3px; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; min-width: 0; display: grid; gap: 10px; }
+
+/* transport */
+.transport { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 12px; }
+.btn { font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--ink); color: var(--panel); border: 0; border-radius: 4px; padding: 7px 14px; cursor: pointer; min-width: 84px; }
+.btn:focus-visible, select:focus-visible, input:focus-visible, .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.clock { font-family: var(--font-data); font-size: 1.35rem; font-variant-numeric: tabular-nums; min-width: 9ch; }
+.clock small { display: block; font-size: 0.7rem; color: var(--ink-3); letter-spacing: 0.04em; }
+.timeline { position: relative; min-width: 0; }
+.timeline canvas { width: 100%; height: 22px; display: block; }
+.timeline input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
+.rate { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); }
+select { font-family: var(--font-data); font-size: 0.85rem; background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; border: 1px solid var(--rule); border-radius: 999px; padding: 3px 12px 3px 8px; cursor: pointer; background: var(--panel); color: var(--ink); }
+.chip[aria-pressed="false"] { color: var(--ink-3); }
+.chip[aria-pressed="false"] .sw { opacity: 0.25; }
+.sw { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
+
+/* main grid */
+.main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+.plots2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+canvas.plot { width: 100%; display: block; }
+#traj { aspect-ratio: 16 / 8.2; }
+#closeup { aspect-ratio: 16 / 10; }
+.strips canvas { aspect-ratio: 16 / 4.2; }
+.strips { display: grid; gap: 6px; }
+.telemetry { display: grid; gap: 10px; align-content: start; }
+.tcard { border-top: 3px solid var(--c); padding-top: 6px; display: grid; gap: 4px; }
+.tcard .name { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; letter-spacing: 0.03em; }
+.tcard .phase { font-size: 0.8rem; color: var(--ink-2); }
+.tgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 10px; }
+.tgrid div { display: grid; }
+.tgrid .k { font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.tgrid .v { font-family: var(--font-data); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+/* results */
+.results table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.results th { text-align: right; font-weight: 500; color: var(--ink-3); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 8px; border-bottom: 1px solid var(--rule); }
+.results th:first-child, .results td:first-child { text-align: left; }
+.results td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--grid); font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.results td:first-child { font-family: var(--font-body); }
+.tablewrap { overflow-x: auto; }
+.delta-pos { color: var(--run-hot); }
+.caveats { background: var(--caution-bg); border: 1px solid var(--rule); border-left: 4px solid var(--caution); border-radius: 6px; padding: 12px 16px; display: grid; gap: 6px; }
+.caveats h2 { color: var(--caution); }
+.caveats ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; max-width: 95ch; }
+.foot { color: var(--ink-3); font-size: 0.8rem; font-family: var(--font-data); }
+.legend-note { font-size: 0.8rem; color: var(--ink-3); margin: 0; }
+
+@media (max-width: 900px) {
+  .main, .plots2 { grid-template-columns: minmax(0, 1fr); }
+  .transport { grid-template-columns: auto 1fr; }
+  .timeline { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Ascent Replay</h1>
+    <p class="sub">A Falcon 9-class rocket flown twice to a 200 km orbit: once from a normal pad, once pushed out of a 100 m vertical silo at 3 g before its engines light. Replay the simulated flights side by side, scrub to any moment, and compare what each run carries to orbit.</p>
+    <div class="tags" id="tags"></div>
+  </header>
+
+  <section class="panel" aria-label="Playback">
+    <div class="transport">
+      <button class="btn" id="play" type="button" aria-label="Play">Play</button>
+      <div class="clock" aria-live="off"><span id="clock">T+0.0 s</span><small id="clockSub">after release</small></div>
+      <div class="timeline">
+        <canvas id="ticks" aria-hidden="true"></canvas>
+        <input type="range" id="scrub" min="-2.6" max="540" step="0.1" value="0" aria-label="Flight time after release, seconds">
+      </div>
+      <label class="rate" for="rate">Speed
+        <select id="rate">
+          <option value="auto" selected>Auto</option>
+          <option value="1">1x</option>
+          <option value="5">5x</option>
+          <option value="20">20x</option>
+          <option value="60">60x</option>
+        </select>
+      </label>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Runs shown"></div>
+  </section>
+
+  <div class="main">
+    <section class="panel" aria-label="Trajectory">
+      <h2>Trajectory: altitude against downrange distance</h2>
+      <canvas class="plot" id="traj" role="img" aria-label="Altitude against downrange distance for each run"></canvas>
+      <p class="legend-note">Dots mark main engine cutoff (MECO), fairing jettison and orbit insertion. Downrange is measured over the rotating Earth.</p>
+    </section>
+    <section class="panel telemetry" aria-label="Live telemetry" id="telemetry"></section>
+  </div>
+
+  <div class="plots2">
+    <section class="panel" aria-label="Launch close-up">
+      <h2>Launch close-up: first 30 seconds</h2>
+      <canvas class="plot" id="closeup" role="img" aria-label="Altitude against time over the first 30 seconds, including the silo shaft below ground"></canvas>
+      <p class="legend-note">The silo run starts 100 m underground and leaves the mouth at 76.7 m/s after 2.6 s. The pad run is held down while its engines ramp up, then released at T+0. The shaft is treated as vented, so no air drag, dynamic pressure or Mach number is computed inside it.</p>
+    </section>
+    <section class="panel strips" aria-label="Strip charts">
+      <h2>Speed, felt g and dynamic pressure</h2>
+      <canvas class="plot" id="s_v" role="img" aria-label="Speed relative to Earth over time"></canvas>
+      <canvas class="plot" id="s_g" role="img" aria-label="Felt axial acceleration over time"></canvas>
+      <canvas class="plot" id="s_q" role="img" aria-label="Dynamic pressure over time"></canvas>
+    </section>
+  </div>
+
+  <section class="panel results" aria-label="Results">
+    <h2>What each run carries to orbit</h2>
+    <div class="tablewrap"><table id="results"></table></div>
+    <p class="legend-note">Payload capacity is the largest payload that still reaches the 200 km circular orbit with zero propellant left, found by the simulator's search. The ideal rocket-equation estimate for a 76.7 m/s head start, holding all losses constant, is about 765 kg.</p>
+  </section>
+
+  <section class="caveats" aria-label="Read before quoting">
+    <h2>Read before quoting these numbers</h2>
+    <ul>
+      <li>Planar 2-D model over a rotating spherical Earth, with drag and back-pressure. Guidance is sweep-optimized, not optimal control, and the engines never throttle.</li>
+      <li>The vehicle calibrates 14.3% high: it carries 26,054 kg from the pad against the published 22,800 kg. It was accepted as a documented miss, so read these numbers as differences between runs.</li>
+      <li>No structural mass is charged for the silo's load case: the fully fuelled stack feels about 4 g during the push. About 8.1 t of extra stage-1 structure would cancel the cold-start gain.</li>
+      <li>The silo drive is a prescribed 3 g push with no force or power limit, the carriage is massless, the shaft has no air drag, and the pitch kick has no aerodynamic penalty. Each of these favours the silo.</li>
+      <li>The instant-ignition runs are yardsticks, not designs: no real engine reaches full thrust at the instant of release.</li>
+    </ul>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<script type="application/json" id="replay-data">__DATA__</script>
+<script>
+(function () {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("replay-data").textContent);
+  const ORDER = ["pad", "silo_cold", "silo_hot_ramp_on_track", "silo_instant"];
+  const COLOR_VAR = { pad: "--run-pad", silo_cold: "--run-cold", silo_hot_ramp_on_track: "--run-hot", silo_instant: "--run-inst" };
+  const DASH = { silo_instant: [6, 4] };
+  const PHASE_NAME = {
+    HOLD: "Held on the pad, engines ramping", ASSIST: "Silo push", COAST_PRE_IGN: "Coasting before ignition",
+    VERTICAL_RISE: "Vertical rise", KICK: "Pitch kick", GRAVITY_TURN: "Gravity turn",
+    COAST_STAGING: "Staging coast", LTG_BURN: "Stage 2, linear-tangent steering", COAST: "Coast"
+  };
+  const EVENT_LABEL = {
+    push_start: "Push starts", release: "Release", kick_start: "Pitch kick", kick_end: "Kick aligned",
+    ramp_end: "Full thrust", propellant: "MECO", staging: "Staging", fairing: "Fairing off", cutoff: "Orbit"
+  };
+  const MARK_EVENTS = ["propellant", "fairing", "cutoff"];
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const runs = ORDER.filter(k => DATA.runs[k]).map(k => ({ key: k, ...DATA.runs[k] }));
+  const visible = new Set(["pad", "silo_cold"]);
+  const T_MIN = Math.min(...runs.map(r => r.t[0]));
+  const T_MAX = Math.max(...runs.map(r => r.t[r.t.length - 1]));
+  let tNow = 0, playing = false, lastFrame = null;
+
+  // ------------------------------------------------------------------ helpers
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  let PAL = {};
+  function readPalette() {
+    PAL = { ink: css("--ink"), ink2: css("--ink-2"), ink3: css("--ink-3"), rule: css("--rule"), grid: css("--grid"),
+      ground: css("--ground"), shaft: css("--shaft"), panel: css("--panel"), caution: css("--caution") };
+    runs.forEach(r => { PAL[r.key] = css(COLOR_VAR[r.key]); });
+  }
+  function idxAt(t, arr) {
+    if (t <= arr[0]) return 0;
+    if (t >= arr[arr.length - 1]) return arr.length - 1;
+    let lo = 0, hi = arr.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (arr[mid] <= t) lo = mid; else hi = mid; }
+    return lo;
+  }
+  function valAt(run, field, t) {
+    const T = run.t, Y = run[field];
+    if (t <= T[0]) return Y[0];
+    if (t >= T[T.length - 1]) return Y[Y.length - 1];
+    const i = idxAt(t, T), f = (t - T[i]) / (T[i + 1] - T[i]);
+    if (Y[i] === null || Y[i + 1] === null) return null;
+    return Y[i] + f * (Y[i + 1] - Y[i]);
+  }
+  function phaseAt(run, t) {
+    if (t < run.t[0]) return run.key === "pad" ? "Waiting on the pad" : "Waiting at the bottom of the shaft";
+    if (t >= run.t[run.t.length - 1]) return "In orbit, 200 km circular";
+    return PHASE_NAME[run.phase[idxAt(t, run.t)]] || run.phase[idxAt(t, run.t)];
+  }
+  const fmt = (v, d) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const qOr = (v, f) => (v === null ? "in shaft" : f(v));
+  function clockText(t) { return (t < 0 ? "T−" : "T+") + fmt(Math.abs(t), 1) + " s"; }
+
+  function setupCanvas(cv) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+  function niceStep(span, target) {
+    const raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+    return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  }
+  function axes(ctx, box, xr, yr, xlabel, ylabel, opts) {
+    const o = opts || {};
+    const sx = x => box.x + (x - xr[0]) / (xr[1] - xr[0]) * box.w;
+    const sy = y => box.y + box.h - (y - yr[0]) / (yr[1] - yr[0]) * box.h;
+    ctx.save();
+    ctx.font = "11px " + css("--font-data");
+    ctx.fillStyle = PAL.ink3; ctx.strokeStyle = PAL.grid; ctx.lineWidth = 1;
+    const xs = niceStep(xr[1] - xr[0], o.xt || 6), ys = niceStep(yr[1] - yr[0], o.yt || 4);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (let x = Math.ceil(xr[0] / xs) * xs; x <= xr[1] + 1e-9; x += xs) {
+      const px = sx(x); ctx.beginPath(); ctx.moveTo(px, box.y); ctx.lineTo(px, box.y + box.h); ctx.stroke();
+      ctx.fillText(fmt(x, xs < 1 ? 1 : 0), px, box.y + box.h + 4);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (let y = Math.ceil(yr[0] / ys) * ys; y <= yr[1] + 1e-9; y += ys) {
+      const py = sy(y); ctx.beginPath(); ctx.moveTo(box.x, py); ctx.lineTo(box.x + box.w, py); ctx.stroke();
+      ctx.fillText(fmt(y, ys < 1 ? 1 : 0), box.x - 6, py);
+    }
+    ctx.strokeStyle = PAL.rule; ctx.strokeRect(box.x, box.y, box.w, box.h);
+    ctx.fillStyle = PAL.ink2; ctx.font = "12px " + css("--font-body");
+    if (xlabel) { ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(xlabel, box.x + box.w, box.y + box.h + 20); }
+    if (ylabel) { ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText(ylabel, box.x, box.y - 6); }
+    ctx.restore();
+    return { sx, sy };
+  }
+  function pathXY(ctx, run, fx, fy, sx, sy, tEnd) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < run.t.length; i++) {
+      if (tEnd !== undefined && run.t[i] > tEnd) {
+        const px = sx(valAt(run, fx, tEnd)), py = sy(valAt(run, fy, tEnd));
+        if (started) ctx.lineTo(px, py);
+        break;
+      }
+      const px = sx(run[fx][i]), py = sy(run[fy][i]);
+      if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+    }
+    return started;
+  }
+  function pathTime(ctx, run, fy, sx, sy, tA, tB) {
+    ctx.beginPath();
+    let started = false, any = false;
+    for (let i = 0; i < run.t.length; i++) {
+      const t = run.t[i];
+      if (t < tA) continue;
+      if (t > tB) { const v = valAt(run, fy, tB); if (started && v !== null) ctx.lineTo(sx(tB), sy(v)); break; }
+      const v = run[fy][i];
+      if (v === null) { started = false; continue; }
+      const px = sx(t), py = sy(v);
+      if (!started) { ctx.moveTo(px, py); started = true; any = true; } else ctx.lineTo(px, py);
+    }
+    return any;
+  }
+  function stroke(ctx, key, width, alpha) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = PAL[key]; ctx.lineWidth = width;
+    ctx.setLineDash(DASH[key] || []); ctx.lineJoin = "round"; ctx.stroke(); ctx.restore();
+  }
+  function marker(ctx, x, y, key, r) {
+    ctx.save(); ctx.fillStyle = PAL[key]; ctx.strokeStyle = PAL.panel; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  const shown = () => runs.filter(r => visible.has(r.key));
+
+  // ------------------------------------------------------------------ drawing
+  function drawTraj() {
+    const cv = document.getElementById("traj");
+    const { ctx, w, h } = setupCanvas(cv);
+    const box = { x: 52, y: 22, w: w - 66, h: h - 60 };
+    const xr = [0, 1800], yr = [0, 220];
+    const { sx, sy } = axes(ctx, box, xr, yr, "downrange, km", "altitude, km", { xt: 9, yt: 5 });
+    const alt = r => r.alt_m.map(a => a / 1000);
+    shown().forEach(r => { if (!r.alt_km) r.alt_km = alt(r); });
+    shown().forEach(r => { if (pathXY(ctx, r, "x_km", "alt_km", sx, sy)) stroke(ctx, r.key, 1.5, 0.22); });
+    shown().forEach(r => { if (pathXY(ctx, r, "x_km", "alt_km", sx, sy, tNow)) stroke(ctx, r.key, 2.4, 1); });
+    const first = shown()[0];
+    shown().forEach(r => {
+      r.events.filter(e => MARK_EVENTS.includes(e.name) && e.t <= tNow).forEach(e => {
+        const px = sx(e.x_km), py = sy(e.alt_m / 1000);
+        ctx.save(); ctx.fillStyle = PAL[r.key]; ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        if (r === first) {
+          ctx.save(); ctx.font = "11px " + css("--font-body"); ctx.fillStyle = PAL.ink2; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+          ctx.fillText(EVENT_LABEL[e.name], px + 6, py - 4); ctx.restore();
+        }
+      });
+    });
+    shown().forEach(r => marker(ctx, sx(valAt(r, "x_km", tNow)), sy(Math.max(0, valAt(r, "alt_m", tNow)) / 1000), r.key, 5));
+  }
+
+  function drawCloseup() {
+    const cv = document.getElementById("closeup");
+    const { ctx, w, h } = setupCanvas(cv);
+    const box = { x: 58, y: 22, w: w - 72, h: h - 60 };
+    const tA = -3, tB = 30;
+    let ymax = 500;
+    shown().forEach(r => { ymax = Math.max(ymax, valAt(r, "alt_m", tB)); });
+    const yr = [-160, ymax * 1.05];
+    const { sx, sy } = axes(ctx, box, [tA, tB], yr, "seconds after release", "altitude, m", { xt: 7, yt: 5 });
+    ctx.save();
+    ctx.fillStyle = PAL.shaft; ctx.globalAlpha = 0.9;
+    const shaftTop = sy(0), shaftBot = sy(-100);
+    ctx.fillRect(box.x + 1, shaftTop, box.w - 2, shaftBot - shaftTop);
+    ctx.globalAlpha = 1; ctx.strokeStyle = PAL.ground; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(box.x, shaftTop); ctx.lineTo(box.x + box.w, shaftTop); ctx.stroke();
+    ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(box.x, shaftBot); ctx.lineTo(box.x + box.w, shaftBot); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = "11px " + css("--font-body"); ctx.fillStyle = PAL.ink2; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText("ground / silo mouth", box.x + box.w - 6, shaftTop - 3);
+    ctx.textBaseline = "top"; ctx.fillText("silo floor, 100 m down", box.x + box.w - 6, shaftBot + 3);
+    ctx.restore();
+    shown().forEach(r => { if (pathTime(ctx, r, "alt_m", sx, sy, tA, tB)) stroke(ctx, r.key, 1.5, 0.22); });
+    const tc = Math.min(Math.max(tNow, tA), tB);
+    shown().forEach(r => { if (pathTime(ctx, r, "alt_m", sx, sy, tA, tc)) stroke(ctx, r.key, 2.4, 1); });
+    if (tNow >= tA && tNow <= tB) {
+      ctx.save(); ctx.strokeStyle = PAL.ink3; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(sx(tNow), box.y); ctx.lineTo(sx(tNow), box.y + box.h); ctx.stroke(); ctx.restore();
+    }
+    shown().forEach(r => {
+      const t = Math.min(Math.max(tNow, r.t[0]), tB);
+      if (t >= tA) marker(ctx, sx(t), sy(valAt(r, "alt_m", t)), r.key, 4.5);
+    });
+  }
+
+  function drawStrip(id, field, label, yr0) {
+    const cv = document.getElementById(id);
+    const { ctx, w, h } = setupCanvas(cv);
+    const box = { x: 52, y: 18, w: w - 64, h: h - 40 };
+    let ymax = yr0;
+    shown().forEach(r => { r[field].forEach(v => { if (v !== null && v > ymax) ymax = v; }); });
+    const { sx, sy } = axes(ctx, box, [T_MIN, T_MAX], [0, ymax * 1.08], null, label, { xt: 6, yt: 3 });
+    shown().forEach(r => { if (pathTime(ctx, r, field, sx, sy, T_MIN, T_MAX)) stroke(ctx, r.key, 1.2, 0.25); });
+    shown().forEach(r => { if (pathTime(ctx, r, field, sx, sy, T_MIN, tNow)) stroke(ctx, r.key, 1.8, 1); });
+    ctx.save(); ctx.strokeStyle = PAL.ink3; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(sx(tNow), box.y); ctx.lineTo(sx(tNow), box.y + box.h); ctx.stroke(); ctx.restore();
+  }
+
+  function drawTicks() {
+    const cv = document.getElementById("ticks");
+    const { ctx, w, h } = setupCanvas(cv);
+    const pad = 8, sx = t => pad + (t - T_MIN) / (T_MAX - T_MIN) * (w - 2 * pad);
+    const r = shown()[0] || runs[0];
+    ctx.font = "10px " + css("--font-body"); ctx.textBaseline = "top"; ctx.textAlign = "center";
+    let lastX = -1e9;
+    r.events.filter(e => ["propellant", "fairing", "cutoff"].includes(e.name)).forEach(e => {
+      const x = sx(e.t);
+      ctx.fillStyle = PAL.ink3; ctx.fillRect(x - 0.5, 12, 1, 8);
+      if (x - lastX > 60) { ctx.fillText(EVENT_LABEL[e.name], x, 0); lastX = x; }
+    });
+  }
+
+  function telemetry() {
+    const el = document.getElementById("telemetry");
+    const cards = shown().map(r => {
+      const alt = valAt(r, "alt_m", tNow), v = valAt(r, "v", tNow);
+      const cells = [
+        ["Altitude", alt >= 10000 ? fmt(alt / 1000, 1) + " km" : fmt(alt, 0) + " m"],
+        ["Speed", fmt(v, 0) + " m/s"],
+        ["Path angle", fmt(valAt(r, "gamma_deg", tNow), 1) + "°"],
+        ["Mass", fmt(valAt(r, "m_t", tNow), 1) + " t"],
+        ["Felt g", fmt(valAt(r, "g_ax", tNow), 2)],
+        ["q", qOr(valAt(r, "q_kpa", tNow), v => fmt(v, 1) + " kPa")],
+        ["Mach", qOr(valAt(r, "mach", tNow), v => fmt(v, 2))],
+        ["Downrange", fmt(valAt(r, "x_km", tNow), 1) + " km"]
+      ];
+      return '<div class="tcard" style="--c: var(' + COLOR_VAR[r.key] + ')"><div class="name">' + r.label +
+        '</div><div class="phase">' + phaseAt(r, tNow) + '</div><div class="tgrid">' +
+        cells.map(c => '<div><span class="k">' + c[0] + '</span><span class="v">' + c[1] + '</span></div>').join("") + "</div></div>";
+    });
+    el.innerHTML = '<h2>Live telemetry</h2>' + (cards.join("") || '<p class="legend-note">Select a run above to see its telemetry.</p>');
+  }
+
+  function results() {
+    const t = document.getElementById("results");
+    const pad = DATA.runs.pad;
+    const head = "<tr><th>Run</th><th>Payload capacity</th><th>vs pad</th><th>Exit speed</th><th>Felt g in silo</th><th>Max-Q</th><th>Gravity loss</th><th>Steering loss</th></tr>";
+    const rows = runs.map(r => {
+      const d = r.key === "pad" ? "—" : '<span class="delta-pos">+' + fmt(r.payload_kg - pad.payload_kg, 0) + " kg</span>";
+      return '<tr><td><span class="sw" style="background: var(' + COLOR_VAR[r.key] + ')"></span> ' + r.label + "</td><td>" +
+        fmt(r.payload_kg, 0) + " kg</td><td>" + d + "</td><td>" + (r.exit_speed_mps ? fmt(r.exit_speed_mps, 1) + " m/s" : "—") +
+        "</td><td>" + (r.felt_g_track ? fmt(r.felt_g_track, 2) + " g" : "—") + "</td><td>" + fmt(r.max_q_kpa, 1) + " kPa</td><td>" +
+        fmt(r.losses_mps.gravity_loss_mps, 0) + " m/s</td><td>" + fmt(r.losses_mps.steering_loss_mps, 0) + " m/s</td></tr>";
+    });
+    t.innerHTML = "<thead>" + head + "</thead><tbody>" + rows.join("") + "</tbody>";
+  }
+
+  function draw() {
+    readPalette();
+    drawTraj(); drawCloseup(); drawTicks();
+    drawStrip("s_v", "v", "speed relative to Earth, m/s", 1000);
+    drawStrip("s_g", "g_ax", "felt axial acceleration, g", 1);
+    drawStrip("s_q", "q_kpa", "dynamic pressure, kPa", 10);
+    telemetry();
+    document.getElementById("clock").textContent = clockText(tNow);
+    const rate = currentRate();
+    document.getElementById("clockSub").textContent = playing ? "playing at " + rate + "x" : "paused";
+    document.getElementById("scrub").value = tNow.toFixed(1);
+  }
+
+  // ------------------------------------------------------------------ playback
+  function currentRate() {
+    const sel = document.getElementById("rate").value;
+    if (sel !== "auto") return Number(sel);
+    if (tNow < 12) return 1;
+    if (tNow < 45) return 5;
+    return 30;
+  }
+  function tick(ts) {
+    if (!playing) { lastFrame = null; return; }
+    if (lastFrame !== null) {
+      tNow = Math.min(T_MAX, tNow + (ts - lastFrame) / 1000 * currentRate());
+      if (tNow >= T_MAX) setPlaying(false);
+    }
+    lastFrame = ts;
+    draw();
+    if (playing) requestAnimationFrame(tick);
+  }
+  function setPlaying(p) {
+    playing = p;
+    const b = document.getElementById("play");
+    b.textContent = p ? "Pause" : "Play";
+    b.setAttribute("aria-label", p ? "Pause" : "Play");
+    if (p) { if (tNow >= T_MAX - 0.05) tNow = T_MIN; lastFrame = null; requestAnimationFrame(tick); }
+    draw();
+  }
+
+  // ------------------------------------------------------------------ wiring
+  function init() {
+    const scrub = document.getElementById("scrub");
+    scrub.min = T_MIN.toFixed(1); scrub.max = T_MAX.toFixed(1);
+    scrub.addEventListener("input", () => { tNow = Number(scrub.value); draw(); });
+    document.getElementById("play").addEventListener("click", () => setPlaying(!playing));
+    document.getElementById("rate").addEventListener("change", draw);
+    document.addEventListener("keydown", e => {
+      if (e.target && ["INPUT", "SELECT", "BUTTON"].includes(e.target.tagName) && e.key === " ") return;
+      if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+    });
+    const chips = document.getElementById("chips");
+    runs.forEach(r => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", visible.has(r.key) ? "true" : "false");
+      b.innerHTML = '<span class="sw" style="background: var(' + COLOR_VAR[r.key] + ')"></span>' + r.label;
+      b.addEventListener("click", () => {
+        if (visible.has(r.key)) visible.delete(r.key); else visible.add(r.key);
+        b.setAttribute("aria-pressed", visible.has(r.key) ? "true" : "false");
+        draw();
+      });
+      chips.appendChild(b);
+    });
+    document.getElementById("tags").innerHTML = ["planar 2-D", "rotating Earth", "drag and back-pressure", "sweep-optimized guidance", "unthrottled", "200 km circular, 28.5°"]
+      .map(s => '<span class="tag">' + s + "</span>").join("");
+    document.getElementById("foot").textContent = "Data: " + DATA.source + " (git " + DATA.git + "), launch-assist-sim. Replayed from the recorded time series; nothing is re-simulated in the page.";
+    results();
+    const redraw = () => draw();
+    new ResizeObserver(redraw).observe(document.querySelector(".wrap"));
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+    new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    tNow = 0;
+    draw();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
+    if (!reduceMotion) setTimeout(() => { tNow = T_MIN; setPlaying(true); }, 900);
+  }
+  init();
+})();
+</script>

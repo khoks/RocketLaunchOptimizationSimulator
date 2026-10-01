@@ -3,7 +3,7 @@
 Living tracker for launch-assist-sim. Milestones follow the README roadmap; build steps
 follow the approved plan (Phase 0 + Phase 1 + vertical constant-acceleration silo push).
 Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a decision.
-Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
+Last updated: 2026-09-30 (Phases 0-2 done; next session starts from docs/handoff/NEXT_SESSION.md).
 
 ## Milestones
 
@@ -17,7 +17,12 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 - [x] M7 Phase 2 gate (closed as a documented miss, accepted by the user 2026-09-30): validation tests pass; the pre-registered gate vehicle (set C) MISSES HIGH: P* 26,054 kg, +14.3%, 974 kg above the 25,080 kg band edge (set A 24,700 kg +8.3% inside; set B 25,416 kg +11.5% outside). Stopped for your decision (2026-09-30); docs/findings/CAL-f9-leo-2d.md
 - [x] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary (2026-09-30)
 - [x] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO (2026-09-30)
-- [ ] M10 Phase 3 plan (assist models: linear_motor, curved track, cable winch, air column, braking, tilted exit) and the structural-mass question the 2-D results raised
+- [ ] M10 Phase V plan (next session, Plan mode): the five decisions in docs/handoff/NEXT_SESSION.md section 5
+- [ ] M11 Fuel replacement at fixed payload: a `propellant_offload` figure of merit and experiment on the Falcon 9 gate vehicle; % of stage-1 and total propellant replaced, energy ratio, with and without a structural penalty (headline question, user 2026-09-30)
+- [ ] M12 Launch configuration knobs: silo depth with exit speed; thrust-ramp start by depth/speed
+- [ ] M13 Animated 2-D launch scene (`launchsim scene`): rocket, silo, plume, staging, camera
+- [ ] M14 3-D view of the planar runs on a globe
+- [ ] M15 Phase 3 assist models (linear_motor, curved track, cable winch, air column, braking, tilted exit) and the structural mass for the 4 g push
 
 ## Build steps (plan, "Build sequence")
 
@@ -58,8 +63,22 @@ Last updated: 2026-09-29 (steps 1-13 done; Phase 2 next).
 | 27 | Research experiments: trigger study, silo_screening_2d, bridge; RQ2/RQ3-2d, RQ6 | [x] | runs from clean 7ad381f; v_k rule did not fire (pad best v_k 30, +0.72 kg); every screening beat explained by the matched attribution (no bug_suspect); findings RQ2-2d, RQ3-2d, RQ6 with physics, honesty and compliance reviews |
 | 28 | Close Phase 2 | [x] | physics.md research notes, probe records kept in docs/findings/probes, status lines |
 
+## Phase V (next session): visual launch simulator and fuel-replacement experiments
+
+Start from docs/handoff/NEXT_SESSION.md (the user's request verbatim, requirements, fact-checked inventory, decisions, plan, gotchas, and the prompt to paste).
+
+| # | Step | Status | Gate / notes |
+|---|---|---|---|
+| R1 | `launchsim replay` command (interactive HTML replay page) | [x] | 2026-09-30 |
+| V0 | Plan mode: decisions (3-D view vs physics, tool type, offload semantics, depth and ramp-start parameterisation) | [ ] | user approval |
+| V1 | Config knobs + `propellant_offload` figure of merit + experiments/silo_offload_2d.yaml | [ ] | full suite, golden 1-D unchanged |
+| V2 | 2-D animated launch scene | [ ] | visual QA against run data |
+| V3 | 3-D scene (view of the planar runs on a globe) | [ ] | visual QA |
+| V4 | Fuel-replacement findings (offload at fixed payload, energy ratio, structural penalty), depth and ramp-start sweeps | [ ] | honesty review |
+
 ## Priorities
 
+0. P0 (next session) The user's headline question: % of rocket propellant the silo push replaces at fixed payload on the Falcon 9 model, with caveats.
 1. P0 Physics correctness and honest tests (validation first; closed forms computed in the tests).
 2. P1 Phase 0 and Phase 1 gates with the CLAUDE.md commands working on Windows.
 3. P2 Concept-A numbers and the two preliminary findings notes.
@@ -136,13 +155,19 @@ Phase 0-1:
 - Ignition timing in 2-D costs more than 1-D predicted: the 0.5 s + 2 s cold-start loss is 2.14x the 1-D value on the same masses (301 kg on README masses, 327 kg on the gate vehicle). The hot ramp ending at release beats cold by about 235 kg; a full hot start ties cold (-18.5 to +0.1 kg under +/-10%).
 - Unthrottled max-Q falls about 16% for every silo variant (a faster, higher trajectory through the transonic region), while q-alpha is above the pad's in every silo variant.
 
-- Viewing results (2026-09-30): there is no GUI; `launchsim animate <run_dir>` renders a 2-D run as an MP4 or GIF (docs/media/ascent_pad_vs_silo_cold_2d.mp4 and .gif), and an interactive replay page of the same runs was published as a private claude.ai artifact (Ascent Replay).
+- Viewing results (2026-09-30): there is no GUI; `launchsim animate <run_dir>` renders a 2-D run as an MP4 or GIF (docs/media/ascent_pad_vs_silo_cold_2d.mp4 and .gif), and `launchsim replay <run_dir>` writes a self-contained interactive HTML replay page (a published copy is the private claude.ai artifact "Ascent Replay").
 
 ## Open questions for you (Phase 2)
 
 - None open. Answered 2026-09-30 (see the decisions log).
 
+- Probe (2026-09-30, not a finding; docs/findings/probes/handoff-2026-09-30/probe_offload.py): the 3 g / 100 m cold-start silo carries the full-load pad's payload (26,061 vs 26,054 kg) with 10% less stage-1 propellant (41.1 t, 7.9% of total); roughly 12 t of RP-1 (~530 GJ) against ~1.2 MWh of electricity at 50% drive efficiency. Same caveats as the 2-D findings, above all no structural mass for the 4 g push.
+
 ## Known issues and observations
+
+- timeseries.csv records gamma_rel_rad outside (-pi, pi] on a vertical fall-back with rotation (silo_failed reaches 4.673 rad, the unwrap documented in physics.md); replay wraps it for display. Check that no loss integral or check uses the unwrapped value.
+- replay.py calls the private plots._results_tree and plots._is_inside and duplicates plots' JSON/YAML readers; make them public (plots.py or results_io.py) and switch animate and replay over together.
+- plots.CALIBRATION_RECORDS feeds the calibration caveat in animate and replay; update it whenever the calibration is re-run.
 
 - Probe citations in RQ3-2d rest on labelled probes kept in docs/findings/probes/RQ3-2d/ (launchsim equal-gamma* probe, a low-v_k probe, and a reviewer's independent stage-2 swap probe); none is a shipped run.
 - Sensitivity was pre-registered only for silo_cold and silo_hot_full; silo_hot_ramp_on_track, the ignition-timing points and silo_instant carry no +/-10% range.

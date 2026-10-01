@@ -2,7 +2,7 @@
 
 A research simulator for giving rockets a ground-powered head start, and for finding out what that head start is really worth.
 
-**Status:** Phases 0–2 done; Phase 3 (assist models) next. The simulator has a 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%), and that miss is accepted and documented (`docs/findings/CAL-f9-leo-2d.md`). The first concept-A findings are preliminary; they are summarised under [Results so far](#results-so-far) and indexed in [`docs/findings/README.md`](docs/findings/README.md). `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
+**Status:** Phases 0–2 done. Next: animated 2-D and 3-D launch scenes, silo-depth and ignition-point settings, and the headline question of how much rocket propellant the silo push can replace at a fixed payload (`docs/handoff/NEXT_SESSION.md`); then Phase 3 (assist models). The simulator has a 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%), and that miss is accepted and documented (`docs/findings/CAL-f9-leo-2d.md`). The first concept-A findings are preliminary; they are summarised under [Results so far](#results-so-far) and indexed in [`docs/findings/README.md`](docs/findings/README.md). `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
 
 ## Why this exists
 
@@ -16,7 +16,7 @@ This project builds a simulator in which the launch-assist phase is a swappable 
 
 ## Quick start
 
-There is no graphical interface. `launchsim` is a command-line program: every output is a file (Markdown, JSON, CSV and PNG), and the `animate` command turns a finished 2-D run into a video you can watch.
+There is no graphical interface. `launchsim` is a command-line program: every output is a file (Markdown, JSON, CSV and PNG), the `animate` command turns a finished 2-D run into a video you can watch, and the `replay` command turns it into an interactive page you open in a browser.
 
 ### Set up
 
@@ -114,6 +114,14 @@ uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --
 ```
 
 `docs/media/ascent_pad_vs_silo_cold_2d.gif` is a smaller GIF of the same two runs, for embedding in this README (`--out docs/media/ascent_pad_vs_silo_cold_2d.gif --fps 12 --width 640`; GIF frame delays come in whole 10 ms steps, so 12 fps plays at 12.5 and the command prints the real rate). The video covers the first 30 s of flight slowly, so the silo push and liftoff are visible, and the rest of the ascent to orbit much faster; the current playback speed is shown in the corner. Rendering is not instant: about 4 minutes for the 600-frame 1280 px MP4 and under a minute for the GIF on a laptop. On a fresh clone the CSVs are not in git, so run the experiment first (`uv run python -m launchsim run experiments/silo_screening_2d.yaml --variant silo_cold --no-sensitivity` is enough for these two runs) and point `animate` at the new timestamped directory.
+
+For an interactive view, `replay` writes a single HTML page you open in a browser: play, pause and scrub the flight, switch runs on and off, and read live telemetry, strip charts and each run's payload beside the caveats.
+
+```bash
+uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs pad silo_cold
+```
+
+The default output is `./<experiment>_<timestamp>_replay.html`, never inside `results/`.
 
 ## The concepts
 

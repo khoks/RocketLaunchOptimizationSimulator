@@ -13,6 +13,7 @@ does. Anything else (a bug in the simulator) keeps its traceback.
     launchsim sweep <experiment.yaml> [--results-root DIR] [--no-plots]
     launchsim animate <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--fps N]
                       [--seconds S] [--width PX]
+    launchsim replay <run_dir> [--runs NAME [NAME ...]] [--out PATH]
     launchsim --version
 
 ``--results-root`` defaults to ``<repo root>/results`` (the repository holding the
@@ -21,6 +22,10 @@ experiment file, found by its pyproject.toml), so the layout is the same from an
 ``animate`` replays planar_2d runs of one results directory (results/<experiment>/
 <timestamp>) as an .mp4 (ffmpeg) or .gif (Pillow); the default output is
 ./<experiment>_<timestamp>_animation.mp4 (.gif without ffmpeg), never inside results/.
+
+``replay`` writes the same kind of selection as one self-contained interactive HTML page
+(replay.write_replay_page: scrub, play, telemetry, metrics and caveats); the default
+output is ./<experiment>_<timestamp>_replay.html, never inside results/.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from typing import Any
 
 import yaml
 
-from launchsim import __version__, plots, sim
+from launchsim import __version__, plots, replay, sim
 from launchsim.config import ResolvedExperiment, resolve_experiment
 from launchsim.units import rad_to_deg
 
@@ -49,7 +54,8 @@ class CliError(Exception):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for ``launchsim run``, ``sweep`` and ``animate``."""
+    """Build the argument parser for ``launchsim run``, ``sweep``, ``animate`` and
+    ``replay``."""
     parser = argparse.ArgumentParser(
         prog="launchsim", description="Ground-powered launch-assist simulator."
     )
@@ -115,6 +121,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=plots.ANIMATION_DEFAULT_WIDTH_PX,
         metavar="PX",
         help="Frame width [px], even; the frame is 16:9 (default: %(default)s).",
+    )
+
+    rep = sub.add_parser(
+        "replay",
+        help="Write an interactive HTML replay of planar_2d runs of one results directory.",
+    )
+    rep.add_argument(
+        "run_dir", help="A results directory of a planar_2d run: results/<experiment>/<timestamp>."
+    )
+    rep.add_argument(
+        "--runs",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help="Runs to show (default: the baseline plus up to three variants, summary order).",
+    )
+    rep.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="Output .html file. Default: ./<experiment>_<timestamp>_replay.html, "
+        "never inside results/.",
     )
     return parser
 
@@ -353,13 +381,34 @@ def command_animate(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_replay(args: argparse.Namespace) -> int:
+    """Write the interactive replay page of a planar results directory and print its
+    path and size."""
+    run_dir = Path(args.run_dir)
+    try:
+        replay.check_replay_run_dir(run_dir)  # a clear error before choosing the output
+        out = (
+            replay.default_replay_path(run_dir, Path.cwd()) if args.out is None else Path(args.out)
+        )
+        written = replay.write_replay_page(run_dir, args.runs, out)
+    except replay.ReplayError as exc:
+        raise CliError(str(exc)) from exc
+    say(f"replay: {written} ({written.stat().st_size / 1024:.0f} KiB)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns the process exit code: 0 on success, 1 for a configuration or
     file-system error (CliError, OSError), printed as one ``error:`` line. argparse
     raises SystemExit(2) for a usage error and SystemExit(0) for ``--version``."""
     _configure_stdout()
     args = build_parser().parse_args(argv)
-    commands = {"run": command_run, "sweep": command_sweep, "animate": command_animate}
+    commands = {
+        "run": command_run,
+        "sweep": command_sweep,
+        "animate": command_animate,
+        "replay": command_replay,
+    }
     try:
         return commands[args.command](args)
     except CliError as exc:

@@ -1,0 +1,25 @@
+a = 29.41995 m/s^2, L = 100.0 m, t_push = 2.607318 s, v_exit = 76.70717 m/s
+| t_ign_s | reference | t_ign rel. push start | t_ign rel. release | ramp start z [m] / v [m/s] | where | ramp end (t+2 s) z / v | where |
+| -4.000 | push_start | -4.000 | -6.607 |  -100.00 /   0.00 | clamped at shaft bottom (hold) |  -100.00 /   0.00 | clamped at shaft bottom (hold) |
+| -2.000 | push_start | -2.000 | -4.607 |  -100.00 /   0.00 | clamped at shaft bottom (hold) |  -100.00 /   0.00 | clamped at shaft bottom (hold) |
+| +0.000 | push_start | +0.000 | -2.607 |  -100.00 /   0.00 | clamped at shaft bottom (hold) |   -41.16 /  58.84 | on the track (push) |
+| +1.000 | push_start | +1.000 | -1.607 |   -85.29 /  29.42 | on the track (push) |    29.37 /  72.87 | free coast above mouth |
+| +2.000 | push_start | +2.000 | -0.607 |   -41.16 /  58.84 | on the track (push) |    97.35 /  63.10 | free coast above mouth |
+| -4.607 | release | -2.000 | -4.607 |  -100.00 /   0.00 | clamped at shaft bottom (hold) |  -100.00 /   0.00 | on the track (push) |
+| -2.607 | release | +0.000 | -2.607 |  -100.00 /   0.00 | on the track (push) |   -41.16 /  58.84 | on the track (push) |
+| -2.000 | release | +0.607 | -2.000 |   -94.57 /  17.87 | on the track (push) |     0.00 /  76.71 | on the track (push) |
+| -1.000 | release | +1.607 | -1.000 |   -62.00 /  47.29 | on the track (push) |    71.82 /  66.94 | free coast above mouth |
+| -0.500 | release | +2.107 | -0.500 |   -34.68 /  62.00 | on the track (push) |   104.07 /  62.05 | free coast above mouth |
+| +0.000 | release | +2.607 | +0.000 |     0.00 /  76.71 | on the track (push) |   133.87 /  57.16 | free coast above mouth |
+| +0.500 | release | +3.107 | +0.500 |    37.13 /  71.82 | free coast above mouth |   161.23 /  52.28 | free coast above mouth |
+| +1.000 | release | +3.607 | +1.000 |    71.82 /  66.94 | free coast above mouth |   186.15 /  47.39 | free coast above mouth |
+| +2.000 | release | +4.607 | +2.000 |   133.87 /  57.16 | free coast above mouth |   228.65 /  37.62 | free coast above mouth |
+| +3.000 | release | +5.607 | +3.000 |   186.15 /  47.39 | free coast above mouth |   261.38 /  27.85 | free coast above mouth |
+inverse (ramp start at depth d below the mouth, on the track):
+  depth 100.0 m -> t_ign_s = 0.0000 (push_start) = -2.6073 (release), v = 0.00 m/s
+  depth  90.0 m -> t_ign_s = 0.8245 (push_start) = -1.7828 (release), v = 24.26 m/s
+  depth  75.0 m -> t_ign_s = 1.3037 (push_start) = -1.3037 (release), v = 38.35 m/s
+  depth  50.0 m -> t_ign_s = 1.8437 (push_start) = -0.7637 (release), v = 54.24 m/s
+  depth  25.0 m -> t_ign_s = 2.2580 (push_start) = -0.3493 (release), v = 66.43 m/s
+  depth  10.0 m -> t_ign_s = 2.4735 (push_start) = -0.1338 (release), v = 72.77 m/s
+  depth   0.0 m -> t_ign_s = 2.6073 (push_start) = +0.0000 (release), v = 76.71 m/s

@@ -1,0 +1,41 @@
+== 1. depth (stroke) and exit speed
+[OK]   depth50_3g
+        stroke=50.0 m, accel=3.0 g, exit_alt=0.0 m, track start alt=-50.0 m, exit alt=0.0 m, v_exit=54.240 m/s, t_push=1.8437 s, brake=30.00 m
+[OK]   depth300_3g
+        stroke=300.0 m, accel=3.0 g, exit_alt=0.0 m, track start alt=-300.0 m, exit alt=0.0 m, v_exit=132.861 m/s, t_push=4.5160 s, brake=180.00 m
+[OK]   depth200_same_v_as_100m_3g
+        stroke=200.0 m, accel=1.5 g, exit_alt=0.0 m, track start alt=-200.0 m, exit alt=0.0 m, v_exit=76.707 m/s, t_push=5.2146 s, brake=60.00 m
+[OK]   mouth_raised_10m
+        stroke=100.0 m, accel=3.0 g, exit_alt=10.0 m, track start alt=-90.0 m, exit alt=10.0 m, v_exit=76.707 m/s, t_push=2.6073 s, brake=60.00 m
+[OK]   mouth_below_ground_-20m
+        stroke=100.0 m, accel=3.0 g, exit_alt=-20.0 m, track start alt=-120.0 m, exit alt=-20.0 m, v_exit=76.707 m/s, t_push=2.6073 s, brake=60.00 m
+[FAIL] tilted_80deg: ValidationError: 1 validation error for RunConfig assist.constant_accel.track.angle_deg   Value error, track angle_deg other than 90 is a Phase 3 feature (Phase 2 releases from vertical tracks only) [type=value_error, input_value=80, input_type=int]     For further information
+== 2. ignition timing
+[OK]   ign_push_start_+1.0
+        t_ign_s=1.0 ref=push_start startup=Startup(kind='ramp', t_ramp_s=2.0, tau_s=0.0)
+[OK]   ign_release_-1.0
+        t_ign_s=-1.0 ref=release startup=Startup(kind='ramp', t_ramp_s=2.0, tau_s=0.0)
+[OK]   ign_release_-5.0 (before push)
+        t_ign_s=-5.0 ref=release startup=Startup(kind='ramp', t_ramp_s=2.0, tau_s=0.0)
+[OK]   ign_release_+3.0
+        t_ign_s=3.0 ref=release startup=Startup(kind='ramp', t_ramp_s=2.0, tau_s=0.0)
+[OK]   ign_lag_tau1.5
+        t_ign_s=0.0 ref=release startup=Startup(kind='lag', t_ramp_s=0.0, tau_s=1.5)
+[OK]   ign_ramp_4s
+        t_ign_s=-1.0 ref=release startup=Startup(kind='ramp', t_ramp_s=4.0, tau_s=0.0)
+[FAIL] ign_depth_key (does not exist): ValidationError: 1 validation error for RunConfig ignition.stage1.at_depth_m   Extra inputs are not permitted [type=extra_forbidden, input_value=50.0, input_type=float]     For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+[FAIL] pad with reference push_start: ValidationError: 1 validation error for ExperimentConfig baseline   Value error, ignition stage1: reference push_start needs an assist model (a pad run has no push) [type=value_error, input_value={'name': 'pad', 'dynamics...0, 'sample_dt_s': 0.05}}, input_type=dict]     For fu
+== 3. propellant offload
+[FAIL] variant with a vehicle: key: ValidationError: 1 validation error for RunConfig vehicle   Extra inputs are not permitted [type=extra_forbidden, input_value={'stages': [{'name': 'sta...llant_mass_t': 369.81}]}, input_type=dict]     For further information visit https://errors.pydantic.dev/2.13/v/extra_forbi
+[FAIL] unpaired planar sweep of vehicle.stages.stage1.propellant_mass_t: ValidationError: 1 validation error for ExperimentConfig   Value error, sweep 1: on planar_2d a sweep of vehicle.* paths needs paired: true (the baseline is re-run with the same vehicle, as in a sensitivity case or a bound) [type=value_error, input_value={'name': 'silo_screeni
+[OK]   paired planar sweep of vehicle.stages.stage1.propellant_mass_t
+        run_0001: silo stage1 prop={'value': 410.9, 'assumed': True, 'note': 'override'} | paired run_0001__pad: {'value': 410.9, 'assumed': True, 'note': 'override'} | liftoff 569100.0 kg
+        run_0002: silo stage1 prop={'value': 390.355, 'assumed': True, 'note': 'override'} | paired run_0002__pad: {'value': 390.355, 'assumed': True, 'note': 'override'} | liftoff 548555.0 kg
+        run_0003: silo stage1 prop={'value': 369.81, 'assumed': True, 'note': 'override'} | paired run_0003__pad: {'value': 369.81, 'assumed': True, 'note': 'override'} | liftoff 528010.0 kg
+[OK]   bound offload10 on stage1 propellant
+        runs: {'silo_cold': {'value': 369.81, 'assumed': True, 'note': 'override'}} paired: pad__offload10 {'value': 369.81, 'assumed': True, 'note': 'override'}
+[OK]   sensitivity +/-10% stage1 propellant
+        silo_cold__vehicle.stages.stage1.propellant_mass_t__+0.1 {'value': 451.99, 'assumed': True, 'note': 'override'}
+        silo_cold__vehicle.stages.stage1.propellant_mass_t__-0.1 {'value': 369.81, 'assumed': True, 'note': 'override'}
+[OK]   bound on stage2 propellant
+[FAIL] paired sweep of the baseline itself: ValidationError: 1 validation error for ExperimentConfig   Value error, sweep 1: a paired sweep of the baseline has no pair; sweep a variant [type=value_error, input_value={'name': 'silo_screening_....81]}, 'paired': True}]}, input_type=dict]     For further information visit 
