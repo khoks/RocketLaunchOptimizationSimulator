@@ -493,7 +493,7 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | # | Step | Main files | Tests | Gate | Status | Commit |
 |---|---|---|---|---|---|---|
 | T | Tracking system: protocol, program board, phase files SP1 to SP6, TODO.md restructure with IDs, this session's decisions, handoff archived, memory updated | docs/process, docs/phases, TODO.md, CLAUDE.md, memory | none (documents only); fast suite stays green | Compliance review; commit | [x] | 98eb5a6 |
-| 1 | Guard and merge rule: digest pin of the four shipped planar experiments (runs, sweep points, bounds, cases, sensitivity runs); capture of the planar written outputs; the recorded silo_cold P* copied into test data; exclusive key families in `merge_run_dicts` and `_set_path` | src/launchsim/config.py | tests/test_config.py, tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/data/ | Digests and golden unchanged | [ ] | |
+| 1 | Guard and merge rule: digest pin of the four shipped planar experiments (runs, sweep points, bounds, cases, sensitivity runs); capture of the planar written outputs; the recorded silo_cold P* copied into test data; exclusive key families in `merge_run_dicts` and `_set_path` | src/launchsim/config.py | tests/test_config.py, tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/data/ | Digests and golden unchanged | [x] | e2fb6ab |
 | 2 | Exit-speed option: exactly one of `net_accel_g` / `exit_speed_mps`; planar metrics `net_accel_g`, `net_accel_mps2`, `stroke_m`; replay reads the metric | config.py, assist/constant_accel.py, metrics_planar.py, replay.py | tests/test_config.py, tests/test_silo.py (suggested) | Exit speed and push time against the closed form at 1e-9; trajectory equals the equivalent `net_accel_g` run | [ ] | |
 | 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [ ] | |
 | 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [ ] | |
@@ -917,6 +917,11 @@ Further points and open questions:
 - Step T passed its gate: commit 98eb5a6 (38 review findings, 36 fixed in the workflow,
   2 by the main session; README edits beyond the status paragraph accepted, section 12
   item 4). Next: step 1 (planar digest pin and the config merge rule).
+- 2026-10-01: step 1 passed its gate: commit e2fb6ab (planar digest pin of 90 resolved
+  runs, planar output capture, recorded payload capacities in test data, exclusive key
+  families in `merge_run_dicts` and `_set_path`; 42 new tests, fast suite 970 passed; two
+  review rounds, no blocker; the gate regenerated the digests from a 2eebcae worktree).
+  Next: step 2 (exit-speed option).
 
 ## 12. Deviations from the plan
 
@@ -953,6 +958,30 @@ Step T (2026-09-30):
    ("README.md: status lines, layout"), so the step owner accepted them and the gate
    criterion is read with that scope; reverting them would leave the README
    contradicting its own status paragraph.
+
+Step 1 (2026-10-01, commit e2fb6ab):
+
+1. **The summary digest is compared in the capture environment only.** Elsewhere the test
+   skips (or fails with `LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1`), as the golden 1-D exact tier
+   does, because the summary prints integrated numbers that differ on another numeric
+   stack. The structure (files, metrics key paths, CSV columns) is compared everywhere.
+2. **The output capture holds more than the brief listed**: the files written, the
+   metrics.json key paths outside the runs (where an `offload` key will appear), the
+   resolved_config.yaml top-level keys and the normalised summary text, so that a digest
+   change reads as a diff.
+3. **An existing fixture body moved.** `fast_run` in tests/test_planar_pipeline.py now
+   calls a module-level `fast_experiment(repo_root)` with the same statements, so the pin
+   helper and the tests build the same experiment. No test body changed.
+4. **`ExclusiveKeysError` is a `ValueError` subclass**, and the two-families check also
+   covers dicts the merge would replace wholesale and two override paths with one parent.
+   A key counts as given when it is present, an explicit null included; the "exactly one"
+   validators of steps 2 and 3 must stay consistent with that.
+5. **The pin names c587a08 as its reference commit** (HEAD when captured; src, tests,
+   experiments and configs identical to 2eebcae).
+6. **For step 8:** a YAML merge key (`<<: *silo`) is resolved by the loader, so a variant
+   that adds `exit_speed_mps` to an anchor carrying `net_accel_g` arrives with both and is
+   refused. `silo_cold_200m` must write its assist block out or use an anchor without the
+   acceleration.
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
