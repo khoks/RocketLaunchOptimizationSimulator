@@ -6,7 +6,7 @@ launch-assist-sim is a research simulator for ground-powered launch assist. A ro
 
 - Background, prior art, first-order numbers and research questions: README.md. Read it before planning experiments.
 - Report findings plainly, including ones that undercut the hypothesis that every m/s of assist helps.
-- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Next session starts from docs/handoff/NEXT_SESSION.md (visual launch scenes, launch-configuration knobs, fuel replacement at fixed payload); see TODO.md. Update this line when a phase's exit criteria pass (README roadmap).
+- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Work now runs as one session per phase (program board: docs/phases/README.md). SP1 (fuel offload at fixed payload on the planar model, launch settings, tracking system) is in progress. The next session starts from docs/handoff/NEXT_SESSION.md; see TODO.md. Update this line when a phase's exit criteria pass (docs/phases/README.md, README roadmap).
 
 ## Commands
 
@@ -52,6 +52,10 @@ experiments/       one YAML per experiment: baseline, variants, sweep axes
 results/           generated, never hand-edited; gitignored except */summary.md
 docs/physics.md    equations and assumptions; the source of truth for the math
 docs/findings/     one write-up per research question
+docs/process/      SESSION_PROTOCOL.md: how every session runs (start checklist, step loop, end checklist, ID conventions)
+docs/phases/       program board (README.md), one file per phase (SP<n>-<slug>.md: brief, step table, exit criteria, session log), inputs/ (dated plans, designs and code surveys)
+docs/handoff/      NEXT_SESSION.md (the live handoff, read first by a new session) and archive/ (earlier handoffs)
+docs/demos/        recorded demo of each finished phase (SP<n>/; created when a phase closes, none yet)
 notebooks/         exploration only; nothing experiments depend on
 tests/
 ```
@@ -144,4 +148,5 @@ Calibration is separate from validation; label it as such:
 - Don't edit a calibrated vehicle config; copy it to a new file.
 - Justify every new dependency in one line in the change summary.
 - Ask before expanding scope (6-DOF, 3-D Earth, structural FEM), deleting results, or replacing a validated model.
-- TODO.md tracks milestones, build steps, priorities, deferred items and the decisions log; update it when a step's gate passes.
+- Follow docs/process/SESSION_PROTOCOL.md: its start checklist, step loop and end checklist. One phase per session. Update the phase file's step table (docs/phases/SP<n>-<slug>.md) at every gate.
+- TODO.md is the program-level tracker: milestones, current phase, priorities, backlog, decisions log and known issues. Per-phase step tables live in docs/phases/. Update TODO.md when a step's gate passes.

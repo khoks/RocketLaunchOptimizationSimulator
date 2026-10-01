@@ -2,7 +2,7 @@
 
 A research simulator for giving rockets a ground-powered head start, and for finding out what that head start is really worth.
 
-**Status:** Phases 0–2 done. Next: animated 2-D and 3-D launch scenes, silo-depth and ignition-point settings, and the headline question of how much rocket propellant the silo push can replace at a fixed payload (`docs/handoff/NEXT_SESSION.md`); then Phase 3 (assist models). The simulator has a 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%), and that miss is accepted and documented (`docs/findings/CAL-f9-leo-2d.md`). The first concept-A findings are preliminary; they are summarised under [Results so far](#results-so-far) and indexed in [`docs/findings/README.md`](docs/findings/README.md). `TODO.md` tracks the steps. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
+**Status:** Phases 0–2 done. Work now runs as one phase per session; [`docs/phases/README.md`](docs/phases/README.md) is the program board. In progress (SP1): the headline question of how much rocket propellant the silo push can replace at a fixed payload (fuel offload at fixed payload on the 2-D model), with the launch settings it needs (silo depth with exit speed, and where the thrust ramp starts). Next: a local app with an animated 2-D launch scene (SP2), then 3-D dynamics in three stages (a point mass on a rotating sphere, an oblate Earth, a 6-DOF fly-out; SP3–SP6, with the 3-D scene in SP4). Roadmap Phase 3 (assist models and the structural mass for the 4 g push) comes after that unless it is moved up. A new session starts from `docs/handoff/NEXT_SESSION.md`. The simulator has a 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%), and that miss is accepted and documented (`docs/findings/CAL-f9-leo-2d.md`). The first concept-A findings are preliminary; they are summarised under [Results so far](#results-so-far) and indexed in [`docs/findings/README.md`](docs/findings/README.md). `TODO.md` is the program-level tracker, and each phase's steps are in its file under `docs/phases/`. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
 
 ## Why this exists
 
@@ -380,7 +380,7 @@ This is a simulation project. Before building any physical assist device at hobb
 | 0. Scaffold | Package, constants, atmosphere wrapper, CLI stub, test harness | Tests pass and the commands in `CLAUDE.md` work | Done |
 | 1. Vertical 1-D | Rocket equation, gravity and staging in one dimension | Rocket-equation, gravity-loss and coast-apex tests pass | Done (plus the constant-acceleration vertical silo push) |
 | 2. Ascent to orbit | Spherical rotating Earth, drag, thrust versus ambient pressure, gravity turn, loss budget, payload search | Orbit, loss-budget and convergence tests pass; the generic Falcon 9-class vehicle lands within ±10% of 22.8 t to low Earth orbit at a stated reference altitude | Done, with the calibration miss noted: the tests pass, but the gate vehicle lands +14.3% high (26,054.4 kg to 200 km), outside the band. The user accepted it as a documented miss ([CAL-f9-leo-2d](docs/findings/CAL-f9-leo-2d.md)) |
-| 3. Assist models | Constant acceleration, linear motor, track geometry (vertical, straight, curved), cable winch, ignition timing | Track, ramp-energy, release-mapping, energy-balance and cable tests pass | Next (constant acceleration, the straight track, ignition timing and the release mapping already exist) |
+| 3. Assist models | Constant acceleration, linear motor, track geometry (vertical, straight, curved), cable winch, ignition timing; the structural mass for the 4 g full-stack push (added with the plan of 2026-09-30) | Track, ramp-energy, release-mapping, energy-balance and cable tests pass | Planned, after SP1–SP6 unless moved up (see [`docs/phases/README.md`](docs/phases/README.md)); constant acceleration, the straight track, ignition timing and the release mapping already exist |
 | 4. Experiments | Sweeps for research questions 1–8 | Each question has a write-up in `docs/findings/` with plots and caveats | Planned (preliminary concept-A notes for RQ2, RQ3 and RQ6 exist) |
 | 5. Fair comparison | Optimized ascent for each configuration (Dymos or CasADi) | Headline results re-run with optimized guidance | Planned |
 | 6. Hobby scale in 6-DOF | RocketPy model of a real rocket with an assist before the rail | Baseline apogee matches RocketPy within ±5%, and the assist's effect is quantified | Planned |
@@ -393,7 +393,8 @@ This is a simulation project. Before building any physical assist device at hobb
 launch-assist-sim/
 ├── README.md
 ├── CLAUDE.md
-├── TODO.md                   tracker: milestones, build steps, decisions log, known issues
+├── TODO.md                   program-level tracker: milestones, priorities, backlog, decisions
+│                             log, known issues
 ├── pyproject.toml
 ├── src/launchsim/            physics, models, simulation, CLI (run, sweep, animate)
 ├── configs/vehicles/         vehicle definitions with sources
@@ -405,6 +406,12 @@ launch-assist-sim/
 │   │                         README.md indexes them
 │   └── probes/               labelled probes cited by the notes (not shipped runs)
 ├── docs/media/               animations captured with `launchsim animate`
+├── docs/process/             SESSION_PROTOCOL.md: how every session runs
+├── docs/phases/              program board (README.md), one file per phase (SP1 to SP6),
+│                             inputs/ (the approved plan, designs, code surveys)
+├── docs/handoff/             NEXT_SESSION.md (read first by a new session), archive/
+├── docs/demos/               recorded demo of each finished phase (created when the first
+│                             phase closes; none yet)
 ├── notebooks/                exploration only
 └── tests/
 ```
@@ -413,6 +420,7 @@ launch-assist-sim/
 
 - Build in the Code tab with this folder open, starting each phase in Plan mode. Use Opus 5.5 at high effort for implementation, and Fable 5.1 (or Opus 5.5 at xhigh) for physics design and for debugging results that look wrong.
 - Do literature digging and physics Q&A in Chat, then save conclusions to `docs/findings/` so Code sessions see them.
+- One fresh session per phase, following `docs/process/SESSION_PROTOCOL.md`: a session starts from `docs/handoff/NEXT_SESSION.md`, completes and tests one phase from `docs/phases/`, and prepares the next session's documents and prompt.
 
 ## References
 
