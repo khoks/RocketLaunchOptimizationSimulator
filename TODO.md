@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-09-30 (Phases 0-2 done; SP1 in progress, step T; the tracker was restructured with ids in SP1 step T).
+Last updated: 2026-09-30 (Phases 0-2 done; SP1 in progress: step T done at 98eb5a6, step 1 next; the tracker was restructured with ids in SP1 step T).
 
 ## Program
 

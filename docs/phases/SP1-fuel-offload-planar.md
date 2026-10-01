@@ -492,7 +492,7 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 
 | # | Step | Main files | Tests | Gate | Status | Commit |
 |---|---|---|---|---|---|---|
-| T | Tracking system: protocol, program board, phase files SP1 to SP6, TODO.md restructure with IDs, this session's decisions, handoff archived, memory updated | docs/process, docs/phases, TODO.md, CLAUDE.md, memory | none (documents only); fast suite stays green | Compliance review; commit | [~] | |
+| T | Tracking system: protocol, program board, phase files SP1 to SP6, TODO.md restructure with IDs, this session's decisions, handoff archived, memory updated | docs/process, docs/phases, TODO.md, CLAUDE.md, memory | none (documents only); fast suite stays green | Compliance review; commit | [x] | 98eb5a6 |
 | 1 | Guard and merge rule: digest pin of the four shipped planar experiments (runs, sweep points, bounds, cases, sensitivity runs); capture of the planar written outputs; the recorded silo_cold P* copied into test data; exclusive key families in `merge_run_dicts` and `_set_path` | src/launchsim/config.py | tests/test_config.py, tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/data/ | Digests and golden unchanged | [ ] | |
 | 2 | Exit-speed option: exactly one of `net_accel_g` / `exit_speed_mps`; planar metrics `net_accel_g`, `net_accel_mps2`, `stroke_m`; replay reads the metric | config.py, assist/constant_accel.py, metrics_planar.py, replay.py | tests/test_config.py, tests/test_silo.py (suggested) | Exit speed and push time against the closed form at 1e-9; trajectory equals the equivalent `net_accel_g` run | [ ] | |
 | 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [ ] | |
@@ -914,6 +914,9 @@ Further points and open questions:
 - Baseline confirmed: clean tree at 2eebcae, fast suite green.
 - Step T started: tracking system (protocol, program board, phase files, TODO.md with IDs,
   handoff archive).
+- Step T passed its gate: commit 98eb5a6 (38 review findings, 36 fixed in the workflow,
+  2 by the main session; README edits beyond the status paragraph accepted, section 12
+  item 4). Next: step 1 (planar digest pin and the config merge rule).
 
 ## 12. Deviations from the plan
 
