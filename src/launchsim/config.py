@@ -32,7 +32,7 @@ import itertools
 import json
 import math
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, get_args
 
@@ -71,6 +71,50 @@ SWITCH_KEYS = ("model", "kind")
 """Discriminator keys: a dict whose value for one of these differs from the base's
 replaces the base dict wholesale when merging, so no stale keys of the old choice
 survive (assist ``model``; startup ``kind``)."""
+KeyFamilies = tuple[tuple[str, ...], ...]
+"""Alternative parameterisations of one setting: each inner tuple is a family, the keys
+that together state the setting one way; a dict uses the keys of one family only."""
+ASSIST_KEY_FAMILIES: KeyFamilies = (("net_accel_g",), ("exit_speed_mps",))
+"""How a constant_accel assist states its push besides ``stroke_m``: by the net
+acceleration or by the exit speed."""
+IGNITION_KEY_FAMILIES: KeyFamilies = (
+    ("t_ign_s", "reference"),
+    ("at_depth_m",),
+    ("at_speed_mps",),
+    ("at_height_m", "height_method"),
+)
+"""How an ignition states when the thrust ramp starts: by time, by depth below the track
+exit, by speed on the push, or by height above the exit."""
+EXCLUSIVE_KEY_FAMILIES: tuple[KeyFamilies, ...] = (ASSIST_KEY_FAMILIES, IGNITION_KEY_FAMILIES)
+"""The exclusive key families of run dicts, declared here once. Every variant, sweep
+point, sensitivity case and bound inherits its parent's keys by a per-key merge, so
+without this rule a variant that states a setting another way (``exit_speed_mps`` over
+an inherited ``net_accel_g``, ``at_depth_m`` over an inherited ``t_ign_s`` and
+``reference``) would carry both parameterisations.
+
+Rule (merge_run_dicts for variants; apply_overrides for the run paths of sweep axes,
+sensitivity cases and bounds): an override that sets a key of one family removes, from
+the dict it is merged into, the base's keys of the other families of the same group.
+An override that sets only keys of the family the base already uses merges as before
+(per key). Keys of two families of one group given together at one dict level raise
+ExclusiveKeysError: the merge cannot say which one is meant. A key counts as given when
+it is present in the override, whatever its value, an explicit null included (pydantic's
+``model_fields_set``, on which the "exactly one" validators are built, counts it the
+same way): ``{at_depth_m: null}`` displaces an inherited ``t_ign_s`` and ``reference``,
+so a null is not a way to unset a key.
+
+Scope: by key name within one dict level of a run dict, as SWITCH_KEYS is. The names
+are not tied to a path (the ignition dict of any stage, the assist dict); no other
+run-level model may use them as field names and no key belongs to two families (a test
+checks both). Vehicle dicts are not subject to the rule. In the dotted-path form the
+rule acts on the key the path names: a dict given as a path's value replaces whatever
+was at that path whole (apply_overrides), so nothing inside it is inherited and there
+is nothing left for the rule to displace.
+
+The table arrives before the fields (SP1 step 1): ``exit_speed_mps`` comes with SP1
+step 2 and ``at_depth_m``, ``at_speed_mps``, ``at_height_m`` and ``height_method`` with
+step 3, each with the validator that enforces "exactly one family" on the resolved
+model. Until then a run dict that carries one of them is refused as an unknown key."""
 LATITUDE_RANGE_DEG = (-90.0, 90.0)
 AZIMUTH_RANGE_DEG = (0.0, 360.0)
 VERTICAL_TRACK_DEG = 90.0
@@ -1516,17 +1560,35 @@ class ConfigPathError(ValueError):
     """A dotted override path that does not address the run or vehicle dict."""
 
 
+class ExclusiveKeysError(ValueError):
+    """Keys of two exclusive families (EXCLUSIVE_KEY_FAMILIES) given together at one
+    dict level of an override."""
+
+
 def merge_run_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Merge a variant override over a run dict: dicts merge by key, scalars and lists
     replace. A dict carrying a discriminator key (SWITCH_KEYS: assist ``model``, startup
     ``kind``) that the base's dict lacks or differs from replaces it wholesale, so
-    switching assist models or startup shapes leaves no stale keys behind. Inputs are not
-    mutated."""
+    switching assist models or startup shapes leaves no stale keys behind. An override
+    dict that sets a key of an exclusive family (EXCLUSIVE_KEY_FAMILIES) removes the
+    base's keys of the other families of that group at the same level, so restating a
+    setting another way leaves one parameterisation; keys of two families given
+    together anywhere in the override raise ExclusiveKeysError. A key is given when it
+    is present, an explicit None included. Inputs are not mutated."""
+    for path, keys in _dict_levels(override, ""):
+        _refuse_mixed_families(keys, f"override {path!r}" if path else "override")
+    return _merge(base, override)
+
+
+def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """merge_run_dicts without the check of the override (done once, at the top)."""
     out = copy.deepcopy(base)
+    for stale in _displaced_keys(out, override):
+        del out[stale]
     for key, value in override.items():
         current = out.get(key)
         if isinstance(value, dict) and isinstance(current, dict) and not _switches(current, value):
-            out[key] = merge_run_dicts(current, value)
+            out[key] = _merge(current, value)
         else:
             out[key] = copy.deepcopy(value)
     return out
@@ -1535,6 +1597,51 @@ def merge_run_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str,
 def _switches(current: dict[str, Any], value: dict[str, Any]) -> bool:
     """True when value changes a discriminator key of current (see SWITCH_KEYS)."""
     return any(k in value and current.get(k) != value[k] for k in SWITCH_KEYS)
+
+
+def _named_families(keys: Collection[str], group: KeyFamilies) -> list[tuple[str, ...]]:
+    """The families of ``group`` that ``keys`` hold at least one key of, in table order."""
+    return [family for family in group if any(k in keys for k in family)]
+
+
+def _refuse_mixed_families(keys: Collection[str], where: str) -> None:
+    """Raise ExclusiveKeysError when ``keys`` (the keys given together at one dict
+    level) belong to two families of one group of EXCLUSIVE_KEY_FAMILIES."""
+    for group in EXCLUSIVE_KEY_FAMILIES:
+        named = _named_families(keys, group)
+        if len(named) > 1:
+            given = [k for family in named for k in family if k in keys]
+            options = " or ".join("{" + ", ".join(family) + "}" for family in group)
+            raise ExclusiveKeysError(
+                f"{where}: keys {given} of two exclusive families are given together; "
+                f"state the setting one way only ({options})"
+            )
+
+
+def _displaced_keys(base: Collection[str], given: Collection[str]) -> list[str]:
+    """The keys of ``base`` (a dict, or its keys) that an override setting the keys
+    ``given`` at the same dict level displaces: for each group of
+    EXCLUSIVE_KEY_FAMILIES of which ``given`` names exactly one family, the base's keys
+    of the group's other families. Empty when ``given`` holds no family key or only keys
+    of the family the base uses."""
+    out: list[str] = []
+    for group in EXCLUSIVE_KEY_FAMILIES:
+        named = _named_families(given, group)
+        if len(named) == 1:
+            out += [k for family in group if family is not named[0] for k in family if k in base]
+    return out
+
+
+def _dict_levels(node: Any, path: str) -> Iterator[tuple[str, list[str]]]:
+    """(dotted path, keys) of ``node`` and of every dict nested in it, through dicts and
+    lists (a list item's segment is its index); ``path`` is the path of ``node``."""
+    if isinstance(node, dict):
+        yield path, list(node)
+        for key, value in node.items():
+            yield from _dict_levels(value, f"{path}.{key}" if path else str(key))
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            yield from _dict_levels(value, f"{path}.{i}" if path else str(i))
 
 
 def _split(path: str) -> list[str]:
@@ -1600,7 +1707,28 @@ def _set_path(root: dict[str, Any], path: str, value: Any, quantity: bool) -> No
         container.clear()  # switching model or kind: drop the old keys (see merge_run_dicts)
         container[key] = value
     else:
+        if not quantity and isinstance(container, dict):
+            for stale in _displaced_keys(container, (key,)):
+                del container[stale]  # another parameterisation (EXCLUSIVE_KEY_FAMILIES)
         container[key] = copy.deepcopy(value)
+
+
+def _refuse_mixed_run_overrides(overrides: dict[str, Any]) -> None:
+    """Raise ExclusiveKeysError when the run paths of ``overrides`` (those without the
+    ``vehicle.`` prefix) give keys of two exclusive families in one dict: two paths with
+    the same parent, a dict value, or a path and a dict value that meet in one dict.
+    Parents are compared as written (dotted text), which is exact for run dicts: the
+    dicts that hold family keys are reached through dict keys only."""
+    given: dict[str, list[str]] = {}
+    for path, value in overrides.items():
+        if path.startswith(VEHICLE_PREFIX):
+            continue
+        parent, _, key = path.rpartition(".")
+        given.setdefault(parent, []).append(key)
+        for level, keys in _dict_levels(value, path):
+            given.setdefault(level, []).extend(keys)
+    for parent, keys in given.items():
+        _refuse_mixed_families(keys, f"overrides under {parent!r}")
 
 
 def apply_overrides(
@@ -1608,14 +1736,28 @@ def apply_overrides(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Apply ``{dotted.path: value}`` overrides and return new (run, vehicle) dicts.
 
+    A path sets exactly one key; its siblings stay, apart from the discriminator and
+    family rules below. Unlike merge_run_dicts, the value is never merged into what was
+    there: a dict given as the value replaces the node at that path whole, so no key
+    below it is inherited (``ignition.stage1: {at_depth_m: 50}`` drops an inherited
+    ``startup`` and ``fails`` along with the time keys; the path
+    ``ignition.stage1.at_depth_m`` keeps them).
+
     Paths starting with ``vehicle.`` go to the vehicle dict, where a number aimed at a
     Quantity (or at a key that does not exist yet) becomes ``{value, assumed: true, note:
     override}``; any other target takes the raw value and validation reports a type
     mismatch. Missing intermediate dict keys are created (validation catches typos); a
     missing named list item or index raises ConfigPathError; list segments match an item's
     ``name`` or an integer index. Setting a discriminator key (``model``, ``kind``) to a
-    different value replaces its whole dict, as merge_run_dicts does.
+    different value replaces its whole dict, as merge_run_dicts does. Setting a run key
+    of an exclusive family (EXCLUSIVE_KEY_FAMILIES) removes the keys of the group's
+    other families from its dict, as merge_run_dicts does, so a sweep axis
+    ``assist.exit_speed_mps`` over a parent with ``net_accel_g`` leaves only the exit
+    speed; run overrides that give keys of two families for one dict (two paths, the
+    keys of a dict value, or both; a key given as None counts) raise ExclusiveKeysError.
+    Vehicle paths are not subject to the family rule.
     """
+    _refuse_mixed_run_overrides(overrides)
     run = copy.deepcopy(run_dict)
     vehicle = copy.deepcopy(vehicle_dict)
     for path, value in overrides.items():
@@ -1789,11 +1931,14 @@ def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any
 def _perturb(
     parent: ResolvedRun, overrides: dict[str, Any], what: str
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """apply_overrides on a resolved run, naming the run and the caller on a bad path."""
+    """apply_overrides on a resolved run, naming the run and the caller on a bad path or
+    on overrides that mix exclusive key families."""
     try:
         return apply_overrides(parent.run_dict, overrides, parent.vehicle_dict)
     except ConfigPathError as exc:
         raise ConfigPathError(f"{what} on run {parent.name!r}: {exc}") from exc
+    except ExclusiveKeysError as exc:
+        raise ExclusiveKeysError(f"{what} on run {parent.name!r}: {exc}") from exc
 
 
 def _nominal_value(parent: ResolvedRun, param: str) -> float:
@@ -1868,14 +2013,18 @@ def resolve_experiment(
     (shared_run_blocks, inject_shared); a Phase 1 experiment that declares none gets
     run dicts identical to the ones it got before Phase 2. ``load_vehicle`` reads the
     vehicle file a calibration case names (None: such a case raises). Raises pydantic
-    ValidationError, ConfigPathError or ValueError (all ValueError subclasses) with the
-    run and path named; nothing else escapes for a bad file."""
+    ValidationError, ConfigPathError, ExclusiveKeysError or ValueError (all ValueError
+    subclasses) with the run and path named; nothing else escapes for a bad file."""
     experiment = ExperimentConfig.model_validate(exp_dict)
     base_dict = inject_shared(exp_dict["baseline"], shared_run_blocks(exp_dict))
     baseline = resolve_run(experiment.baseline.name, base_dict, vehicle_dict)
     variants: dict[str, ResolvedRun] = {}
     for vname, override in experiment.variants.items():
-        variants[vname] = resolve_run(vname, merge_run_dicts(base_dict, override), vehicle_dict)
+        try:
+            merged = merge_run_dicts(base_dict, override)
+        except ExclusiveKeysError as exc:
+            raise ExclusiveKeysError(f"variant {vname!r}: {exc}") from exc
+        variants[vname] = resolve_run(vname, merged, vehicle_dict)
     runs = {baseline.name: baseline, **variants}
 
     sweeps: list[list[SweepPoint]] = []

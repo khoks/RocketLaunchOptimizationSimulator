@@ -4504,6 +4504,104 @@ reuse the nominal trajectories without flying (the `trajectory_key` memo, "Repor
 definitions (planar)"). A bound, by contrast, carries its paired baseline already
 (`BoundCase.baseline`).
 
+**Merge rule (both models).** The two override forms inherit differently:
+
+- A variant is a partial run dict merged over the baseline's (`merge_run_dicts`): per
+  key, dicts merge, scalars and lists replace.
+- A sweep point, a sensitivity case and a bound are dotted paths set on their parent's
+  resolved dict (`apply_overrides`, `_set_path`). A path sets exactly one key; its
+  siblings stay, apart from the two rules below. Its value is never merged into what
+  was there: a dict given as the value replaces the node at that path whole, so
+  nothing below it is inherited. Over a parent
+  `stage1: {t_ign_s: -2.0, reference: push_start, startup: {...}}`, the path
+  `ignition.stage1.at_depth_m: 50` ends with `{startup: {...}, at_depth_m: 50}`, but
+  the dict-valued path `ignition.stage1: {at_depth_m: 50}` ends with `{at_depth_m: 50}`
+  alone: the inherited `startup` (and a `fails`) is gone, so the run takes the
+  vehicle's startup. The same dict in a variant keeps them. To vary a two-key family
+  (`at_height_m` with `height_method`) on a sweep or a bound and keep the rest of the
+  dict, give its keys as two paths, not as one dict value.
+
+Two rules keep an inherited key from surviving next to the setting that replaces it,
+both scoped by key name within one dict level and both declared once in `config.py`:
+
+- Discriminators (`SWITCH_KEYS`: the assist `model`, a startup `kind`). A dict whose
+  discriminator differs from the base's replaces the base dict wholesale.
+- Exclusive key families (`EXCLUSIVE_KEY_FAMILIES`, SP1 step 1). A group lists the
+  alternative ways to state one setting; a dict uses one family of a group.
+
+  | Group | Families |
+  |---|---|
+  | assist push (`ASSIST_KEY_FAMILIES`) | {`net_accel_g`} or {`exit_speed_mps`} |
+  | ramp start (`IGNITION_KEY_FAMILIES`) | {`t_ign_s`, `reference`}, {`at_depth_m`}, {`at_speed_mps`} or {`at_height_m`, `height_method`} |
+
+  An override that sets a key of one family removes the base's keys of the group's
+  other families from the dict it is merged into, in `merge_run_dicts` and in
+  `_set_path` alike. So a sweep axis `assist.exit_speed_mps` over a parent with
+  `net_accel_g` ends with only the exit speed, and a variant `{at_depth_m: 50}` over the
+  baseline's `{t_ign_s: -2.0, reference: release}` ends with only the depth. An override
+  that sets only keys of the family the base already uses merges exactly as before
+  (`{t_ign_s: 0.5}` keeps the inherited `reference`); keys outside the families
+  (`startup`, `fails`, `stroke_m`) are never displaced by this rule (a discriminator
+  switch or a dict-valued path still replaces its dict whole, as above). In the
+  dotted-path form the rule acts on the key the path names, not on the keys inside a
+  dict value. Keys of two families of one group given together for one dict (in a
+  variant, in one dict value, or as two paths of one sweep point, sensitivity case or
+  bound) raise `ExclusiveKeysError` (a ValueError) naming the variant or sweep, the
+  dict and the keys: the merge cannot say which is meant. A key counts as given when
+  it is present in the override, whatever its value, an explicit null included:
+  `{at_depth_m: null}` displaces the inherited `t_ign_s` and `reference` and leaves
+  `at_depth_m: null`, and `{net_accel_g: null, exit_speed_mps: 70}` is refused. A null
+  is therefore not a way to unset a key; pydantic's `model_fields_set`, on which the
+  "exactly one" validators of steps 2 and 3 are built, counts an explicit null as set
+  in the same way. A YAML anchor merge (`<<: *silo`) is resolved by the YAML loader, so
+  a variant that pulls in the anchor's `net_accel_g` and adds `exit_speed_mps` gives
+  both and is refused; such a variant writes its assist block out. The rule applies to
+  run dicts only, never to `vehicle.` paths.
+
+  The rule arrives before the fields. `exit_speed_mps` (SP1 step 2) and `at_depth_m`,
+  `at_speed_mps`, `at_height_m`, `height_method` (SP1 step 3) are added with the
+  validators that require exactly one family on the resolved model; until then a run
+  dict carrying one of them is refused as an unknown key. No experiment shipped before
+  SP1 names a key of a second family, so every resolved dict is unchanged: the 1-D
+  golden compares the 1-D dicts byte for byte, and the planar digest pin below does
+  the same for the planar ones.
+
+**Regression pins of the shipped planar experiments (SP1 step 1).** Helper:
+`tests/planar_pin_support.py`; data: `tests/data/planar_pins/`. Both were captured
+from the untouched code of commit c587a08 (sources equal to 2eebcae) before the merge
+rule changed, and the helper script re-checks them against any sources put first on
+the path.
+
+- Resolved digests (`resolved_digests.json`): the sha256 of `json.dumps(run_dict)` and
+  of `json.dumps(vehicle_dict)`, key order kept, for every run the four shipped planar
+  experiments resolve: 16 for calibration_f9_2d, 60 for silo_screening_2d, 4 for
+  silo_bridge_2d_readme and 10 for guidance_trigger_2d (baseline and variants, sweep
+  points and their paired baselines, sensitivity runs, bound runs with their paired
+  baselines, calibration cases). Resolved inputs are parsed and unit-converted, never
+  integrated, so the digests hold in every environment and are never recaptured.
+- Output capture (`output_capture.json`, `output_summary.md`): what the fixed-guidance
+  fast experiment of `tests/test_planar_pipeline.py` (pad, silo_cold, silo_failed)
+  writes. The files, every key path of metrics.json (per run and outside the runs),
+  the top-level keys of resolved_config.yaml and the time-series and event columns are
+  compared in every environment. The sha256 of summary.md without its provenance (the
+  title's timestamp and git label, the Timestamp and Git bullets) is compared in the
+  capture environment only, by the rule of the golden 1-D exact tier, because the
+  summary prints integrated numbers. SP1 steps 2 and 3 add planar metric keys and
+  summary rows on purpose and recapture it, listing their additions; the gate of SP1
+  step 7 ("no `offload` output without the block") is judged against it. The file
+  records the git state it was taken in (`captured_at`: the checkout's HEAD, whether
+  it had uncommitted changes, and whether launchsim ran from the checkout's `src`),
+  read at each capture, so a recapture never claims c587a08: the step 1 capture ran an
+  export of c587a08's `src` put first on the path (`launchsim_from_checkout` false),
+  a later one the recapturing step's own code. Only `resolved_digests.json` carries
+  `reference_commit`.
+
+`tests/data/silo_screening_2d_record.json` holds the payload capacities of the shipped
+silo_screening_2d run at full precision (pad 26,054.396243494975 kg, silo_cold
+27,553.227114190096 kg; results/silo_screening_2d/20260930T175743Z, git 7ad381f), copied
+from its metrics.json, which git does not track. They are regression references for
+the search refactor of SP1 step 5, not validation.
+
 **The shipped Phase 2 experiments** (amendment 1: created with the schema, before any
 planar run). All four declare identical shared blocks (a test compares them key for
 key; one `budget_id`): planar_2d; 28.5 deg, azimuth 90, rotation on; 200 km circular;
@@ -4837,6 +4935,11 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_config_planar.py::test_shipped_planar_experiments_resolve`, `::test_shared_blocks_are_identical_across_the_planar_experiments`, `::test_calibration_and_silo_baselines_differ_only_in_sample_dt`, `::test_shipped_blocks_state_every_threshold`, `::test_every_shipped_planar_experiment_is_checked`, `::test_shipped_planar_cap_is_explicit_and_shared`, `::test_planar_cap_may_not_differ_between_runs`, `::test_planar_cap_is_finite_and_positive` | "Experiment schema (planar)": the four shipped planar experiments resolve (cases through a CLI-style vehicle loader); identical shared blocks and one `budget_id`; amendment 15 baseline identity; every search, LTG, checks and guidance field written out; every planar_2d experiment in experiments/ is one of the four checked; `integrator.planar_max_step_s` stated as 2 s in all four and carried by every run (baseline, variants, sweep points and paired baselines, sensitivity cases, bounds, calibration cases); a per-run value refused in a variant, sweep, sensitivity parameter or bound (a message naming the setting) and unreachable from a case; the cap finite and > 0 ("Integrator") | exact / structural |
 | `test_config_planar.py::test_m2_role_defaults_to_diagnostic_and_is_explicit`, `::test_m2_role_may_not_differ_between_runs` | `checks.m2_role`: default diagnostic, blocking accepted, any other value refused; written out as diagnostic in all four shipped planar experiments and carried by every resolved run; a variant's own `checks` refused as a shared block ("Screening-beat rule (2-D)", "Experiment schema (planar)") | exact / raises |
 | `test_config_planar.py::test_phase1_resolved_run_dicts_are_byte_identical`, `::test_inject_shared_is_a_plain_copy_when_nothing_is_declared` | no injection for a 1-D experiment: every run, sweep-point and sensitivity run dict of both 1-D golden sets equals the golden, key order included | exact (JSON text) |
+| `test_config.py::test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name`, `::test_merge_keeps_one_family_per_group` (every ordered pair of families of a group), `::test_merge_drops_only_what_the_given_key_displaces`, `::test_set_path_applies_the_family_rule_to_run_paths_only`, `::test_sweep_axis_exit_speed_over_a_net_accel_parent`, `::test_shipped_experiments_use_the_first_family_only` | "Experiment schema (planar)", merge rule: the table is the design's (written out in the test), no key in two families, and only ConstantAccelConfig and IgnitionConfig have fields of those names; an override giving family B over a base using family A ends with B's keys, none of A's and every unrelated key in place, in `merge_run_dicts` and in the dotted-path form alike (same family: today's per-key merge, in place); one key of a two-key family keeps its partner; other stages and non-family keys untouched; `_set_path` applies the rule to run paths, never to vehicle paths; a sweep point `assist.exit_speed_mps` over the shipped silo_cold holds only the exit speed and the rest of the parent's dict unchanged; the five experiments shipped before SP1 name no key of a second family | exact (dicts and key order written out in the test) |
+| `test_config.py::test_dict_valued_path_replaces_its_dict_whole_while_a_variant_merges`, `::test_an_explicit_null_counts_as_a_given_key` | "Experiment schema (planar)", merge rule, the two override forms and a null: over a stage-1 dict with `t_ign_s`, `reference`, `startup` and `fails`, a variant and a single-key path keep every key the family rule does not displace (same family: all four; `at_depth_m`: `startup` and `fails`), while the same dict given as the value of the path `ignition.stage1` replaces the dict there whole (only the given key left, the inherited `startup` and `fails` gone); a two-key family given as two paths keeps the rest; the other stage and the base untouched. A key given as null counts as given: a null of another family displaces the base's family and stays in the dict, in a variant and as a path alike (`at_depth_m: null` over the time keys, `exit_speed_mps: null` over `net_accel_g`); a null of the family in use replaces in place and keeps its partner; a null of one family next to a key of another is refused, in `merge_run_dicts` and as two paths | exact (literal dicts written out in the test) / raises ExclusiveKeysError |
+| `test_config.py::test_two_families_given_together_raise_in_merge`, `::test_two_families_given_together_raise_in_overrides`, `::test_mixed_families_name_the_variant_or_the_sweep` | keys of two families of one group given together: in an override dict at any depth (also one the merge would take wholesale), as two paths with one parent, in a dict value, or a path meeting a dict value; two keys of one family, different groups, the same group in different dicts and vehicle paths are accepted; through `resolve_experiment` the error names the sweep and run or the variant, and the dict | raises ExclusiveKeysError (a ValueError) |
+| `test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`, `::test_pinned_digest_is_the_sha256_of_the_json_text` | "Experiment schema (planar)", regression pins: every run and vehicle dict of the four shipped planar experiments has the sha256 of its `json.dumps` text captured before SP1 step 1; the number of pinned dicts equals the count the YAML declares (1 + variants + grid points, twice when paired, + 2 per sensitivity run and parameter + bound re-runs and their baselines + cases: 16, 60, 4, 10); the digest equals hashlib's of the literal JSON text and moves with a value, an added key or the key order | exact (sha256) |
+| `test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`, `::test_summary_matches_the_capture_in_the_capture_environment`, `::test_capture_helpers_see_added_keys_columns_and_files`, `::test_output_capture_records_the_git_state_it_was_taken_in`, `::test_recorded_silo_payloads_carry_their_provenance` | regression pins: the fast experiment writes the captured files, metrics.json key paths, resolved_config.yaml keys and CSV columns (the planar column constants); its provenance-free summary.md has the captured sha256 (capture environment only; skipped elsewhere, failed with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) and the tracked text is the one that digest belongs to; the helpers on hand-written records (key paths in first-seen order, an added key, a removed column, a reordered list, a new file); output_capture.json carries `captured_at` (keys `git`, `dirty`, `launchsim_from_checkout`, the hash not `no-git`) and no `reference_commit`, which only resolved_digests.json holds (c587a08, the helper's `REFERENCE_COMMIT`), and `capture_provenance` returns `no-git`, not dirty, not from the checkout for a directory outside any checkout and the hash and dirty flag of `results_io.git_info` for this one; the recorded silo_screening_2d P* (silo_cold 27,553.227114190096 kg as the phase file quotes it; the pad's equal to the calibration record's amended re-run) round to the cells of the tracked summary.md, within half its last printed decimal (0.05 kg), and equal the untracked metrics.json where it is on disk | exact / 0.05 kg against the printed cells |
 | `test_config_planar.py` (model rules) | rotation only on planar_2d; explicit site; guidance, search, checks and target; aero and two stages; `integrator.rtol == search.final_rtol`; insertion and planar ends; `integrator.method` round trip; Phase 3 track message; heating refusal on vertical_1d only; shared blocks refused in baselines, variants, sweeps, sensitivity and bounds; paired sweeps (guidance_study only); cases (calibration only); search skip (amendment 4); sensitivity paths perturb the vehicle numbers (amendment 5, expected values from the vehicle file); the aero bound and its paired baseline (amendment 6); search and checks validators; radian and kg properties; `budget_id`; planar variants, sweeps, sensitivity and bounds may not change the integrator block, `sample_dt_s` included (1-D keeps its freedom); paired sweeps planar_2d only, planar vehicle sweeps paired (1-D unchanged); later-stage `t_ign_s >= 0`; gamma*, fixed gamma*, delta and LTG pitch ranges; `search_atol_scale >= 1`; omega_p against omega_E cos(lat) sin(az) at four sites (465.1 m/s at the equator, negative westward); the section-11 checks fields; raw-form-only experiments; `sim.run` runs the shipped silo_failed in the planar model (the former strict-xfail tripwire of the step-19 gap) | exact / raises / 1e-12 relative |
 | `test_thrust_schedule.py::test_thrust_fraction_shapes`, `::test_zero_duration_is_a_step` | f for step, ramp, lag ("Thrust startup") | 1e-12 relative |
 | `test_thrust_schedule.py::test_propellant_burned_closed_forms`, `::test_lag_forms_are_exact_just_after_ignition` | `propellant_burned_kg`: mdot t_r/2 at t_r; mdot [dt - tau (1 - e^(-dt/tau))]; just after ignition the lag forms follow their series, never a negative mass | 1e-12 relative; series 1e-6 relative |

@@ -4,15 +4,19 @@ every run and refused per run, end: insertion, integrator.method, the search, LT
 checks blocks, paired sweeps (guidance_study only), calibration cases, bounds, the
 automatic search skip (amendment 4), sensitivity paths (amendment 5), the aero bound
 (amendment 6) and baseline identity across experiments (amendment 15). The shipped
-Phase 2 experiments must resolve, and the Phase 1 run dicts must stay byte-identical
-to the 1-D golden. Expected numbers are computed here from the YAML inputs."""
+Phase 2 experiments must resolve, the Phase 1 run dicts must stay byte-identical
+to the 1-D golden, and every run and vehicle dict the four shipped planar experiments
+resolve keeps its pinned sha256 (SP1 step 1; tests/planar_pin_support.py). Expected
+numbers are computed here from the YAML inputs."""
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -286,6 +290,69 @@ def test_inject_shared_is_a_plain_copy_when_nothing_is_declared(
     out = inject_shared(exp["baseline"], {})
     assert out == exp["baseline"] and out is not exp["baseline"]
     assert list(out) == list(exp["baseline"])
+
+
+# ------------------------------------------------- shipped planar experiments unchanged
+
+
+def _declared_run_count(exp: dict[str, Any]) -> int:
+    """How many runs a raw experiment dict declares, counted from the YAML alone: the
+    baseline, the variants, every sweep grid point (the product of its axis lengths,
+    twice when paired: the point and its paired baseline), two runs (+ and -) per
+    sensitivity run and parameter, every bound re-run plus its paired baseline, and
+    the calibration cases."""
+    count = 1 + len(exp.get("variants", {}))
+    for sweep in exp.get("sweeps", []):
+        points = math.prod(len(values) for values in sweep["axes"].values())
+        count += points * (2 if sweep.get("paired", False) else 1)
+    sensitivity = exp.get("sensitivity")
+    if sensitivity is not None:
+        count += 2 * len(sensitivity["of"]) * len(sensitivity["params"])
+    count += sum(len(bound["of"]) + 1 for bound in exp.get("bounds", []))
+    return count + len(exp.get("cases", {}))
+
+
+def test_shipped_planar_resolved_dicts_match_the_pinned_digests(
+    raw: dict[str, dict[str, Any]],
+    resolved: dict[str, ResolvedExperiment],
+    planar_pins: ModuleType,
+) -> None:
+    """SP1 step 1 guard (tests/planar_pin_support.py): every run and vehicle dict the
+    four shipped planar experiments resolve (runs, sweep points and their paired
+    baselines, sensitivity runs, bound runs, calibration cases) has the sha256 of
+    ``json.dumps`` (key order kept) that the untouched code produced before
+    merge_run_dicts and _set_path learned the exclusive key families. The number of
+    pinned dicts per experiment equals the count declared in the YAML, so nothing a
+    file resolves escapes the pin."""
+    pinned = planar_pins.read_json(planar_pins.DIGESTS_FILE)["experiments"]
+    assert tuple(pinned) == planar_pins.PINNED_EXPERIMENTS
+    assert set(planar_pins.PINNED_EXPERIMENTS) <= set(PLANAR_EXPERIMENTS)
+    for name in planar_pins.PINNED_EXPERIMENTS:
+        actual = planar_pins.resolved_digests(resolved[name])
+        assert len(pinned[name]) == _declared_run_count(raw[name]), name
+        problems = planar_pins.compare_digests(actual, pinned[name])
+        assert not problems, f"{name}:\n" + "\n".join(problems)
+
+
+def test_pinned_digest_is_the_sha256_of_the_json_text(planar_pins: ModuleType) -> None:
+    """The digest is sha256(json.dumps(d)) over UTF-8, so it sees values, added keys and
+    key order; compare_digests names what changed."""
+    assert planar_pins.dict_digest({"a": 1}) == hashlib.sha256(b'{"a": 1}').hexdigest()
+    base = {"a": 1, "b": {"c": 2.0}}
+    digest = planar_pins.dict_digest(base)
+    assert planar_pins.dict_digest({"b": {"c": 2.0}, "a": 1}) != digest  # key order
+    assert planar_pins.dict_digest({"a": 1, "b": {"c": 2.0, "d": None}}) != digest
+    assert planar_pins.dict_digest({"a": 1, "b": {"c": 2.0000000000000004}}) != digest
+    pin = {"run:x": {"run": "1", "vehicle": "2"}, "run:y": {"run": "3", "vehicle": "2"}}
+    assert planar_pins.compare_digests(pin, pin) == []
+    moved = {"run:x": {"run": "9", "vehicle": "2"}, "run:z": {"run": "3", "vehicle": "2"}}
+    assert planar_pins.compare_digests(moved, pin) == [
+        "run:y: no longer resolved",
+        "run:z: not in the pin",
+        "run:x: the run dict changed",
+    ]
+    swapped = {"run:y": pin["run:y"], "run:x": pin["run:x"]}
+    assert planar_pins.compare_digests(swapped, pin) == ["the order of the resolved runs changed"]
 
 
 # ---------------------------------------------------------------------- model rules

@@ -1,0 +1,374 @@
+{
+ "_note": "sha256 of json.dumps(run_dict) and json.dumps(vehicle_dict), key order kept, of every run the four shipped planar experiments resolve (baseline, variants, sweep points and paired baselines, sensitivity runs, bound runs and paired baselines, calibration cases). Captured from the untouched code before SP1 step 1 changed config.merge_run_dicts and config._set_path; never recaptured. See tests/planar_pin_support.py.",
+ "reference_commit": "c587a08",
+ "experiments": {
+  "calibration_f9_2d": {
+   "run:pad": {
+    "run": "309a57f7e32a4b1de1e97f1a0620e6594d14749cad3ba778dc6e4a68bf530f48",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sens:pad__vehicle.stages.stage1.dry_mass_t__+0.1": {
+    "run": "6b073ba4dc5518f80fd1af737c6d62b489d2c190e743d20c60ff4d57470478f5",
+    "vehicle": "4dfa8d324973e984790ebc3eb5e4ddcc5c3dc27348efc366271501381c59d4e8"
+   },
+   "sens:pad__vehicle.stages.stage1.dry_mass_t__-0.1": {
+    "run": "3b9affb25afc59785ecd7c0635a8a987f6569c622a8ddffdf082c10d734a6ad0",
+    "vehicle": "ed7b95cd9996314e421b81bcd6f9e54f7e67bcfb372587127d4ca9e1a5b8e3b5"
+   },
+   "sens:pad__vehicle.stages.stage1.engine.isp_vac_s__+0.1": {
+    "run": "2473dda28c264eb9bf3243a6d439efead77e736c19299a7c9f241cc1bb63ebf4",
+    "vehicle": "ba7c85aa6c258536e42cdc5475500e8408937cf340880fe16684f2bac03dacbe"
+   },
+   "sens:pad__vehicle.stages.stage1.engine.isp_vac_s__-0.1": {
+    "run": "365641464b67a75d73d0c1aa8b12eab5c90d51882a3a5ecb71a805f4ef1fd899",
+    "vehicle": "a8b832d01077840a3d5001f2eef08a80290629a1ed16010336326061b30ed0ad"
+   },
+   "sens:pad__vehicle.stages.stage2.engine.isp_vac_s__+0.1": {
+    "run": "5d6c0f55f8702fe55ce989fa221796916fe55c99b346a659df0fa8d872533270",
+    "vehicle": "ffb5f68f4354f12073e20d6fcc8ea84ba8137666eecb3173e14d7edb3bb71985"
+   },
+   "sens:pad__vehicle.stages.stage2.engine.isp_vac_s__-0.1": {
+    "run": "381ddf0110e169f9e8264e766ef0860f5f47c366ec55b8a0fd4324946ea897b6",
+    "vehicle": "948945b7788b7986cbe442ce493211de454b5b3fdd911afe80626043f3501a1e"
+   },
+   "sens:pad__vehicle.aero.cd_scale__+0.1": {
+    "run": "9c0187c0d8d1993eb5c98fdc12f6279c1cc716d7d50166a243dc391c370bcbd7",
+    "vehicle": "ca0820a1a1b009baa6379228f69528597e31c33d881075ec78295b3f00656a7c"
+   },
+   "sens:pad__vehicle.aero.cd_scale__-0.1": {
+    "run": "3ebbf6b783c2e885f1a0c5cb6ae329c819da5b6a5066ac86bd1df6153fd6034f",
+    "vehicle": "a2f17e57b79aac5bd44d023c6df360863a72d2fa028f1ba7b034817f35ea8c30"
+   },
+   "case:readme_loads": {
+    "run": "64b9b6658cce6281f8b9231464f49a64d8aa47c6a2db3ff9d2a9e2b9ac18ad60",
+    "vehicle": "4909c97610a7edb7cf594e7bbe417735a17ede903b918527614d43f98c365201"
+   },
+   "case:recorded_scope": {
+    "run": "cad9f89df40bc2b479761c1e0127e00ffbb0471c85232fd9b88d733fc91f6c53",
+    "vehicle": "a5351a04c684ef8e9f313cc4961f2a5d1ae373c502e4943c16988cf8f9426d17"
+   },
+   "case:aref_fairing": {
+    "run": "036d8bde7f37c8abbf32e47baba210efa01cae5f1d2c09199b05a8c5bc6112d6",
+    "vehicle": "39f1bbcc7bb7ba858a533cdff2cf03621a8105bd316682009961702929059b6d"
+   },
+   "case:alt_185": {
+    "run": "4f5775eafaff5558306eff6cf62e06e5c2bfde40461165168d2a57de594c6226",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "case:alt_250": {
+    "run": "3b6e17df0e99ceb4baf09eb3ad885c52274f28c168f51ff592173c2cd9db4119",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "case:alt_300": {
+    "run": "2dba41031fd7244eab60ee430b5ed91e3a9c9e6eb7dda89bb37df9d630c8e91e",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "case:no_rotation": {
+    "run": "014d037d08c7a0cd00309e6bdfb7e006d7f738a6a6e7fd2ad058fca0b5d80826",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   }
+  },
+  "silo_screening_2d": {
+   "run:pad": {
+    "run": "0e279e02f42dbe0e4337cdb3889aed45c4fe58bb4edc2d734e0c77434a6d7413",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:pad_instant": {
+    "run": "09c235cf7139f994fc55935a24be2e2739f970ba8cf09098d6f578e7e9e8a645",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_instant": {
+    "run": "ee13c627290e49c9a0268bbbde90232fdf2fb928abbf4e84a83ad7e19af0e20b",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_cold": {
+    "run": "691b7e7abe6bc69eeb7441597f42d78da422fdec8b5f5a377bb900e387998617",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_cold_lag": {
+    "run": "88c06fd6b63bc983d3f11fe31d7378591650a322ffe692cdd8ac3d70e11a835b",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_hot_ramp_on_track": {
+    "run": "0bbf8f996b73c0deb96678098baba3fa6826cb2a87e9e568d4258ea8cb27fabf",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_hot_full": {
+    "run": "f8c115eae59fa765e692a3b1e664274eddc3c5931f41b51eb0ac34bffdf0b356",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_hot_full_impinged": {
+    "run": "32b3812e8aa556c181db6800e9787e7929c6284f39e8bcbb8b827432d91d2bfa",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_failed": {
+    "run": "70b1400bc8accc4014f5640af4e663ce47ba3294b620d56014465abfe66df799",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_sled_22t": {
+    "run": "3ecf34a3efa1cb3e634eb29cf5560e66172ff48e8d4befd30fd4b823bfbebe98",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0001": {
+    "run": "1ff5690e07efd2d578bab36a4021a1cd100ac98dbc6f8630709fc9b4a697dd7c",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0002": {
+    "run": "abd7890aef62c103c04f471f7ecfb10c6cacf0f07e9f2234568408d42f68e55a",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0003": {
+    "run": "5a25242edfd719040a52a35c3d04597bb5559f30b6cfebb7c595657c7e370b62",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0004": {
+    "run": "2577f3be09a3124093e70fa9ad92695ccb3ad77d7caa7d3d7e10b58c81ce81d6",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0005": {
+    "run": "7b18239e2a8b26989cb7402e9449802755ef046b8a9cee5c28ac0508d88025ec",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0006": {
+    "run": "3d6cf723c64d8355b0cdd00518354f9cb474cdd2c454bbdf5a9ceb80ccb63ae3",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0007": {
+    "run": "885d7b8bfec9ec6c51ac092b67dd483021e8714b030849bddc72da4118f5be43",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0008": {
+    "run": "26c531c968414f81ead5539386fa0c2ac014f6787ac2cca73f93d2461cd8c573",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0009": {
+    "run": "bb059a778595ec367fdb68386e73cfd2761eef307b1e3177f8afacf746800c92",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0010": {
+    "run": "270a99d54dd867731882e2082d9e002d487b8433378b0ed316f90d717049d575",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0011": {
+    "run": "fc7ea66ac18422d816048766b3ac50f95a80fb77291f639c02c081d31f8cf6ce",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0012": {
+    "run": "c754c4dc6fbfddb60968d6bbd88f3362eeb26371c9a08f14cbedad6f70c08501",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0001": {
+    "run": "c783634548c7dc4898cd239583817fd221cd7c6ed22dabf1d6744563c71fe99f",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0002": {
+    "run": "c0e0dfcad6088f5a823762456dd0fce08f7b59dd8095f4a2a129d8cf310565bb",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0003": {
+    "run": "a45abcf9dfa0639156cfc9a796f40d6fac764350b46434bd46e2e364b268d9b7",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0004": {
+    "run": "70f9bb7e208c3085287049fd88a58c03c1a30b3f046b95e8be8bce914bcb855e",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0005": {
+    "run": "7063aa9d994e727ac44135e54e6ab655b2139e514c89bbc0c18867a232f07a6c",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0006": {
+    "run": "228f7182f734383e44e6af18f517a85d82a9b60acdadd43f74374652999e898d",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0007": {
+    "run": "5c19cfedda7c570380e8fe71c78fefa7c3c7f8aa7a9c0f26a5f9f325e48dc34e",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0008": {
+    "run": "84f31b2da1e440ec345c66e40cc2a366600ebf97af2bb558108b653e0a7d1d4d",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_2:run_0009": {
+    "run": "44dd0c0a437e0ab7048a3fc271ccb5bd60edda1383f1ee4534c6605c6b959e5d",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_3:run_0001": {
+    "run": "3f43a162a51d56a5239e0ff57fd5a778988171eb4af49c87f9c5574283b8554c",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_3:run_0002": {
+    "run": "7b8ba60c5833e4c9de4026a78f403745889b47955707318708fa36589970084a",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_3:run_0003": {
+    "run": "f995003b39b9ae327ee4099cbece2198623f2332f2830c91643e8a9f81240877",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sens:silo_cold__vehicle.stages.stage1.dry_mass_t__+0.1": {
+    "run": "166f291efed86c534cbeb219103454db85a8cdc46c8c0a570e87573a270baaa2",
+    "vehicle": "4dfa8d324973e984790ebc3eb5e4ddcc5c3dc27348efc366271501381c59d4e8"
+   },
+   "sens:silo_cold__vehicle.stages.stage1.dry_mass_t__-0.1": {
+    "run": "d58c1d5926f03ead471e49fcf30c6fa0c368407f81cd253307ae8b0e9bb803dd",
+    "vehicle": "ed7b95cd9996314e421b81bcd6f9e54f7e67bcfb372587127d4ca9e1a5b8e3b5"
+   },
+   "sens:silo_cold__vehicle.stages.stage1.engine.isp_vac_s__+0.1": {
+    "run": "227c2b8fa17323aa9de9a81258346c2f7ab6e0a3dafb7284278f5fb0d6e4c862",
+    "vehicle": "ba7c85aa6c258536e42cdc5475500e8408937cf340880fe16684f2bac03dacbe"
+   },
+   "sens:silo_cold__vehicle.stages.stage1.engine.isp_vac_s__-0.1": {
+    "run": "3a8a547c498acdfe4b19169d5cc5c048d657887ba96f897dd30fa63299a53c4a",
+    "vehicle": "a8b832d01077840a3d5001f2eef08a80290629a1ed16010336326061b30ed0ad"
+   },
+   "sens:silo_cold__vehicle.stages.stage2.engine.isp_vac_s__+0.1": {
+    "run": "75f765a81051b4aec5c6abe5ec94f0382a9d752e49b50ac9cd5d04d7ec5e38a1",
+    "vehicle": "ffb5f68f4354f12073e20d6fcc8ea84ba8137666eecb3173e14d7edb3bb71985"
+   },
+   "sens:silo_cold__vehicle.stages.stage2.engine.isp_vac_s__-0.1": {
+    "run": "6e9ac5609e193f886a82b9c144884a6b183fa16963dc6c84a84174cc09fcd19a",
+    "vehicle": "948945b7788b7986cbe442ce493211de454b5b3fdd911afe80626043f3501a1e"
+   },
+   "sens:silo_cold__vehicle.aero.cd_scale__+0.1": {
+    "run": "a65d60e894bd9bf285f1e7c2cea8203652b092b7c12aba85d909e53758839258",
+    "vehicle": "ca0820a1a1b009baa6379228f69528597e31c33d881075ec78295b3f00656a7c"
+   },
+   "sens:silo_cold__vehicle.aero.cd_scale__-0.1": {
+    "run": "82eea9a88cbd6f65853d39f0048ecd3ee6f9745a5ea3a88e4e2a5771663fd023",
+    "vehicle": "a2f17e57b79aac5bd44d023c6df360863a72d2fa028f1ba7b034817f35ea8c30"
+   },
+   "sens:silo_cold__vehicle.screening.stage_isp_eff_s.0__+0.1": {
+    "run": "d5d9ac69d2844754b45ac0190cb8a6fb82ab0d51e4be6bd68098b3bf5ed75283",
+    "vehicle": "5336309d33e69b1b04b9054e23b788d10b75b6be690e8d50c1ffdc76aa560540"
+   },
+   "sens:silo_cold__vehicle.screening.stage_isp_eff_s.0__-0.1": {
+    "run": "a44f347f761837d7277804493021c036d0e9b5a4910a12d609228be24e229dfc",
+    "vehicle": "43c74bfa68eec221d58d8aa510a3795e9d1f2a9b192f0115a572a2988d8077d1"
+   },
+   "sens:silo_cold__assist.drive_efficiency__+0.1": {
+    "run": "5bd23c8a905cb96cf0f168d46f0d6f8f6849dfb4e59632a1e3364143cb271026",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sens:silo_cold__assist.drive_efficiency__-0.1": {
+    "run": "418e65f4c8885b3e47a149dd499a11ecdb265c452f86b183d8704767bba587cc",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sens:silo_hot_full__vehicle.stages.stage1.dry_mass_t__+0.1": {
+    "run": "b8c220075fb68802277cc2c2c932cf21aa337cd60302042cbffe35a5164bd5f6",
+    "vehicle": "4dfa8d324973e984790ebc3eb5e4ddcc5c3dc27348efc366271501381c59d4e8"
+   },
+   "sens:silo_hot_full__vehicle.stages.stage1.dry_mass_t__-0.1": {
+    "run": "6b09e3cc21139e3679acf3ebec5de88c7a450e95c21248a1cbdbbf54091bb47d",
+    "vehicle": "ed7b95cd9996314e421b81bcd6f9e54f7e67bcfb372587127d4ca9e1a5b8e3b5"
+   },
+   "sens:silo_hot_full__vehicle.stages.stage1.engine.isp_vac_s__+0.1": {
+    "run": "0b212e3c2556b84aa73fa2625abd43d3498676b0d471b2dcc2ed440d65aec486",
+    "vehicle": "ba7c85aa6c258536e42cdc5475500e8408937cf340880fe16684f2bac03dacbe"
+   },
+   "sens:silo_hot_full__vehicle.stages.stage1.engine.isp_vac_s__-0.1": {
+    "run": "679bad6ad41e8a44a697e570c6c8d62147301e20ff2c400d039644f8eb487ff6",
+    "vehicle": "a8b832d01077840a3d5001f2eef08a80290629a1ed16010336326061b30ed0ad"
+   },
+   "sens:silo_hot_full__vehicle.stages.stage2.engine.isp_vac_s__+0.1": {
+    "run": "41fab0be0b2d15e592efface1ac6814c21aad7c83d4f801e6920161eb5f9ccee",
+    "vehicle": "ffb5f68f4354f12073e20d6fcc8ea84ba8137666eecb3173e14d7edb3bb71985"
+   },
+   "sens:silo_hot_full__vehicle.stages.stage2.engine.isp_vac_s__-0.1": {
+    "run": "47d6c7b6add1be0ce9d3877364bb0847876ea2b2077ec1c87b344695a0431196",
+    "vehicle": "948945b7788b7986cbe442ce493211de454b5b3fdd911afe80626043f3501a1e"
+   },
+   "sens:silo_hot_full__vehicle.aero.cd_scale__+0.1": {
+    "run": "cc253ac3c6191baef387b55eae19232e80a4fedafaede7c65048cf2b136b35e6",
+    "vehicle": "ca0820a1a1b009baa6379228f69528597e31c33d881075ec78295b3f00656a7c"
+   },
+   "sens:silo_hot_full__vehicle.aero.cd_scale__-0.1": {
+    "run": "dc367f991684b0bd57bf56dace3b903077e29f2171091088610fba8a13eb5eb7",
+    "vehicle": "a2f17e57b79aac5bd44d023c6df360863a72d2fa028f1ba7b034817f35ea8c30"
+   },
+   "sens:silo_hot_full__vehicle.screening.stage_isp_eff_s.0__+0.1": {
+    "run": "7674f11059aa0e08c4ff57065f8ba6299b01942740111276ab06e67fb9ee7e44",
+    "vehicle": "5336309d33e69b1b04b9054e23b788d10b75b6be690e8d50c1ffdc76aa560540"
+   },
+   "sens:silo_hot_full__vehicle.screening.stage_isp_eff_s.0__-0.1": {
+    "run": "19ed5cc899fa00cb01b4e1d1df8a83864dbc7cdfb2431f57ba3bddc33c07b115",
+    "vehicle": "43c74bfa68eec221d58d8aa510a3795e9d1f2a9b192f0115a572a2988d8077d1"
+   },
+   "sens:silo_hot_full__assist.drive_efficiency__+0.1": {
+    "run": "628b74f24cd6161115b8ea9eff2ae616440b7792ad6ca571c1c59e3f52cbe5ac",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sens:silo_hot_full__assist.drive_efficiency__-0.1": {
+    "run": "5b3b96595329c34b75f4af004abea0d0f6831fbbd16357a5df9ded60a53b0f9c",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "bound:aero_bound:silo_cold__aero_bound": {
+    "run": "852eb2c6bda6e2a9e3f3b71960cf9520b5378f2487667153db2fe23c585e0817",
+    "vehicle": "39f1bbcc7bb7ba858a533cdff2cf03621a8105bd316682009961702929059b6d"
+   },
+   "bound:aero_bound:pad__aero_bound": {
+    "run": "eb901e7c998c1823cf81ec4922eed0f4526d0ab07b2af1210a064f11c20b251f",
+    "vehicle": "39f1bbcc7bb7ba858a533cdff2cf03621a8105bd316682009961702929059b6d"
+   }
+  },
+  "silo_bridge_2d_readme": {
+   "run:pad": {
+    "run": "0e279e02f42dbe0e4337cdb3889aed45c4fe58bb4edc2d734e0c77434a6d7413",
+    "vehicle": "4909c97610a7edb7cf594e7bbe417735a17ede903b918527614d43f98c365201"
+   },
+   "run:pad_instant": {
+    "run": "09c235cf7139f994fc55935a24be2e2739f970ba8cf09098d6f578e7e9e8a645",
+    "vehicle": "4909c97610a7edb7cf594e7bbe417735a17ede903b918527614d43f98c365201"
+   },
+   "run:silo_instant": {
+    "run": "ee13c627290e49c9a0268bbbde90232fdf2fb928abbf4e84a83ad7e19af0e20b",
+    "vehicle": "4909c97610a7edb7cf594e7bbe417735a17ede903b918527614d43f98c365201"
+   },
+   "run:silo_cold": {
+    "run": "691b7e7abe6bc69eeb7441597f42d78da422fdec8b5f5a377bb900e387998617",
+    "vehicle": "4909c97610a7edb7cf594e7bbe417735a17ede903b918527614d43f98c365201"
+   }
+  },
+  "guidance_trigger_2d": {
+   "run:pad": {
+    "run": "0e279e02f42dbe0e4337cdb3889aed45c4fe58bb4edc2d734e0c77434a6d7413",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "run:silo_cold": {
+    "run": "691b7e7abe6bc69eeb7441597f42d78da422fdec8b5f5a377bb900e387998617",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0001": {
+    "run": "fa510b71f324cb0c903dc4219f6cac41afd5ea572f3bc71562929b29b8149bf6",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0001__pad": {
+    "run": "d0fd2a4aecc9439b8524699b6d289450110405e448d6d09caea600f620e64a96",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0002": {
+    "run": "dd40dac2548fb6caa0a3150e9e7e44a43763bab5b87aa98fb27a50be48a8b4f7",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0002__pad": {
+    "run": "cd850435fb783c1d8a6adf5970514c86dccd4c350610af2f603e674fd535e202",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0003": {
+    "run": "ffc3ee6b3b19196be69b79a732cc297e06ba38fa49205f6cab59c26f710db4c5",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0003__pad": {
+    "run": "bed025e7e2b95893b04957618571a39ded75664ec21b8b3deb3f94b4b1404a4d",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0004": {
+    "run": "4084491fda0bb5ae50127313a1e11fe43c917e6d8521c972aaf4f2e64063ba79",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   },
+   "sweep_1:run_0004__pad": {
+    "run": "fb03c7c040e35a58bd0cf28e4885693a967430354259d2037359afcb41325e1a",
+    "vehicle": "4eac12392344bf381d2347446e1f038b8e14a9454b7fbe41e4f63448102c5f1f"
+   }
+  }
+ }
+}

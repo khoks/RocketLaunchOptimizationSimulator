@@ -23,6 +23,12 @@ PLANAR_REQUIRED_METRICS key non-null, the gamma* neighbours), and bounds, calibr
 cases and a paired sweep with fixed guidance.
 Expected values (g_eff, the energy ratio, the angle bounds) are computed here from
 constants and the configs.
+
+Also fast (SP1 step 1; tests/planar_pin_support.py): what the fast experiment writes
+equals the output capture taken before SP1 changed any code (files, metrics.json key
+paths, CSV columns in every environment; the provenance-free summary.md by sha256 in
+the capture environment), and the tracked record of the shipped silo_screening_2d
+payload capacities carries its provenance.
 """
 
 from __future__ import annotations
@@ -31,8 +37,9 @@ import copy
 import dataclasses
 import json
 import math
+import os
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -95,17 +102,23 @@ def _fixed(exp: dict[str, Any], variants: tuple[str, ...]) -> dict[str, Any]:
     return exp
 
 
-@pytest.fixture(scope="module")
-def fast_run(repo_root: Path, tmp_path_factory: pytest.TempPathFactory) -> tuple[Any, Path]:
+def fast_experiment(repo_root: Path) -> ResolvedExperiment:
     """The fixed-guidance experiment (pad, silo_cold, silo_failed) with two energy-only
-    sensitivity cases of silo_cold, run and written (no plots)."""
+    sensitivity cases of silo_cold, resolved. tests/planar_pin_support.py runs the same
+    experiment to check or recapture the output capture."""
     exp, veh = _raw(repo_root)
     exp = _fixed(exp, ("silo_cold", "silo_failed"))
     exp["sensitivity"] = {
         "of": ["silo_cold"],
         "params": {"assist.drive_efficiency": 0.1, "vehicle.screening.stage_isp_eff_s.0": 0.1},
     }
-    resolved = resolve_experiment(exp, veh)
+    return resolve_experiment(exp, veh)
+
+
+@pytest.fixture(scope="module")
+def fast_run(repo_root: Path, tmp_path_factory: pytest.TempPathFactory) -> tuple[Any, Path]:
+    """``fast_experiment`` run and written (no plots)."""
+    resolved = fast_experiment(repo_root)
     root = tmp_path_factory.mktemp("planar_fast")
     return sim.run_experiment(resolved, root, plots=False, repo_root=repo_root)
 
@@ -992,6 +1005,183 @@ def test_unwrap_takes_the_ambiguous_minus_pi_step_as_plus_pi() -> None:
     tiny = 1e-14  # below the integrator's angular tolerance ATOL_RAD (1.57e-13 rad)
     near = unwrap_rad(np.array([half, -half + tiny]))
     assert near[1] == pytest.approx(3.0 * half + tiny, abs=1e-15)
+
+
+# --------------------------------------------------------- output capture (SP1 step 1)
+
+
+def test_written_outputs_keep_the_captured_structure(
+    fast_run: tuple[Any, Path], planar_pins: ModuleType
+) -> None:
+    """The fast experiment writes what tests/data/planar_pins/output_capture.json
+    recorded (tests/planar_pin_support.py): the same files, the same key paths of
+    metrics.json per run and outside the runs (so no ``offload`` key, and no metric key
+    a step did not list), the same top-level keys of resolved_config.yaml and the same
+    time-series and event columns per run. The capture's column lists are the planar
+    constants of today, for every run."""
+    _er, out = fast_run
+    capture = planar_pins.read_json(planar_pins.CAPTURE_FILE)
+    problems = planar_pins.compare_structure(planar_pins.output_structure(out), capture)
+    assert not problems, "\n".join(problems)
+    assert list(capture["runs"]) == ["pad", "silo_cold", "silo_failed"]
+    for name, run in capture["runs"].items():
+        assert run["timeseries_columns"] == list(sim.PLANAR_TIMESERIES_COLUMNS), name
+        assert run["event_columns"] == list(sim.PLANAR_EVENT_COLUMNS), name
+        assert set(PLANAR_REQUIRED_METRICS) <= set(run["metrics_keys"]), name
+
+
+def test_summary_matches_the_capture_in_the_capture_environment(
+    fast_run: tuple[Any, Path], planar_pins: ModuleType
+) -> None:
+    """summary.md without its provenance (the timestamp and git label of the title, the
+    Timestamp and Git bullets) has the captured sha256, and the tracked
+    output_summary.md is the text that digest belongs to. Compared only in the capture
+    environment (the golden 1-D rule: skipped elsewhere with the reason, failed instead
+    when LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1), because the summary prints integrated
+    numbers and residuals that move with the numeric stack."""
+    _er, out = fast_run
+    capture = planar_pins.read_json(planar_pins.CAPTURE_FILE)
+    pinned_text = planar_pins.read_summary_pin()
+    assert planar_pins.gs.text_digest(pinned_text) == capture["summary_sha256"]
+    status, reason = planar_pins.gs.exact_tier_status(capture["environment"], os.environ)
+    if status == "fail":
+        pytest.fail(reason)
+    if status == "skip":
+        pytest.skip(reason)
+    text = planar_pins.normalised_summary(out)
+    assert "Timestamp" not in text and "- Git" not in text
+    assert planar_pins.gs.text_digest(text) == capture["summary_sha256"], planar_pins.summary_diff(
+        text, pinned_text
+    )
+
+
+def test_capture_helpers_see_added_keys_columns_and_files(
+    tmp_path: Path, planar_pins: ModuleType
+) -> None:
+    """key_paths lists every dict key once, in first-seen order, with list items under
+    one shared segment and values ignored; compare_structure names an added metric key,
+    a removed column, a reordered list and a new file, and nothing for equal captures."""
+    record = {"a": 1, "b": {"c": [1, 2], "d": {"e": None}}, "rows": [{"x": 1}, {"x": 2, "y": 3}]}
+    assert planar_pins.key_paths(record) == [
+        "a",
+        "b",
+        "b.c",
+        "b.d",
+        "b.d.e",
+        "rows",
+        "rows.[].x",
+        "rows.[].y",
+    ]
+    assert planar_pins.key_paths({"a": 2, "b": {"c": [], "d": {"e": 0}}}) == [
+        "a",
+        "b",
+        "b.c",
+        "b.d",
+        "b.d.e",
+    ]
+    run = {"metrics_keys": ["m1", "m2"], "timeseries_columns": ["t_s", "m_kg"], "event_columns": []}
+    base = {
+        "files": ["metrics.json", "summary.md"],
+        "metrics_keys": ["experiment", "runs"],
+        "resolved_config_keys": ["experiment"],
+        "runs": {"pad": run},
+    }
+    assert planar_pins.compare_structure(copy.deepcopy(base), base) == []
+    changed = copy.deepcopy(base)
+    changed["files"].append("offload.csv")
+    changed["metrics_keys"] = ["runs", "experiment"]
+    changed["runs"]["pad"]["metrics_keys"].append("offload")
+    changed["runs"]["pad"]["timeseries_columns"] = ["t_s"]
+    assert planar_pins.compare_structure(changed, base) == [
+        "files: added ['offload.csv'], removed []",
+        "metrics_keys: order changed",
+        "runs.pad.metrics_keys: added ['offload'], removed []",
+        "runs.pad.timeseries_columns: added [], removed ['m_kg']",
+    ]
+    csv_file = tmp_path / "events.csv"
+    csv_file.write_text("t_s,event,phase\n0.0,release,COAST\n", encoding="utf-8")
+    assert planar_pins.csv_header(csv_file) == ["t_s", "event", "phase"]
+
+
+def test_output_capture_records_the_git_state_it_was_taken_in(
+    tmp_path: Path, repo_root: Path, planar_pins: ModuleType
+) -> None:
+    """The resolved digests are never recaptured and name the reference commit. The
+    output capture is recaptured by SP1 steps 2 and 3 from their own code, so it claims
+    no reference commit: it carries the git state read when it was taken
+    (``captured_at``: the checkout's HEAD, uncommitted changes, whether launchsim ran
+    from the checkout's src). capture_provenance reads that state: no repository and
+    foreign sources for a directory outside any checkout, the checkout's own hash (as
+    results_io.git_info reports it) for this one."""
+    digests = planar_pins.read_json(planar_pins.DIGESTS_FILE)
+    assert digests["reference_commit"] == planar_pins.REFERENCE_COMMIT == "c587a08"
+    capture = planar_pins.read_json(planar_pins.CAPTURE_FILE)
+    assert "reference_commit" not in capture
+    captured_at = capture["captured_at"]
+    assert list(captured_at) == ["git", "dirty", "launchsim_from_checkout"]
+    assert isinstance(captured_at["git"], str) and captured_at["git"] != "no-git"
+    assert isinstance(captured_at["launchsim_from_checkout"], bool)
+    assert planar_pins.capture_provenance(tmp_path) == {
+        "git": "no-git",
+        "dirty": False,
+        "launchsim_from_checkout": False,
+    }
+    here = planar_pins.capture_provenance(repo_root)
+    info = sim.git_info(repo_root)
+    assert (here["git"], here["dirty"]) == (info["hash"], info["dirty"])
+    ran_from = Path(sim.__file__).resolve().parent
+    assert here["launchsim_from_checkout"] is ran_from.is_relative_to(repo_root.resolve() / "src")
+
+
+SILO_RECORD_PATH = Path(__file__).parent / "data" / "silo_screening_2d_record.json"
+"""Full-precision P* of the shipped silo_screening_2d run (its metrics.json is untracked)."""
+CALIBRATION_RECORD_PATH = Path(__file__).parent / "data" / "calibration_record.json"
+RECORDED_SILO_COLD_PAYLOAD_KG = 27553.227114190096
+"""silo_cold's P* [kg] as docs/phases/SP1-fuel-offload-planar.md (section 5.12) quotes it
+from results/silo_screening_2d/20260930T175743Z/metrics.json (git 7ad381f)."""
+SUMMARY_PAYLOAD_HALF_STEP_KG = 0.05
+"""Half the last printed decimal of a 6-significant-digit P* cell at 2.6e4 to 2.8e4 kg."""
+PAYLOAD_ROW_LABEL = "payload capacity P* [kg] (sweep-optimized)"
+
+
+def _summary_cells(lines: list[str], label: str) -> list[str]:
+    """The value cells of the summary table row whose first cell is ``label``."""
+    row = next(ln for ln in lines if ln.startswith(f"| {label} |"))
+    return [cell.strip() for cell in row.strip().strip("|").split("|")][1:]
+
+
+def test_recorded_silo_payloads_carry_their_provenance(repo_root: Path) -> None:
+    """tests/data/silo_screening_2d_record.json holds the two P* that SP1 step 5 must
+    reproduce, at full precision: silo_cold's is the value the phase file quotes, the
+    pad's equals the tracked calibration record's amended re-run (same commit), and both
+    round to the cells of the tracked summary.md of the run directory the record names,
+    whose title carries the record's timestamp, git hash and budget id. Where the
+    untracked metrics.json is on disk it is the source, digit for digit."""
+    record = json.loads(SILO_RECORD_PATH.read_text(encoding="utf-8"))
+    payloads = record["payload_kg"]
+    assert payloads["silo_cold"] == RECORDED_SILO_COLD_PAYLOAD_KG
+    calibration = json.loads(CALIBRATION_RECORD_PATH.read_text(encoding="utf-8"))
+    rerun = calibration["amended_rerun"]
+    assert payloads["pad"] == rerun["payload_kg"]["pad"]
+    assert record["gamma_star_rad"]["pad"] == rerun["gamma_star_rad"]["pad"]
+    assert record["git"] == rerun["git"] and record["git_dirty"] is False
+    assert record["search_budget_id"] == calibration["search_budget_id"]
+    run_dir = repo_root / record["run_dir"]
+    assert run_dir.name == record["timestamp_utc"]
+    lines = (run_dir / "summary.md").read_text(encoding="utf-8").splitlines()
+    assert lines[0] == f"# silo_screening_2d ({record['timestamp_utc']}, git {record['git']})"
+    assert f"- Search budget id: {record['search_budget_id']}" in lines
+    names = [cell.split(" ")[0] for cell in _summary_cells(lines, "quantity")]
+    cells = dict(zip(names, _summary_cells(lines, PAYLOAD_ROW_LABEL), strict=True))
+    for name, payload_kg in payloads.items():
+        assert abs(float(cells[name]) - payload_kg) <= SUMMARY_PAYLOAD_HALF_STEP_KG, name
+    metrics_path = run_dir / "metrics.json"
+    if metrics_path.exists():  # untracked: present only where the run was made
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        assert metrics["git"]["hash"] == record["git"]
+        for name, payload_kg in payloads.items():
+            assert metrics["runs"][name]["payload_kg"] == payload_kg, name
+            assert metrics["runs"][name]["gamma_star_rad"] == record["gamma_star_rad"][name]
 
 
 # ---------------------------------------------------------------------------- slow

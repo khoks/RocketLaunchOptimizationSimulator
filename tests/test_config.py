@@ -1,22 +1,28 @@
 """Config rules: vehicle files are all-Quantity with exactly one provenance, unknown keys
 fail, Phase 1 limits raise with the phase named, the F9 file converts to SI correctly,
-and the shipped experiment resolves every variant, sweep point and sensitivity case."""
+the shipped experiment resolves every variant, sweep point and sensitivity case, and
+the merge and override rules (per-key merge, discriminator switches, and the exclusive
+key families of SP1 step 1: an override that states a setting another way displaces the
+base's parameterisation; two given together raise)."""
 
 from __future__ import annotations
 
 import copy
+import itertools
 import math
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from launchsim import config
 from launchsim.config import (
     PLANNED_MODELS,
     ConfigPathError,
     ConstantAccelConfig,
+    ExclusiveKeysError,
     ExperimentConfig,
     IgnitionConfig,
     Quantity,
@@ -491,6 +497,396 @@ def test_bad_override_paths_are_value_errors_naming_the_run(
     bad["sweeps"][0]["axes"] = {"asist.net_accel_g": [1]}
     with pytest.raises(ValidationError, match="asist"):  # created key, rejected by forbid
         resolve_experiment(bad, f9_vehicle_dict)
+
+
+# ------------------------------------------------- exclusive key families (SP1 step 1)
+
+ASSIST_FAMILIES = (("net_accel_g",), ("exit_speed_mps",))
+"""docs/phases/SP1-fuel-offload-planar.md, section 5.9: one of the two states the push."""
+IGNITION_FAMILIES = (
+    ("t_ign_s", "reference"),
+    ("at_depth_m",),
+    ("at_speed_mps",),
+    ("at_height_m", "height_method"),
+)
+"""Section 5.9: one of the four states when the thrust ramp starts."""
+FAMILY_GROUPS = (ASSIST_FAMILIES, IGNITION_FAMILIES)
+FAMILY_OWNERS = {ASSIST_FAMILIES: ConstantAccelConfig, IGNITION_FAMILIES: IgnitionConfig}
+"""The one run-level model whose dict each group's keys belong to."""
+SHIPPED_BEFORE_SP1 = (
+    "silo_screening_1d",
+    "calibration_f9_2d",
+    "silo_screening_2d",
+    "silo_bridge_2d_readme",
+    "guidance_trigger_2d",
+)
+"""The experiments shipped when the family rule was added (commit c587a08)."""
+SILO_ASSIST = {
+    "model": "constant_accel",
+    "net_accel_g": 3.0,
+    "stroke_m": 100,
+    "brake_decel_g": 5,
+    "track": {"angle_deg": 90, "exit_altitude_m": 0},
+}
+EXIT_SPEED_MPS = 76.71
+"""The exit speed SP1 step 8 plans for the 200 m silo [m/s]; any number would do here."""
+
+
+def _family_pairs() -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Every ordered pair (base family, override family) inside one group."""
+    return [(a, b) for group in FAMILY_GROUPS for a in group for b in group]
+
+
+def test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name() -> None:
+    """The table in config.py is section 5.9's, sits beside SWITCH_KEYS and is safe to
+    scope by key name: no key is in two families or is a discriminator, and of all the
+    pydantic models config.py defines only ConstantAccelConfig (assist group) and
+    IgnitionConfig (ignition group) have a field named like a family key."""
+    assert config.ASSIST_KEY_FAMILIES == ASSIST_FAMILIES
+    assert config.IGNITION_KEY_FAMILIES == IGNITION_FAMILIES
+    assert config.EXCLUSIVE_KEY_FAMILIES == FAMILY_GROUPS
+    keys = [k for group in FAMILY_GROUPS for family in group for k in family]
+    assert len(keys) == len(set(keys)) and not set(keys) & set(config.SWITCH_KEYS)
+    models = [
+        obj
+        for obj in vars(config).values()
+        if isinstance(obj, type)
+        and issubclass(obj, BaseModel)
+        and obj.__module__ == config.__name__
+    ]
+    assert ConstantAccelConfig in models and IgnitionConfig in models and len(models) > 20
+    for group, owner in FAMILY_OWNERS.items():
+        group_keys = {k for family in group for k in family}
+        users = {m.__name__ for m in models if group_keys & set(m.model_fields)}
+        assert users == {owner.__name__}
+    # the fields that exist today are the first family of each group (steps 2 and 3 add
+    # the others); the defaults test_run_defaults pins are untouched
+    assert set(ASSIST_FAMILIES[0]) <= set(ConstantAccelConfig.model_fields)
+    assert set(IGNITION_FAMILIES[0]) <= set(IgnitionConfig.model_fields)
+
+
+@pytest.mark.parametrize(("base_family", "given_family"), _family_pairs())
+def test_merge_keeps_one_family_per_group(
+    base_family: tuple[str, ...], given_family: tuple[str, ...]
+) -> None:
+    """For every ordered pair of families of one group: an override that gives the keys
+    of ``given_family`` over a base that uses ``base_family`` ends with the given keys
+    and none of the base's other-family keys, keeps every unrelated key in place, and,
+    when both are the same family, is today's per-key merge. merge_run_dicts and the
+    dotted-path form agree, and neither mutates its inputs."""
+    base = {"d": {"before": 1, **{k: f"base {k}" for k in base_family}, "after": {"x": 2}}}
+    given = {k: f"new {k}" for k in given_family}
+    if base_family == given_family:
+        expected = {"before": 1, **given, "after": {"x": 2}}  # replaced in place
+    else:
+        expected = {"before": 1, "after": {"x": 2}, **given}  # dropped, then appended
+    frozen = copy.deepcopy(base)
+    merged = merge_run_dicts(base, {"d": given})
+    assert merged == {"d": expected} and list(merged["d"]) == list(expected)
+    dotted, _ = apply_overrides(base, {f"d.{k}": v for k, v in given.items()}, {})
+    assert dotted == {"d": expected} and list(dotted["d"]) == list(expected)
+    assert base == frozen
+
+
+def test_merge_drops_only_what_the_given_key_displaces() -> None:
+    """One key of a two-key family displaces the other families and keeps its own
+    partner (a variant that only moves t_ign_s keeps the inherited reference, as
+    today); an override without a family key displaces nothing; the rule acts at the
+    dict level of the key (another stage's ignition is untouched) and inside a dict the
+    discriminator rule did not replace."""
+    timed = {"stage1": {"t_ign_s": -2.0, "reference": "push_start"}, "stage2": {"t_ign_s": 0.0}}
+    base = {"assist": dict(SILO_ASSIST), "ignition": timed}
+    moved = merge_run_dicts(base, {"ignition": {"stage1": {"t_ign_s": 0.5}}})
+    assert moved["ignition"]["stage1"] == {"t_ign_s": 0.5, "reference": "push_start"}
+    by_depth = merge_run_dicts(base, {"ignition": {"stage1": {"at_depth_m": 50.0}}})
+    assert by_depth["ignition"] == {"stage1": {"at_depth_m": 50.0}, "stage2": {"t_ign_s": 0.0}}
+    assert by_depth["assist"] == SILO_ASSIST
+    by_height = {"at_height_m": 40.0, "height_method": "event", "startup": {"kind": "step"}}
+    lower = merge_run_dicts({"s": by_height}, {"s": {"at_height_m": 10.0}})
+    assert lower["s"] == {**by_height, "at_height_m": 10.0}
+    back = merge_run_dicts({"s": by_height}, {"s": {"reference": "release"}})
+    assert back["s"] == {"startup": {"kind": "step"}, "reference": "release"}
+    shaped = merge_run_dicts({"s": by_height}, {"s": {"startup": {"kind": "lag", "tau_s": 1.0}}})
+    assert shaped["s"] == {**by_height, "startup": {"kind": "lag", "tau_s": 1.0}}
+    # same assist model: merged by key, the stale acceleration dropped
+    by_speed = merge_run_dicts(
+        base, {"assist": {"model": "constant_accel", "exit_speed_mps": EXIT_SPEED_MPS}}
+    )
+    assert by_speed["assist"] == {
+        "model": "constant_accel",
+        "stroke_m": 100,
+        "brake_decel_g": 5,
+        "track": {"angle_deg": 90, "exit_altitude_m": 0},
+        "exit_speed_mps": EXIT_SPEED_MPS,
+    }
+    # a model switch still replaces the dict wholesale
+    assert merge_run_dicts(base, {"assist": {"model": "none"}})["assist"] == {"model": "none"}
+
+
+def test_dict_valued_path_replaces_its_dict_whole_while_a_variant_merges() -> None:
+    """The two override forms inherit differently (docs/physics.md, "Merge rule"). A
+    variant merges a dict per key, so only the family rule removes anything. A dotted
+    path puts its value at the path: a single-key path keeps the siblings as the
+    variant does, but a dict given as the value replaces the dict there whole, so
+    nothing below it is inherited, family key or not (the inherited startup and fails
+    go with the time keys). A two-key family given as two paths keeps the rest. The
+    expected dicts are written out."""
+    startup = {"kind": "ramp", "t_ramp_s": 2.0}
+    base = {
+        "ignition": {
+            "stage1": {
+                "t_ign_s": -2.0,
+                "reference": "push_start",
+                "startup": dict(startup),
+                "fails": True,
+            },
+            "stage2": {"t_ign_s": 0.0},
+        }
+    }
+    frozen = copy.deepcopy(base)
+    # a key of the family in use
+    variant = merge_run_dicts(base, {"ignition": {"stage1": {"t_ign_s": 0.5}}})
+    assert variant["ignition"]["stage1"] == {
+        "t_ign_s": 0.5,
+        "reference": "push_start",
+        "startup": {"kind": "ramp", "t_ramp_s": 2.0},
+        "fails": True,
+    }
+    whole, _ = apply_overrides(base, {"ignition.stage1": {"t_ign_s": 0.5}}, {})
+    assert whole == {"ignition": {"stage1": {"t_ign_s": 0.5}, "stage2": {"t_ign_s": 0.0}}}
+    # a key of another family: the time keys go in every form, startup and fails only
+    # under the dict-valued path
+    kept = {"startup": {"kind": "ramp", "t_ramp_s": 2.0}, "fails": True, "at_depth_m": 50.0}
+    variant = merge_run_dicts(base, {"ignition": {"stage1": {"at_depth_m": 50.0}}})
+    assert variant["ignition"]["stage1"] == kept
+    keyed, _ = apply_overrides(base, {"ignition.stage1.at_depth_m": 50.0}, {})
+    assert keyed["ignition"]["stage1"] == kept
+    whole, _ = apply_overrides(base, {"ignition.stage1": {"at_depth_m": 50.0}}, {})
+    assert whole == {"ignition": {"stage1": {"at_depth_m": 50.0}, "stage2": {"t_ign_s": 0.0}}}
+    # a two-key family as two paths (the form for a sweep or a bound) keeps the rest
+    two, _ = apply_overrides(
+        base,
+        {"ignition.stage1.at_height_m": 40.0, "ignition.stage1.height_method": "event"},
+        {},
+    )
+    assert two["ignition"]["stage1"] == {
+        "startup": {"kind": "ramp", "t_ramp_s": 2.0},
+        "fails": True,
+        "at_height_m": 40.0,
+        "height_method": "event",
+    }
+    assert two["ignition"]["stage2"] == {"t_ign_s": 0.0}
+    assert base == frozen
+
+
+def test_an_explicit_null_counts_as_a_given_key() -> None:
+    """A key is given when it is present in the override, whatever its value: a null
+    family key displaces the base's other families like any value and stays in the dict
+    (it unsets nothing), in both forms; a null of the family in use replaces in place
+    and keeps its partner; a null of one family next to a key of another is two
+    families given together."""
+    base = {
+        "assist": dict(SILO_ASSIST),
+        "ignition": {"stage1": {"t_ign_s": -2.0, "reference": "push_start", "fails": True}},
+    }
+    merged = merge_run_dicts(base, {"ignition": {"stage1": {"at_depth_m": None}}})
+    assert merged["ignition"] == {"stage1": {"fails": True, "at_depth_m": None}}
+    dotted, _ = apply_overrides(base, {"ignition.stage1.at_depth_m": None}, {})
+    assert dotted["ignition"] == {"stage1": {"fails": True, "at_depth_m": None}}
+    same = merge_run_dicts(base, {"ignition": {"stage1": {"t_ign_s": None}}})
+    assert same["ignition"] == {
+        "stage1": {"t_ign_s": None, "reference": "push_start", "fails": True}
+    }
+    nulled = merge_run_dicts(base, {"assist": {"exit_speed_mps": None}})
+    assert nulled["assist"] == {
+        "model": "constant_accel",
+        "stroke_m": 100,
+        "brake_decel_g": 5,
+        "track": {"angle_deg": 90, "exit_altitude_m": 0},
+        "exit_speed_mps": None,
+    }
+    with pytest.raises(ExclusiveKeysError, match="two exclusive families"):
+        merge_run_dicts(base, {"assist": {"net_accel_g": None, "exit_speed_mps": EXIT_SPEED_MPS}})
+    with pytest.raises(ExclusiveKeysError, match="two exclusive families"):
+        merge_run_dicts(base, {"ignition": {"stage1": {"t_ign_s": None, "at_depth_m": None}}})
+    with pytest.raises(ExclusiveKeysError, match="two exclusive families"):
+        apply_overrides(
+            base, {"assist.net_accel_g": None, "assist.exit_speed_mps": EXIT_SPEED_MPS}, {}
+        )
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"assist": {"net_accel_g": 3.0, "exit_speed_mps": EXIT_SPEED_MPS}},
+        {"ignition": {"stage1": {"t_ign_s": 0.5, "at_depth_m": 50.0}}},
+        {"ignition": {"stage1": {"reference": "release", "at_speed_mps": 20.0}}},
+        {"ignition": {"stage1": {"at_depth_m": 50.0, "height_method": "event"}}},
+        # also in a dict the merge would take wholesale (a model switch, a new key)
+        {"assist": {"model": "other", "net_accel_g": 3.0, "exit_speed_mps": EXIT_SPEED_MPS}},
+        {"new": {"deep": [{"at_speed_mps": 20.0, "at_height_m": 40.0}]}},
+    ],
+)
+def test_two_families_given_together_raise_in_merge(override: dict[str, Any]) -> None:
+    """Keys of two families of one group in one override dict cannot be merged (which
+    one is meant?): ExclusiveKeysError, a ValueError, whatever the base holds."""
+    assert issubclass(ExclusiveKeysError, ValueError)
+    for base in ({}, {"assist": dict(SILO_ASSIST), "ignition": {"stage1": {"t_ign_s": -2.0}}}):
+        with pytest.raises(ExclusiveKeysError, match="two exclusive families"):
+            merge_run_dicts(base, override)
+
+
+def test_two_families_given_together_raise_in_overrides() -> None:
+    """The dotted-path form refuses two families for one dict: two paths with one
+    parent, a dict value, or a path and a dict value that meet; the message names the
+    dict and the keys. Two keys of one family, families of different groups and the
+    same group in different dicts are fine, and vehicle paths are outside the rule."""
+    run = {"assist": dict(SILO_ASSIST), "ignition": {"stage1": {"t_ign_s": -2.0}}}
+    for bad in (
+        {"assist.exit_speed_mps": EXIT_SPEED_MPS, "assist.net_accel_g": 1.0},
+        {"ignition.stage1.at_depth_m": 50.0, "ignition.stage1.at_speed_mps": 20.0},
+        {"ignition.stage1": {"t_ign_s": 0.5, "at_depth_m": 50.0}},
+        {"ignition.stage1": {"t_ign_s": 0.5}, "ignition.stage1.at_depth_m": 50.0},
+        {"ignition": {"stage1": {"at_height_m": 40.0}}, "ignition.stage1.reference": "release"},
+    ):
+        with pytest.raises(ExclusiveKeysError, match="two exclusive families"):
+            apply_overrides(run, bad, {})
+    with pytest.raises(ExclusiveKeysError, match=r"'assist'.*net_accel_g.*exit_speed_mps"):
+        apply_overrides(run, {"assist.exit_speed_mps": EXIT_SPEED_MPS, "assist.net_accel_g": 1}, {})
+    fine, _ = apply_overrides(
+        run,
+        {
+            "ignition.stage1.at_height_m": 40.0,
+            "ignition.stage1.height_method": "event",
+            "ignition.stage2.t_ign_s": 1.0,
+            "assist.exit_speed_mps": EXIT_SPEED_MPS,
+        },
+        {},
+    )
+    assert fine["ignition"] == {
+        "stage1": {"at_height_m": 40.0, "height_method": "event"},
+        "stage2": {"t_ign_s": 1.0},
+    }
+    quantity = {"value": 1.0, "source": "test"}
+    vehicle = {"x": {"t_ign_s": dict(quantity), "net_accel_g": dict(quantity)}}
+    two_families = {  # of each group, in one vehicle dict: neither refused nor displacing
+        "vehicle.x.at_depth_m": 2.0,
+        "vehicle.x.at_speed_mps": 20.0,
+        "vehicle.x.exit_speed_mps": 3.0,
+        "vehicle.x.height_method": "event",
+    }
+    _, v = apply_overrides(run, two_families, vehicle)
+    assert list(v["x"]) == [
+        "t_ign_s",
+        "net_accel_g",
+        "at_depth_m",
+        "at_speed_mps",
+        "exit_speed_mps",
+        "height_method",
+    ]
+    assert v["x"]["t_ign_s"] == quantity and v["x"]["at_depth_m"]["value"] == 2.0
+    assert v["x"]["height_method"] == "event"
+
+
+def test_set_path_applies_the_family_rule_to_run_paths_only() -> None:
+    """config._set_path, the function behind every sweep axis, sensitivity case and
+    bound: a run path (quantity False) that sets a family key deletes the dict's keys of
+    the group's other families and nothing else; a vehicle path (quantity True) never
+    does; a key of the family in use is replaced in place."""
+    root = {"assist": dict(SILO_ASSIST)}
+    config._set_path(root, "assist.exit_speed_mps", EXIT_SPEED_MPS, quantity=False)
+    assert list(root["assist"]) == ["model", "stroke_m", "brake_decel_g", "track", "exit_speed_mps"]
+    assert root["assist"]["exit_speed_mps"] == EXIT_SPEED_MPS
+    config._set_path(root, "assist.net_accel_g", 1.5, quantity=False)
+    assert list(root["assist"]) == ["model", "stroke_m", "brake_decel_g", "track", "net_accel_g"]
+    same = {"assist": dict(SILO_ASSIST)}
+    config._set_path(same, "assist.net_accel_g", 0.5, quantity=False)
+    assert same["assist"] == {**SILO_ASSIST, "net_accel_g": 0.5}
+    assert list(same["assist"]) == list(SILO_ASSIST)
+    as_vehicle = {"assist": dict(SILO_ASSIST)}
+    config._set_path(as_vehicle, "assist.exit_speed_mps", EXIT_SPEED_MPS, quantity=True)
+    assert as_vehicle["assist"]["net_accel_g"] == SILO_ASSIST["net_accel_g"]
+    assert as_vehicle["assist"]["exit_speed_mps"]["value"] == EXIT_SPEED_MPS
+    config._set_path(as_vehicle, "assist.exit_speed_mps", "fast", quantity=True)  # not a number
+    assert as_vehicle["assist"]["net_accel_g"] == SILO_ASSIST["net_accel_g"]
+    assert as_vehicle["assist"]["exit_speed_mps"] == "fast"
+    created: dict[str, Any] = {}
+    config._set_path(created, "ignition.stage1.at_depth_m", 50.0, quantity=False)
+    assert created == {"ignition": {"stage1": {"at_depth_m": 50.0}}}
+
+
+def test_sweep_axis_exit_speed_over_a_net_accel_parent(
+    experiment_dict: dict[str, Any], f9_vehicle_dict: dict[str, Any]
+) -> None:
+    """A sweep axis ``assist.exit_speed_mps`` over the shipped silo_cold (net_accel_g
+    3) ends, at every grid point, with only the exit speed: the override the sweep
+    resolver builds for a point (one path per axis) removes net_accel_g and leaves the
+    rest of the parent's run dict as it was. The same for a ramp start by depth over the
+    inherited t_ign_s and reference. (The fields arrive in SP1 steps 2 and 3, so the
+    points are built here with apply_overrides, as resolve_experiment does, and not
+    validated.)"""
+    parent = resolve_experiment(experiment_dict, f9_vehicle_dict).variants["silo_cold"]
+    assert parent.run_dict["assist"]["net_accel_g"] == 3.0
+    assert parent.run_dict["ignition"]["stage1"] == {"t_ign_s": 0.5, "reference": "release"}
+    for speed_mps, stroke_m in itertools.product([40.0, EXIT_SPEED_MPS], [100, 200]):
+        point, vehicle = apply_overrides(
+            parent.run_dict,
+            {"assist.exit_speed_mps": speed_mps, "assist.stroke_m": stroke_m},
+            parent.vehicle_dict,
+        )
+        expected = {k: v for k, v in parent.run_dict["assist"].items() if k != "net_accel_g"}
+        expected.update(stroke_m=stroke_m, exit_speed_mps=speed_mps)
+        assert point["assist"] == expected and "net_accel_g" not in point["assist"]
+        rest = {k: v for k, v in point.items() if k != "assist"}
+        assert rest == {k: v for k, v in parent.run_dict.items() if k != "assist"}
+        assert vehicle == parent.vehicle_dict
+    by_depth, _ = apply_overrides(
+        parent.run_dict, {"ignition.stage1.at_depth_m": 50.0}, parent.vehicle_dict
+    )
+    assert by_depth["ignition"]["stage1"] == {"at_depth_m": 50.0}
+    assert by_depth["ignition"]["stage2"] == parent.run_dict["ignition"]["stage2"]
+
+
+def test_mixed_families_name_the_variant_or_the_sweep(
+    experiment_dict: dict[str, Any], f9_vehicle_dict: dict[str, Any]
+) -> None:
+    """Through resolve_experiment the error says where the two families meet: a sweep
+    whose axes vary both the net acceleration and the exit speed (a grid of both is
+    ambiguous at every point), and a variant that writes both."""
+    bad = copy.deepcopy(experiment_dict)
+    bad["sweeps"] = [
+        {"of": "silo_cold", "axes": {"assist.net_accel_g": [1, 3], "assist.exit_speed_mps": [40]}}
+    ]
+    with pytest.raises(ExclusiveKeysError, match=r"sweep 1 on run 'silo_cold'.*'assist'"):
+        resolve_experiment(bad, f9_vehicle_dict)
+    bad = copy.deepcopy(experiment_dict)
+    bad["variants"]["silo_cold"]["ignition"]["stage1"]["at_depth_m"] = 50.0
+    with pytest.raises(ExclusiveKeysError, match=r"variant 'silo_cold'.*'ignition.stage1'"):
+        resolve_experiment(bad, f9_vehicle_dict)
+
+
+def _keys_and_path_segments(node: Any) -> set[str]:
+    """Every dict key under ``node`` and every segment of a dotted key (a sweep axis, a
+    sensitivity parameter, a bound override)."""
+    if isinstance(node, dict):
+        out = {seg for key in node for seg in str(key).split(".")}
+        return out.union(*(_keys_and_path_segments(v) for v in node.values()))
+    if isinstance(node, list):
+        return set().union(*(_keys_and_path_segments(v) for v in node))
+    return set()
+
+
+def test_shipped_experiments_use_the_first_family_only(repo_root: Path) -> None:
+    """No experiment shipped before SP1 names a key of a second family anywhere (YAML
+    anchors resolved, sweep axes, sensitivity parameters and bounds included), so no
+    override in them displaces anything and every resolved dict is what it was (the
+    1-D golden and the planar digest pin compare them byte for byte)."""
+    later = {k for group in FAMILY_GROUPS for family in group[1:] for k in family}
+    assert later == {"exit_speed_mps", "at_depth_m", "at_speed_mps", "at_height_m", "height_method"}
+    for name in SHIPPED_BEFORE_SP1:
+        used = _keys_and_path_segments(_load(repo_root / "experiments" / f"{name}.yaml"))
+        assert "t_ign_s" in used, name  # the walk reaches the run dicts
+        assert not used & later, name
 
 
 # ------------------------------------------------------------- shipped experiment

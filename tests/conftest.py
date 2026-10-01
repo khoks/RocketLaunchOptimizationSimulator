@@ -14,9 +14,12 @@ and the search and arrive with build steps 21 and 23.
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from types import ModuleType
 from typing import Protocol
 
 import matplotlib
@@ -53,6 +56,22 @@ reads it)."""
 def repo_root() -> Path:
     """Repository root directory."""
     return REPO_ROOT
+
+
+@pytest.fixture(scope="session")
+def planar_pins() -> ModuleType:
+    """tests/planar_pin_support.py (the planar regression pins of SP1 step 1: resolved
+    digests and the output capture), loaded by path so the tests that use it collect
+    under any pytest import mode."""
+    name = "planar_pin_support"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(f"{name}.py"))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture(scope="session")

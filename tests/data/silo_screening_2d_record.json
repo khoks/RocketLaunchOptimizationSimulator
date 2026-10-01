@@ -1,0 +1,18 @@
+{
+ "_note": "Record (not validation) of the payload capacities P* of experiments/silo_screening_2d.yaml, copied at full precision from the run's metrics.json (SP1 step 1; docs/phases/SP1-fuel-offload-planar.md, section 5.12). metrics.json is not tracked in git; only the run's summary.md is, and it prints six significant digits (27553.2). SI units, angles in rad. A regression reference only: SP1 step 5's slow test reproduces these P* within 0.002 kg after the search refactor. The pad value equals tests/data/calibration_record.json, amended_rerun.payload_kg.pad (same commit, same vehicle, same shared blocks).",
+ "experiment": "experiments/silo_screening_2d.yaml",
+ "vehicle": "configs/vehicles/generic_f9_class_2d.yaml",
+ "run_dir": "results/silo_screening_2d/20260930T175743Z",
+ "timestamp_utc": "20260930T175743Z",
+ "git": "7ad381f227a9",
+ "git_dirty": false,
+ "search_budget_id": "a17a01601d0f4ae0c48cac48342127d5597e056e769da83503d7364c7d65a7df",
+ "payload_kg": {
+  "pad": 26054.396243494975,
+  "silo_cold": 27553.227114190096
+ },
+ "gamma_star_rad": {
+  "pad": 0.4012363454432839,
+  "silo_cold": 0.3778028918922695
+ }
+}
