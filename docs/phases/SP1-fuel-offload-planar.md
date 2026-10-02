@@ -494,10 +494,10 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 |---|---|---|---|---|---|---|
 | T | Tracking system: protocol, program board, phase files SP1 to SP6, TODO.md restructure with IDs, this session's decisions, handoff archived, memory updated | docs/process, docs/phases, TODO.md, CLAUDE.md, memory | none (documents only); fast suite stays green | Compliance review; commit | [x] | 98eb5a6 |
 | 1 | Guard and merge rule: digest pin of the four shipped planar experiments (runs, sweep points, bounds, cases, sensitivity runs); capture of the planar written outputs; the recorded silo_cold P* copied into test data; exclusive key families in `merge_run_dicts` and `_set_path` | src/launchsim/config.py | tests/test_config.py, tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/data/ | Digests and golden unchanged | [x] | e2fb6ab |
-| 2 | Exit-speed option: exactly one of `net_accel_g` / `exit_speed_mps`; planar metrics `net_accel_g`, `net_accel_mps2`, `stroke_m`; replay reads the metric | config.py, assist/constant_accel.py, metrics_planar.py, replay.py | tests/test_config.py, tests/test_silo.py (suggested) | Exit speed and push time against the closed form at 1e-9; trajectory equals the equivalent `net_accel_g` run | [ ] | |
+| 2 | Exit-speed option: exactly one of `net_accel_g` / `exit_speed_mps`; planar metrics `net_accel_g`, `net_accel_mps2`, `stroke_m`; replay reads the metric | config.py, assist/constant_accel.py, metrics_planar.py, replay.py | tests/test_config.py, tests/test_silo.py (suggested) | Exit speed and push time against the closed form at 1e-9; trajectory equals the equivalent `net_accel_g` run | [x] | 1fc92d3 |
 | 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [ ] | |
 | 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [ ] | |
-| 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [ ] | |
+| 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [~] | |
 | 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [ ] | |
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [ ] | |
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [ ] | |
@@ -922,6 +922,16 @@ Further points and open questions:
   families in `merge_run_dicts` and `_set_path`; 42 new tests, fast suite 970 passed; two
   review rounds, no blocker; the gate regenerated the digests from a 2eebcae worktree).
   Next: step 2 (exit-speed option).
+- 2026-10-01: the first attempt at step 2 was cut off when the Fable usage limit ran out
+  (every agent of the workflow failed; the implementer's edits stayed in the tree with no
+  report). The user switched the session to Opus 5.5 and step 2 was relaunched with the
+  instruction to review the partial diff critically and finish it.
+- 2026-10-02: step 5 started in parallel in a git worktree on branch `sp1-step5` (it
+  depends only on step 1 and touches other files); it merges back after its gate.
+- 2026-10-02: step 2 passed its gate: commit 1fc92d3 (exit-speed option; three planar push
+  metrics; replay label from the metric; fast suite 1004 passed, slow tier 23 passed; one
+  review round, four minor findings). Next: step 3 (ramp start by depth, speed and
+  closed-form height).
 
 ## 12. Deviations from the plan
 
@@ -982,6 +992,30 @@ Step 1 (2026-10-01, commit e2fb6ab):
    that adds `exit_speed_mps` to an anchor carrying `net_accel_g` arrives with both and is
    refused. `silo_cold_200m` must write its assist block out or use an anchor without the
    acceleration.
+
+Step 2 (2026-10-02, commit 1fc92d3):
+
+1. **Bit identity with the equivalent `net_accel_g` run holds only where the two
+   accelerations are the same double.** v^2/(2L) and (v^2/(2 g0 L)) g0 coincide for the
+   tested pair (76.71 m/s, 200 m), which the tests assert as a precondition before
+   comparing runs exactly. For other pairs they differ by 1-2 ulp and planar runs agree
+   to integrator noise (about 5e-8 relative, reproduced at 83.3 m/s and 137 m). Exit
+   speed and push time hold to about 5e-16 either way. Documented in docs/physics.md.
+2. **A serializer was added**: `ConstantAccelConfig` drops the unused push key from
+   `model_dump`, because "a key present as null counts as given" (step 1) otherwise broke
+   the existing dump round trip used by tests/test_convergence.py.
+3. **The validator also refuses a derived acceleration that is not finite and positive**
+   (an overflowing, underflowing or infinite-stroke case).
+4. **1-D exit-speed runs also get the extra assumption line.** The standing rule "no new
+   assumption text on 1-D runs" is read as protecting the existing `net_accel_g` runs,
+   whose text is unchanged; hiding the line would leave a 1-D exit-speed run with an
+   assumption it does not state.
+5. **The three push metrics are also written for silo_failed and the sensitivity
+   records** (9 key paths in the output capture), since `planar_track_metrics` serves all
+   of them.
+6. **docs/physics.md quoted the 3 g0, 100 m felt load as 3.9992 g0**; the value is
+   (3 g0 + mu/R_E^2)/g0 = 3.99915, so 3.9991 g0 to four decimals. physics.md is corrected;
+   tests/test_silo.py still quotes 3.9992 (KI-021).
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
