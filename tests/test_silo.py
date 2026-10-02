@@ -14,7 +14,13 @@ exact and the tests assert them at 1e-10 relative:
   W_thrust = T L, and P_peak(f_imp = 1)/P_cold = (M0 - mdot t_p)/m0;
 - facility: d_brake = v_exit^2/(2 a_brake) = L a/a_brake, facility = L + d_brake;
 - the ``interface_tensile`` flag (F_int < 0 with F_drive > 0) and the ``drive_limit``
-  status (F_drive crossing zero inside the push), whose root is solved in the test.
+  status (F_drive crossing zero inside the push), whose root is solved in the test;
+- the push stated by its exit speed v over L (SP1 step 2): a = v^2 / (2 L), so
+  v_exit = v, t_push = 2 L / v, felt v^2 / (2 L) + g_eff, E_drive = M (v^2 / 2 +
+  g_eff L); where v^2 / (2 L) and (v^2 / (2 g0 L)) g0 are the same double (the
+  tested 76.71 m/s over 200 m) the run flies exactly the run stated by net_accel_g =
+  v^2 / (2 g0 L) and only its assumptions gain a line; otherwise the two differ by an
+  ulp or two in a and agree to integrator noise (docs/physics.md, "Silo model").
 
 The F9 numbers (542,570 kg, 3 g0, L = 100 m, g_eff = mu/R_E^2): 76.70717 m/s,
 2.60732 s, 3.9992 g0 felt, F_int 21.2786 MN, E 2.1279 GJ, P 1.6322 GW, braking 60 m.
@@ -23,15 +29,20 @@ The F9 numbers (542,570 kg, 3 g0, L = 100 m, g_eff = mu/R_E^2): 76.70717 m/s,
 from __future__ import annotations
 
 import math
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 
 from launchsim import sim
+from launchsim.assist import build_assist
 from launchsim.assist.base import normal_load_N
 from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.assist.track import VERTICAL, StraightTrack
+from launchsim.config import ConstantAccelConfig, resolve_experiment
 from launchsim.constants import G0_MPS2, J_PER_KWH, MU_EARTH_M3S2, R_EARTH_M
 from launchsim.dynamics import InverseSquareGravity, TrackParams, rhs_track, track_layout
 from launchsim.phases import ASSIST_KIND, HOLD_KIND, IgnitionSpec, IntegratorSettings
@@ -640,3 +651,230 @@ def test_hot_push_peak_power_from_the_dense_output(
     assert bm["drive_power_min_W"] < 0.0 and bm["drive_work_in_J"] == 0.0
     assert bm["drive_work_out_J"] > 0.0 and bm["drive_energy_J"] == -bm["drive_work_out_J"]
     assert bm["electrical_energy_J"] == 0.0
+
+
+# ------------------------------------------------ exit-speed option (SP1 step 2)
+
+V_EXIT_SET = 76.71
+"""A configured exit speed [m/s]: the rounded exit speed of the 3 g0, 100 m silo."""
+L_DEEP = 200.0
+"""The stroke [m] the exit-speed runs use (twice the 3 g0 silo's, so about 1.5 g0 net)."""
+HOT_ON_TRACK = IgnitionSpec(-1.0)
+"""Lit 1 s before release, on the track: the ramp start is resolved against the push
+time, so the hot run also exercises t_push = 2 L / v."""
+
+
+def _same_value(x: object, y: object) -> bool:
+    """Equality of two metric values, a NaN equal to a NaN (n/a in both runs)."""
+    if isinstance(x, float) and isinstance(y, float) and math.isnan(x) and math.isnan(y):
+        return True
+    return bool(x == y)
+
+
+def _silo_from_config(
+    push: dict[str, float],
+    vehicle: Vehicle,
+    ignition: IgnitionSpec,
+    settings: IntegratorSettings,
+) -> sim.Result:
+    """A buried vertical silo of L_DEEP built from a validated ConstantAccelConfig whose
+    push is stated by ``push`` (``net_accel_g`` or ``exit_speed_mps``), through
+    ``assist.build_assist`` (the path of ``sim.run``), under mu/r^2."""
+    cfg = ConstantAccelConfig.model_validate(
+        {
+            "model": "constant_accel",
+            "stroke_m": L_DEEP,
+            "brake_decel_g": A_BRAKE / G0_MPS2,
+            "drive_efficiency": ETA,
+            **push,
+        }
+    )
+    assist, track = build_assist(cfg, G_EFF)
+    assert track is not None and track.length_m == L_DEEP and track.start_altitude_m == -L_DEEP
+    specs = {name: IgnitionSpec() for name in vehicle.stage_names}
+    specs[vehicle.stage_names[0]] = ignition
+    return sim.simulate(
+        vehicle=vehicle,
+        ignition=specs,
+        gravity=InverseSquareGravity(MU_EARTH_M3S2),
+        g_eff_mps2=G_EFF,
+        assist=assist,
+        track=track,
+        start=None,
+        end="stage1_burnout",
+        settings=settings,
+    )
+
+
+def test_exit_speed_push_closed_forms(
+    f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """A cold push stated by its exit speed v over the stroke L (a = v^2 / (2 L), never
+    taken from the code): the integrated exit speed is v and the push time 2 L / v; at
+    every sample s = v^2 t^2 / (4 L) and sdot = v^2 t / (2 L); the felt axial
+    acceleration is v^2 / (2 L) + g_eff and the drive force M (v^2 / (2 L) + g_eff);
+    the drive energy is the kinetic plus potential energy gained, M (v^2 / 2 + g_eff L),
+    which does not depend on how the push is stated; the peak power is F_drive v at
+    release; braking v^2 / (2 a_brake) and the facility L + that. The 1-D metrics gain
+    no key."""
+    v, length = V_EXIT_SET, L_DEEP
+    result = _silo_from_config({"exit_speed_mps": v}, f9_vehicle, COLD, tight_settings)
+    assert result.status == "nominal" and result.flags == []
+    m = result.metrics
+    t_push = 2.0 * length / v
+    assert math.isclose(m["exit_speed_mps"], v, rel_tol=REL)
+    assert math.isclose(m["speed_at_release_mps"], v, rel_tol=REL)
+    assert math.isclose(m["push_time_s"], t_push, rel_tol=REL)
+    assert math.isclose(m["t_release_s"], t_push, rel_tol=REL)
+    assert m["alt_at_release_m"] == 0.0 and m["track_start_altitude_m"] == -length
+    rows = _track_rows(result)
+    t = rows["t_s"].to_numpy()
+    assert t[0] == 0.0 and math.isclose(t[-1], t_push, rel_tol=REL)
+    s_closed = v * v * t * t / (4.0 * length)
+    np.testing.assert_allclose(rows["s_m"].to_numpy(), s_closed, rtol=REL, atol=REL * length)
+    np.testing.assert_allclose(
+        rows["v_mps"].to_numpy(), v * v * t / (2.0 * length), rtol=REL, atol=REL * v
+    )
+    m0 = f9_vehicle.liftoff_mass_kg()
+    felt = v * v / (2.0 * length) + G_EFF
+    assert math.isclose(m["felt_g_track_peak"], felt / G0_MPS2, rel_tol=REL)
+    np.testing.assert_allclose(rows["drive_force_N"].to_numpy(), m0 * felt, rtol=REL)
+    assert math.isclose(m["interface_force_peak_N"], m0 * felt, rel_tol=REL)
+    assert math.isclose(m["drive_energy_J"], m0 * (0.5 * v * v + G_EFF * length), rel_tol=REL)
+    assert math.isclose(m["drive_power_peak_W"], m0 * felt * v, rel_tol=REL)
+    assert math.isclose(m["braking_distance_m"], v * v / (2.0 * A_BRAKE), rel_tol=REL)
+    assert math.isclose(m["facility_length_m"], length + v * v / (2.0 * A_BRAKE), rel_tol=REL)
+    # About half the 3 g0 silo's net acceleration at the same exit speed: the lower felt
+    # g that the deeper silo is for (hand number, a cross-check of the constants only).
+    assert abs(felt / G0_MPS2 - 2.4993) < 1e-4
+    assert not {"net_accel_g", "net_accel_mps2", "stroke_m"} & set(m)
+
+
+def test_exit_speed_vertical_1d_run_from_the_experiment_file(
+    repo_root: Path, f9_vehicle_dict: dict[str, Any]
+) -> None:
+    """The option works on the 1-D model end to end, from the experiment dict through
+    resolve_experiment and sim.run_resolved (the path of the ``run`` command): the
+    shipped silo_screening_1d with a variant restating silo_cold's push by its exit
+    speed v over a deeper stroke L releases at v after 2 L / v (closed forms), with the
+    exit-speed assumption line and no push-setting metric (those are planar only). The
+    shipped file is read, never written."""
+    exp = yaml.safe_load(
+        (repo_root / "experiments" / "silo_screening_1d.yaml").read_text(encoding="utf-8")
+    )
+    v, length = V_EXIT_SET, L_DEEP
+    silo = {k: x for k, x in exp["variants"]["silo_cold"]["assist"].items() if k != "net_accel_g"}
+    exp["variants"] = {
+        "silo_by_speed": {
+            "assist": {**silo, "exit_speed_mps": v, "stroke_m": length},
+            "ignition": exp["variants"]["silo_cold"]["ignition"],
+        }
+    }
+    for key in ("sweeps", "sensitivity"):
+        exp.pop(key, None)
+    run = resolve_experiment(exp, f9_vehicle_dict).variants["silo_by_speed"]
+    assert run.run.dynamics == "vertical_1d" and "net_accel_g" not in run.run_dict["assist"]
+    result = sim.run_resolved(run).result
+    assert result.status == "nominal" and result.flags == []
+    m = result.metrics
+    assert math.isclose(m["exit_speed_mps"], v, rel_tol=REL)
+    assert math.isclose(m["push_time_s"], 2.0 * length / v, rel_tol=REL)
+    assert m["track_start_altitude_m"] == -length
+    assert not {"net_accel_g", "net_accel_mps2", "stroke_m"} & set(m)
+    derived = [line for line in result.assumptions if "configured exit speed" in line]
+    assert derived == [
+        "constant_accel: the net acceleration is derived from the configured exit speed "
+        "76.71 m/s (assumed) and the track length L, a = v_exit^2 / (2 L); the push time is "
+        "2 L / v_exit"
+    ]
+
+
+@pytest.mark.parametrize("ignition", [COLD, HOT_ON_TRACK], ids=["cold", "hot_on_track"])
+def test_exit_speed_run_is_the_equivalent_net_accel_run(
+    ignition: IgnitionSpec, f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """The run stated by exit speed v over L and the run stated by net_accel_g =
+    v^2 / (2 g0 L) fly the same trajectory, cold and with the ramp started on the track
+    (the hot run burns propellant on the push, so its thrust schedule depends on the
+    push time). For this (v, L) the two accelerations, v^2 / (2 L) and (v^2 / (2 g0 L))
+    g0, are the same double (asserted first), so the dynamics, which see only the
+    acceleration, must give identical time series, events and metrics, compared
+    exactly: any dependence on how the push is stated would show. Their assumptions
+    differ by exactly the one line that names the configured exit speed, placed after
+    the net-acceleration line; the run stated by its acceleration has no such line."""
+    v, length = V_EXIT_SET, L_DEEP
+    accel_g = v * v / (2.0 * G0_MPS2 * length)
+    assert v * v / (2.0 * length) == accel_g * G0_MPS2  # the precondition of an exact test
+    by_speed = _silo_from_config({"exit_speed_mps": v}, f9_vehicle, ignition, tight_settings)
+    by_accel = _silo_from_config({"net_accel_g": accel_g}, f9_vehicle, ignition, tight_settings)
+    assert by_speed.status == by_accel.status == "nominal"
+    assert by_speed.flags == by_accel.flags == []
+    assert len(by_speed.timeseries) > 10 and len(by_speed.events) > 3
+    pd.testing.assert_frame_equal(by_speed.timeseries, by_accel.timeseries, check_exact=True)
+    pd.testing.assert_frame_equal(by_speed.events, by_accel.events, check_exact=True)
+    assert list(by_speed.metrics) == list(by_accel.metrics)
+    differ = [
+        key
+        for key, value in by_speed.metrics.items()
+        if not _same_value(value, by_accel.metrics[key])
+    ]
+    assert differ == []
+    if ignition is HOT_ON_TRACK:
+        assert by_speed.metrics["propellant_burned_on_track_kg"] > 0.0
+        t_ign = by_speed.metrics["t_ign_rel_release_s_stage1"]
+        assert math.isclose(t_ign, -1.0, abs_tol=1e-12)
+    lines, plain = list(by_speed.assumptions), list(by_accel.assumptions)
+    extra = [line for line in lines if line not in plain]
+    assert len(extra) == 1 and len(lines) == len(plain) + 1
+    assert extra[0].startswith("constant_accel: the net acceleration is derived from")
+    assert f"exit speed {v:g} m/s" in extra[0] and "v_exit^2 / (2 L)" in extra[0]
+    k = lines.index(extra[0])
+    assert lines[k - 1].startswith("constant_accel: prescribed net acceleration")
+    assert lines[:k] + lines[k + 1 :] == plain
+    assert not [line for line in plain if "exit speed" in line]
+
+
+def test_net_accel_assumptions_keep_their_phase_1_text() -> None:
+    """A model built without a configured exit speed (every run stated by net_accel_g)
+    emits the Phase 1 lines, written out here: nine of them, the first with the
+    acceleration in g0, none naming an exit speed. With a configured exit speed the
+    same nine plus one, second in the list; a non-positive or non-finite one is
+    refused."""
+    lines = _assist().assumptions()
+    assert lines == (
+        "constant_accel: prescribed net acceleration 3 g0 (assumed); drive force "
+        "unconstrained, solved from the track equation",
+        "constant_accel: carriage mass 0 t (assumed)",
+        "constant_accel: braking deceleration 5 g0 (assumed)",
+        "constant_accel: drive efficiency 0.5 (assumed)",
+        "constant_accel: exhaust impingement fraction 0 (assumed); the system keeps "
+        "(1 - f_imp) T of the on-track thrust",
+        "constant_accel: shaft vented (no air column), no friction",
+        f"constant_accel: constant g_eff = {G_EFF:.7g} m/s^2 on the track, omega_p = 0, "
+        "Coriolis neglected",
+        "constant_accel: infinite jerk at push start and release",
+        "constant_accel: vehicle clamped to the carriage during any hold before the push",
+    )
+    with_speed = ConstantAccelAssist(
+        net_accel_mps2=A,
+        carriage_mass_kg=0.0,
+        brake_decel_mps2=A_BRAKE,
+        efficiency=ETA,
+        g_eff_mps2=G_EFF,
+        exit_speed_input_mps=V_EXIT_SET,
+    ).assumptions()
+    assert len(with_speed) == len(lines) + 1
+    assert with_speed[0] == lines[0] and with_speed[2:] == lines[1:]
+    assert with_speed[1] == (
+        "constant_accel: the net acceleration is derived from the configured exit speed "
+        "76.71 m/s (assumed) and the track length L, a = v_exit^2 / (2 L); the push time is "
+        "2 L / v_exit"
+    )
+    for bad in (0.0, -1.0, math.inf, math.nan):
+        with pytest.raises(ValueError, match="exit_speed_input_mps"):
+            ConstantAccelAssist(
+                net_accel_mps2=A,
+                carriage_mass_kg=0.0,
+                brake_decel_mps2=A_BRAKE,
+                exit_speed_input_mps=bad,
+            )

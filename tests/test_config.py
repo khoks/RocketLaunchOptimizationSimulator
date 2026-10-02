@@ -3,7 +3,8 @@ fail, Phase 1 limits raise with the phase named, the F9 file converts to SI corr
 the shipped experiment resolves every variant, sweep point and sensitivity case, and
 the merge and override rules (per-key merge, discriminator switches, and the exclusive
 key families of SP1 step 1: an override that states a setting another way displaces the
-base's parameterisation; two given together raise)."""
+base's parameterisation; two given together raise), and the silo push stated by exactly
+one of net_accel_g and exit_speed_mps (SP1 step 2)."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ import pytest
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from launchsim import config
+from launchsim import compare, config
 from launchsim.config import (
     PLANNED_MODELS,
     ConfigPathError,
@@ -325,6 +326,126 @@ def test_constant_accel_units() -> None:
         )
 
 
+PUSH_BASE = {"model": "constant_accel", "stroke_m": 200.0, "brake_decel_g": 5}
+"""A constant_accel block without the key that states the push (SP1 step 2)."""
+
+
+def test_constant_accel_exit_speed_derives_the_acceleration() -> None:
+    """``exit_speed_mps`` v over ``stroke_m`` L gives the net acceleration of a push
+    from rest at constant acceleration, a = v^2 / (2 L) (v^2 = 2 a L), computed here;
+    the equivalent ``net_accel_g`` = v^2 / (2 g0 L) gives the same a through the g0
+    conversion. On the ``net_accel_g`` path the SI value is exactly the product
+    net_accel_g x g0, as before the option existed (``==``, not a tolerance)."""
+    v, stroke = 76.71, 200.0
+    a = v * v / (2.0 * stroke)
+    by_speed = ConstantAccelConfig.model_validate({**PUSH_BASE, "exit_speed_mps": v})
+    assert by_speed.net_accel_g is None and by_speed.exit_speed_mps == v
+    assert math.isclose(by_speed.net_accel_mps2, a, rel_tol=1e-15)
+    assert math.isclose(by_speed.net_accel_mps2, 14.71106025, rel_tol=1e-9)  # hand number
+    by_accel = ConstantAccelConfig.model_validate({**PUSH_BASE, "net_accel_g": a / G0_MPS2})
+    assert by_accel.exit_speed_mps is None
+    assert math.isclose(by_accel.net_accel_mps2, a, rel_tol=1e-15)
+    for g in (0.5, 1, 3, 3.0, 5):
+        cfg = ConstantAccelConfig.model_validate({**PUSH_BASE, "net_accel_g": g})
+        assert cfg.net_accel_mps2 == g * G0_MPS2
+    # the stroke enters the derived acceleration: half the stroke, twice the acceleration
+    short = ConstantAccelConfig.model_validate(
+        {**PUSH_BASE, "stroke_m": stroke / 2.0, "exit_speed_mps": v}
+    )
+    assert math.isclose(short.net_accel_mps2, 2.0 * a, rel_tol=1e-15)
+
+
+@pytest.mark.parametrize(
+    ("push", "message"),
+    [
+        ({}, "exactly one of net_accel_g or exit_speed_mps.*given: neither"),
+        (
+            {"net_accel_g": 3.0, "exit_speed_mps": 76.71},
+            "exactly one of net_accel_g or exit_speed_mps.*given: net_accel_g, exit_speed_mps",
+        ),
+        (
+            {"net_accel_g": None, "exit_speed_mps": 76.71},
+            "exactly one of net_accel_g or exit_speed_mps.*given: net_accel_g, exit_speed_mps",
+        ),
+        (
+            {"net_accel_g": 3.0, "exit_speed_mps": None},
+            "exactly one of net_accel_g or exit_speed_mps.*given: net_accel_g, exit_speed_mps",
+        ),
+        ({"net_accel_g": None, "exit_speed_mps": None}, "exactly one of"),
+        ({"exit_speed_mps": None}, "exit_speed_mps is null"),
+        ({"net_accel_g": None}, "net_accel_g is null"),
+        ({"exit_speed_mps": 0.0}, "greater than 0"),
+        ({"exit_speed_mps": -5.0}, "greater than 0"),
+        ({"exit_speed_mps": math.inf}, "finite number"),
+        ({"exit_speed_mps": math.nan}, "finite number"),
+        ({"net_accel_g": 0.0}, "greater than 0"),
+        # v^2 overflows to inf; v^2 underflows to 0; an infinite stroke gives a = 0
+        ({"exit_speed_mps": 1e200}, r"v\^2 / \(2 L\) = inf m/s\^2, which must be finite"),
+        ({"exit_speed_mps": 1e-200}, r"v\^2 / \(2 L\) = 0 m/s\^2, which must be finite"),
+        (
+            {"exit_speed_mps": 76.71, "stroke_m": math.inf},
+            r"v\^2 / \(2 L\) = 0 m/s\^2, which must be finite",
+        ),
+    ],
+)
+def test_constant_accel_needs_exactly_one_push_key(push: dict[str, Any], message: str) -> None:
+    """Exactly one of ``net_accel_g`` and ``exit_speed_mps`` states the push. A key
+    counts as given when it is present, an explicit null included (the rule of the
+    merge, EXCLUSIVE_KEY_FAMILIES): both present is refused whatever the values, neither
+    is refused, and the one key present must hold a positive (for the exit speed also
+    finite) number, so a null never unsets a key. The acceleration derived from an exit
+    speed, v^2 / (2 L), must be finite and > 0 too. The same through RunConfig."""
+    with pytest.raises(ValidationError, match=message):
+        ConstantAccelConfig.model_validate({**PUSH_BASE, **push})
+    with pytest.raises(ValidationError, match=message):
+        RunConfig.model_validate({"name": "x", "assist": {**PUSH_BASE, **push}})
+
+
+def test_constant_accel_push_keys_are_the_assist_family_table() -> None:
+    """The two push keys are the fields of the assist group of the exclusive-family
+    table, so the merge rule and the validator speak of the same keys."""
+    keys = {k for family in config.ASSIST_KEY_FAMILIES for k in family}
+    assert keys == {"net_accel_g", "exit_speed_mps"}
+    assert keys <= set(ConstantAccelConfig.model_fields)
+
+
+@pytest.mark.parametrize("mode", ["python", "json"])
+@pytest.mark.parametrize("push", [{"net_accel_g": 3.0}, {"exit_speed_mps": 76.71}])
+def test_constant_accel_dump_states_the_push_by_its_one_key(
+    push: dict[str, float], mode: str
+) -> None:
+    """``model_dump`` writes the one key that states the push and not the unused one (a
+    null there would count as given and the dump would be refused on validation), so a
+    dump validates again to an equal model, alone and inside a RunConfig. The dump of a
+    push stated by net_accel_g has exactly the keys it had before exit_speed_mps
+    existed (written out here)."""
+    block = {**PUSH_BASE, **push}
+    cfg = ConstantAccelConfig.model_validate(block)
+    dumped = cfg.model_dump(mode=mode)
+    (key,) = push
+    other = "exit_speed_mps" if key == "net_accel_g" else "net_accel_g"
+    assert dumped[key] == push[key] and other not in dumped
+    assert ConstantAccelConfig.model_validate(dumped) == cfg
+    assert ConstantAccelConfig.model_validate(dumped).net_accel_mps2 == cfg.net_accel_mps2
+    if key == "net_accel_g":
+        assert list(dumped) == [
+            "model",
+            "net_accel_g",
+            "stroke_m",
+            "carriage_mass_t",
+            "brake_decel_g",
+            "drive_efficiency",
+            "exhaust_impingement_fraction",
+            "shaft",
+            "allow_negative_drive_force",
+            "track",
+        ]
+    run = RunConfig.model_validate({"name": "silo", "assist": block})
+    run_dump = run.model_dump(mode=mode)
+    assert other not in run_dump["assist"] and run_dump["assist"] == dumped
+    assert RunConfig.model_validate(run_dump) == run
+
+
 def test_run_defaults() -> None:
     run = RunConfig.model_validate({"name": "pad"})
     assert run.assist.model == "none"
@@ -559,8 +680,9 @@ def test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name() -> Non
         group_keys = {k for family in group for k in family}
         users = {m.__name__ for m in models if group_keys & set(m.model_fields)}
         assert users == {owner.__name__}
-    # the fields that exist today are the first family of each group (steps 2 and 3 add
-    # the others); the defaults test_run_defaults pins are untouched
+    # the assist group has both families as fields since step 2
+    # (test_constant_accel_push_keys_are_the_assist_family_table); the ignition group's
+    # other families arrive in step 3; the defaults test_run_defaults pins are untouched
     assert set(ASSIST_FAMILIES[0]) <= set(ConstantAccelConfig.model_fields)
     assert set(IGNITION_FAMILIES[0]) <= set(IgnitionConfig.model_fields)
 
@@ -822,9 +944,11 @@ def test_sweep_axis_exit_speed_over_a_net_accel_parent(
     3) ends, at every grid point, with only the exit speed: the override the sweep
     resolver builds for a point (one path per axis) removes net_accel_g and leaves the
     rest of the parent's run dict as it was. The same for a ramp start by depth over the
-    inherited t_ign_s and reference. (The fields arrive in SP1 steps 2 and 3, so the
-    points are built here with apply_overrides, as resolve_experiment does, and not
-    validated.)"""
+    inherited t_ign_s and reference. (Written in SP1 step 1, before the fields existed,
+    so the points are built here with apply_overrides, as resolve_experiment does, and
+    not validated; the exit speed is resolved and validated end to end since step 2 in
+    test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone, the depth arrives in
+    step 3.)"""
     parent = resolve_experiment(experiment_dict, f9_vehicle_dict).variants["silo_cold"]
     assert parent.run_dict["assist"]["net_accel_g"] == 3.0
     assert parent.run_dict["ignition"]["stage1"] == {"t_ign_s": 0.5, "reference": "release"}
@@ -863,6 +987,135 @@ def test_mixed_families_name_the_variant_or_the_sweep(
     bad["variants"]["silo_cold"]["ignition"]["stage1"]["at_depth_m"] = 50.0
     with pytest.raises(ExclusiveKeysError, match=r"variant 'silo_cold'.*'ignition.stage1'"):
         resolve_experiment(bad, f9_vehicle_dict)
+
+
+def _assert_only_the_exit_speed(assist: Any, speed_mps: float, stroke_m: float) -> None:
+    """``assist`` is a validated ConstantAccelConfig stated by the exit speed alone, with
+    the derived net acceleration v^2 / (2 L) computed here."""
+    assert isinstance(assist, ConstantAccelConfig)
+    assert assist.exit_speed_mps == speed_mps and assist.stroke_m == stroke_m
+    assert assist.net_accel_g is None
+    assert "exit_speed_mps" in assist.model_fields_set
+    assert "net_accel_g" not in assist.model_fields_set
+    expected = speed_mps * speed_mps / (2.0 * stroke_m)
+    assert math.isclose(assist.net_accel_mps2, expected, rel_tol=1e-15)
+
+
+@pytest.mark.parametrize(
+    ("experiment", "vehicle"),
+    [
+        ("silo_screening_1d", "generic_f9_class"),
+        ("silo_screening_2d", "generic_f9_class_2d"),
+    ],
+)
+def test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone(
+    repo_root: Path, experiment: str, vehicle: str
+) -> None:
+    """Resolved end to end, on both models: a sweep axis ``assist.exit_speed_mps`` over
+    the shipped silo_cold (net_accel_g 3) gives, at every grid point, a validated
+    ConstantAccelConfig with only the exit speed (net_accel_g neither in the run dict
+    nor set on the model) and the derived acceleration v^2 / (2 L) with the point's own
+    stroke; the rest of the parent's assist block is inherited. The shipped file is
+    read, never written."""
+    exp = _load(repo_root / "experiments" / f"{experiment}.yaml")
+    veh = _load(repo_root / "configs" / "vehicles" / f"{vehicle}.yaml")
+    for key in ("sensitivity", "bounds"):
+        exp.pop(key, None)
+    speeds, strokes = [40.0, EXIT_SPEED_MPS], [50, 100, 200]
+    exp["sweeps"] = [
+        {"of": "silo_cold", "axes": {"assist.exit_speed_mps": speeds, "assist.stroke_m": strokes}}
+    ]
+    resolved = resolve_experiment(exp, veh)
+    parent = resolved.variants["silo_cold"]
+    assert parent.run.assist.net_accel_g == 3.0 and parent.run.assist.exit_speed_mps is None
+    points = resolved.sweeps[0]
+    assert len(points) == len(speeds) * len(strokes)
+    grid = list(itertools.product(speeds, strokes))
+    for point, (speed_mps, stroke_m) in zip(points, grid, strict=True):
+        assert point.overrides == {"assist.exit_speed_mps": speed_mps, "assist.stroke_m": stroke_m}
+        _assert_only_the_exit_speed(point.run.run.assist, speed_mps, float(stroke_m))
+        raw = point.run.run_dict["assist"]
+        assert "net_accel_g" not in raw and raw["exit_speed_mps"] == speed_mps
+        inherited = {k: v for k, v in raw.items() if k not in ("exit_speed_mps", "stroke_m")}
+        assert inherited == {
+            k: v
+            for k, v in parent.run_dict["assist"].items()
+            if k not in ("net_accel_g", "stroke_m")
+        }
+        assert point.run.run.dynamics == parent.run.dynamics
+    # and back: a net_accel_g axis over an exit-speed parent ends with the acceleration
+    exp["variants"]["silo_by_speed"] = {
+        "assist": {
+            **{k: v for k, v in parent.run_dict["assist"].items() if k != "net_accel_g"},
+            "exit_speed_mps": EXIT_SPEED_MPS,
+            "stroke_m": 200,
+        },
+        "ignition": {"stage1": {"t_ign_s": 0.5}},
+    }
+    exp["sweeps"] = [{"of": "silo_by_speed", "axes": {"assist.net_accel_g": [1.5]}}]
+    back = resolve_experiment(exp, veh)
+    _assert_only_the_exit_speed(back.variants["silo_by_speed"].run.assist, EXIT_SPEED_MPS, 200.0)
+    by_accel = back.sweeps[0][0].run.run.assist
+    assert by_accel.net_accel_g == 1.5 and by_accel.exit_speed_mps is None
+    assert by_accel.net_accel_mps2 == 1.5 * G0_MPS2 and by_accel.stroke_m == 200.0
+
+
+def test_exit_speed_variant_over_a_silo_baseline_resolves_to_the_exit_speed_alone(
+    tiny_dict: dict[str, Any], toy_dict: dict[str, Any]
+) -> None:
+    """A variant that sets ``exit_speed_mps`` over a baseline whose silo is stated by
+    ``net_accel_g`` resolves to a ConstantAccelConfig with only the exit speed and the
+    derived acceleration v^2 / (2 L): the merge drops the inherited acceleration and the
+    validator sees one key. With the stroke inherited (L = 20 m) and with its own. A
+    sensitivity case on the exit speed scales the speed (so the acceleration by its
+    square). A variant that restates the acceleration beside the exit speed is refused
+    by the merge, and a baseline that writes both by the validator."""
+    exp = copy.deepcopy(tiny_dict)
+    silo = exp["variants"]["silo"]["assist"]
+    assert silo["net_accel_g"] == 1.0 and silo["stroke_m"] == 20
+    exp["baseline"]["assist"] = copy.deepcopy(silo)
+    exp["variants"] = {
+        "by_speed": {"assist": {"exit_speed_mps": 30.0}},
+        "by_speed_deeper": {"assist": {"exit_speed_mps": 30.0, "stroke_m": 45.0}},
+    }
+    exp.pop("sweeps")
+    resolved = resolve_experiment(exp, toy_dict)
+    base = resolved.baseline.run.assist
+    assert isinstance(base, ConstantAccelConfig)
+    assert base.net_accel_g == 1.0 and base.exit_speed_mps is None
+    assert base.net_accel_mps2 == G0_MPS2
+    _assert_only_the_exit_speed(resolved.variants["by_speed"].run.assist, 30.0, 20.0)
+    _assert_only_the_exit_speed(resolved.variants["by_speed_deeper"].run.assist, 30.0, 45.0)
+    for name in ("by_speed", "by_speed_deeper"):
+        raw = resolved.variants[name].run_dict["assist"]
+        assert "net_accel_g" not in raw
+        assert {k: v for k, v in raw.items() if k not in ("exit_speed_mps", "stroke_m")} == {
+            k: v for k, v in silo.items() if k not in ("net_accel_g", "stroke_m")
+        }
+    # a +/-10% sensitivity case on the exit speed perturbs the speed (read as m/s), and
+    # the acceleration follows as its square
+    sens = copy.deepcopy(exp)
+    sens["sensitivity"] = {"of": ["by_speed"], "params": {"assist.exit_speed_mps": 0.1}}
+    cases = {c.fraction: c for c in resolve_experiment(sens, toy_dict).sensitivity}
+    assert sorted(cases) == [-0.1, 0.1]
+    assert compare.si_value("assist.exit_speed_mps", 30.0) == (30.0, "m/s")
+    for fraction, case in cases.items():
+        speed = case.run.run.assist.exit_speed_mps
+        assert math.isclose(speed, 30.0 * (1.0 + fraction), rel_tol=1e-12)
+        _assert_only_the_exit_speed(case.run.run.assist, speed, 20.0)
+        assert math.isclose(
+            case.run.run.assist.net_accel_mps2,
+            (1.0 + fraction) ** 2 * 30.0**2 / (2.0 * 20.0),
+            rel_tol=1e-12,
+        )
+    both = copy.deepcopy(exp)
+    both["variants"]["by_speed"]["assist"]["net_accel_g"] = 2.0
+    with pytest.raises(ExclusiveKeysError, match=r"variant 'by_speed'.*'assist'"):
+        resolve_experiment(both, toy_dict)
+    both = copy.deepcopy(exp)
+    both["baseline"]["assist"]["exit_speed_mps"] = 30.0
+    with pytest.raises(ValidationError, match="exactly one of net_accel_g or exit_speed_mps"):
+        resolve_experiment(both, toy_dict)
 
 
 def _keys_and_path_segments(node: Any) -> set[str]:

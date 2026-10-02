@@ -3019,7 +3019,10 @@ Brent refine: independent of the sampling interval); the run-wide peak felt axia
 (hold, track and flight); a pad's zero assist items or the push's
 (`planar_track_metrics`: the 1-D track items, with the exit speed |v_rel| at release;
 the track-normal load for the vehicle and the carriage separately, both in the summary
-table under the peak, as CLAUDE.md asks); for a failed ignition the highest apex and the
+table under the peak, as CLAUDE.md asks; and, planar only, the push settings as flown,
+`stroke_m`, `net_accel_mps2` and `net_accel_g`, which carry the derived acceleration
+of a push stated by its exit speed and are the source of the replay page's drive
+label, "Silo model"); for a failed ignition the highest apex and the
 impact (`summary.PLANAR_FAILED_ROWS`: failed stage, apex altitude and time, impact time
 and |v_rel|);
 how stage 1 starts; the closure items (`closure_metrics`); `trace_status`, `run_checks`
@@ -3791,9 +3794,12 @@ Modules: `assist/constant_accel.py` (`ConstantAccelAssist`), `assist/base.py`
 `track_observables`, `track_to_vertical`), `phases/prelude.py` (`fly_track`: the push
 to the track exit), `phases/vertical.py` (`VerticalPlanner.run_track`, `map_release`),
 `phases/engine.py` (`ev_track_end`, `ev_drive_limit`), `metrics.py` (`track_metrics`,
-`track_flags`). Tests: `tests/test_silo.py`, `tests/test_assist_energy.py`,
+`track_flags`), `config.py` (`ConstantAccelConfig`: the push stated by its acceleration
+or by its exit speed), `metrics_planar.py` (`push_setting_metrics`, planar only).
+Tests: `tests/test_silo.py`, `tests/test_assist_energy.py`,
 `tests/test_events.py` (release map from a track), `tests/test_loss_identity.py` (a),
-`tests/test_ignition_loss.py` (straddle through the silo).
+`tests/test_ignition_loss.py` (straddle through the silo), `tests/test_config.py` and
+`tests/test_planar_pipeline.py` (the exit-speed form).
 
 **Model.** The drive prescribes the net acceleration along the track, sddot = a
 exactly, and the drive force is solved from the track equation at every instant:
@@ -3821,13 +3827,77 @@ the facility length. A vertical straight track has no normal load (phi = pi/2, k
 0); the horizontal check N = m g_eff and the untouched sddot = a exist at unit level
 only (Phase 1's config accepts 90 deg alone).
 
+**Two ways to state the push (SP1 step 2, decision D-SP1-05).** The track length L is
+`stroke_m` in both. `ConstantAccelConfig` takes exactly one of:
+
+- `net_accel_g`: the net acceleration in g0, a = `net_accel_g` x g0 (`units.from_g`;
+  the Phase 1 form, unchanged to the bit);
+- `exit_speed_mps`: the speed v along the track at its exit. The push starts from rest
+  at constant acceleration, so v^2 = 2 a L and
+
+      a = v^2 / (2 L)
+
+  (`ConstantAccelConfig.net_accel_mps2`). The depth and the exit speed are then set
+  independently: a deeper silo reaches the same v at a lower acceleration.
+
+The model is the same in both cases (`ConstantAccelAssist.from_config` is the only
+place the acceleration enters, and it reads `net_accel_mps2`), so every closed form
+above holds with a = v^2 / (2 L) put in. Written in v and L:
+
+| Quantity | Closed form in v and L |
+|---|---|
+| push time | t_push = sqrt(2 L / a) = 2 L / v |
+| position and speed on the push | s(t) = v^2 t^2 / (4 L), sdot(t) = v^2 t / (2 L) |
+| exit speed | sqrt(2 a L) = v (to rounding: a is formed first, then the root) |
+| felt axial acceleration on the track | a + g_eff sin phi = v^2 / (2 L) + g_eff sin phi |
+| drive force | F_drive = M (v^2 / (2 L) + g_eff sin phi) - (1 - f_imp) T |
+| interface force | F_int = m_v (v^2 / (2 L) + g_eff sin phi) - T |
+| cold drive energy (vertical) | M (a + g_eff) L = M (v^2 / 2 + g_eff L): the kinetic energy does not depend on L, the potential energy grows with it |
+| cold peak drive power (vertical, at release) | M (v^2 / (2 L) + g_eff) v |
+| braking distance, facility length | v^2 / (2 a_brake), which does not depend on L; L + v^2 / (2 a_brake) |
+
+At a fixed exit speed, doubling L halves a, doubles the push time and lowers the felt
+g, the drive force, the interface force and the peak power; the drive energy rises only
+by the extra M g_eff L. Example (v = 76.71 m/s, L = 200 m): a = 14.71106 m/s^2 =
+1.50011 g0, t_push = 5.2144 s, felt 2.4993 g0 with the 1-D g_eff = 9.7982855 m/s^2,
+against 3.9991 g0 for the 3 g0, 100 m silo. A run stated by `exit_speed_mps` and the run
+stated by `net_accel_g` = v^2 / (2 g0 L) model the same push, but the two accelerations,
+v^2 / (2 L) and (v^2 / (2 g0 L)) g0, are rounded along different paths and can differ
+by an ulp or two. Where they are the same double, as for the tested pair (76.71 m/s,
+200 m), the two runs are identical bit for bit, in 1-D and planar alike (`test_silo.py`,
+`test_planar_pipeline.py`): nothing downstream of the acceleration depends on how the
+push is stated, and only the assumption list differs, by the line that names the exit
+speed. For a general (v, L) the doubles need not coincide (1,134 of 1,800 pairs did on
+a 60 x 30 grid of v from 15 to 305 m/s and L from 30 to 311 m, the rest differed by at
+most 2 ulps), and the adaptive step selection carries a one-ulp difference in a into
+the integrated quantities at the integrator-noise level. Probe: planar, v = 83.3 m/s,
+L = 137 m, lit 1 s before release, a = 25.32441605839416 against 25.324416058394164
+m/s^2: the exit speed and the push time still match v and 2 L / v to 6e-16, but 67
+metrics differ, the largest (the near-zero closure residuals aside) by about 5e-8
+relative (drag loss 23.0183813 against 23.0183801 m/s, perigee altitude by about
+2 mm). Such a pair agrees to integrator noise, not to the bit.
+
+Rules of the config (`ConstantAccelConfig._one_push_parameterisation`): exactly one of
+the two keys; a key counts as given when it is present, an explicit null included
+(pydantic's `model_fields_set`, the same reading as the merge rule in "Experiment
+schema (planar)"), so both keys present is refused whatever their values and a null is
+never a way to leave a key out; the one key present must hold a number > 0, the exit
+speed must be finite, and so must the derived v^2 / (2 L) be (finite and > 0, which
+refuses an overflow or underflow of absurd inputs and an infinite stroke). Because a
+null counts as given, `model_dump` leaves the unused key out
+(`ConstantAccelConfig._dump_one_push_key`): the dump states the push by its one key and
+validates again to an equal model, and the dump of a push stated by `net_accel_g` is
+the dict it was before the option existed. Nothing checks that the derived
+acceleration is one a vehicle would survive: as for `net_accel_g`, the felt g is
+reported, not limited.
+
 **Reported quantities** (F9, 542,570 kg, a = 3 g0 = 29.41995 m/s^2, L = 100 m,
 m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening_1d.yaml`):
 
 | Quantity (metric) | Definition | Value |
 |---|---|---|
 | exit speed, push time (`exit_speed_mps`, `push_time_s`, `t_release_s`) | sqrt(2 a L), sqrt(2 L/a) | 76.70717 m/s, 2.60732 s |
-| felt axial g on the track (`felt_g_track_peak`) | (F_int + T)/m_v = a + g_eff = 39.2182 m/s^2, in g0 | 3.9992 g0 on the full stack |
+| felt axial g on the track (`felt_g_track_peak`) | (F_int + T)/m_v = a + g_eff = 39.2182 m/s^2, in g0 | 3.9991 g0 on the full stack |
 | peak felt g in flight (`peak_felt_g_flight`) | max T/m over the burn (unthrottled, stated) | 5.712 g0 at stage-1 burnout, every variant |
 | peak felt axial g, run-wide (`peak_felt_axial_g`, `_phase`, `_t_s`) | max over the hold (g_eff), the track (a + g_eff sin phi) and the flight (T/m); the CLAUDE.md summary item | 5.712 g0 (BURN) at 3 g0 net; 5.999 g0 (ASSIST) at the sweep's 5 g0; 3.999 g0 (ASSIST) for `silo_failed` |
 | interface force (`interface_force_peak_N`, `_min_N`, `peak_interface_force_N`) | F_int = m_v (a + g_eff) - T over the push; `interface_tensile` flag if F_int < 0 at any ASSIST sample (the hold-down load is reported separately) | 21.2786 MN (README 21.5 MN at 549 t) |
@@ -3842,6 +3912,7 @@ m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening
 | propellant on the track / before release (`propellant_burned_on_track_kg`, `_before_release_kg`, `dv_vac_equiv_before_release_mps`, `hold_propellant_burned_kg`) | integral mdot dt over the push / over hold plus push, and c ln(m0/m_release) | 0 (cold) |
 | energy closure (`assist_energy_residual_rel`) | "Assist energy identity" | 1e-16 |
 | geometry (`track_start_altitude_m`, `carriage_mass_kg`) | exit_altitude - L sin phi; m_c | -100 m; 0 |
+| push settings, planar_2d only (`stroke_m`, `net_accel_mps2`, `net_accel_g`; `metrics_planar.PUSH_SETTING_METRICS`) | L; the prescribed a, whichever way the config states it (a = v^2 / (2 L) for `exit_speed_mps`); a / g0 (g0 as the unit). Settings as flown, not results: no summary row, not in `PLANAR_REQUIRED_METRICS`, no `delta_` item against a pad, and not written by the 1-D `track_metrics` (the golden 1-D outputs are unchanged). Both accelerations are null for a drive that prescribes none (Phase 3) | 100 m; 29.41995 m/s^2; 3 g0 (planar `silo_cold`) |
 
 Where a row lists two keys for one number (`drive_energy_J` and `assist_energy_J`,
 `drive_power_peak_W` and `peak_drive_power_W`, `interface_force_peak_N` and
@@ -3909,7 +3980,13 @@ impingement fraction (assumed; the system keeps (1 - f_imp) T), vented shaft (no
 column) and no friction, constant g_eff on the track with omega_p = 0 and Coriolis
 neglected, infinite jerk at push start and release, vehicle clamped to the carriage
 during any hold before the push. `sim.simulate` adds the track geometry line and the
-carriage-braking and impingement notes.
+carriage-braking and impingement notes. A push stated by `exit_speed_mps` adds one
+line after the net-acceleration line (`ConstantAccelAssist.exit_speed_assumption`,
+on both models): the acceleration is derived from the configured exit speed (the
+assumed input) and the track length, a = v_exit^2 / (2 L), with push time 2 L / v_exit.
+The net-acceleration line itself still quotes a in g0 (1.50011 g0 in the example). A
+push stated by `net_accel_g` has the nine lines above and no other, so every shipped
+run and the golden 1-D outputs keep their text.
 
 ## Hot start
 
@@ -4558,13 +4635,26 @@ both scoped by key name within one dict level and both declared once in `config.
   both and is refused; such a variant writes its assist block out. The rule applies to
   run dicts only, never to `vehicle.` paths.
 
-  The rule arrives before the fields. `exit_speed_mps` (SP1 step 2) and `at_depth_m`,
-  `at_speed_mps`, `at_height_m`, `height_method` (SP1 step 3) are added with the
-  validators that require exactly one family on the resolved model; until then a run
-  dict carrying one of them is refused as an unknown key. No experiment shipped before
-  SP1 names a key of a second family, so every resolved dict is unchanged: the 1-D
-  golden compares the 1-D dicts byte for byte, and the planar digest pin below does
-  the same for the planar ones.
+  The assist group's fields exist since SP1 step 2 (both models; "Silo model"): a
+  `constant_accel` block gives `stroke_m` and exactly one of `net_accel_g` and
+  `exit_speed_mps` (> 0; the exit speed finite), and the validator of
+  `ConstantAccelConfig` requires exactly one family on the resolved model, counting a
+  key as given when it is present (a null included), as the merge does. So the merge
+  and the validator agree at every level: a sweep axis `assist.exit_speed_mps` over a
+  `net_accel_g` parent, and a variant `{assist: {exit_speed_mps: v}}` over a baseline
+  silo stated by `net_accel_g`, both resolve to a block with only the exit speed and
+  the derived acceleration v^2 / (2 L), with the point's or the variant's own
+  `stroke_m` when it sets one (`test_config.py`); a block that reaches the validator
+  with both keys (a baseline that writes both, a YAML anchor merge) or with neither is
+  refused there. A sensitivity case on `assist.exit_speed_mps` perturbs the speed and
+  is read as m/s (`compare.SI_SUFFIX_CONVERSIONS`).
+
+  For the ignition group the rule still arrives before the fields: `at_depth_m`,
+  `at_speed_mps`, `at_height_m` and `height_method` (SP1 step 3) are added with their
+  validator; until then a run dict carrying one of them is refused as an unknown key.
+  No experiment shipped before SP1 names a key of a second family, so every resolved
+  dict is unchanged: the 1-D golden compares the 1-D dicts byte for byte, and the
+  planar digest pin below does the same for the planar ones.
 
 **Regression pins of the shipped planar experiments (SP1 step 1).** Helper:
 `tests/planar_pin_support.py`; data: `tests/data/planar_pins/`. Both were captured
@@ -4594,7 +4684,11 @@ the path.
   read at each capture, so a recapture never claims c587a08: the step 1 capture ran an
   export of c587a08's `src` put first on the path (`launchsim_from_checkout` false),
   a later one the recapturing step's own code. Only `resolved_digests.json` carries
-  `reference_commit`.
+  `reference_commit`. Recaptures so far: SP1 step 2 added the three planar push
+  settings `stroke_m`, `net_accel_mps2` and `net_accel_g` to the metrics of the two
+  silo runs and of the sensitivity records (nine key paths, additions only); the pad's
+  keys, the comparison keys, the files, the CSV columns and the summary digest did not
+  change (`output_summary.md` is byte for byte the step 1 text).
 
 `tests/data/silo_screening_2d_record.json` holds the payload capacities of the shipped
 silo_screening_2d run at full precision (pad 26,054.396243494975 kg, silo_cold
@@ -4711,6 +4805,11 @@ assumption in Phase 1, and `NoAssist` emits nothing):
 
 - constant_accel: prescribed net acceleration <a> g0 (assumed); drive force
   unconstrained, solved from the track equation.
+- only when the push is stated by `exit_speed_mps` (SP1 step 2, on both models; never
+  for a run stated by `net_accel_g`): constant_accel: the net acceleration is derived
+  from the configured exit speed <v> m/s (assumed) and the track length L, a =
+  v_exit^2 / (2 L); the push time is 2 L / v_exit. (The line above then quotes the
+  derived a.)
 - constant_accel: carriage mass <m_c> t (assumed).
 - constant_accel: braking deceleration <a_brake> g0 (assumed).
 - constant_accel: drive efficiency <eta> (assumed).
@@ -4938,8 +5037,13 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_config.py::test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name`, `::test_merge_keeps_one_family_per_group` (every ordered pair of families of a group), `::test_merge_drops_only_what_the_given_key_displaces`, `::test_set_path_applies_the_family_rule_to_run_paths_only`, `::test_sweep_axis_exit_speed_over_a_net_accel_parent`, `::test_shipped_experiments_use_the_first_family_only` | "Experiment schema (planar)", merge rule: the table is the design's (written out in the test), no key in two families, and only ConstantAccelConfig and IgnitionConfig have fields of those names; an override giving family B over a base using family A ends with B's keys, none of A's and every unrelated key in place, in `merge_run_dicts` and in the dotted-path form alike (same family: today's per-key merge, in place); one key of a two-key family keeps its partner; other stages and non-family keys untouched; `_set_path` applies the rule to run paths, never to vehicle paths; a sweep point `assist.exit_speed_mps` over the shipped silo_cold holds only the exit speed and the rest of the parent's dict unchanged; the five experiments shipped before SP1 name no key of a second family | exact (dicts and key order written out in the test) |
 | `test_config.py::test_dict_valued_path_replaces_its_dict_whole_while_a_variant_merges`, `::test_an_explicit_null_counts_as_a_given_key` | "Experiment schema (planar)", merge rule, the two override forms and a null: over a stage-1 dict with `t_ign_s`, `reference`, `startup` and `fails`, a variant and a single-key path keep every key the family rule does not displace (same family: all four; `at_depth_m`: `startup` and `fails`), while the same dict given as the value of the path `ignition.stage1` replaces the dict there whole (only the given key left, the inherited `startup` and `fails` gone); a two-key family given as two paths keeps the rest; the other stage and the base untouched. A key given as null counts as given: a null of another family displaces the base's family and stays in the dict, in a variant and as a path alike (`at_depth_m: null` over the time keys, `exit_speed_mps: null` over `net_accel_g`); a null of the family in use replaces in place and keeps its partner; a null of one family next to a key of another is refused, in `merge_run_dicts` and as two paths | exact (literal dicts written out in the test) / raises ExclusiveKeysError |
 | `test_config.py::test_two_families_given_together_raise_in_merge`, `::test_two_families_given_together_raise_in_overrides`, `::test_mixed_families_name_the_variant_or_the_sweep` | keys of two families of one group given together: in an override dict at any depth (also one the merge would take wholesale), as two paths with one parent, in a dict value, or a path meeting a dict value; two keys of one family, different groups, the same group in different dicts and vehicle paths are accepted; through `resolve_experiment` the error names the sweep and run or the variant, and the dict | raises ExclusiveKeysError (a ValueError) |
+| `test_config.py::test_constant_accel_exit_speed_derives_the_acceleration` | "Silo model", two ways to state the push: a = v^2 / (2 L) from `exit_speed_mps` (v = 76.71 m/s, L = 200 m: 14.71106025 m/s^2 as a hand number; half the stroke, twice a); `net_accel_g` = v^2 / (2 g0 L) gives the same a; on the `net_accel_g` path a = `net_accel_g` x g0 exactly, as before the option | 1e-15 relative (hand number 1e-9); exact (`==`) on the `net_accel_g` path |
+| `test_config.py::test_constant_accel_needs_exactly_one_push_key`, `::test_constant_accel_push_keys_are_the_assist_family_table`, `::test_constant_accel_dump_states_the_push_by_its_one_key` | "Silo model", rules of the config: exactly one of the two keys, a null counting as given (both, neither, a null of either, both null are refused, alone and through RunConfig); > 0, the exit speed finite, the derived v^2 / (2 L) finite and > 0 (v = 1e200, 1e-200 and an infinite stroke refused); the push keys are the assist group of `ASSIST_KEY_FAMILIES`; `model_dump` (python and json) holds only the key in use and validates again to an equal model, alone and in a RunConfig, and the `net_accel_g` dump has the pre-option key list (written out) | raises / exact |
+| `test_config.py::test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone`, `::test_exit_speed_variant_over_a_silo_baseline_resolves_to_the_exit_speed_alone` | "Experiment schema (planar)", merge rule with the fields in place: a sweep axis `assist.exit_speed_mps` (with `assist.stroke_m`) over the shipped silo_cold of silo_screening_1d and silo_screening_2d, and a variant `{assist: {exit_speed_mps: v}}` (stroke inherited and its own) over a baseline silo stated by `net_accel_g`, resolve to a ConstantAccelConfig with only the exit speed (not in the run dict, not in `model_fields_set`) and a = v^2 / (2 L) computed in the test, the rest of the parent's block inherited; back the other way, a `net_accel_g` axis over an exit-speed parent; a +/-10 % sensitivity case perturbs v (read as m/s), a following as (1 +/- 0.1)^2; a variant restating `net_accel_g` beside the exit speed raises ExclusiveKeysError, a baseline writing both the validator's error | 1e-15 relative; 1e-12 (sensitivity) / raises |
 | `test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`, `::test_pinned_digest_is_the_sha256_of_the_json_text` | "Experiment schema (planar)", regression pins: every run and vehicle dict of the four shipped planar experiments has the sha256 of its `json.dumps` text captured before SP1 step 1; the number of pinned dicts equals the count the YAML declares (1 + variants + grid points, twice when paired, + 2 per sensitivity run and parameter + bound re-runs and their baselines + cases: 16, 60, 4, 10); the digest equals hashlib's of the literal JSON text and moves with a value, an added key or the key order | exact (sha256) |
 | `test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`, `::test_summary_matches_the_capture_in_the_capture_environment`, `::test_capture_helpers_see_added_keys_columns_and_files`, `::test_output_capture_records_the_git_state_it_was_taken_in`, `::test_recorded_silo_payloads_carry_their_provenance` | regression pins: the fast experiment writes the captured files, metrics.json key paths, resolved_config.yaml keys and CSV columns (the planar column constants); its provenance-free summary.md has the captured sha256 (capture environment only; skipped elsewhere, failed with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) and the tracked text is the one that digest belongs to; the helpers on hand-written records (key paths in first-seen order, an added key, a removed column, a reordered list, a new file); output_capture.json carries `captured_at` (keys `git`, `dirty`, `launchsim_from_checkout`, the hash not `no-git`) and no `reference_commit`, which only resolved_digests.json holds (c587a08, the helper's `REFERENCE_COMMIT`), and `capture_provenance` returns `no-git`, not dirty, not from the checkout for a directory outside any checkout and the hash and dirty flag of `results_io.git_info` for this one; the recorded silo_screening_2d P* (silo_cold 27,553.227114190096 kg as the phase file quotes it; the pad's equal to the calibration record's amended re-run) round to the cells of the tracked summary.md, within half its last printed decimal (0.05 kg), and equal the untracked metrics.json where it is on disk | exact / 0.05 kg against the printed cells |
+| `test_planar_pipeline.py::test_planar_exit_speed_push_closed_forms_and_push_metrics`, `::test_planar_exit_speed_run_is_the_equivalent_net_accel_run` | "Silo model", the exit-speed form on planar_2d (fixed guidance, cold, v = 76.71 m/s, L = 200 m): abs(v_rel) at release v, push time 2 L / v; felt (v^2 / (2 L) + g_eff)/g0, drive force m0 (v^2 / (2 L) + g_eff) and E_drive = m0 (v^2 / 2 + g_eff L) with the site's g_eff = mu/R_E^2 - omega_p^2 R_E written in the test; the push metrics `stroke_m` = L, `net_accel_mps2` = v^2 / (2 L), `net_accel_g` = v^2 / (2 g0 L) (the configured value for the run stated by `net_accel_g`), absent on the pad, not required, in no summary row; the run stated by `net_accel_g` = v^2 / (2 g0 L) has the same acceleration double and identical time series, events and metrics; the assumptions differ by the one exit-speed line | 1e-9 relative (release items, loads, energy); 1e-15 (push metrics); exact (the equivalent run) |
+| `test_planar_pipeline.py::test_capture_holds_the_push_setting_metrics_of_sp1_step_2` | regression pins, the SP1 step 2 recapture: `PUSH_SETTING_METRICS` (`stroke_m`, `net_accel_mps2`, `net_accel_g`) appear as one block right after `carriage_mass_kg` in the metrics keys of silo_cold and silo_failed and as the three `sensitivity.[].metrics` paths, never on the pad and as no `delta_` key | exact (key lists) |
 | `test_config_planar.py` (model rules) | rotation only on planar_2d; explicit site; guidance, search, checks and target; aero and two stages; `integrator.rtol == search.final_rtol`; insertion and planar ends; `integrator.method` round trip; Phase 3 track message; heating refusal on vertical_1d only; shared blocks refused in baselines, variants, sweeps, sensitivity and bounds; paired sweeps (guidance_study only); cases (calibration only); search skip (amendment 4); sensitivity paths perturb the vehicle numbers (amendment 5, expected values from the vehicle file); the aero bound and its paired baseline (amendment 6); search and checks validators; radian and kg properties; `budget_id`; planar variants, sweeps, sensitivity and bounds may not change the integrator block, `sample_dt_s` included (1-D keeps its freedom); paired sweeps planar_2d only, planar vehicle sweeps paired (1-D unchanged); later-stage `t_ign_s >= 0`; gamma*, fixed gamma*, delta and LTG pitch ranges; `search_atol_scale >= 1`; omega_p against omega_E cos(lat) sin(az) at four sites (465.1 m/s at the equator, negative westward); the section-11 checks fields; raw-form-only experiments; `sim.run` runs the shipped silo_failed in the planar model (the former strict-xfail tripwire of the step-19 gap) | exact / raises / 1e-12 relative |
 | `test_thrust_schedule.py::test_thrust_fraction_shapes`, `::test_zero_duration_is_a_step` | f for step, ramp, lag ("Thrust startup") | 1e-12 relative |
 | `test_thrust_schedule.py::test_propellant_burned_closed_forms`, `::test_lag_forms_are_exact_just_after_ignition` | `propellant_burned_kg`: mdot t_r/2 at t_r; mdot [dt - tau (1 - e^(-dt/tau))]; just after ignition the lag forms follow their series, never a negative mass | 1e-12 relative; series 1e-6 relative |
@@ -4999,7 +5103,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_assist_energy.py::test_ramp_straddling_the_push_closes` | closure only for a ramp lit inside the push; release at t_push | residual_rel < 1e-9; abs(s - L) < 1e-9 m |
 | `test_silo.py::test_cold_push_kinematics_and_drive_force` | v_exit = sqrt(2 a L), t = sqrt(2L/a), s = a t^2/2, F_drive = M (a + g_eff), m_c in {0, 20 t} ("Silo model") | 1e-10 relative |
 | `test_silo.py::test_vertical_track_carries_no_normal_load`, `::test_horizontal_track_unit_level` | N = m (kappa sdot^2 + g_eff cos phi): 0 at phi = pi/2, m g_eff at phi = 0 (unit level), sddot = a unchanged | abs(N) < 1e-6 N; 1e-10 relative |
-| `test_silo.py::test_cold_felt_acceleration_and_interface_force`, `::test_peak_felt_axial_g_folds_in_the_track` | felt = a + g_eff = 39.2182 m/s^2 = 3.9992 g0; F_int = m_v (a + g_eff) = 21.2786 MN; run-wide peak = max(track, flight) with its phase (5 g0 push: ASSIST) | 1e-10 relative (hand numbers to 1e-4 as a cross-check) |
+| `test_silo.py::test_cold_felt_acceleration_and_interface_force`, `::test_peak_felt_axial_g_folds_in_the_track` | felt = a + g_eff = 39.2182 m/s^2 = 3.9991 g0; F_int = m_v (a + g_eff) = 21.2786 MN; run-wide peak = max(track, flight) with its phase (5 g0 push: ASSIST) | 1e-10 relative (hand numbers to 1e-4 as a cross-check) |
 | `test_silo.py::test_hot_full_thrust_interface_and_drive_force` | F_int(t) = m_v(t)(a + g) - T at every sample, minimum at exit; F_drive at f_imp in {0, 1} | 1e-10 relative |
 | `test_silo.py::test_interface_tensile_flag_for_a_slow_hot_push` | 0.5 g0 hot with f_imp = 1: F_drive > 0, F_int < 0 -> `interface_tensile` | sign / flag |
 | `test_silo.py::test_drive_limit_when_a_ramp_crosses_zero_drive_force`, `::test_drive_force_negative_at_push_start_ends_at_t0` | `drive_limit` at the root of m(t)(a + g) = T(t) (the quadratic solved in the test); already negative at t0 -> ends at t0, release items None; `allow_negative_drive_force` completes with `drive_braking`, work_in equals the drive_limit run's net E_drive at the root | root 1e-9 relative; work 1e-9 relative |
@@ -5008,6 +5112,8 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_silo.py::test_cold_energy_power_and_facility` | E_drive = M (a + g) L, P_peak = F v_exit, d_brake = v^2/(2 a_brake) = L a/a_brake = 60 m, facility 160 m | 1e-10 relative |
 | `test_silo.py::test_hot_full_thrust_energy_and_peak_power` | E_drive = (a + g) a [M0 t_p^2/2 - mdot t_p^3/3] - T L, W_thrust = T L, P(f_imp = 1)/P_cold = (M0 - mdot t_p)/m0, P(f_imp = 0) = ((M0 - mdot t_p)(a + g) - T) v_exit; P_hot at least 35 % below P_cold | 1e-10 relative |
 | `test_silo.py::test_hot_push_peak_power_from_the_dense_output` | 0.6 g0 hot: vertex value F_drive(0)^2 a/(4 mdot (a + g)) at t* = F_drive(0)/(2 mdot (a + g)) inside the push; braking minimum at release | 1e-9 relative (t* to 1e-6 s abs; the sampled maximum within 1e-3; measured 3e-14) |
+| `test_silo.py::test_exit_speed_push_closed_forms`, `::test_exit_speed_vertical_1d_run_from_the_experiment_file` | "Silo model", the push stated by its exit speed (v = 76.71 m/s, L = 200 m, cold, mu/r^2, through `ConstantAccelConfig` and `build_assist`): integrated exit speed v, push time 2 L / v; at every sample s = v^2 t^2 / (4 L), sdot = v^2 t / (2 L); felt (v^2 / (2 L) + g_eff)/g0; drive and interface force m0 (v^2 / (2 L) + g_eff); E_drive = m0 (v^2 / 2 + g_eff L); P_peak = F_drive v; braking v^2 / (2 a_brake), facility L + that; the 1-D metrics carry no push-setting key; end to end on vertical_1d from silo_screening_1d (a variant restating silo_cold by exit speed, `resolve_experiment`, `sim.run_resolved`): exit speed v, push time 2 L / v, the exit-speed assumption line written out | 1e-10 relative (felt 2.4993 g0 as a hand number to 1e-4) |
+| `test_silo.py::test_exit_speed_run_is_the_equivalent_net_accel_run`, `::test_net_accel_assumptions_keep_their_phase_1_text` | "Silo model", the same push stated two ways, cold and lit 1 s before release on the track: for this (v, L) v^2 / (2 L) and (v^2 / (2 g0 L)) g0 are the same double (asserted), and the time series, events and metrics are identical; the assumptions differ by the one exit-speed line, after the net-acceleration line; the nine Phase 1 lines written out for a model without a configured exit speed, the tenth line written out with one, a non-positive or non-finite one refused | exact (frames and metrics compared bit for bit) / raises |
 | `test_failed_ignition.py::test_silo_failed_under_inverse_square_gravity_via_sim_run` | apex r_a - R_E, t_up in the conditioned Kepler form, t_return = 2 t_up, abs(v_impact) = v_exit, shaft bottom sqrt(v^2 + 2 g_eff L), carriage at d_brake met at the Kepler fall time and energy speed; status, events, T_vac = 0, abs(J_grav) ("Failed-ignition coast") | apex 1e-5 m; 1e-9 relative; abs(J_grav) < 1e-6 m/s (hand numbers 300.270 m, 7.8291 s, 88.56 m/s as a cross-check) |
 | `test_failed_ignition.py::test_silo_failed_under_constant_gravity_via_simulate` | h = 3 L, t_up = v0/g0, t_return = 2 v0/g0, carriage at v0/g0 + sqrt(2 (h - d)/g0) at sqrt(v0^2 - 2 g0 d) | 1e-9 relative |
 | `test_failed_ignition.py::test_mouth_above_the_ground_splits_return_and_impact`, `::test_mouth_below_the_ground_never_returns` | return at the mouth, impact at sqrt(v0^2 + 2 g dz), shaft bottom sqrt(v0^2 + 2 g L) either way; the flag; gravity loss v0 - v_impact < 0 | 1e-8 relative |

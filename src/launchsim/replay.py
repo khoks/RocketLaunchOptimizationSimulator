@@ -457,10 +457,20 @@ def ignition_text(m: dict[str, Any], assisted: bool) -> str:
     return f"stage 1 lit {before}, held at the start of the track ({shape})"
 
 
+def push_accel_g(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float | None:
+    """The net acceleration of a run's push in g0, for labels: the run's ``net_accel_g``
+    metric (metrics.json; written for every planar push whichever way its config
+    states it, so a push defined by ``exit_speed_mps`` has it too), else the assist
+    block's ``net_accel_g`` key (resolved_config.yaml; results written before the
+    metric existed). None when neither holds a finite number."""
+    accel = _finite(m.get("net_accel_g"))
+    return _finite(assist.get("net_accel_g")) if accel is None else accel
+
+
 def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
-    """The ground start of a run: 'pad start' or the assist geometry, drive, carriage
-    mass and exhaust impingement fraction (when non-zero) and exit speed, from
-    resolved_config.yaml and metrics.json."""
+    """The ground start of a run: 'pad start' or the assist geometry, drive (the net
+    acceleration of ``push_accel_g``), carriage mass and exhaust impingement fraction
+    (when non-zero) and exit speed, from resolved_config.yaml and metrics.json."""
     if not is_assisted(assist):
         return "pad start"
     depth = _finite(m.get("track_start_altitude_m"))
@@ -475,7 +485,7 @@ def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
         where += f" {abs(depth):.0f} m deep"
     model = str(assist.get("model"))
     drive = f"{model} drive"
-    accel = _finite(assist.get("net_accel_g"))
+    accel = push_accel_g(assist, m)
     if model == "constant_accel" and accel is not None:
         drive = f"{accel:g} g net push"
     parts = [where, drive]
@@ -665,14 +675,15 @@ def drive_caveat(
 ) -> str | None:
     """What the assist model leaves out (prescribed push, massless carriage, vented
     shaft, kick without aerodynamic penalty), each naming its runs unless it applies to
-    every assisted run; None without an assisted run. ``sources``: run_source per run."""
+    every assisted run; None without an assisted run. ``sources``: run_source per run
+    (its metrics give the push's net acceleration, ``push_accel_g``)."""
     assisted = [r["key"] for r in runs if r["assisted"]]
     if not assisted:
         return None
     applies: dict[str, list[str]] = {}
     for name in assisted:
         assist = run_assist(sources[name]["config"])
-        accel = _finite(assist.get("net_accel_g"))
+        accel = push_accel_g(assist, sources[name]["metrics"])
         if assist.get("model") == "constant_accel" and accel is not None:
             part = f"the drive is a prescribed {accel:g} g push with no force or power limit"
             applies.setdefault(part, []).append(name)

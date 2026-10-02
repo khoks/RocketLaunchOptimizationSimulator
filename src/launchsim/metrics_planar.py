@@ -39,6 +39,7 @@ import pandas as pd
 from scipy.optimize import minimize_scalar
 
 from launchsim.assist.base import AssistModel, TrackGeometry
+from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.constants import V_REL_EPS_MPS
 from launchsim.dynamics import PLANAR_LAYOUT, PlanarParams, TrackParams, planar_forces
 from launchsim.losses import (
@@ -919,6 +920,36 @@ def planar_run_metrics(
     return out
 
 
+PUSH_SETTING_METRICS: tuple[str, ...] = ("stroke_m", "net_accel_mps2", "net_accel_g")
+"""The planar-only track metrics that state the push as the model flew it (SP1 step 2;
+``push_setting_metrics``). Settings, not results: they are in no summary row and not in
+PLANAR_REQUIRED_METRICS, and the 1-D ``metrics.track_metrics`` does not write them."""
+
+
+def prescribed_accel_mps2(assist: AssistModel) -> float | None:
+    """The net acceleration [m/s^2] along the track that a drive prescribes
+    (``ConstantAccelAssist.net_accel_mps2``), or None for a drive that prescribes none
+    (a force- or power-limited drive, whose acceleration is a result, not a setting)."""
+    if isinstance(assist, ConstantAccelAssist):
+        return float(assist.net_accel_mps2)
+    return None
+
+
+def push_setting_metrics(assist: AssistModel, track: TrackGeometry) -> dict[str, Any]:
+    """PUSH_SETTING_METRICS of a push: ``stroke_m``, the track length L [m];
+    ``net_accel_mps2``, the prescribed net acceleration a along the track [m/s^2],
+    whichever way the config stated it (``net_accel_g``, or ``exit_speed_mps`` with a =
+    v^2 / (2 L)); and ``net_accel_g`` = a / g0 (g0 the unit, never a gravity model).
+    Both accelerations are None for a drive that prescribes none. Frame: along the
+    track tangent."""
+    accel = prescribed_accel_mps2(assist)
+    return {
+        "stroke_m": float(track.length_m),
+        "net_accel_mps2": accel,
+        "net_accel_g": None if accel is None else float(to_g(accel)),
+    }
+
+
 def planar_track_metrics(
     trace: RunTrace,
     assist: AssistModel,
@@ -929,9 +960,11 @@ def planar_track_metrics(
     """The track metrics of a planar assisted run: the items and names of the 1-D
     ``metrics.track_metrics`` (docs/physics.md, "Silo model"; SI), with the exit speed
     |v_rel| at release from the planar state and the felt g from the planar frame's
-    ASSIST rows (felt_axial_g). The TRACK_METRIC_ALIASES are written beside their
-    canonical keys, and peak_track_normal_g = max(vehicle, carriage). Frame: the flat
-    track frame with constant g_eff."""
+    ASSIST rows (felt_axial_g), plus the planar-only PUSH_SETTING_METRICS (the stroke
+    and the net acceleration the push flew, so a reader of metrics.json has them when
+    the config states the push by its exit speed). The TRACK_METRIC_ALIASES are written
+    beside their canonical keys, and peak_track_normal_g = max(vehicle, carriage).
+    Frame: the flat track frame with constant g_eff."""
     rows = frame[frame["phase"] == ASSIST_KIND]
     phases = trace.assist_phases()
     y_rel = trace.y_release
@@ -979,6 +1012,7 @@ def planar_track_metrics(
         "peak_track_normal_g": max(n_v, n_c),
     }
     out.update({alias: out[canonical] for alias, canonical in TRACK_METRIC_ALIASES.items()})
+    out.update(push_setting_metrics(assist, track))
     return out
 
 

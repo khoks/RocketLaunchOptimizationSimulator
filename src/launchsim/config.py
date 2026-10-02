@@ -40,9 +40,11 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     ValidationError,
     ValidationInfo,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -111,10 +113,12 @@ rule acts on the key the path names: a dict given as a path's value replaces wha
 was at that path whole (apply_overrides), so nothing inside it is inherited and there
 is nothing left for the rule to displace.
 
-The table arrives before the fields (SP1 step 1): ``exit_speed_mps`` comes with SP1
-step 2 and ``at_depth_m``, ``at_speed_mps``, ``at_height_m`` and ``height_method`` with
-step 3, each with the validator that enforces "exactly one family" on the resolved
-model. Until then a run dict that carries one of them is refused as an unknown key."""
+The assist group's fields exist since SP1 step 2: ``ConstantAccelConfig`` takes
+``net_accel_g`` or ``exit_speed_mps`` and its validator enforces "exactly one family"
+on the resolved model. The ignition group's table arrived before its fields (SP1
+step 1): ``at_depth_m``, ``at_speed_mps``, ``at_height_m`` and ``height_method`` come
+with step 3, with their validator. Until then a run dict that carries one of them is
+refused as an unknown key."""
 LATITUDE_RANGE_DEG = (-90.0, 90.0)
 AZIMUTH_RANGE_DEG = (0.0, 360.0)
 VERTICAL_TRACK_DEG = 90.0
@@ -581,12 +585,26 @@ class NoAssistConfig(_Model):
 class ConstantAccelConfig(_Model):
     """Prescribed constant net acceleration along a straight track (screening drive).
 
+    The push over ``stroke_m`` (the track length L [m]) is stated in exactly one of two
+    ways (ASSIST_KEY_FAMILIES; docs/physics.md, "Silo model"): ``net_accel_g``, the net
+    acceleration a in units of g0, or ``exit_speed_mps``, the speed v [m/s] along the
+    track at its exit, from which the acceleration is derived, a = v^2 / (2 L) (a push
+    from rest at constant acceleration; push time 2 L / v). Both must be > 0 and the
+    exit speed finite, and so must the derived acceleration. A key counts as given when
+    it is present, an explicit null included (pydantic's ``model_fields_set``; the merge
+    rule of EXCLUSIVE_KEY_FAMILIES counts it the same way): both keys present is refused
+    whatever their values, neither present is refused, and the one key present must
+    hold a number, so a null is never a way to leave a key out. The unused key is
+    therefore left out of ``model_dump`` (``_dump_one_push_key``): a dump states the
+    push by its one key, as the input did, and validates again to an equal model.
+
     The ``_g`` and ``_t`` fields hold the YAML-side units and exist only for the file
     boundary and reporting; dynamics and the assist model must use the SI properties
     net_accel_mps2, carriage_mass_kg and brake_decel_mps2."""
 
     model: Literal["constant_accel"]
-    net_accel_g: float = Field(gt=0.0)
+    net_accel_g: float | None = Field(default=None, gt=0.0)
+    exit_speed_mps: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     stroke_m: float = Field(gt=0.0)
     carriage_mass_t: float = Field(default=0.0, ge=0.0)
     brake_decel_g: float = Field(gt=0.0)
@@ -596,9 +614,56 @@ class ConstantAccelConfig(_Model):
     allow_negative_drive_force: bool = False
     track: TrackConfig = TrackConfig()
 
+    @model_validator(mode="after")
+    def _one_push_parameterisation(self) -> ConstantAccelConfig:
+        """Exactly one push key given (present, a null counting as given), holding a
+        number; on the exit-speed path the derived a = v^2 / (2 L) [m/s^2] finite and
+        > 0 (an overflow or underflow of absurd inputs, or an infinite stroke)."""
+        keys = [key for family in ASSIST_KEY_FAMILIES for key in family]
+        given = [key for key in keys if key in self.model_fields_set]
+        if len(given) != 1:
+            found = ", ".join(given) if given else "neither"
+            raise ValueError(
+                f"constant_accel needs exactly one of {' or '.join(keys)} beside stroke_m "
+                f"(given: {found}; a key given as null counts as given)"
+            )
+        if getattr(self, given[0]) is None:
+            raise ValueError(
+                f"constant_accel {given[0]} is null: the key that states the push must "
+                "hold a number (a null does not unset a key)"
+            )
+        if self.exit_speed_mps is not None:
+            accel = self.net_accel_mps2
+            if not (math.isfinite(accel) and accel > 0.0):
+                raise ValueError(
+                    f"constant_accel: exit_speed_mps {self.exit_speed_mps:g} over stroke_m "
+                    f"{self.stroke_m:g} gives the net acceleration v^2 / (2 L) = {accel:g} "
+                    "m/s^2, which must be finite and > 0"
+                )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _dump_one_push_key(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The default dump without the push key that is not used (the one holding
+        None; the validator guarantees exactly one holds a number), so ``model_dump``
+        states the push as the input did and ``model_validate`` of it gives an equal
+        model, which a null key would make it refuse. A dump of a push stated by
+        ``net_accel_g`` is the dict it was before ``exit_speed_mps`` existed."""
+        out: dict[str, Any] = handler(self)
+        for key in (key for family in ASSIST_KEY_FAMILIES for key in family):
+            if key in out and getattr(self, key) is None:
+                del out[key]
+        return out
+
     @property
     def net_accel_mps2(self) -> float:
-        """Prescribed net acceleration [m/s^2]."""
+        """Prescribed net acceleration a [m/s^2]: ``net_accel_g`` in SI when the push is
+        stated by its acceleration, else v^2 / (2 L) from ``exit_speed_mps`` v [m/s] and
+        ``stroke_m`` L [m] (constant acceleration from rest along the track)."""
+        if self.exit_speed_mps is not None:
+            return self.exit_speed_mps * self.exit_speed_mps / (2.0 * self.stroke_m)
+        if self.net_accel_g is None:  # unreachable on a validated instance
+            raise ValueError("constant_accel has neither net_accel_g nor exit_speed_mps")
         return units.from_g(self.net_accel_g)
 
     @property

@@ -8,8 +8,10 @@ UTF-8 document; the default output lands outside the results tree; vertical_1d r
 sweep points, unknown, repeated or too many runs and outputs inside results/ are
 refused with one error line; the text is generated from the run data (calibration
 caveat conditional on the vehicle, each run's own dry-mass slope and upper-bound
-flags); and the page's inline script is syntactically valid (checked with node when it
-is installed, skipped otherwise)."""
+flags; the push's net acceleration from the run's ``net_accel_g`` metric, so a run
+defined by exit speed has its label, with the config key as the fallback for results
+written before the metric); and the page's inline script is syntactically valid
+(checked with node when it is installed, skipped otherwise)."""
 
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ import yaml
 
 from launchsim import replay
 from launchsim.cli import main
+from launchsim.constants import G0_MPS2
 
 EXPERIMENT = "synth_replay_2d"
 TIMESTAMP = "20260101T000000Z"
@@ -500,6 +503,89 @@ def test_detail_names_carriage_mass_and_exhaust_impingement(tmp_path: Path) -> N
     detail = runs["silo_step"]["detail"]
     assert "5 t carriage" in detail and "exhaust impingement fraction 1" in detail
     assert runs["pad"]["detail"].startswith("pad start")
+
+
+SILO_EXIT_SPEED_MPS = 50.0
+"""The exit speed of the synthetic silo runs [m/s] (``_row``, ``_run_metrics``)."""
+
+
+def _restate_push(
+    run_dir: Path, name: str, *, metric_g: float | None, config: dict[str, float]
+) -> None:
+    """Rewrite run ``name`` of a synthetic directory: its metrics.json record gets the
+    ``net_accel_g`` metric ``metric_g`` (None: no such key, as results written before
+    the metric existed) and its resolved_config.yaml assist block states the push by
+    ``config`` alone (``net_accel_g`` or ``exit_speed_mps``; {} for neither)."""
+    path = run_dir / "metrics.json"
+    metrics = json.loads(path.read_text(encoding="utf-8"))
+    record = metrics["runs"][name]
+    record.pop("net_accel_g", None)
+    if metric_g is not None:
+        record["net_accel_g"] = metric_g
+    path.write_text(json.dumps(metrics), encoding="utf-8")
+    path = run_dir / "resolved_config.yaml"
+    resolved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assist = resolved["runs"][name]["run"]["assist"]
+    for key in ("net_accel_g", "exit_speed_mps"):
+        assist.pop(key, None)
+    assist.update(config)
+    path.write_text(yaml.safe_dump(resolved), encoding="utf-8")
+
+
+def test_push_label_of_a_run_defined_by_exit_speed_comes_from_the_metric(tmp_path: Path) -> None:
+    """A run whose assist block states the push by ``exit_speed_mps`` (no ``net_accel_g``
+    key in resolved_config.yaml) still gets its drive label and its caveat: both read
+    the run's ``net_accel_g`` metric, here v^2 / (2 g0 L) for the synthetic silo (50 m/s
+    over 50 m: 25 m/s^2, computed in the test). The metric wins over a config key that
+    disagrees; results without the metric fall back to the config key (the fixture's
+    3 g, as before the metric existed); with neither, the label names the model and the
+    caveat drops the prescribed-push part."""
+    run_dir = _make_run_dir(tmp_path)
+    accel_g = SILO_EXIT_SPEED_MPS**2 / (2.0 * G0_MPS2 * DEPTH_M)
+    label = f"{accel_g:g} g"
+    assert label == "2.54929 g"  # hand number: 25 / 9.80665
+    _restate_push(run_dir, "silo", metric_g=accel_g, config={"exit_speed_mps": SILO_EXIT_SPEED_MPS})
+    data = replay.replay_data(run_dir, ["pad", "silo"])
+    detail = data["runs"][1]["detail"]
+    assert f"vertical silo 50 m deep, {label} net push" in detail and "exit 50.0 m/s" in detail
+    text = " ".join(data["meta"]["caveats"])
+    assert f"The drive is a prescribed {label} push with no force or power limit" in text
+    assert "3 g" not in detail and "prescribed 3 g push" not in text
+    # the metric first: a config key that disagrees does not win
+    _restate_push(run_dir, "silo", metric_g=accel_g, config={"net_accel_g": 3.0})
+    detail = replay.replay_data(run_dir, ["pad", "silo"])["runs"][1]["detail"]
+    assert f"{label} net push" in detail and "3 g net push" not in detail
+    # no metric (older results): the config key
+    _restate_push(run_dir, "silo", metric_g=None, config={"net_accel_g": 3.0})
+    data = replay.replay_data(run_dir, ["pad", "silo"])
+    assert "3 g net push" in data["runs"][1]["detail"]
+    assert "prescribed 3 g push" in " ".join(data["meta"]["caveats"])
+    # neither: no acceleration to name
+    _restate_push(run_dir, "silo", metric_g=None, config={"exit_speed_mps": SILO_EXIT_SPEED_MPS})
+    data = replay.replay_data(run_dir, ["pad", "silo"])
+    detail = data["runs"][1]["detail"]
+    assert "constant_accel drive" in detail and "net push" not in detail
+    text = " ".join(data["meta"]["caveats"])
+    assert "push with no force or power limit" not in text
+    assert "The carriage is massless" in text
+    # the page of the exit-speed run renders (strict JSON, the label embedded)
+    _restate_push(run_dir, "silo", metric_g=accel_g, config={"exit_speed_mps": SILO_EXIT_SPEED_MPS})
+    page = replay.write_replay_page(run_dir, ["pad", "silo"], tmp_path / "page.html")
+    embedded = _embedded(page.read_text(encoding="utf-8"))
+    assert f"{label} net push" in embedded["runs"][1]["detail"]
+
+
+def test_two_runs_with_different_push_accelerations_are_named_in_the_caveat(
+    tmp_path: Path,
+) -> None:
+    """One run stated by exit speed (its metric) beside one stated by net_accel_g (its
+    config key): the caveat names each prescribed push with its own run."""
+    run_dir = _make_run_dir(tmp_path)
+    accel_g = SILO_EXIT_SPEED_MPS**2 / (2.0 * G0_MPS2 * DEPTH_M)
+    _restate_push(run_dir, "silo", metric_g=accel_g, config={"exit_speed_mps": SILO_EXIT_SPEED_MPS})
+    text = " ".join(replay.replay_data(run_dir, None)["meta"]["caveats"])
+    assert f"a prescribed {accel_g:g} g push with no force or power limit (silo)" in text
+    assert "a prescribed 3 g push with no force or power limit (silo_step)" in text
 
 
 def test_output_in_any_results_tree_is_refused(tmp_path: Path) -> None:

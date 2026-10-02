@@ -51,9 +51,14 @@ from scipy.integrate import quad
 from launchsim import cli, compare, sim, summary
 from launchsim.atmosphere import ATMOSPHERE_ASSUMPTIONS
 from launchsim.config import ChecksConfig, ResolvedExperiment, resolve_experiment
-from launchsim.constants import MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
+from launchsim.constants import G0_MPS2, MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.dynamics import PLANAR_STATE_NAMES
-from launchsim.metrics_planar import PLANAR_REQUIRED_METRICS, missing_required, unwrap_rad
+from launchsim.metrics_planar import (
+    PLANAR_REQUIRED_METRICS,
+    PUSH_SETTING_METRICS,
+    missing_required,
+    unwrap_rad,
+)
 from launchsim.summary import PLANAR_VARIANT_ROWS
 from launchsim.vehicle import payload_gain_kg, with_payload
 
@@ -1007,6 +1012,115 @@ def test_unwrap_takes_the_ambiguous_minus_pi_step_as_plus_pi() -> None:
     assert near[1] == pytest.approx(3.0 * half + tiny, abs=1e-15)
 
 
+# ------------------------------------------------- exit-speed option (SP1 step 2)
+
+EXIT_SPEED_MPS = 76.71
+"""A configured exit speed [m/s] (the rounded exit speed of the 3 g0, 100 m silo)."""
+DEEP_STROKE_M = 200.0
+"""The stroke [m] of the exit-speed runs: about 1.5 g0 net at EXIT_SPEED_MPS."""
+
+
+def _same_metric(x: Any, y: Any) -> bool:
+    """Equality of two metric values, a NaN equal to a NaN (n/a in both runs)."""
+    if isinstance(x, float) and isinstance(y, float) and math.isnan(x) and math.isnan(y):
+        return True
+    return bool(x == y)
+
+
+@pytest.fixture(scope="module")
+def exit_speed_runs(repo_root: Path) -> dict[str, Any]:
+    """Two fixed-guidance cold silos of DEEP_STROKE_M that differ only in how the push is
+    stated: ``by_speed`` (exit_speed_mps = EXIT_SPEED_MPS) and ``by_accel``
+    (net_accel_g = v^2 / (2 g0 L), computed here). RunResults by name, run in memory
+    (nothing written; the pad is not flown, ``fast_run`` has one)."""
+    exp, veh = _raw(repo_root)
+    exp = _fixed(exp, ("silo_cold",))
+    block = {k: v for k, v in exp["variants"]["silo_cold"]["assist"].items() if k != "net_accel_g"}
+    block["stroke_m"] = DEEP_STROKE_M
+    ignition = exp["variants"]["silo_cold"]["ignition"]
+    accel_g = EXIT_SPEED_MPS**2 / (2.0 * G0_MPS2 * DEEP_STROKE_M)
+    exp["variants"] = {
+        "by_speed": {"assist": {**block, "exit_speed_mps": EXIT_SPEED_MPS}, "ignition": ignition},
+        "by_accel": {"assist": {**block, "net_accel_g": accel_g}, "ignition": ignition},
+    }
+    resolved = resolve_experiment(exp, veh)
+    return {name: sim.run_resolved(run) for name, run in resolved.variants.items()}
+
+
+def test_planar_exit_speed_push_closed_forms_and_push_metrics(
+    exit_speed_runs: dict[str, Any], fast_run: tuple[Any, Path]
+) -> None:
+    """A planar silo stated by its exit speed v over L: |v_rel| at release is v and the
+    push time 2 L / v (1e-9); the felt axial g on the track is (v^2 / (2 L) + g_eff)/g0
+    with the site's g_eff = mu/R_E^2 - omega_p^2 R_E, the drive force m0 times that
+    acceleration and the cold drive energy m0 (v^2/2 + g_eff L), all computed here. The
+    planar-only push metrics state the push as flown: stroke_m = L, net_accel_mps2 =
+    v^2 / (2 L) and net_accel_g = v^2 / (2 g0 L); the run stated by net_accel_g carries
+    its configured value there; the pad (of ``fast_run``) carries none of the three,
+    they are not required metrics and no summary row reads them."""
+    v, length = EXIT_SPEED_MPS, DEEP_STROKE_M
+    rr = exit_speed_runs["by_speed"]
+    m = rr.result.metrics
+    assert rr.result.model == "planar_2d" and m["run_checks"] == "ok"
+    assert m["exit_speed_mps"] == pytest.approx(v, rel=1e-9)
+    assert m["speed_at_release_mps"] == pytest.approx(v, rel=1e-9)
+    assert m["push_time_s"] == pytest.approx(2.0 * length / v, rel=1e-9)
+    a = v * v / (2.0 * length)
+    g_eff = _g_eff_track()
+    m0 = rr.resolved.to_vehicle().liftoff_mass_kg()
+    assert m["felt_g_track_peak"] == pytest.approx((a + g_eff) / G0_MPS2, rel=1e-9)
+    assert m["drive_force_peak_N"] == pytest.approx(m0 * (a + g_eff), rel=1e-9)
+    assert m["drive_energy_J"] == pytest.approx(m0 * (0.5 * v * v + g_eff * length), rel=1e-9)
+    assert m["track_start_altitude_m"] == -length
+    assert m["stroke_m"] == length
+    assert m["net_accel_mps2"] == pytest.approx(a, rel=1e-15)
+    assert m["net_accel_g"] == pytest.approx(a / G0_MPS2, rel=1e-15)
+    other = exit_speed_runs["by_accel"].result.metrics
+    configured = exit_speed_runs["by_accel"].resolved.run.assist.net_accel_g
+    assert other["stroke_m"] == length
+    assert other["net_accel_g"] == pytest.approx(configured, rel=1e-15)
+    assert other["net_accel_mps2"] == pytest.approx(configured * G0_MPS2, rel=1e-15)
+    assert tuple(PUSH_SETTING_METRICS) == ("stroke_m", "net_accel_mps2", "net_accel_g")
+    pad = fast_run[0].baseline
+    assert pad.name == "pad" and pad.resolved.run.assist.model == "none"
+    assert not set(PUSH_SETTING_METRICS) & set(pad.result.metrics)
+    assert not set(PUSH_SETTING_METRICS) & set(PLANAR_REQUIRED_METRICS)
+    assert not set(PUSH_SETTING_METRICS) & {key for _l, _s, key in PLANAR_VARIANT_ROWS}
+
+
+def test_planar_exit_speed_run_is_the_equivalent_net_accel_run(
+    exit_speed_runs: dict[str, Any],
+) -> None:
+    """The planar run stated by exit speed v over L and the one stated by net_accel_g =
+    v^2 / (2 g0 L) fly the same trajectory through the same guidance. For this (v, L)
+    the two accelerations, v^2 / (2 L) and (v^2 / (2 g0 L)) g0, are the same double
+    (asserted first), so the planar pipeline, which sees only the acceleration, must give
+    identical time series, events and metrics (the push metrics included), compared
+    exactly: any dependence on how the push is stated would show. Their assumptions
+    differ by exactly the line that names the configured exit speed."""
+    v, length = EXIT_SPEED_MPS, DEEP_STROKE_M
+    assert v * v / (2.0 * length) == v * v / (2.0 * G0_MPS2 * length) * G0_MPS2
+    by_speed, by_accel = exit_speed_runs["by_speed"].result, exit_speed_runs["by_accel"].result
+    assert by_speed.status == by_accel.status and by_speed.metrics["run_checks"] == "ok"
+    assert by_speed.events is not None and by_accel.events is not None
+    assert len(by_speed.timeseries) > 100 and len(by_speed.events) > 5
+    pd.testing.assert_frame_equal(by_speed.timeseries, by_accel.timeseries, check_exact=True)
+    pd.testing.assert_frame_equal(by_speed.events, by_accel.events, check_exact=True)
+    assert list(by_speed.metrics) == list(by_accel.metrics)
+    differ = [
+        key
+        for key, value in by_speed.metrics.items()
+        if not _same_metric(value, by_accel.metrics[key])
+    ]
+    assert differ == []
+    lines, plain = list(by_speed.assumptions), list(by_accel.assumptions)
+    extra = [line for line in lines if line not in plain]
+    assert len(extra) == 1 and len(lines) == len(plain) + 1
+    assert f"configured exit speed {EXIT_SPEED_MPS:g} m/s" in extra[0]
+    assert [line for line in lines if line != extra[0]] == plain
+    assert not [line for line in plain if "exit speed" in line]
+
+
 # --------------------------------------------------------- output capture (SP1 step 1)
 
 
@@ -1028,6 +1142,27 @@ def test_written_outputs_keep_the_captured_structure(
         assert run["timeseries_columns"] == list(sim.PLANAR_TIMESERIES_COLUMNS), name
         assert run["event_columns"] == list(sim.PLANAR_EVENT_COLUMNS), name
         assert set(PLANAR_REQUIRED_METRICS) <= set(run["metrics_keys"]), name
+
+
+def test_capture_holds_the_push_setting_metrics_of_sp1_step_2(planar_pins: ModuleType) -> None:
+    """The recapture of SP1 step 2 added exactly the PUSH_SETTING_METRICS keys
+    (stroke_m, net_accel_mps2, net_accel_g): one block after the track metrics of each
+    silo run and of the sensitivity records (all cases of silo_cold), never on the pad,
+    and as no ``delta_`` key of a comparison (the pad has no push to difference
+    against)."""
+    capture = planar_pins.read_json(planar_pins.CAPTURE_FILE)
+    added = list(PUSH_SETTING_METRICS)
+    for name in ("silo_cold", "silo_failed"):
+        keys = capture["runs"][name]["metrics_keys"]
+        first = keys.index(added[0])
+        assert keys[first : first + len(added)] == added, name
+        assert keys[first - 1] == "carriage_mass_kg", name  # the last track-only key
+    assert not set(added) & set(capture["runs"]["pad"]["metrics_keys"])
+    outside = capture["metrics_keys"]
+    sensitivity = [f"sensitivity.[].metrics.{key}" for key in added]
+    assert [path for path in outside if path.rsplit(".", 1)[-1] in added] == sensitivity
+    assert not [path for path in outside if path.rsplit(".", 1)[-1].startswith("delta_stroke")]
+    assert not [path for path in outside if "delta_net_accel" in path]
 
 
 def test_summary_matches_the_capture_in_the_capture_environment(

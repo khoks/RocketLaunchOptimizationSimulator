@@ -4,8 +4,11 @@
 The acceleration is imposed, sddot = a exactly, and the drive force is solved from the
 track equation at every instant, so every closed form is exact (v_exit = sqrt(2 a L),
 t_push = sqrt(2 L / a), s = a t^2 / 2) and a hot start changes only the forces and the
-energy, never the exit speed. Force and power limits are Phase 3's ``linear_motor``
-behind the same interface. SI, radians, pure.
+energy, never the exit speed. The acceleration is either the configured one or derived
+from a configured exit speed v over the stroke L, a = v^2 / (2 L), in which case
+t_push = 2 L / v (``config.ConstantAccelConfig``; the model below is the same either
+way and only its assumptions say which was the input). Force and power limits are
+Phase 3's ``linear_motor`` behind the same interface. SI, radians, pure.
 """
 
 from __future__ import annotations
@@ -38,7 +41,10 @@ class ConstantAccelAssist:
     the assumptions only (the dynamics receive g_eff through ``state_rate``);
     omega_p_rads: the planar rotation rate [rad/s] folded into that g_eff (g_eff =
     mu/R_E^2 - omega_p^2 R_E), quoted in the assumptions only (0 in the 1-D model; the
-    planar pipeline sets the site's value). name and
+    planar pipeline sets the site's value); exit_speed_input_mps: the configured exit
+    speed v [m/s] when net_accel_mps2 was derived from it (a = v^2 / (2 L), L the track
+    length), None when the acceleration itself is the input; quoted in the assumptions
+    only (the dynamics use net_accel_mps2 alone). name and
     extra_state_names are class constants (the registry key and the track state layout
     cannot change per instance). At each instant, with M = m_v + m_c and T the
     vehicle's delivered thrust along the track,
@@ -60,6 +66,7 @@ class ConstantAccelAssist:
     allow_negative_drive: bool = False
     g_eff_mps2: float | None = None
     omega_p_rads: float = 0.0
+    exit_speed_input_mps: float | None = None
 
     @classmethod
     def from_config(
@@ -69,7 +76,9 @@ class ConstantAccelAssist:
         (``assist.build_assist``): the config's SI properties feed the model, g_eff_mps2
         [m/s^2] is quoted in its assumptions, and the track starts at exit_altitude -
         L sin phi so that its exit sits at the configured altitude in the datum frame
-        (a buried silo starts at -L)."""
+        (a buried silo starts at -L). ``config.net_accel_mps2`` is the acceleration
+        either way (the configured one, or v^2 / (2 L) from a configured exit speed,
+        which is then recorded as exit_speed_input_mps for the assumptions)."""
         phi = config.track.phi_rad
         track = StraightTrack(
             length_m=config.stroke_m,
@@ -84,6 +93,7 @@ class ConstantAccelAssist:
             f_imp=config.exhaust_impingement_fraction,
             allow_negative_drive=config.allow_negative_drive_force,
             g_eff_mps2=g_eff_mps2,
+            exit_speed_input_mps=config.exit_speed_mps,
         )
         return model, track
 
@@ -100,6 +110,9 @@ class ConstantAccelAssist:
             raise ValueError("f_imp must lie in [0, 1]")
         if not math.isfinite(self.omega_p_rads):
             raise ValueError("omega_p_rads must be finite")
+        v_in = self.exit_speed_input_mps
+        if v_in is not None and not (math.isfinite(v_in) and v_in > 0.0):
+            raise ValueError("exit_speed_input_mps must be finite and > 0")
 
     def initial_extra(self) -> np.ndarray:
         """No extra states."""
@@ -171,13 +184,29 @@ class ConstantAccelAssist:
             "1-DOF track frame, Coriolis neglected"
         )
 
+    def exit_speed_assumption(self) -> tuple[str, ...]:
+        """The one line a push stated by its exit speed adds (empty when the net
+        acceleration is the input, so those runs keep their Phase 1 list): the
+        configured exit speed [m/s] and the derivation a = v_exit^2 / (2 L) of the
+        acceleration the line before it quotes."""
+        if self.exit_speed_input_mps is None:
+            return ()
+        return (
+            "constant_accel: the net acceleration is derived from the configured exit speed "
+            f"{self.exit_speed_input_mps:g} m/s (assumed) and the track length L, a = "
+            "v_exit^2 / (2 L); the push time is 2 L / v_exit",
+        )
+
     def assumptions(self) -> tuple[str, ...]:
         """The drive's assumptions, every parameter being an assumption in Phase 1; the
         track-gravity line from ``track_gravity_assumption`` (unchanged for omega_p =
-        0)."""
+        0). A push stated by its exit speed adds ``exit_speed_assumption`` after the
+        net-acceleration line; one stated by its acceleration has the Phase 1 lines
+        unchanged."""
         return (
             f"constant_accel: prescribed net acceleration {units.to_g(self.net_accel_mps2):g} g0 "
             "(assumed); drive force unconstrained, solved from the track equation",
+            *self.exit_speed_assumption(),
             f"constant_accel: carriage mass {units.kg_to_t(self.carriage_mass_kg):g} t (assumed)",
             f"constant_accel: braking deceleration {units.to_g(self.brake_decel_mps2):g} g0 "
             "(assumed)",

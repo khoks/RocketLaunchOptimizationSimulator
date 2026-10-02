@@ -1,9 +1,9 @@
 {
  "_note": "What the fixed-guidance fast experiment of tests/test_planar_pipeline.py (fast_experiment: pad, silo_cold, silo_failed) writes: files, metrics.json key paths, CSV columns, and the sha256 of the provenance-free summary.md (output_summary.md beside this file is that text). Structure is compared in every environment, the summary digest only in the capture environment. captured_at is the git state at this capture (HEAD of the checkout, uncommitted changes, whether launchsim ran from the checkout's src). See tests/planar_pin_support.py.",
  "captured_at": {
-  "git": "c587a0873c9a",
+  "git": "1575b797b4aa",
   "dirty": true,
-  "launchsim_from_checkout": false
+  "launchsim_from_checkout": true
  },
  "environment": {
   "python": "3.12.11",
@@ -482,6 +482,9 @@
   "sensitivity.[].metrics.assist_energy_residual_rel",
   "sensitivity.[].metrics.track_start_altitude_m",
   "sensitivity.[].metrics.carriage_mass_kg",
+  "sensitivity.[].metrics.stroke_m",
+  "sensitivity.[].metrics.net_accel_mps2",
+  "sensitivity.[].metrics.net_accel_g",
   "sensitivity.[].metrics.startup_kind_stage1",
   "sensitivity.[].metrics.t_startup_s_stage1",
   "sensitivity.[].metrics.search_status",
@@ -1219,6 +1222,9 @@
     "assist_energy_residual_rel",
     "track_start_altitude_m",
     "carriage_mass_kg",
+    "stroke_m",
+    "net_accel_mps2",
+    "net_accel_g",
     "startup_kind_stage1",
     "t_startup_s_stage1",
     "search_status",
@@ -1419,6 +1425,9 @@
     "assist_energy_residual_rel",
     "track_start_altitude_m",
     "carriage_mass_kg",
+    "stroke_m",
+    "net_accel_mps2",
+    "net_accel_g",
     "failed_stage",
     "startup_kind_stage1",
     "t_startup_s_stage1",
