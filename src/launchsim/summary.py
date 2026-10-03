@@ -2,7 +2,9 @@
 sim.py; pure: builds strings, writes nothing). A planar_2d experiment gets
 ``planar_experiment_summary`` and ``planar_sweep_summary`` (PLANAR_VARIANT_ROWS, the
 CALIBRATION banner, the guidance label (sweep-optimized or fixed), the bounds, cases and
-screening lines).
+screening lines and, with an offload block, the section "Propellant saved at fixed
+payload": ``offload_section`` of the block's plain record, with its caveats,
+``offload_caveats``).
 
 ``experiment_summary`` assembles the sections in the CLAUDE.md order: the per-variant
 table against the baseline (``variants_table``, rows ``variant_rows``), the sensitivity
@@ -23,10 +25,16 @@ from launchsim.compare import (
     ATTRIBUTION_TERMS,
     BUG_SUSPECT,
     CD_SENSITIVITY_NOTE,
+    CHECK_FAIL,
+    CHECK_NA,
+    CHECK_PASS,
     COMPARISON_BASIS,
+    CROSS_VEHICLE_TERMS,
     GRAVITY_STEERING,
     IDENTITY_TOL_MPS,
     INSTANT_VARIANT_NAME,
+    OFFLOAD_ENERGY_RATIO_LABEL,
+    PAD_CONTROL_NO_BOUND,
     SCREENING_NOT_CHECKED,
     SENSITIVITY_NONE_DECLARED,
     SensitivityRow,
@@ -44,7 +52,9 @@ from launchsim.config import (
     SEARCHED_FIGURES,
     SweepPoint,
 )
-from launchsim.units import rad_to_deg
+from launchsim.offload import NO_OFFLOAD_STATUS
+from launchsim.search import OK_STATUS
+from launchsim.units import j_to_mj, kg_to_t, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
     from launchsim.results_io import ExperimentResult, SweepResult
@@ -1210,13 +1220,28 @@ def planar_checks_section(er: ExperimentResult) -> str:
     """The planar Checks section: the per-run checks, the screening line of every
     variant, then which runs block findings (bug_suspect) or that none does, and which
     comparisons carry no matched-payload attribution (not_checked: their dP* is not
-    explained, so no finding about a beat rests on it)."""
+    explained, so no finding about a beat rests on it). With an offload block: its runs
+    (written ones, verification searches, sensitivity arms) among the per-run checks,
+    the decomposition line of every case and arm (``offload_check_lines``), the
+    decompositions and paired-pad comparisons among what can block findings
+    (``offload_check_comparisons``) and a failing stage-1 pad control in a blocked line
+    of its own (``offload_blocking_controls``); no offload row enters the unexplained
+    beats."""
     runs = {**er.runs, **er.cases}
     for row in er.sensitivity:
         runs.setdefault(row.result.name, row.result)
     for bound in er.bounds:
         runs.setdefault(bound.result.name, bound.result)
         runs.setdefault(bound.baseline.name, bound.baseline)
+    offload: list[tuple[str, Mapping[str, Any]]] = []
+    controls: list[str] = []
+    offload_lines: list[str] = []
+    if er.offload is not None and not er.offload.record.get("skipped"):
+        for name, rr in {**er.offload.runs, **er.offload.checked_runs}.items():
+            runs.setdefault(name, rr)
+        offload = offload_check_comparisons(er.offload.record)
+        controls = offload_blocking_controls(er.offload.record)
+        offload_lines = [*offload_check_lines(er.offload.record), ""]
     lines = [*run_check_lines(runs), "", *screening_lines(er), ""]
     extra = extra_comparisons(er)
     if extra:
@@ -1226,7 +1251,8 @@ def planar_checks_section(er: ExperimentResult) -> str:
             *(_compact_screening(label, c) for label, c in extra),
             "",
         ]
-    lines += blocked_lines(runs, [*er.comparison.items(), *extra])
+    lines += offload_lines
+    lines += blocked_lines(runs, [*er.comparison.items(), *extra, *offload], controls)
     unexplained = [
         label
         for label, c in [*er.comparison.items(), *extra, *unattributed_comparisons(er)]
@@ -1299,12 +1325,16 @@ def _gamma_sensitive(c: Mapping[str, Any]) -> str:
 
 
 def blocked_lines(
-    runs: Mapping[str, RunResult], comparisons: Sequence[tuple[str, Mapping[str, Any]]]
+    runs: Mapping[str, RunResult],
+    comparisons: Sequence[tuple[str, Mapping[str, Any]]],
+    controls: Sequence[str] = (),
 ) -> list[str]:
     """The blocked-findings line (runs and comparisons that are bug_suspect, or that none
-    is: only blocking checks count), the comparisons with a failed diagnostic check
-    (DIAGNOSTIC_FAILED_TEXT: reported, not blocking), the not_checked comparisons and the
-    gamma*-sensitive verdicts."""
+    is: only blocking checks count), then the stage-1 pad controls that failed their
+    consistency test (controls, labelled; PAD_CONTROL_BLOCKED, a line of their own: a
+    solver's consistency test, neither a run nor a comparison), the comparisons with a
+    failed diagnostic check (DIAGNOSTIC_FAILED_TEXT: reported, not blocking), the
+    not_checked comparisons and the gamma*-sensitive verdicts."""
     lines: list[str] = []
     suspects = [n for n, rr in runs.items() if rr.result.status == BUG_SUSPECT]
     suspects += [
@@ -1314,6 +1344,8 @@ def blocked_lines(
         lines.append(f"{FINDINGS_BLOCKED}: " + ", ".join(suspects))
     else:
         lines.append("No run and no comparison is bug_suspect.")
+    if controls:
+        lines.append(f"{PAD_CONTROL_BLOCKED}: " + ", ".join(controls))
     diagnostic = [f"{n} ({_diagnostic_failed(c)})" for n, c in comparisons if _diagnostic_failed(c)]
     if diagnostic:
         lines.append(f"{DIAGNOSTIC_FAILED_TEXT}: " + ", ".join(diagnostic))
@@ -1454,20 +1486,527 @@ def cases_section(er: ExperimentResult) -> str:
     return note + "\n\n" + _table(header, rows)
 
 
+# ------------------------------------------------- propellant saved (offload, SP1 step 7)
+
+OFFLOAD_SECTION_TITLE = "## Propellant saved at fixed payload"
+"""Title of the summary section of an experiment's offload block."""
+OFFLOAD_MODEL_READING = (
+    "read every offload as a difference between runs of the vehicle model, not as a Falcon 9 figure"
+)
+"""How every offload is read, closing the calibration caveat (``offload_calibration_caveat``)."""
+OFFLOAD_CAVEATS: tuple[str, ...] = (
+    "guidance is sweep-optimized (a shared gamma* grid refined per run, not optimal "
+    "control) and the engines never throttle",
+    "no structural mass is charged for the push load (the fully fuelled stack rides the "
+    "push at the net acceleration plus g); the penalty rows add an assumed stage-1 dry "
+    "mass, a parametric assumption, not a sized structure",
+    "the drive is a prescribed constant acceleration with no force or power limit, the "
+    "carriage is massless unless the variant states a carriage mass, and the shaft is "
+    "vented (no air drag in it)",
+    "max-Q of each offloaded run is reported beside the pad's: a lighter stack climbs "
+    "faster, and no max-Q limit constrains it (there is no throttle model)",
+    "the tanks are partly filled: dry masses and tank structure unchanged, the mixture "
+    "ratio kept, no ullage, centre-of-gravity or tank-mass effect",
+    "stage 1 is the headline: stage-2 and both-stage offloads are a property of the "
+    "vehicle model (stage-2 propellant is worth about nothing at the margin on this "
+    "vehicle), quoted net of the pad control (the gross rows beside them are not a "
+    "saving of the assist); total tonnes are maximised by a stage-1-only offload, so "
+    "'both' cannot beat the headline",
+)
+"""The vehicle-independent caveats printed with every offload block (phase file SP1,
+step 7 and section 10): guidance, structural mass, the drive model, max-Q, the tanks,
+and the stage-2 reading. ``offload_caveats`` puts the vehicle's calibration caveat
+first."""
+
+
+def offload_calibration_caveat(
+    vehicle_name: str, calibration: tuple[float, float, str] | None
+) -> str:
+    """The calibration caveat of an offload block on vehicle_name: from its calibration
+    record (``plots.CALIBRATION_RECORDS``: the model's calibration P* [kg], the
+    published reference [kg] and the findings note), the gap in percent; without a
+    record, that the vehicle has none on file. Either way closed by
+    OFFLOAD_MODEL_READING."""
+    if calibration is None:
+        return (
+            f"calibration: the vehicle {vehicle_name} has no calibration record on file; "
+            f"{OFFLOAD_MODEL_READING}"
+        )
+    model_kg, reference_kg, note = calibration
+    gap_pct = float(to_percent(model_kg / reference_kg - 1.0))
+    side = "high" if gap_pct >= 0.0 else "low"
+    return (
+        f"calibration: the vehicle {vehicle_name} carries {model_kg:,.0f} kg in its "
+        f"calibration run against the published {reference_kg:,.0f} kg, {gap_pct:+.1f}% "
+        f"{side}, a documented calibration result ({note}); {OFFLOAD_MODEL_READING}"
+    )
+
+
+def offload_caveats(vehicle_name: str, calibration: tuple[float, float, str] | None) -> list[str]:
+    """Every caveat of an offload block on vehicle_name: its calibration caveat
+    (``offload_calibration_caveat``) then OFFLOAD_CAVEATS."""
+    return [offload_calibration_caveat(vehicle_name, calibration), *OFFLOAD_CAVEATS]
+
+
+OFFLOAD_ENERGY_TEXT = (
+    "Energy comparison: the fuel (RP-1) removed is each stage's removed propellant times "
+    "its fuel fraction (the energy block's fuel mass over the experiment vehicle's full "
+    "load: the mixture ratio kept, on any load; the lower heating value from the energy "
+    "block), the oxidiser (LOX) the rest; the combustion heat is the removed fuel's mass "
+    "times its lower heating value, and the electrical energy is the offloaded run's "
+    "push (positive drive work over the drive efficiency)"
+)
+"""What the energy rows of the offload block mean."""
+OFFLOAD_DECOMPOSITION_TEXT = (
+    "Cross-vehicle decomposition of each case against the pad, both at P_ref "
+    "(docs/physics.md, 'Cross-vehicle decomposition'): the ideal delta-v the case's "
+    "vehicle does without, D_id(pad) - D_id(case), split into the release-speed head "
+    "start and the differences in the losses, the pre-flight burn, the fairing term and "
+    "the margin; each cell is m/s (kg of the offload, a proportional split). Only the "
+    "joint gravity + steering term is read as physics. The residual must stay below "
+    "checks.closure_tol_mps: explained when it does, bug_suspect (findings blocked) "
+    "when it does not"
+)
+"""The sentence above the decomposition table of the offload block."""
+OFFLOAD_PAD_CONTROL_CHECK_CLAUSE = (
+    "a stage-1 pad control is a consistency test of the solver, and a failing one blocks findings"
+)
+"""The pad-control clause of the experiment summary's offload Checks heading (a sweep
+solves no pad control)."""
+OFFLOAD_DECOMPOSITION_CHECK_CLAUSE = (
+    "the screening rule for offload rows: an offload beyond the ideal screening estimate "
+    "is explained only by a decomposition that closes, else bug_suspect; offload rows "
+    "never enter the unexplained-beats list"
+)
+"""The decomposition clause of the offload Checks heading, in both summaries."""
+OFFLOAD_CHECKS_TEXT = (
+    f"Offload checks ({OFFLOAD_PAD_CONTROL_CHECK_CLAUSE}; {OFFLOAD_DECOMPOSITION_CHECK_CLAUSE})"
+)
+"""The heading of the offload lines of an experiment summary's Checks section."""
+OFFLOAD_SWEEP_CHECKS_TEXT = f"Offload checks ({OFFLOAD_DECOMPOSITION_CHECK_CLAUSE})"
+"""The heading of the offload lines of a sweep summary's Checks section (no pad
+control: a sweep names stage-1 solves and fixed cases only)."""
+PAD_CONTROL_BLOCKED = (
+    "Findings are blocked until these are investigated (a stage-1 pad control failed its "
+    "consistency test of the solver, docs/physics.md, 'Pad control, and why')"
+)
+"""What the Checks section says when a stage-1 pad control fails its consistency test
+(``blocked_lines``, ``offload_blocking_controls``): its own line, apart from the runs and
+comparisons of FINDINGS_BLOCKED."""
+RESOLUTION_EFFECT_TEXT = (
+    "a resolution effect: the full-load pad misses P_ref by grams of residual "
+    "propellant at the feasible-side convention's resolution, within "
+    "final_payload_xtol_kg; not a failure"
+)
+"""How a stage-1 pad control that ends no_offload by grams is reported (phase file SP1,
+section 12, step 5 deviation 2)."""
+
+type OffloadRow = tuple[str, str, str]
+"""A row of an offload table: (label with unit, format, key path in the record)."""
+OFFLOAD_CASE_ROWS: tuple[OffloadRow, ...] = (
+    ("assisted run (of)", "text", "of"),
+    ("kind", "kind", ""),
+    ("status (the solve, or a fixed case's payload search)", "text", "status"),
+    ("recorded run (replay it beside the pad)", "text", "run"),
+    ("  its status", "text", "run_status"),
+    ("quoted offload [t]", "t", "quoted_offload_kg"),
+    ("  basis", "text", "quoted_basis"),
+    ("stage-1 propellant removed, gross [t]", "t", "stage1_offload_kg"),
+    (
+        "stage-2 propellant removed, gross [t] (a stage-2 pre-offload included)",
+        "t",
+        "stage2_offload_kg",
+    ),
+    ("total propellant removed, gross [t]", "t", "total_offload_kg"),
+    ("  % of the stage-1 load", "pct", "stage1_fraction"),
+    ("  % of the stage-2 load", "pct", "stage2_fraction"),
+    ("  % of the total load", "pct", "total_fraction"),
+    (
+        "assumed stage-1 dry mass added [t] (an assumption, not a sized structure)",
+        "t",
+        "stage1_dry_mass_added_kg",
+    ),
+    ("payload flown [kg] (solved: P_ref; fixed: its own P*)", "num", "payload_kg"),
+    ("  minus P_ref [kg]", "signed", "payload_delta_kg"),
+    ("verification: P* of the offloaded vehicle [kg]", "num", "verification.payload_kg"),
+    ("  P* - P_ref [kg]", "signed", "verification.delta_kg"),
+    ("  tolerance [kg] (checks.search_final_flag_rel x P_ref)", "num", "verification.tolerance_kg"),
+    ("  passed", "text", "verification.passed"),
+    ("pad control's offload in this mode [t]", "t", "pad_control_offload_kg"),
+    ("  offload net of the pad control [t]", "t", "net_offload_kg"),
+    ("liftoff mass [kg]", "num", "vs_pad.liftoff_mass_kg"),
+    ("  pad's [kg]", "num", "vs_pad.pad_liftoff_mass_kg"),
+    ("MECO: t after release [s]", "num", "vs_pad.stage1_burnout_t_s"),
+    ("  pad's [s]", "num", "vs_pad.pad_stage1_burnout_t_s"),
+    ("max-Q [Pa] (unthrottled: an upper bound)", "num", "vs_pad.max_q_pa"),
+    ("  pad's [Pa]", "num", "vs_pad.pad_max_q_pa"),
+    ("  above the pad's", "text", "vs_pad.max_q_above_pad"),
+    ("peak felt axial g in flight [g0]", "num", "vs_pad.peak_felt_axial_g_flight"),
+    ("  pad's [g0]", "num", "vs_pad.pad_peak_felt_axial_g_flight"),
+    ("speed at release [m/s]", "num", "vs_pad.speed_at_release_mps"),
+    ("peak felt g on the track [g0]", "num", "vs_pad.felt_g_track_peak"),
+    ("interface force, peak [N]", "num", "vs_pad.peak_interface_force_N"),
+    ("facility length incl. braking [m]", "num", "vs_pad.facility_length_m"),
+    ("ideal-screening offload at this release speed [t]", "t", "screening_offload_kg"),
+    ("  stage-1 offload / screening offload", "num", "screening_ratio"),
+    ("  beats the screening estimate", "text", "beats_screening"),
+    ("decomposition status", "text", "decomposition_status"),
+    ("  residual [m/s]", "sci", "decomposition.xv_residual_mps"),
+    ("paired pad (the same propellant change, no penalty)", "text", "paired_pad.run"),
+    ("  its P* [kg]", "num", "paired_pad.payload_kg"),
+    ("  its P* - P_ref [kg]", "signed", "paired_pad.payload_delta_vs_reference_kg"),
+    (
+        "  assisted P* - paired pad P* [kg] (one vehicle, attributed)",
+        "signed",
+        "paired_pad.payload_delta_kg",
+    ),
+    ("  screening status (against the paired pad)", "text", "paired_pad.screening_status"),
+    ("flags (see Flags)", "count", "flags"),
+)
+"""Rows of the offload cases table (one column per case). The quoted offload leads (a
+stage-1 solve's x*, the headline; a stage2 or both solve's x* net of the pad control;
+a fixed case's imposed offload); the gross rows follow it (for a stage2 or both case a
+property of the vehicle model, not a saving of the assist)."""
+OFFLOAD_ENERGY_ROWS: tuple[OffloadRow, ...] = (
+    ("RP-1 removed [kg]", "num", "energy.fuel_removed_kg"),
+    ("LOX removed [kg]", "num", "energy.oxidizer_removed_kg"),
+    ("combustion heat of the removed RP-1, lower heating value [MJ]", "MJ", "energy.heat_J"),
+    ("  [kWh]", "num", "energy.heat_kWh"),
+    ("electrical energy of the push [MJ]", "MJ", "energy.electrical_energy_J"),
+    ("  [kWh]", "num", "energy.electrical_energy_kWh"),
+    (
+        "heat / electricity (not an efficiency claim)",
+        "num",
+        "energy.heat_to_electricity_ratio",
+    ),
+)
+"""Rows of the energy comparison, appended to the cases table when the block has
+energy inputs."""
+OFFLOAD_PAD_CONTROL_ROWS: tuple[OffloadRow, ...] = (
+    ("recorded run", "text", "run"),
+    ("status", "text", "status"),
+    ("x_pad [kg]", "num", "offload_kg"),
+    ("m_res at x_pad [kg] (signed)", "num", "m_res_kg"),
+    ("dv margin at x_pad [m/s] (signed)", "num", "dv_margin_mps"),
+    ("abs(dm_res/dx) from the solve's own logs [kg/kg]", "num", "slope_kg_per_kg"),
+    ("stage 1: bound final_payload_xtol_kg / abs(dm_res/dx) [kg]", "num", "bound_kg"),
+    ("  0 <= x_pad <= bound (an ok control)", "text", "within_bound"),
+    ("ended no_offload by grams (a resolution effect)", "text", "resolution_effect"),
+    ("stage 1: consistency test of the solver (section 5.3)", "text", "consistency"),
+    ("verification: P* - P_ref [kg]", "signed", "verification.delta_kg"),
+    ("  passed", "text", "verification.passed"),
+)
+"""Rows of the pad-control table (one column per mode)."""
+
+
+def _dig(record: Mapping[str, Any], path: str) -> Any:
+    """The value at a dotted key path of a plain record (None where a level is missing)."""
+    node: Any = record
+    for key in path.split("."):
+        if not isinstance(node, Mapping):
+            return None
+        node = node.get(key)
+    return node
+
+
+def _offload_cell(record: Mapping[str, Any], fmt: str, path: str) -> str:
+    """One cell of an offload table: ``t`` kg printed in tonnes, ``pct`` a fraction in
+    percent, ``MJ`` joules in MJ, ``signed`` a signed number, ``sci`` a residual to 3
+    significant digits (never rounded to 0), ``count`` a list's length, ``kind`` the
+    case's solve mode or fixed offload (a fraction key with its fraction, a mass key
+    with its offload in tonnes), ``text`` and ``num`` as ``_fmt``."""
+    if fmt == "kind":
+        if record.get("kind") == "solve":
+            return f"solved, {record.get('mode')}"
+        key = record.get("fixed_key")
+        fraction = record.get("fixed_fraction")
+        if fraction is not None:
+            return f"fixed, {key} = {_fmt(fraction)}"
+        return f"fixed, {key} = {_offload_cell(record, 't', 'offload_kg')} t"
+    value = _dig(record, path)
+    if fmt == "count":
+        return str(len(value)) if isinstance(value, list) else "n/a"
+    if not _is_finite_number(value):
+        return _fmt(value)
+    x = float(value)
+    if fmt == "t":
+        return _fmt(float(kg_to_t(x)))
+    if fmt == "pct":
+        return _fmt(float(to_percent(x)))
+    if fmt == "MJ":
+        return _fmt(float(j_to_mj(x)))
+    if fmt == "signed":
+        return _signed(x)
+    if fmt == "sci":
+        return f"{x:.3g}"
+    return _fmt(x)
+
+
+def _offload_table(
+    records: Sequence[Mapping[str, Any]], rows: Sequence[OffloadRow], label: str
+) -> str:
+    """A table with one row per OffloadRow and one column per record (headed by the
+    record's ``label`` key)."""
+    header = ["quantity", *(str(r.get(label)) for r in records)]
+    body = [[row[0], *(_offload_cell(r, row[1], row[2]) for r in records)] for row in rows]
+    return _table(header, body)
+
+
+def offload_decomposition_table(cases: Sequence[Mapping[str, Any]]) -> str:
+    """The cross-vehicle decomposition of every case that has one: per CROSS_VEHICLE_TERMS
+    term ``m/s (kg)``, the joint gravity + steering term, the ideal delta-v reduction,
+    the residual and the status; one column per case."""
+    with_xv = [c for c in cases if c.get("decomposition")]
+    if not with_xv:
+        return "(no decomposition: no case has an evaluation at P_ref)"
+
+    def cell(c: Mapping[str, Any], term: str) -> str:
+        xv = c["decomposition"]
+        return f"{_signed(xv.get(f'xv_{term}_mps'))} ({_signed(xv.get(f'xv_{term}_kg'))})"
+
+    header = ["term: m/s (kg)", *(str(c["name"]) for c in with_xv)]
+    rows = [[t.replace("_", " "), *(cell(c, t) for c in with_xv)] for t in CROSS_VEHICLE_TERMS]
+    rows.append(["gravity + steering", *(cell(c, GRAVITY_STEERING) for c in with_xv)])
+    rows.append(
+        [
+            "D_id(pad) - D_id(case) [m/s]",
+            *(_fmt(c["decomposition"].get("xv_ideal_dv_reduction_mps")) for c in with_xv),
+        ]
+    )
+    rows.append(
+        [
+            "offload split [kg]",
+            *(_fmt(c["decomposition"].get("xv_offload_kg")) for c in with_xv),
+        ]
+    )
+    rows.append(
+        [
+            "residual [m/s]",
+            *(_offload_cell(c, "sci", "decomposition.xv_residual_mps") for c in with_xv),
+        ]
+    )
+    rows.append(["status", *(_fmt(c["decomposition"].get("xv_status")) for c in with_xv)])
+    return _table(header, rows)
+
+
+PAD_CONTROL_VERDICT_TEXT: dict[str, str] = {
+    CHECK_PASS: "consistency test pass",
+    CHECK_FAIL: "consistency test FAIL (a consistency test of the solver: findings blocked)",
+    PAD_CONTROL_NO_BOUND: "consistency test not checked (no bound)",
+}
+"""How the Checks section and the pad-control lines word a stage-1 control's
+``consistency`` verdict (``results_io.pad_control_consistency``)."""
+
+
+def _pad_control_text(c: Mapping[str, Any]) -> str:
+    """One pad control in words: x_pad (by a resolution effect, or a no_offload control
+    that misses P_ref by more), and for stage 1 the bound of section 5.3 (an ok control)
+    and the consistency verdict; stage 2 and both as properties of the vehicle model."""
+    m_res = _fmt(c.get("m_res_kg"))
+    ok = c.get("status") == OK_STATUS
+    if c.get("resolution_effect"):
+        text = f"x_pad = 0, m_res(0) = {m_res} kg: {RESOLUTION_EFFECT_TEXT}"
+    elif c.get("status") == NO_OFFLOAD_STATUS:
+        text = (
+            f"x_pad = 0, m_res(0) = {m_res} kg: the full-load pad misses P_ref by more than "
+            "final_payload_xtol_kg in the control's own solve (its gamma*_ref and warm "
+            "starts are its own, not the pad search's): the control does not reproduce "
+            "P_ref at this budget"
+        )
+    else:
+        text = f"x_pad = {_fmt(c.get('offload_kg'))} kg (status {c.get('status')})"
+    verdict = c.get("consistency")
+    if verdict == CHECK_NA or verdict is None:
+        return text + "; a property of the vehicle model, which the assisted cases are net of"
+    if ok and c.get("bound_kg") is not None:
+        side = "within" if c.get("within_bound") else "OUTSIDE"
+        text += f"; {side} the bound 0 to {_fmt(c.get('bound_kg'))} kg (section 5.3)"
+    elif ok:
+        text += "; no bound (no logged search brackets m_res = 0, so no slope)"
+    return f"{text}; {PAD_CONTROL_VERDICT_TEXT.get(str(verdict), str(verdict))}"
+
+
+def pad_control_lines(controls: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The pad-control table (one column per mode) and one line per control in words
+    (``_pad_control_text``)."""
+    if not controls:
+        return ["(no pad control: pad_control is false, or no solved case ran)"]
+    lines = [_offload_table(controls, OFFLOAD_PAD_CONTROL_ROWS, "mode"), ""]
+    lines += [f"- pad control {c.get('mode')}: {_pad_control_text(c)}" for c in controls]
+    return lines
+
+
+def offload_sensitivity_table(arms: Sequence[Mapping[str, Any]]) -> str:
+    """The offload sensitivity arms: case, parameter, change, whether the pad was
+    perturbed, the arm's P_ref, status, offload and its change against the nominal case,
+    the share of the stage-1 load, the decomposition and the screening ratio, whether
+    the solve was reused."""
+    header = [
+        "case",
+        "parameter",
+        "change",
+        "pad perturbed",
+        "P_ref [kg] (the same-perturbation pad's P*)",
+        "status",
+        "offload [t]",
+        "change vs nominal [t]",
+        "% of the stage-1 load",
+        "decomposition",
+        "offload / screening",
+        "solve reused (same trajectory)",
+    ]
+    rows = [
+        [
+            str(a.get("case")),
+            str(a.get("param")),
+            f"{a.get('fraction', 0.0):+.0%}",
+            "yes" if a.get("pad_perturbed") else "no",
+            _fmt(a.get("reference_payload_kg")),
+            _fmt(a.get("status")),
+            _offload_cell(a, "t", "offload_kg"),
+            _offload_cell(a, "t", "offload_delta_kg"),
+            _offload_cell(a, "pct", "stage1_fraction"),
+            _fmt(a.get("decomposition_status")),
+            _fmt(a.get("screening_ratio")),
+            "yes" if a.get("trajectory_reused") else "no",
+        ]
+        for a in arms
+    ]
+    return _table(header, rows)
+
+
+def offload_section(record: Mapping[str, Any]) -> str:
+    """The "Propellant saved at fixed payload" section of an offload record (the
+    metrics.json ``offload`` value; pure text): the basis line with the reference
+    payload, the sensitivity basis, the caveats (the record's: ``offload_caveats``), the
+    cases table (OFFLOAD_CASE_ROWS, plus OFFLOAD_ENERGY_ROWS with energy inputs) and the
+    cases that did not run, the energy note with its exclusions, the decomposition
+    table, the pad controls, the sensitivity arms and the notes. A skipped block prints
+    only why."""
+    if record.get("skipped"):
+        return str(record["skipped"])
+    lines = [
+        f"{record.get('basis')}. Reference payload P_ref = "
+        f"{_fmt(record.get('reference_payload_kg'))} kg ({record.get('reference')}'s payload "
+        "capacity P*).",
+        "",
+    ]
+    if record.get("sensitivity_basis"):
+        lines += [f"{record['sensitivity_basis']}.", ""]
+    lines += ["Caveats (they travel with every number below):", ""]
+    lines += [f"- {c}" for c in record.get("caveats") or []]
+    lines.append("")
+    cases = [c for c in record.get("cases") or [] if not c.get("skipped")]
+    energy = record.get("energy_inputs") is not None
+    if cases:
+        rows = [*OFFLOAD_CASE_ROWS, *(OFFLOAD_ENERGY_ROWS if energy else ())]
+        lines += [_offload_table(cases, rows, "name"), ""]
+    for c in record.get("cases") or []:
+        if c.get("skipped"):
+            lines.append(f"- {c.get('name')} (of {c.get('of')}): {c['skipped']}")
+    if energy and cases:
+        excludes = next((c["energy"]["excludes"] for c in cases if c.get("energy")), [])
+        lines += [
+            "",
+            f"{OFFLOAD_ENERGY_TEXT}. The heat / electricity ratio is "
+            f"{OFFLOAD_ENERGY_RATIO_LABEL}; it leaves out " + "; ".join(excludes) + ".",
+        ]
+    lines += ["", "### Decomposition", "", OFFLOAD_DECOMPOSITION_TEXT + ".", ""]
+    lines.append(offload_decomposition_table(cases))
+    lines += ["", "### Pad controls", "", *pad_control_lines(record.get("pad_controls") or [])]
+    arms = record.get("sensitivity") or []
+    if arms:
+        lines += ["", "### Sensitivity", "", offload_sensitivity_table(arms)]
+    for note in record.get("notes") or []:
+        lines += ["", str(note)]
+    return "\n".join(lines)
+
+
+def offload_blocking_controls(record: Mapping[str, Any]) -> list[str]:
+    """The pad controls of an offload record that block findings, labelled ``pad control
+    <mode>`` for ``blocked_lines`` (its ``controls``, PAD_CONTROL_BLOCKED): a stage-1
+    control that fails its consistency test (the stage-1 headline rests on that
+    solver)."""
+    return [
+        f"pad control {p.get('mode')}"
+        for p in record.get("pad_controls") or []
+        if p.get("consistency") == CHECK_FAIL
+    ]
+
+
+def offload_check_comparisons(record: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
+    """The offload comparisons that can block findings, labelled, as comparison-like
+    mappings for ``blocked_lines``: each case's and each sensitivity arm's decomposition
+    (its status as ``screening_status``: explained, or bug_suspect) and each paired-pad
+    comparison (attributed, one vehicle). None of them enters the unexplained-beats
+    list. A failing pad control is not a comparison: ``offload_blocking_controls``."""
+    out: list[tuple[str, Mapping[str, Any]]] = []
+    for c in record.get("cases") or []:
+        if c.get("decomposition_status") is not None:
+            out.append(
+                (
+                    f"{c['name']} offload decomposition",
+                    {"screening_status": c["decomposition_status"]},
+                )
+            )
+        paired = c.get("paired_pad")
+        if paired:
+            out.append((f"{c['name']} vs {paired['run']}", paired.get("comparison") or {}))
+    for a in record.get("sensitivity") or []:
+        if a.get("decomposition_status") is not None:
+            out.append(
+                (
+                    f"{a['run']} offload decomposition",
+                    {"screening_status": a["decomposition_status"]},
+                )
+            )
+    return out
+
+
+def offload_check_lines(record: Mapping[str, Any]) -> list[str]:
+    """The Checks section's offload lines: OFFLOAD_CHECKS_TEXT, then per stage-1 pad
+    control its consistency verdict (``_pad_control_text``), per case (and arm) its
+    decomposition status, residual and offload-to-screening ratio."""
+    lines = [f"{OFFLOAD_CHECKS_TEXT}:"]
+    for p in record.get("pad_controls") or []:
+        if p.get("consistency") not in (None, CHECK_NA):
+            lines.append(f"- pad control {p.get('mode')}: {_pad_control_text(p)}")
+    items = [(c["name"], c) for c in record.get("cases") or [] if not c.get("skipped")]
+    for name, c in items:
+        lines.append(
+            f"- {name}: decomposition {_fmt(c.get('decomposition_status'))} (residual "
+            f"{_offload_cell(c, 'sci', 'decomposition.xv_residual_mps')} m/s; stage-1 "
+            f"offload / screening {_fmt(c.get('screening_ratio'))})"
+        )
+    for a in record.get("sensitivity") or []:
+        lines.append(
+            f"- {a.get('run')}: decomposition {_fmt(a.get('decomposition_status'))} (residual "
+            f"{_offload_cell(a, 'sci', 'decomposition_residual_mps')} m/s)"
+        )
+    return lines
+
+
 def planar_experiment_summary(er: ExperimentResult, header_lines: Sequence[str] = ()) -> str:
     """The summary.md text of a planar experiment: the CALIBRATION banner (label
     calibration), the title, the comparison basis and the guidance label
     (``guidance_label``: sweep-optimized, or fixed guidance), the per-variant table
-    (PLANAR_VARIANT_ROWS), the bounds, the calibration cases, the sensitivity table, the
-    flags, the assumptions (union, attributed) and the checks (``planar_checks_section``:
+    (PLANAR_VARIANT_ROWS), with an offload block its section "Propellant saved at fixed
+    payload" (``offload_section``; the block's runs then also join the flags and the
+    assumptions), the bounds, the calibration cases, the sensitivity table, the flags,
+    the assumptions (union, attributed) and the checks (``planar_checks_section``:
     per-run checks, the screening line of every variant, the attributed sensitivity and
-    bound comparisons, blocked findings, unexplained beats, gamma*-sensitive
-    verdicts)."""
+    bound comparisons, the offload decompositions, blocked findings, unexplained beats,
+    gamma*-sensitive verdicts). Without an offload block the text is what it was before
+    the block existed."""
     runs = er.runs
     banner = [CALIBRATION_BANNER, ""] if er.label == CALIBRATION_LABEL else []
     banner += preregistration_lines(er.preregistration)
     budget = f"- Search budget id: {er.search_budget_id}" if er.search_budget_id else None
     all_runs = {**runs, **er.cases}
+    offload: list[str] = []
+    if er.offload is not None:
+        offload = [OFFLOAD_SECTION_TITLE, "", offload_section(er.offload.record), ""]
+    reported = {**all_runs, **er.offload_runs}
     return "\n".join(
         [
             *banner,
@@ -1487,6 +2026,7 @@ def planar_experiment_summary(er: ExperimentResult, header_lines: Sequence[str] 
             "",
             planar_variants_table(er),
             "",
+            *offload,
             "## Bounds",
             "",
             bounds_section(er),
@@ -1501,11 +2041,11 @@ def planar_experiment_summary(er: ExperimentResult, header_lines: Sequence[str] 
             "",
             "## Flags",
             "",
-            flags_section(all_runs),
+            flags_section(reported),
             "",
             "## Assumptions",
             "",
-            assumptions_section(all_runs, er.baseline.name),
+            assumptions_section(reported, er.baseline.name),
             "",
             "## Checks",
             "",
@@ -1568,12 +2108,15 @@ def planar_sweep_summary(
 
 def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> str:
     """The Checks section of a planar sweep summary: the per-run checks of the baseline,
-    every point and every paired baseline, then (``blocked_lines``) the runs and point
-    comparisons that are bug_suspect (FINDINGS_BLOCKED) or that none is, the not_checked
-    comparisons, the gamma*-sensitive verdicts and the failed checks of every point
-    (each point's own summary.md has its full screening line)."""
+    every point and every paired baseline (and of the offload runs a sweep's offload
+    cases flew), then (``blocked_lines``) the runs and point comparisons that are
+    bug_suspect (FINDINGS_BLOCKED) or that none is, the not_checked comparisons, the
+    gamma*-sensitive verdicts and the failed checks of every point (each point's own
+    summary.md has its full screening line); a sweep with offload cases also lists each
+    point's offload decompositions, a bug_suspect one blocking findings."""
     runs: dict[str, RunResult] = {baseline.name: baseline}
     comparisons: list[tuple[str, Mapping[str, Any]]] = []
+    offload: list[tuple[str, Mapping[str, Any]]] = []
     for sweep in sweeps:
         tag = f"sweep_{sweep.sweep_index}"
         paired = sweep.paired or [None] * len(sweep.results)
@@ -1582,9 +2125,20 @@ def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> 
             if pair is not None:
                 runs[f"{tag}/{pair.name}"] = pair
             comparisons.append((f"{tag}/{rr.name}", comp))
+        for point_runs in sweep.offload_runs:
+            runs.update({f"{tag}/{name}": rr for name, rr in point_runs.items()})
+        for rr, records in zip(sweep.results, sweep.offload, strict=False):
+            for case, rec in records.items():
+                status = rec.get("decomposition_status")
+                if status is not None:
+                    label = f"{tag}/{rr.name} {case} offload decomposition"
+                    offload.append((label, {"screening_status": status}))
     lines = [*run_check_lines(runs), ""]
     lines += [sweep_point_check_line(name, c) for name, c in comparisons]
-    return "\n".join([*lines, "", *blocked_lines(runs, comparisons)])
+    if offload:
+        lines += ["", f"{OFFLOAD_SWEEP_CHECKS_TEXT}:"]
+        lines += [f"- {label}: {c['screening_status']}" for label, c in offload]
+    return "\n".join([*lines, "", *blocked_lines(runs, [*comparisons, *offload])])
 
 
 def sweep_point_check_line(name: str, c: Mapping[str, Any]) -> str:

@@ -1,8 +1,11 @@
 """Unit conversions at the YAML and plot boundary.
 
-Internally everything is SI and radians. Degrees, km, kN, tonnes, g and kWh appear only
-in configuration files and plot labels and are converted here. Nothing else in the
-package multiplies by 1000, pi/180 or g0. All functions accept floats or numpy arrays.
+Internally everything is SI and radians. Degrees, km, kN, tonnes, g, kWh and MJ appear
+only in configuration files, plot labels and reports and are converted here. Nothing
+else in the package multiplies by 1000, 1e6, pi/180 or g0. Percent is a reporting
+format, not covered by that rule: the offload reports use ``to_percent``, other labels
+Python's ``%`` format spec or a factor 100 of their own (the calibration footnote in
+plots.py). All functions accept floats or numpy arrays.
 """
 
 from __future__ import annotations
@@ -80,3 +83,19 @@ def kwh_to_j(energy_kwh: Quantity) -> Quantity:
 def pa_to_kpa(pressure_pa: Quantity) -> Quantity:
     """Pascals to kilopascals (plot labels and reports)."""
     return pressure_pa / 1000.0
+
+
+def mj_to_j(energy_mj: Quantity) -> Quantity:
+    """Megajoules to joules; also a specific energy in MJ/kg to J/kg (the heating value of
+    the offload block's energy comparison)."""
+    return energy_mj * 1.0e6
+
+
+def j_to_mj(energy_j: Quantity) -> Quantity:
+    """Joules to megajoules (reports); also J/kg to MJ/kg."""
+    return energy_j / 1.0e6
+
+
+def to_percent(fraction: Quantity) -> Quantity:
+    """A dimensionless fraction to percent (reports)."""
+    return fraction * 100.0

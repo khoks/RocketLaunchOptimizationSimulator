@@ -399,17 +399,59 @@ def nonmonotone_flags(evals: Sequence[OffloadEval]) -> tuple[str, ...]:
     return tuple(flags)
 
 
+def verification_from_record(
+    record: SearchRecord, reference_payload_kg: float, final_flag_rel: float
+) -> OffloadVerification:
+    """The OffloadVerification of an independent payload search ``record`` of the vehicle
+    offloaded by x*: passed when it ended ok with |P* - P_ref| <= final_flag_rel x P_ref
+    [kg] (``checks.search_final_flag_rel``). The search may come from ``verify_offload``
+    or from a pipeline that ran the offloaded run itself (``sim.run_resolved``, SP1 step
+    7)."""
+    tolerance = final_flag_rel * reference_payload_kg
+    delta = record.payload_kg - reference_payload_kg
+    passed = record.status == OK_STATUS and abs(delta) <= tolerance
+    return OffloadVerification(record.status, record.payload_kg, delta, tolerance, passed, record)
+
+
 def verify_offload(
     factory: ProblemFactory, offloaded: Vehicle, reference_payload_kg: float, budget: SearchBudget
 ) -> OffloadVerification:
     """The independent check of a solved offload: ``run_search`` (fresh WarmStore) on
     ``factory(offloaded)``, the vehicle offloaded by x* at its own payload P0, must end
-    ok with |P* - P_ref| <= budget.final_flag_rel x P_ref [kg]."""
+    ok with |P* - P_ref| <= budget.final_flag_rel x P_ref [kg]
+    (``verification_from_record``)."""
     record = run_search(factory(offloaded))
-    tolerance = budget.final_flag_rel * reference_payload_kg
-    delta = record.payload_kg - reference_payload_kg
-    passed = record.status == OK_STATUS and abs(delta) <= tolerance
-    return OffloadVerification(record.status, record.payload_kg, delta, tolerance, passed, record)
+    return verification_from_record(record, reference_payload_kg, budget.final_flag_rel)
+
+
+def with_verification(result: OffloadResult, verification: OffloadVerification) -> OffloadResult:
+    """result with ``verification`` attached and its flags appended (the mismatch flag when
+    it failed, then the verification search's own flags, prefixed), as ``solve_offload``
+    with verify attaches them: for a solve run with verify False whose verification
+    search ran elsewhere. ValueError unless result's status is ok (only an ok solve is
+    verified)."""
+    if result.status != OK_STATUS:
+        raise ValueError(f"only an ok offload solve is verified, got status {result.status!r}")
+    flags = (*result.flags, *_verification_flags(verification, result.offload_kg))
+    return dataclasses.replace(result, verification=verification, flags=flags)
+
+
+def residual_slope_kg_per_kg(result: OffloadResult) -> float | None:
+    """|dm_res/dx| [kg/kg] of a solve from its own logged evaluations: the secant between
+    the largest offload with m_res >= 0 and the smallest with m_res < 0 of the final
+    search, or of X2 when the final search holds no such pair (a no_offload solve), else
+    of X1; None when no logged search brackets m_res = 0. The stage-1 pad control's bound
+    is final_payload_xtol_kg / this slope (phase file SP1 section 5.3)."""
+    for name in (FINAL_LOG, X2_LOG, X1_LOG):
+        flown = [e for e in result.evaluations if e.search == name and e.ok]
+        feasible = [e for e in flown if e.m_res_kg >= 0.0]
+        short = [e for e in flown if e.m_res_kg < 0.0]
+        if feasible and short:
+            lo = max(feasible, key=lambda e: e.offload_kg)
+            hi = min(short, key=lambda e: e.offload_kg)
+            if hi.offload_kg > lo.offload_kg:
+                return (lo.m_res_kg - hi.m_res_kg) / (hi.offload_kg - lo.offload_kg)
+    return None
 
 
 def _verification_flags(v: OffloadVerification, offload_kg: float) -> list[str]:

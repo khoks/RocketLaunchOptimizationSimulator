@@ -12,7 +12,8 @@ M2 only when ``checks.m2_role`` is blocking; docs/physics.md, "Screening-beat ru
 (2-D)"). ``cross_vehicle_decomposition`` splits the ideal delta-v change between two
 runs at one payload on different vehicles (an offloaded run against the full-load pad;
 docs/physics.md, "Cross-vehicle decomposition"), from MatchedRuns that
-``evaluation_matched_run`` and ``offload_matched_run`` build without flying anything.
+``evaluation_matched_run`` and ``offload_matched_run`` build without flying anything;
+``offload_energy`` is the energy comparison of an offload (SP1 step 7), pure arithmetic.
 ``compare`` and its helpers are pure;
 ``run_sensitivity`` runs simulations through ``sim.run_resolved`` (and, for a planar
 energy-only case, ``sim.rerun_resolved``), looked up on the ``sim`` module at call time
@@ -54,7 +55,7 @@ from launchsim.dynamics import PLANAR_LAYOUT, PlanarDynamics2D
 from launchsim.losses import LossBudget, loss_budget, rocket_equation_closure
 from launchsim.metrics import metrics_record
 from launchsim.phases import ASCENT_KINDS, ZERO_SPAN_S, PhaseResult, RunTrace
-from launchsim.units import deg_to_rad, from_g, km_to_m, kn_to_n, kwh_to_j, t_to_kg
+from launchsim.units import deg_to_rad, from_g, j_to_kwh, km_to_m, kn_to_n, kwh_to_j, t_to_kg
 from launchsim.vehicle import (
     Vehicle,
     ideal_dv_mps,
@@ -1092,6 +1093,16 @@ the same-perturbation baseline, and a bound against its paired baseline, are att
 instead)."""
 
 
+def _worst_abs(values: Sequence[Any]) -> float:
+    """The largest |value| of residuals [m/s], NaN when any of them is not a finite
+    number (so a check reading it fails: NaN < tol is False, whatever the order of the
+    values; TODO.md KI-024)."""
+    floats = [float(x) for x in values]
+    if not all(math.isfinite(x) for x in floats):
+        return math.nan
+    return max(abs(x) for x in floats)
+
+
 def _attribution_check(
     attribution: Mapping[str, Any] | None,
     beats: bool | None,
@@ -1100,10 +1111,11 @@ def _attribution_check(
 ) -> dict[str, Any]:
     """The attribution check of the screening-beat rule: an attribution must close (its
     residual and both matched runs' closure residuals below checks.closure_tol_mps [m/s],
-    both matched runs' loss-identity residuals below checks.identity_tol_mps [m/s]).
-    Without an attribution: fail when one was required and the run beats the screening
-    yardstick (an unexplained beat, which CLAUDE.md treats as a bug), else n/a with the
-    reason."""
+    both matched runs' loss-identity residuals below checks.identity_tol_mps [m/s]; a
+    residual that is not a finite number fails the check, whichever position it holds,
+    and the worst value of its group is then NaN: ``_worst_abs``, KI-024). Without an
+    attribution: fail when one was required and the run beats the screening yardstick
+    (an unexplained beat, which CLAUDE.md treats as a bug), else n/a with the reason."""
     if attribution is None:
         if required and beats is True:
             return _check_row(
@@ -1120,8 +1132,8 @@ def _attribution_check(
         attribution["attr_variant_identity_residual_mps"],
         attribution["attr_baseline_identity_residual_mps"],
     )
-    worst_closure = max(abs(float(x)) for x in closures)
-    worst_identity = max(abs(float(x)) for x in identities)
+    worst_closure = _worst_abs(closures)
+    worst_identity = _worst_abs(identities)
     ok = worst_closure < checks.closure_tol_mps and worst_identity < checks.identity_tol_mps
     return _check_row(
         CHECK_PASS if ok else CHECK_FAIL,
@@ -1620,6 +1632,108 @@ def cross_vehicle_decomposition(
     out["xv_check"] = check
     out["xv_status"] = DECOMPOSITION_EXPLAINED if check["status"] == CHECK_PASS else BUG_SUSPECT
     return out
+
+
+# ------------------------------------------------------- offload reporting (SP1 step 7)
+
+OFFLOAD_COMPARISON_BASIS = (
+    "Offload basis: propellant saved at fixed payload. Different vehicles (each run's own "
+    "propellant load, tanks partly filled, dry masses unchanged unless a row says so), the "
+    "same payload and the same orbit: every offload is measured at the reference payload "
+    "P_ref, the full-load pad baseline's payload capacity P* on the same vehicle and "
+    "orbit (sweep-optimized guidance, the shared search budget)"
+)
+"""The basis line of the summary's "Propellant saved at fixed payload" block (and of the
+metrics.json ``offload`` record): what an offload row compares."""
+OFFLOAD_SENSITIVITY_BASIS = (
+    "Offload sensitivity basis: each arm perturbs the assisted run and the pad alike (a "
+    "vehicle. parameter on both, a run parameter on the assisted run only: a pad has no "
+    "drive); an arm's reference payload is the payload capacity of the pad under the same "
+    "perturbation, and its offload is solved at that P_ref (not at the nominal one); arms "
+    "carry no independent verification search"
+)
+"""The basis line of the offload sensitivity arms (phase file SP1 section 7, step 7, and
+section 10 item 12)."""
+OFFLOAD_ENERGY_RATIO_LABEL = "not an efficiency claim"
+"""Label of the heat-to-electricity ratio of an offload's energy comparison."""
+OFFLOAD_ENERGY_EXCLUSIONS: tuple[str, ...] = (
+    "the energy to produce the removed oxidiser (LOX: air separation and liquefaction)",
+    "the energy to extract, refine and deliver the removed fuel",
+    "electricity generation, transmission and storage losses (the push's electrical "
+    "energy is its positive drive work over the drive efficiency, metered at the drive)",
+    "the energy of the push's facility beyond the drive (braking, the carriage's return)",
+)
+"""What the offload's energy comparison leaves out (printed with the ratio)."""
+PAD_CONTROL_NO_BOUND = "not_checked"
+"""Consistency verdict of an ok stage-1 pad control whose logged searches bracket no
+m_res = 0 (no slope s, so no bound final_payload_xtol_kg / s): reported, neither passed
+nor failed. The other verdicts are CHECK_PASS, CHECK_FAIL and, for a stage2 or both
+control (reported, no consistency test), CHECK_NA (``results_io.pad_control_consistency``)."""
+
+
+def offload_energy(
+    removed_kg: Sequence[float],
+    loads_kg: Sequence[float],
+    fuel_kg: Sequence[float],
+    heating_value_j_per_kg: float,
+    electrical_energy_j: float | None,
+) -> dict[str, Any]:
+    """The energy comparison of an offload (docs/physics.md, "Reporting definitions
+    (planar)"), pure arithmetic. Per stage i: removed_kg[i] [kg] of propellant taken
+    from the stage; loads_kg[i] [kg] is the full load whose fuel is fuel_kg[i] [kg] (the
+    oxidiser the remainder), the energy block's figures for the experiment's vehicle,
+    which fix the mixture ratio fuel_i / load_i. The ratio is kept, so the fuel removed
+    is removed_i x fuel_i / load_i and the oxidiser removed is the rest, whichever
+    vehicle the propellant came from (a sweep point or a sensitivity arm with another
+    load keeps the same ratio, so removed_i may exceed load_i). The combustion heat of
+    the removed fuel is its mass times the lower heating value heating_value_j_per_kg
+    [J/kg]; the ratio heat / electrical_energy_j (the push's electrical energy [J]) is
+    OFFLOAD_ENERGY_RATIO_LABEL, None without a positive finite electrical energy (a pad).
+    Output keys (SI, kWh beside J): ``fuel_fraction_per_stage``,
+    ``fuel_removed_per_stage_kg``, ``oxidizer_removed_per_stage_kg``,
+    ``fuel_removed_kg``, ``oxidizer_removed_kg``, ``heating_value_J_per_kg``,
+    ``heat_J``, ``heat_kWh``, ``electrical_energy_J``, ``electrical_energy_kWh``,
+    ``heat_to_electricity_ratio``, ``ratio_label`` and ``excludes``
+    (OFFLOAD_ENERGY_EXCLUSIONS). ValueError for lists of different lengths, a load that is
+    not > 0, a fuel mass outside (0, load] or a removed mass that is negative or not
+    finite."""
+    if not len(removed_kg) == len(loads_kg) == len(fuel_kg):
+        raise ValueError("offload energy: one removed mass, load and fuel mass per stage")
+    fractions: list[float] = []
+    fuel: list[float] = []
+    oxidizer: list[float] = []
+    for i, (removed, load, f) in enumerate(zip(removed_kg, loads_kg, fuel_kg, strict=True)):
+        if not load > 0.0:
+            raise ValueError(f"offload energy: stage {i} load must be > 0 kg, got {load!r}")
+        if not 0.0 < f <= load:
+            raise ValueError(f"offload energy: stage {i} fuel {f!r} kg outside (0, {load!r}]")
+        if not (math.isfinite(removed) and removed >= 0.0):
+            raise ValueError(f"offload energy: stage {i} removed {removed!r} kg is not >= 0")
+        fraction = f / load
+        fractions.append(fraction)
+        fuel.append(removed * fraction)
+        oxidizer.append(removed - removed * fraction)
+    fuel_total = math.fsum(fuel)
+    heat = fuel_total * heating_value_j_per_kg
+    elec: float | None = None
+    if _is_finite_number(electrical_energy_j):
+        elec = float(electrical_energy_j)  # type: ignore[arg-type]
+    positive = elec is not None and elec > 0.0
+    return {
+        "fuel_fraction_per_stage": fractions,
+        "fuel_removed_per_stage_kg": fuel,
+        "oxidizer_removed_per_stage_kg": oxidizer,
+        "fuel_removed_kg": fuel_total,
+        "oxidizer_removed_kg": math.fsum(oxidizer),
+        "heating_value_J_per_kg": heating_value_j_per_kg,
+        "heat_J": heat,
+        "heat_kWh": float(j_to_kwh(heat)),
+        "electrical_energy_J": elec,
+        "electrical_energy_kWh": None if elec is None else float(j_to_kwh(elec)),
+        "heat_to_electricity_ratio": heat / elec if positive and elec is not None else None,
+        "ratio_label": OFFLOAD_ENERGY_RATIO_LABEL,
+        "excludes": list(OFFLOAD_ENERGY_EXCLUSIONS),
+    }
 
 
 # ----------------------------------------------------------------- planar sensitivity

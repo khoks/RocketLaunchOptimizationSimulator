@@ -9,8 +9,8 @@ usage errors (no command, an unknown option) exit 2 with the usage text, as argp
 does. Anything else (a bug in the simulator) keeps its traceback.
 
     launchsim run   <experiment.yaml> [--results-root DIR] [--variant NAME] [--no-plots]
-                    [--no-sensitivity]
-    launchsim sweep <experiment.yaml> [--results-root DIR] [--no-plots]
+                    [--no-sensitivity] [--no-offload]
+    launchsim sweep <experiment.yaml> [--results-root DIR] [--no-plots] [--no-offload]
     launchsim animate <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--fps N]
                       [--seconds S] [--width PX]
     launchsim replay <run_dir> [--runs NAME [NAME ...]] [--out PATH]
@@ -38,8 +38,10 @@ from typing import Any
 import yaml
 
 from launchsim import __version__, plots, replay, sim
-from launchsim.config import ResolvedExperiment, resolve_experiment
-from launchsim.units import rad_to_deg
+from launchsim.compare import CHECK_NA
+from launchsim.config import OFFLOAD_GROSS_MODES, ResolvedExperiment, resolve_experiment
+from launchsim.results_io import OFFLOAD_QUOTED_FAILED, OFFLOAD_QUOTED_NO_CONTROL
+from launchsim.units import kg_to_t, rad_to_deg, to_percent
 
 REPO_MARKER = "pyproject.toml"
 RESULTS_DIR_NAME = "results"
@@ -70,13 +72,25 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--no-sensitivity",
         action="store_true",
-        help="Skip the sensitivity cases (the +/- parameter re-runs).",
+        help="Skip the sensitivity cases (the +/- parameter re-runs), the offload block's "
+        "sensitivity arms included.",
+    )
+    run.add_argument(
+        "--no-offload",
+        action="store_true",
+        help="Skip the experiment's offload block (planar_2d: the propellant saved at fixed "
+        "payload); the summary says it was skipped.",
     )
 
     sweep = sub.add_parser("sweep", help="Run every sweep declared in an experiment.")
     sweep.add_argument("experiment", help="Path to an experiment YAML file.")
     sweep.add_argument("--results-root", default=None, help=RESULTS_ROOT_HELP)
     sweep.add_argument("--no-plots", action="store_true", help="Skip PNG plots.")
+    sweep.add_argument(
+        "--no-offload",
+        action="store_true",
+        help="Skip the offload cases a sweep names (no offload columns in sweep_index.csv).",
+    )
 
     animate = sub.add_parser(
         "animate",
@@ -292,6 +306,74 @@ def run_line(name: str, result: sim.Result, baseline: bool) -> str:
     return f"  {name}{tag}: {result.status} ({head}){flags}"
 
 
+OFFLOAD_NOT_QUOTED_REASONS: dict[str, str] = {
+    OFFLOAD_QUOTED_NO_CONTROL: "no pad-control offload to net it against",
+    OFFLOAD_QUOTED_FAILED: "the case's own solve did not end ok",
+}
+"""The console's short reason for a solve that quotes no offload, by its record's
+``quoted_basis`` (``results_io._quoted_offload``)."""
+
+
+def offload_lines(record: dict[str, Any]) -> list[str]:
+    """The console lines of an offload block (ASCII): the skip note, or the reference
+    payload and one line per case and per pad control. A stage-1 solve: status, the
+    gross offload in tonnes and in % of the stage-1 and total loads, the decomposition
+    status. A fixed case: the same, then its figure P* - P_ref [kg]. A stage2 or both
+    solve leads with its quoted offload, net of the pad control, labelled a property of
+    the vehicle model, the gross tonnes after it (D-SP1-10). A solve that quotes nothing
+    says "not quoted" and why (OFFLOAD_NOT_QUOTED_REASONS, from its ``quoted_basis``; a
+    failed solve without the vehicle-model label). A pad control: status, x_pad and, for
+    stage 1, its consistency verdict."""
+    if record.get("skipped"):
+        return [f"  offload: {record['skipped']}"]
+
+    def tonnes(kg: Any) -> str:
+        return sim._fmt(None if kg is None else float(kg_to_t(kg)))
+
+    def percent(fraction: Any) -> str:
+        return sim._fmt(None if fraction is None else float(to_percent(fraction)))
+
+    lines = [f"  offload at P_ref {sim._fmt(record.get('reference_payload_kg'))} kg:"]
+    for c in record.get("cases") or []:
+        if c.get("skipped"):
+            lines.append(f"    {c.get('name')}: {c['skipped']}")
+            continue
+        gross = tonnes(c.get("total_offload_kg"))
+        shares = (
+            f"({percent(c.get('stage1_fraction'))} % of stage 1, "
+            f"{percent(c.get('total_fraction'))} % of the total)"
+        )
+        removed = f"{gross} t removed {shares}"
+        netted = c.get("mode") not in OFFLOAD_GROSS_MODES
+        vehicle_model = ", a property of the vehicle model" if netted else ""
+        quoted = c.get("quoted_offload_kg")
+        if c.get("kind") != "solve":  # a fixed case: its figure is P* - P_ref
+            text = f"{removed}, P* - P_ref {sim._signed(c.get('payload_delta_kg'))} kg"
+        elif quoted is None:
+            basis = str(c.get("quoted_basis"))
+            reason = OFFLOAD_NOT_QUOTED_REASONS.get(basis, basis)
+            label = "" if basis == OFFLOAD_QUOTED_FAILED else vehicle_model
+            text = f"not quoted ({reason}){label}; gross {removed}"
+        elif netted:
+            text = f"{tonnes(quoted)} t net of the pad control{vehicle_model}; gross {removed}"
+        else:
+            text = removed
+        lines.append(
+            f"    {c.get('name')}: {c.get('status')}, {text}, "
+            f"decomposition {c.get('decomposition_status')}"
+        )
+    for p in record.get("pad_controls") or []:
+        verdict = p.get("consistency")
+        tail = "" if verdict in (None, CHECK_NA) else f", consistency {verdict}"
+        lines.append(
+            f"    pad control {p.get('mode')}: {p.get('status')}, x_pad "
+            f"{sim._fmt(p.get('offload_kg'))} kg{tail}"
+        )
+    if record.get("sensitivity"):
+        lines.append(f"    sensitivity: {len(record['sensitivity'])} arms")
+    return lines
+
+
 def command_run(args: argparse.Namespace) -> int:
     """Run an experiment (baseline + variants) and print the results directory."""
     experiment_path = Path(args.experiment)
@@ -308,12 +390,16 @@ def command_run(args: argparse.Namespace) -> int:
         only_variant=args.variant,
         repo_root=repo_root_or_cwd(experiment_path),
         sensitivity=not args.no_sensitivity,
+        offload=not args.no_offload,
     )
     say(f"results: {out_dir}")
     for name, rr in er.runs.items():
         say(run_line(name, rr.result, name == er.baseline.name))
     for name, rr in er.cases.items():
         say(run_line(f"case {name}", rr.result, False))
+    if er.offload is not None:
+        for line in offload_lines(er.offload.record):
+            say(line)
     if er.preregistration is not None:
         state = er.preregistration
         if state.get("dirty") is False:
@@ -337,6 +423,7 @@ def command_sweep(args: argparse.Namespace) -> int:
         results_root(args, experiment_path),
         plots=not args.no_plots,
         repo_root=repo_root_or_cwd(experiment_path),
+        offload=not args.no_offload,
     )
     say(f"results: {out_dir}")
     if not sweeps:

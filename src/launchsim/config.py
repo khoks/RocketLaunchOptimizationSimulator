@@ -17,6 +17,11 @@ the same run dicts as before. Variants, sweeps (except a paired guidance sweep o
 ``guidance_study``), sensitivity cases and bounds may not touch them; calibration
 ``cases`` may change ``site``, ``target_orbit`` and the vehicle, and are never compared.
 
+The ``offload`` block (planar_2d with a payload search only; SP1 step 7) is not a
+shared block: it names cases built on the variants (``offload_case_start``, the vehicle
+changes restated through ``apply_overrides``), the pad control, sensitivity arms and
+energy inputs, resolved into ``ResolvedOffload`` and run by ``results_io``.
+
 Limits enforced as validation errors: Earth rotation only on planar_2d runs (the 1-D
 model keeps omega_p = 0: "a Phase 2 feature"), vertical tracks only ("a Phase 3
 feature"), only the ``none`` and ``constant_accel`` assist models (``linear_motor`` and
@@ -52,16 +57,20 @@ from launchsim import units
 from launchsim.constants import OMEGA_EARTH_RADS, P_SEA_LEVEL_PA, R_EARTH_M
 from launchsim.vehicle import (
     HEATING_TRIGGER,
+    OFFLOAD_MODES,
     CdTable,
     DragModel,
     Engine,
     FairingDrop,
     FairingDropKind,
     FairingTrigger,
+    OffloadMode,
     Stage,
     Startup,
     StartupKind,
     Vehicle,
+    offload_load_kg,
+    offload_split_kg,
 )
 
 VEHICLE_PREFIX = "vehicle."
@@ -1436,11 +1445,18 @@ class SweepConfig(_Model):
     guidance block and need label ``guidance_study``, and on ``vehicle.*``) also re-runs
     the baseline at every point with the same overrides, so each point is compared with
     its own pair. On planar_2d a ``vehicle.*`` axis must be paired, so a vehicle change
-    is never booked as an assist gain."""
+    is never booked as an assist gain.
+
+    ``offload`` (planar_2d only; SP1 step 7) names cases of the experiment's ``offload``
+    block (stage-1 solves and fixed cases only, on a sweep of a variant): at every point
+    each is solved (or fixed) with the point's run in place of the case's ``of``, at the
+    reference payload of the point's baseline, and its results become columns of
+    sweep_index.csv."""
 
     of: str
     axes: dict[str, list[Any]]
     paired: bool = False
+    offload: list[str] = Field(default_factory=list)
 
     @field_validator("axes")
     @classmethod
@@ -1498,6 +1514,265 @@ class CaseConfig(_Model):
         if bad:
             raise ValueError(f"case overrides take vehicle. paths only, got {bad}")
         return self
+
+
+# ------------------------------------------------------------------------ offload block
+
+OFFLOAD_FIXED_KEYS: tuple[str, ...] = (
+    "stage1_t",
+    "stage1_fraction",
+    "stage2_t",
+    "stage2_fraction",
+    "both_fraction",
+)
+"""The ways an imposed (``fixed:``) offload is stated: a mass [t] taken from the first or
+the second stage, a fraction of that stage's load, or one fraction of each stage's load
+(mode both)."""
+OFFLOAD_FIXED_MODES: dict[str, OffloadMode] = {
+    "stage1_t": "stage1",
+    "stage1_fraction": "stage1",
+    "stage2_t": "stage2",
+    "stage2_fraction": "stage2",
+    "both_fraction": "both",
+}
+"""The offload mode (``vehicle.OFFLOAD_MODES``) of each OFFLOAD_FIXED_KEYS key."""
+OFFLOAD_MASS_KEY_SUFFIX = "_t"
+"""Suffix of the OFFLOAD_FIXED_KEYS keys that state a mass in tonnes (the others state a
+fraction of a load)."""
+OFFLOAD_STAGE1_INDEX = 0
+OFFLOAD_STAGE2_INDEX = 1
+"""Stage indices of the offload modes: ``stage1`` is the vehicle's first stage, ``stage2``
+its second, whatever their names."""
+OFFLOAD_PROPELLANT_KEY = "propellant_mass_t"
+OFFLOAD_DRY_MASS_KEY = "dry_mass_t"
+"""Vehicle-file keys an offload case restates (``offload_overrides``)."""
+OFFLOAD_GROSS_MODES: tuple[OffloadMode, ...] = ("stage1",)
+"""Solve modes quoted gross, never netted against a pad control: stage 1, the headline
+(its pad control is a consistency test of the solver, not a correction). A stage2 or
+both solve is quoted net of the pad control (D-SP1-10), so it needs ``pad_control:
+true`` and is never solved at a sweep point or in a sensitivity arm (neither solves a
+pad control)."""
+PAD_CONTROL_PREFIX = "offload_"
+"""Name of a pad-control run: ``<baseline>__offload_<mode>`` (``pad_control_run_name``)."""
+
+
+class OffloadFixedConfig(_Model):
+    """An imposed offload (an offload case's ``fixed:``; docs/physics.md, "Experiment
+    schema (planar)"): exactly one of OFFLOAD_FIXED_KEYS, a mass [t] (> 0) taken from the
+    first stage (``stage1_t``) or the second (``stage2_t``), a fraction in (0, 1) of that
+    stage's load (``stage1_fraction``, ``stage2_fraction``), or the same fraction in (0,
+    1) of each stage's load (``both_fraction``, mode both). A key counts as given when it
+    is present, a null included (as the exclusive families count it), so a null is
+    refused, never ignored. A mass at or beyond the stage's load is refused when the
+    experiment is resolved against its vehicle."""
+
+    stage1_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    stage1_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+    stage2_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    stage2_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+    both_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> OffloadFixedConfig:
+        """Exactly one key of OFFLOAD_FIXED_KEYS given (a null counting as given),
+        holding a number."""
+        given = [k for k in OFFLOAD_FIXED_KEYS if k in self.model_fields_set]
+        if len(given) != 1:
+            found = ", ".join(given) if given else "none"
+            raise ValueError(
+                f"a fixed offload states exactly one of {', '.join(OFFLOAD_FIXED_KEYS)} "
+                f"(given: {found})"
+            )
+        if getattr(self, given[0]) is None:
+            raise ValueError(f"fixed offload {given[0]} is null: it must hold a number")
+        return self
+
+    @property
+    def key(self) -> str:
+        """The OFFLOAD_FIXED_KEYS key that states the offload."""
+        return next(k for k in OFFLOAD_FIXED_KEYS if getattr(self, k) is not None)
+
+    @property
+    def mode(self) -> OffloadMode:
+        """The offload mode (stage1, stage2 or both) of the stated key."""
+        return OFFLOAD_FIXED_MODES[self.key]
+
+    @property
+    def fraction(self) -> float | None:
+        """The stated fraction (dimensionless) of a ``*_fraction`` key; None for a mass key
+        (``stage1_t``, ``stage2_t``), whose SI value is ``offload_kg``."""
+        if self.key.endswith(OFFLOAD_MASS_KEY_SUFFIX):
+            return None
+        return float(getattr(self, self.key))
+
+    def offload_kg(self, vehicle: Vehicle) -> float:
+        """The imposed offload x [kg] along ``mode`` on vehicle: the stated mass in kg, or
+        the stated fraction of ``vehicle.offload_load_kg`` (the stage's load, or both
+        loads together for ``both_fraction``). Raises ValueError for a vehicle without the
+        mode's stages."""
+        fraction = self.fraction
+        if fraction is None:
+            return float(units.t_to_kg(float(getattr(self, self.key))))
+        return fraction * offload_load_kg(vehicle, self.mode)
+
+
+class OffloadCaseConfig(_Model):
+    """One case of the ``offload`` block: ``name`` (its recorded run's name), ``of`` (a
+    variant, never the baseline: the pad's own offload is the pad control) and exactly
+    one of ``solve`` (the mode solved for the largest offload that still carries the
+    reference payload: stage1, stage2 or both) or ``fixed`` (an imposed offload,
+    OffloadFixedConfig: the variant flies it, its payload capacity is compared with the
+    reference payload). Optional: ``stage2_offload_t`` [t] (> 0) taken from the second
+    stage before the case (stage-1 cases only: the frontier point of a both-stage
+    offload), ``stage1_dry_mass_added_t`` [t] (> 0), an assumed structural penalty added
+    to the first stage's dry mass of the assisted run only (a penalty row, never a sized
+    structure), and ``paired_pad`` (also fly the pad with the same final propellant
+    change, without the penalty, and compare the case with it on one vehicle)."""
+
+    name: str
+    of: str
+    solve: OffloadMode | None = None
+    fixed: OffloadFixedConfig | None = None
+    stage2_offload_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    stage1_dry_mass_added_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    paired_pad: bool = False
+
+    @model_validator(mode="after")
+    def _one_way(self) -> OffloadCaseConfig:
+        """Exactly one of solve and fixed; stage2_offload_t only on a stage-1 case;
+        paired_pad not on a penalty row (the paired pad must fly the case's vehicle)."""
+        if (self.solve is None) == (self.fixed is None):
+            raise ValueError(
+                f"offload case {self.name!r}: give exactly one of solve (a mode to solve) "
+                "or fixed (an imposed offload)"
+            )
+        if self.stage2_offload_t is not None and self.mode != "stage1":
+            raise ValueError(
+                f"offload case {self.name!r}: stage2_offload_t is taken before a stage-1 "
+                f"case only (this case's mode is {self.mode})"
+            )
+        if self.paired_pad and self.stage1_dry_mass_added_t is not None:
+            raise ValueError(
+                f"offload case {self.name!r}: paired_pad compares the case with the pad on "
+                "one vehicle (the matched-payload attribution), but stage1_dry_mass_added_t "
+                "is the assisted run's only; give the penalty row without paired_pad"
+            )
+        return self
+
+    @property
+    def mode(self) -> OffloadMode:
+        """The case's offload mode: ``solve``, or the mode of its ``fixed`` key."""
+        if self.solve is not None:
+            return self.solve
+        assert self.fixed is not None
+        return self.fixed.mode
+
+    @property
+    def solved(self) -> bool:
+        """True for a solved case (``solve``), False for an imposed one (``fixed``)."""
+        return self.solve is not None
+
+
+class OffloadEnergyConfig(_Model):
+    """Inputs of the offload's energy comparison (docs/physics.md, "Reporting definitions
+    (planar)"), sourced Quantities because the vehicle file holds no fuel split:
+    ``fuel_mass_t``, the fuel (RP-1) mass [t] of each stage's full load, keyed by stage
+    name (every stage of the vehicle; the oxidiser, LOX, is the remainder of the stage's
+    propellant, so each value must be > 0 and no more than that propellant, checked
+    against the vehicle when the experiment is resolved), and
+    ``heating_value_MJ_per_kg``, the fuel's lower heating value [MJ/kg] (> 0)."""
+
+    fuel_mass_t: dict[str, Quantity] = Field(min_length=1)
+    heating_value_MJ_per_kg: Quantity
+
+    @model_validator(mode="after")
+    def _positive(self) -> OffloadEnergyConfig:
+        """Every fuel mass and the heating value > 0 (the bounds against the vehicle's
+        propellant are checked at resolve time, ``_check_offload_energy``)."""
+        for stage, q in self.fuel_mass_t.items():
+            if not q.value > 0.0:
+                raise ValueError(f"offload energy fuel_mass_t {stage}: must be > 0 t")
+        if not self.heating_value_MJ_per_kg.value > 0.0:
+            raise ValueError("offload energy heating_value_MJ_per_kg must be > 0")
+        return self
+
+    @property
+    def heating_value_J_per_kg(self) -> float:
+        """The lower heating value [J/kg]."""
+        return float(units.mj_to_j(self.heating_value_MJ_per_kg.value))
+
+    def fuel_kg(self, stage: str) -> float:
+        """The fuel mass [kg] of a stage's full load."""
+        return float(units.t_to_kg(self.fuel_mass_t[stage].value))
+
+
+class OffloadConfig(_Model):
+    """The experiment's ``offload`` block (SP1 step 7; docs/physics.md, "Experiment schema
+    (planar)"): ``reference`` (the baseline, whose payload capacity is the reference
+    payload P_ref), ``cases`` (OffloadCaseConfig, unique names), ``pad_control`` (solve
+    every distinct solve mode of the cases once on the reference baseline at P_ref;
+    required by a stage2 or both solve, which is quoted net of it),
+    ``sensitivity_of`` (case names re-solved under the experiment's sensitivity params,
+    pad and assisted run perturbed alike) and ``energy`` (OffloadEnergyConfig, optional).
+    Not a shared block: nothing in it changes a run of the experiment.
+
+    The YAML key ``reference`` is read into the field ``reference_run`` (a pydantic
+    alias): ``reference`` is a key of the ignition time family (IGNITION_KEY_FAMILIES),
+    which no other config model may use as a field name (the exclusive-family rule is by
+    key name; tests/test_config.py checks it). The block is not a run dict, so the YAML
+    key itself is never merged by that rule."""
+
+    reference_run: str = Field(alias="reference")
+    cases: list[OffloadCaseConfig] = Field(min_length=1)
+    pad_control: bool = False
+    sensitivity_of: list[str] = Field(default_factory=list)
+    energy: OffloadEnergyConfig | None = None
+
+    @model_validator(mode="after")
+    def _names(self) -> OffloadConfig:
+        """Unique case names; sensitivity_of names known cases, each once; a stage2 or
+        both solve only with pad_control and never in sensitivity_of (its offload is
+        quoted net of the pad's, D-SP1-10, which an arm does not solve)."""
+        names = [c.name for c in self.cases]
+        dup = sorted({n for n in names if names.count(n) > 1})
+        if dup:
+            raise ValueError(f"offload case names are used twice: {dup}")
+        unknown = [n for n in self.sensitivity_of if n not in names]
+        if unknown:
+            raise ValueError(f"offload sensitivity_of names no case: {unknown}")
+        if len(set(self.sensitivity_of)) != len(self.sensitivity_of):
+            raise ValueError("offload sensitivity_of names a case twice")
+        for c in self.cases:
+            netted = c.solve is not None and c.solve not in OFFLOAD_GROSS_MODES
+            if netted and not self.pad_control:
+                raise ValueError(
+                    f"offload case {c.name!r}: a {c.solve} solve is quoted net of the pad "
+                    "control (stage-2 and both-stage offloads are a property of the vehicle "
+                    "model, D-SP1-10), so the block needs pad_control: true"
+                )
+            if netted and c.name in self.sensitivity_of:
+                raise ValueError(
+                    f"offload sensitivity_of {c.name!r}: a {c.solve} solve is quoted net of "
+                    "the pad control, which an arm does not solve under its perturbation; "
+                    "name stage-1 solves and fixed cases"
+                )
+        return self
+
+    @property
+    def pad_control_modes(self) -> tuple[str, ...]:
+        """The distinct modes of the solved cases, in OFFLOAD_MODES order, when
+        pad_control is set; () otherwise."""
+        if not self.pad_control:
+            return ()
+        solved = {c.solve for c in self.cases if c.solve is not None}
+        return tuple(m for m in OFFLOAD_MODES if m in solved)
+
+    def case(self, name: str) -> OffloadCaseConfig:
+        """The case of that name (KeyError when there is none)."""
+        for c in self.cases:
+            if c.name == name:
+                return c
+        raise KeyError(name)
 
 
 def _path_root(path: str) -> str:
@@ -1600,6 +1875,7 @@ class ExperimentConfig(_Model):
     sensitivity: SensitivityConfig | None = None
     bounds: list[BoundConfig] = Field(default_factory=list)
     cases: dict[str, CaseConfig] = Field(default_factory=dict)
+    offload: OffloadConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1725,11 +2001,82 @@ class ExperimentConfig(_Model):
                     )
             names += [bound_run_name(of, bound.name) for of in (self.baseline.name, *bound.of)]
         names += list(self.cases)
+        what = "runs, bounds and cases"
+        if self.offload is not None:
+            names += offload_run_names(self.offload, self.baseline.name)
+            what = "runs, bounds, cases and offload runs"
         seen: set[str] = set()
         for name in names:
             if name in seen:
-                raise ValueError(f"run name {name!r} is used twice (runs, bounds and cases)")
+                raise ValueError(f"run name {name!r} is used twice ({what})")
             seen.add(name)
+        return self
+
+    @model_validator(mode="after")
+    def _offload_block(self) -> ExperimentConfig:
+        """The offload block (SP1 step 7) and the sweeps that name its cases: planar_2d
+        with search.figure_of_merit payload (the solve and its verification are payload
+        searches); ``reference`` the baseline; every case ``of`` a variant (never the
+        baseline); ``sensitivity_of`` needs the sensitivity block (its params); a sweep's
+        ``offload`` names cases of the block, each once, on a sweep that is not of the
+        baseline (the baseline's own offload is the pad control), and no stage2 or both
+        solve (quoted net of a pad control, which a sweep does not solve)."""
+        swept = [(k, s) for k, s in enumerate(self.sweeps, start=1) if s.offload]
+        block = self.offload
+        if block is None:
+            if swept:
+                raise ValueError(
+                    f"sweep {swept[0][0]}: offload names cases of the experiment's offload "
+                    "block, which this experiment does not declare"
+                )
+            return self
+        if self.dynamics != PLANAR_2D:
+            raise ValueError("offload: a planar_2d block (declare dynamics: planar_2d)")
+        fom = None if self.search is None else self.search.figure_of_merit
+        if fom != "payload":
+            raise ValueError(
+                "offload: the offload solve and its verification are payload searches, so "
+                f"the block needs search.figure_of_merit payload (got {fom})"
+            )
+        if block.reference_run != self.baseline.name:
+            raise ValueError(
+                f"offload reference {block.reference_run!r} must be the baseline "
+                f"{self.baseline.name!r}: the reference payload is the full-load pad's P*"
+            )
+        for case in block.cases:
+            if case.of == self.baseline.name:
+                raise ValueError(
+                    f"offload case {case.name!r}: of {case.of!r} is the baseline; the "
+                    "baseline's own offload is the pad control (pad_control: true)"
+                )
+            if case.of not in self.variants:
+                raise ValueError(f"offload case {case.name!r}: of {case.of!r}: no such variant")
+        if block.sensitivity_of and self.sensitivity is None:
+            raise ValueError(
+                "offload sensitivity_of re-solves its cases under the experiment's "
+                "sensitivity params: declare the sensitivity block"
+            )
+        names = {c.name for c in block.cases}
+        for k, sweep in swept:
+            if sweep.of == self.baseline.name:
+                raise ValueError(
+                    f"sweep {k}: of {sweep.of!r} is the baseline, so its offload cases would "
+                    "solve the baseline's own offload, which is the pad control "
+                    "(pad_control: true); name offload cases on a sweep of a variant"
+                )
+            unknown = [n for n in sweep.offload if n not in names]
+            if unknown:
+                raise ValueError(f"sweep {k}: offload names no case of the block: {unknown}")
+            if len(set(sweep.offload)) != len(sweep.offload):
+                raise ValueError(f"sweep {k}: offload names a case twice")
+            for name in sweep.offload:
+                solve = block.case(name).solve
+                if solve is not None and solve not in OFFLOAD_GROSS_MODES:
+                    raise ValueError(
+                        f"sweep {k}: offload case {name!r} solves {solve}, which is quoted "
+                        "net of a pad control; a sweep solves none, so it names stage-1 "
+                        "solves and fixed cases only"
+                    )
         return self
 
 
@@ -1750,6 +2097,25 @@ def bound_run_name(of: str, bound: str) -> str:
 def paired_baseline_name(point_name: str, baseline: str) -> str:
     """Name of the baseline re-run paired with a sweep point: ``<point>__<baseline>``."""
     return f"{point_name}__{baseline}"
+
+
+def pad_control_run_name(baseline: str, mode: str) -> str:
+    """Name of the pad control of an offload mode: ``<baseline>__offload_<mode>``."""
+    return f"{baseline}__{PAD_CONTROL_PREFIX}{mode}"
+
+
+def offload_run_names(block: OffloadConfig, baseline: str) -> list[str]:
+    """The names of the runs an offload block writes (results directories): every case's
+    recorded run (its name), the paired pad of a ``paired_pad`` case
+    (``<case>__<baseline>``, ``paired_baseline_name``) and the pad control of each mode
+    (``pad_control_run_name``)."""
+    names: list[str] = []
+    for case in block.cases:
+        names.append(case.name)
+        if case.paired_pad:
+            names.append(paired_baseline_name(case.name, baseline))
+    names += [pad_control_run_name(baseline, m) for m in block.pad_control_modes]
+    return names
 
 
 # ---------------------------------------------------------------- overrides and merging
@@ -2014,6 +2380,10 @@ class SweepPoint:
     overrides: dict[str, Any]
     run: ResolvedRun
     paired_baseline: ResolvedRun | None = None
+    offload: tuple[ResolvedOffloadCase, ...] = ()
+    """The offload cases the sweep names (``SweepConfig.offload``), each built on this
+    point's run (``offload_case_start``, named ``<run>__<case>``; no paired pad); empty
+    unless the sweep names some."""
 
 
 @dataclass(frozen=True)
@@ -2039,10 +2409,69 @@ class BoundCase:
 
 
 @dataclass(frozen=True)
+class ResolvedOffloadCase:
+    """One offload case resolved against its runs (nothing flown): ``config``; ``variant``,
+    the run it is built on (the variant named in ``of``, or a sweep point's run);
+    ``start``, that run with the case's vehicle changes (``offload_case_start``: the
+    stage-2 pre-offload, the assumed stage-1 dry mass and, for a fixed case, the imposed
+    offload), named after the case: what a solve starts from, or the fixed case's run
+    itself; ``pad_start``, the pad with the same propellant changes and no penalty
+    (``paired_pad``; None otherwise), named ``<case>__<baseline>``, to which a solved
+    case adds its x*; ``imposed_kg``, a fixed case's offload x [kg] along its mode (None
+    for a solved case)."""
+
+    config: OffloadCaseConfig
+    variant: ResolvedRun
+    start: ResolvedRun
+    pad_start: ResolvedRun | None
+    imposed_kg: float | None
+
+    @property
+    def name(self) -> str:
+        """The case's name."""
+        return self.config.name
+
+
+@dataclass(frozen=True)
+class ResolvedOffloadArm:
+    """One sensitivity arm of an offload case (``offload.sensitivity_of``): the case
+    ``case`` rebuilt (``start``) on its variant with ``param`` moved by the signed
+    ``fraction`` (that perturbed variant is ``variant``), and ``pad``, the reference
+    baseline under the same perturbation for a ``vehicle.`` parameter (the vehicle dict
+    of the perturbed variant, as a sensitivity case's same-perturbation baseline) or the
+    unchanged baseline for a run parameter (``pad_perturbed`` False: a pad has no drive
+    to perturb)."""
+
+    case: str
+    param: str
+    fraction: float
+    start: ResolvedRun
+    pad: ResolvedRun
+    pad_perturbed: bool
+    imposed_kg: float | None = None
+    """A fixed case's imposed offload x [kg] on the perturbed variant (None when solved)."""
+    variant: ResolvedRun | None = None
+    """The perturbed variant the arm's start is built on (its full loads)."""
+
+
+@dataclass(frozen=True)
+class ResolvedOffload:
+    """The experiment's offload block resolved (nothing flown): ``config``, the
+    ResolvedOffloadCase of every case in order, the sensitivity arms and the modes the
+    pad control solves (``OffloadConfig.pad_control_modes``)."""
+
+    config: OffloadConfig
+    cases: list[ResolvedOffloadCase]
+    arms: list[ResolvedOffloadArm]
+    pad_control_modes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ResolvedExperiment:
     """Everything an experiment declares, validated, nothing run. ``bounds`` and
     ``cases`` (calibration only; independent runs, never compared) are empty unless
-    declared; neither is part of ``runs``."""
+    declared; neither is part of ``runs``. ``offload`` is the resolved offload block
+    (None unless declared)."""
 
     experiment: ExperimentConfig
     baseline: ResolvedRun
@@ -2051,6 +2480,7 @@ class ResolvedExperiment:
     sensitivity: list[SensitivityCase]
     bounds: list[BoundCase] = field(default_factory=list)
     cases: dict[str, ResolvedRun] = field(default_factory=dict)
+    offload: ResolvedOffload | None = None
 
     @property
     def runs(self) -> dict[str, ResolvedRun]:
@@ -2206,14 +2636,195 @@ def _resolve_case(
     return resolve_run(cname, r, v)
 
 
+def _restated_quantity(
+    vehicle_dict: dict[str, Any], stage_index: int, key: str, value_t: float, note: str
+) -> dict[str, Any]:
+    """The vehicle-file Quantity of a stage mass an offload restates: ``value_t`` [t],
+    ``assumed: true`` (a derived number, not the source's), and a note that names the
+    change and the vehicle dict's own value [t] and provenance. Raises ConfigPathError
+    when the mass is not a Quantity."""
+    path = f"stages.{stage_index}.{key}"
+    orig = read_path(vehicle_dict, path)
+    if not (isinstance(orig, dict) and _is_number(orig.get("value"))):
+        raise ConfigPathError(f"{path}: not a Quantity, cannot restate it")
+    provenance = f"source: {orig['source']}" if orig.get("source") else "assumed"
+    return {
+        "value": value_t,
+        "assumed": True,
+        "note": f"{note}; the vehicle's value was {orig['value']:g} t ({provenance})",
+    }
+
+
+def offload_overrides(
+    vehicle_dict: dict[str, Any], removed_kg: list[float], dry_added_kg: float, what: str
+) -> dict[str, Any]:
+    """The ``vehicle.`` overrides of an offload (docs/physics.md, "Experiment schema
+    (planar)"): every stage's ``propellant_mass_t`` less removed_kg[i] [kg] (stages with
+    0 left alone; the tanks partly filled, every dry mass unchanged) and the first
+    stage's ``dry_mass_t`` plus dry_added_kg [kg] (an assumed structural penalty; left
+    alone at 0), each a restated Quantity [t] (``_restated_quantity``). Raises
+    ValueError naming ``what`` when a stage would keep no propellant (a stage needs
+    propellant > 0)."""
+    out: dict[str, Any] = {}
+    for i, taken in enumerate(removed_kg):
+        if taken == 0.0:
+            continue
+        load_t = read_value(vehicle_dict, f"stages.{i}.{OFFLOAD_PROPELLANT_KEY}")
+        load_kg = float(units.t_to_kg(load_t))
+        if not taken < load_kg:
+            raise ValueError(
+                f"{what}: takes {units.kg_to_t(taken):g} t of propellant from stage "
+                f"{vehicle_dict['stages'][i].get('name', i)!r}, which carries "
+                f"{units.kg_to_t(load_kg):g} t (an offload beyond the load; a stage keeps "
+                "some propellant)"
+            )
+        note = f"{what}: {units.kg_to_t(taken):.9g} t of propellant removed (tanks partly filled)"
+        path = f"{VEHICLE_PREFIX}stages.{i}.{OFFLOAD_PROPELLANT_KEY}"
+        value_t = float(units.kg_to_t(load_kg - taken))
+        out[path] = _restated_quantity(vehicle_dict, i, OFFLOAD_PROPELLANT_KEY, value_t, note)
+    if dry_added_kg > 0.0:
+        i = OFFLOAD_STAGE1_INDEX
+        dry_t = read_value(vehicle_dict, f"stages.{i}.{OFFLOAD_DRY_MASS_KEY}")
+        dry_kg = float(units.t_to_kg(dry_t))
+        note = (
+            f"{what}: {units.kg_to_t(dry_added_kg):.9g} t of stage-1 dry mass added, an "
+            "assumed structural penalty, not a sized structure"
+        )
+        path = f"{VEHICLE_PREFIX}stages.{i}.{OFFLOAD_DRY_MASS_KEY}"
+        value_t = float(units.kg_to_t(dry_kg + dry_added_kg))
+        out[path] = _restated_quantity(vehicle_dict, i, OFFLOAD_DRY_MASS_KEY, value_t, note)
+    return out
+
+
+def _offloaded(run: ResolvedRun, overrides: dict[str, Any], name: str, what: str) -> ResolvedRun:
+    """run with the vehicle overrides applied (``_perturb``), resolved under name (only
+    renamed when there are none)."""
+    if not overrides:
+        return resolve_run(name, run.run_dict, run.vehicle_dict)
+    r, v = _perturb(run, overrides, what)
+    return resolve_run(name, r, v)
+
+
+def offload_case_start(
+    case: OffloadCaseConfig, run: ResolvedRun, name: str, *, penalty: bool = True
+) -> tuple[ResolvedRun, float | None]:
+    """The start of an offload case on run (a variant, a sweep point, or with penalty
+    False the pad for a paired pad), resolved under name, and a fixed case's imposed
+    offload x [kg] (None for a solved case): run's vehicle with the case's
+    ``stage2_offload_t`` taken from the second stage, for a fixed case the imposed
+    offload taken along its mode (``vehicle.offload_split_kg`` on run's vehicle), and,
+    with penalty, ``stage1_dry_mass_added_t`` added to the first stage's dry mass
+    (``offload_overrides``). Raises ValueError for an offload beyond a stage's load."""
+    vehicle = run.to_vehicle()
+    removed = [0.0] * vehicle.n_stages
+    if case.stage2_offload_t is not None:
+        removed[OFFLOAD_STAGE2_INDEX] += float(units.t_to_kg(case.stage2_offload_t))
+    imposed: float | None = None
+    if case.fixed is not None:
+        imposed = case.fixed.offload_kg(vehicle)
+        split = offload_split_kg(vehicle, case.fixed.mode, imposed)
+        removed = [a + b for a, b in zip(removed, split, strict=True)]
+    added = case.stage1_dry_mass_added_t if penalty else None
+    dry = 0.0 if added is None else float(units.t_to_kg(added))
+    what = f"offload case {case.name!r}"
+    overrides = offload_overrides(run.vehicle_dict, removed, dry, what)
+    return _offloaded(run, overrides, name, what), imposed
+
+
+def offload_solved_run(
+    start: ResolvedRun, mode: OffloadMode, offload_kg: float, case: str, name: str
+) -> ResolvedRun:
+    """start with the solved offload x* = offload_kg [kg] removed along mode
+    (``vehicle.offload_split_kg`` on start's vehicle, ``offload_overrides``), resolved
+    under name: the vehicle dict of a solved case's recorded run, or of its paired pad.
+    At x* = 0 only the name changes."""
+    removed = list(offload_split_kg(start.to_vehicle(), mode, offload_kg))
+    what = f"offload case {case!r} (solved)"
+    return _offloaded(start, offload_overrides(start.vehicle_dict, removed, 0.0, what), name, what)
+
+
+def _check_offload_energy(energy: OffloadEnergyConfig | None, vehicle: VehicleConfig) -> None:
+    """The energy block against the vehicle: a fuel mass for every stage and no other
+    key, each no more than its stage's propellant (the oxidiser is the remainder).
+    Raises ValueError."""
+    if energy is None:
+        return
+    stages = {s.name: s for s in vehicle.stages}
+    unknown = sorted(set(energy.fuel_mass_t) - set(stages))
+    if unknown:
+        raise ValueError(f"offload energy fuel_mass_t names no stage of the vehicle: {unknown}")
+    missing = [n for n in stages if n not in energy.fuel_mass_t]
+    if missing:
+        raise ValueError(f"offload energy fuel_mass_t needs every stage; missing {missing}")
+    for name, q in energy.fuel_mass_t.items():
+        propellant = stages[name].propellant_mass_t.value
+        if q.value > propellant:
+            raise ValueError(
+                f"offload energy fuel_mass_t {name}: {q.value:g} t is more than the stage's "
+                f"propellant ({propellant:g} t; the oxidiser is the remainder)"
+            )
+
+
+def _resolve_offload(
+    experiment: ExperimentConfig, baseline: ResolvedRun, variants: dict[str, ResolvedRun]
+) -> ResolvedOffload | None:
+    """The offload block resolved: each case's start (and paired-pad start), each
+    sensitivity arm and the pad-control modes; the energy block checked against the
+    vehicle. None without a block."""
+    block = experiment.offload
+    if block is None:
+        return None
+    _check_offload_energy(block.energy, baseline.vehicle)
+    cases: list[ResolvedOffloadCase] = []
+    for case in block.cases:
+        variant = variants[case.of]
+        start, imposed = offload_case_start(case, variant, case.name)
+        pad_start = None
+        if case.paired_pad:
+            pad_name = paired_baseline_name(case.name, baseline.name)
+            pad_start, _ = offload_case_start(case, baseline, pad_name, penalty=False)
+        cases.append(ResolvedOffloadCase(case, variant, start, pad_start, imposed))
+    arms: list[ResolvedOffloadArm] = []
+    params = {} if experiment.sensitivity is None else experiment.sensitivity.params
+    for name in block.sensitivity_of:
+        case = block.case(name)
+        variant = variants[case.of]
+        for param, fraction in params.items():
+            nominal = _nominal_value(variant, param)
+            for sign in (+1.0, -1.0):
+                tag = f"{param}__{'+' if sign > 0 else '-'}{fraction:g}"
+                what = f"offload sensitivity of {name!r}"
+                r, v = _perturb(variant, {param: nominal * (1.0 + sign * fraction)}, what)
+                arm_variant = resolve_run(f"{case.of}__{tag}", r, v)
+                start, imposed = offload_case_start(case, arm_variant, f"{name}__{tag}")
+                perturbed = param.startswith(VEHICLE_PREFIX)
+                pad = (
+                    resolve_run(
+                        f"{baseline.name}__{tag}", baseline.run_dict, arm_variant.vehicle_dict
+                    )
+                    if perturbed
+                    else baseline
+                )
+                arms.append(
+                    ResolvedOffloadArm(
+                        name, param, sign * fraction, start, pad, perturbed, imposed, arm_variant
+                    )
+                )
+    return ResolvedOffload(block, cases, arms, block.pad_control_modes)
+
+
 def resolve_experiment(
     exp_dict: dict[str, Any],
     vehicle_dict: dict[str, Any],
     load_vehicle: VehicleLoader | None = None,
 ) -> ResolvedExperiment:
-    """Validate the baseline, every variant, every sweep point (and its paired baseline),
-    every sensitivity case, every bound and every calibration case of an experiment
-    against its vehicle dict, without running anything.
+    """Validate the baseline, every variant, every sweep point (and its paired baseline
+    and offload cases), every sensitivity case, every bound, every calibration case and
+    the offload block (its cases, paired pads, sensitivity arms and energy inputs) of an
+    experiment against its vehicle dict, without running anything. Pure (dicts in, a
+    ResolvedExperiment out): a caller with an in-memory experiment dict (the SP2 app)
+    resolves it here, runs it with ``sim.run_resolved`` and assembles the result with
+    ``results_io.planar_experiment_result`` without writing anything.
 
     The experiment's declared shared blocks are injected into every run dict
     (shared_run_blocks, inject_shared); a Phase 1 experiment that declares none gets
@@ -2247,7 +2858,13 @@ def resolve_experiment(
             if sweep.paired:
                 rb, vb = _perturb(baseline, run_overrides, f"sweep {k}")
                 paired = resolve_run(paired_baseline_name(point.name, baseline.name), rb, vb)
-            points.append(SweepPoint(k, i, sweep.of, overrides, point, paired))
+            offload: list[ResolvedOffloadCase] = []
+            for cname in sweep.offload:
+                assert experiment.offload is not None  # ExperimentConfig checks it
+                case = experiment.offload.case(cname)
+                start, imposed = offload_case_start(case, point, f"{point.name}__{cname}")
+                offload.append(ResolvedOffloadCase(case, point, start, None, imposed))
+            points.append(SweepPoint(k, i, sweep.of, overrides, point, paired, tuple(offload)))
         sweeps.append(points)
 
     cases: list[SensitivityCase] = []
@@ -2268,6 +2885,14 @@ def resolve_experiment(
         cname: _resolve_case(cname, case, exp_dict, vehicle_dict, load_vehicle)
         for cname, case in experiment.cases.items()
     }
+    offload = _resolve_offload(experiment, baseline, variants)
     return ResolvedExperiment(
-        experiment, baseline, variants, sweeps, cases, bounds=bounds, cases=calibration
+        experiment,
+        baseline,
+        variants,
+        sweeps,
+        cases,
+        bounds=bounds,
+        cases=calibration,
+        offload=offload,
     )

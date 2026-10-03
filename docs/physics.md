@@ -1977,14 +1977,23 @@ short of the cutoff.
 Results are "sweep-optimized": gamma* is the best point of a shared grid refined by
 a bounded Brent search, not an optimal-control solution (Phase 5).
 
+A fourth figure, the propellant offload at fixed payload (below), is not a
+`search.figure_of_merit` value (D-SP1-09: that block is shared and pre-registered): an
+experiment asks for it with its `offload:` block ("Experiment schema (planar)",
+"Offload block"), solved by the subsection below and reported as "Propellant saved at
+fixed payload" ("Reporting definitions (planar)").
+
 ### Propellant offload at fixed payload
 
 Module: `offload.py` (`OffloadProblem`, `OffloadWarmStore`, `solve_offload`,
-`OffloadResult`), with `vehicle.with_offload`. Tests: `tests/test_offload.py`; the
-refactor guard of the search (below) is `tests/test_silo_screening_record.py`. SP1 step
-5 builds the solver; the experiment's `offload:` block, the pad controls per mode and
-the reporting arrive in SP1 step 7, so no run, metric or summary row carries an offload
-yet.
+`OffloadResult`, and since SP1 step 7 `verification_from_record`, `with_verification`,
+`residual_slope_kg_per_kg`), with `vehicle.with_offload`. Tests: `tests/test_offload.py`;
+the refactor guard of the search (below) is `tests/test_silo_screening_record.py`. SP1
+step 5 builds the solver; SP1 step 7 runs it from the experiment's `offload:` block
+("Experiment schema (planar)", "Offload block"), with the pad controls per mode, the
+decomposition, the energy comparison and the summary block "Propellant saved at fixed
+payload" ("Reporting definitions (planar)", "Propellant saved at fixed payload"; tests
+`tests/test_offload_pipeline.py`).
 
 **Definition.** The offload x >= 0 [kg] is propellant removed along a mode
 (`vehicle.OFFLOAD_MODES`):
@@ -2035,11 +2044,20 @@ between them.
 the experiment block of step 7 runs it). Because the stage-2 marginal value is near
 zero, the pad itself may fly P_ref with less stage-2 propellant; a stage-2 (or both)
 offload on an assisted run is then a property of the vehicle model, not of the assist,
-and is quoted only net of the pad's own. Stage 1 is the only headline. For `stage1`
-the pad control is a consistency test of the solver: the pad's reference run at P_ref
-keeps 0 <= m_res < `final_payload_xtol_kg`, which is all a stage-1 offload could
-remove, so the control must return 0 <= x_pad <= `final_payload_xtol_kg` / s with s =
-|dm_res/dx| from the control's own logged evaluations (phase file SP1 section 5.3).
+and is quoted net of the pad's own (the gross removal is printed beside the quoted
+figure, labelled so). A stage2 or both solve therefore needs `pad_control: true` and
+is solved neither at a sweep point nor in a sensitivity arm, which solve no pad
+control. Stage 1 is the only headline. For `stage1` the pad control is a consistency
+test of the solver: the pad's reference run at P_ref keeps 0 <= m_res <
+`final_payload_xtol_kg`, which is all a stage-1 offload could remove, so the control
+must return 0 <= x_pad <= `final_payload_xtol_kg` / s with s = |dm_res/dx| from the
+control's own logged evaluations (phase file SP1 section 5.3).
+The verdict (`results_io.pad_control_consistency`): an `ok` control passes inside that
+bound and fails outside it, and is `not_checked` when no logged search brackets m_res
+= 0 (no slope, so no bound); a `no_offload` control passes only as a resolution effect,
+-`final_payload_xtol_kg` < m_res(0) < 0 (below), and fails otherwise; `search_failed`
+fails. A failing stage-1 control blocks findings, since the headline rests on that
+solver ("Reporting definitions (planar)", "Propellant saved at fixed payload", Checks).
 **Measured** (gate fork; the test budget, which the gate test flies, and the shipped
 budget alike): the control ends `no_offload`, x_pad = 0, with m_res(0) = -0.0017 kg
 (-0.0016 kg at the shipped budget). The cause is not its gamma*_ref (refined at its
@@ -2124,7 +2142,12 @@ for dm above tolerance x |dm_res/dP|, an offload error of tolerance x |dm_res/dP
 |dm_res/dx|. On silo_cold (stage 1, final mode at x*: dm_res/dP = 0.993 kg/kg, dm_res/dx
 = 0.039 kg/kg) that is 2.6 kg of m_res and about 66 kg of offload, 1.6e-3 of x*: looser
 than the 1e-3 convergence rule. The verification needs figure_of_merit `payload`
-(ValueError otherwise). Its expected gap is the final tolerances': x* keeps up to 0.05
+(ValueError otherwise). The experiment pipeline of SP1 step 7 solves with verify off and
+runs the same check as `sim.run_resolved` of the offloaded run's resolved config (the
+vehicle dict restated with x*, "Offload block"), the run `solve_offload` names as its
+equivalent: `verification_from_record` judges that run's SearchRecord by the same rule
+and `with_verification` attaches it and its flags; that run is also the assisted side of
+the paired-pad comparison. Its expected gap is the final tolerances': x* keeps up to 0.05
 kg of residual, worth 0.05 kg / |dm_res/dP| of payload, and the payload search ends up
 to 0.05 kg below its root, so about +/- 0.05 kg. Measured on silo_cold (stage 1): P* =
 26,054.4047 kg against P_ref = 26,054.3963 kg, +0.0084 kg at the test budget (+0.0085
@@ -3201,7 +3224,9 @@ Module: `compare.py` (`cross_vehicle_decomposition`, `CROSS_VEHICLE_TERMS`,
 `START_MASS_UNKNOWN_REASON`, `evaluation_matched_run`, `offload_matched_run`;
 `attribution_terms` also returns D_id, an internal key). Tests:
 `tests/test_closure.py` (the cross-vehicle tests). SP1 step 6 builds it; the `offload:`
-block of SP1 step 7 calls it, so no run, metric or summary row carries it yet.
+block of SP1 step 7 calls it for every case and sensitivity arm and reports it in the
+summary block "Propellant saved at fixed payload" and in metrics.json
+("Reporting definitions (planar)").
 
 **Why the matched-payload attribution cannot be used.** `matched_attribution` compares
 two runs on one vehicle: both share D_id(P_ref), which cancels. An offloaded run and the
@@ -3590,6 +3615,191 @@ s (pad) to 2.0 s (silo_cold), of which the cold delta solve is about 1.1 s;
 0.37 s, the four peak scans 0.17 s); an energy-only sensitivity case flies nothing. The pad's recorded run reproduces build step 22's fixed-gamma*
 figures (m_res, dv margin, max-Q, closure residual) to every printed digit; gamma_rel of
 silo_failed's fall-back rises past pi after the apex.
+
+### Propellant saved at fixed payload
+
+SP1 step 7. Modules: `results_io.py` (`planar_offload`, `OffloadReport`,
+`offload_record`, `offload_sweep_point`, `OFFLOAD_SWEEP_COLUMNS`,
+`pad_control_consistency`), `sim.py` (`solve_resolved_offload`, `offload_run_result`,
+`OFFLOAD_ASSUMPTIONS`), `compare.py` (`offload_energy`, `OFFLOAD_COMPARISON_BASIS`,
+`OFFLOAD_SENSITIVITY_BASIS`), `metrics_planar.py` (`offload_metrics`), `summary.py`
+(`offload_section`, `offload_caveats`, `OFFLOAD_CAVEATS`), `replay.py`
+(`ROLE_OFFLOAD`), `cli.py` (`--no-offload`). Test:
+`tests/test_offload_pipeline.py`. The block is declared in the experiment
+("Experiment schema (planar)", "Offload block"); without it nothing below is computed
+or written, and an experiment's outputs are those of the step 1 output capture as
+steps 2 and 3 left it.
+
+**The pass.** `planar_experiment_result` calls `planar_offload` after the comparisons
+and the bounds, with the reference payload P_ref = `compare.reference_payload_kg` of the
+baseline (its payload capacity P*). A baseline without a P* (its search did not end ok)
+solves nothing: the record says `reference_failed`. In order:
+
+1. **Pad controls** (D-SP1-10; "Pad control, and why"): every distinct solve mode of the
+   cases that ran, once, on the baseline at P_ref (`sim.solve_resolved_offload`, the
+   solver of "Propellant offload at fixed payload" with verify off), an `ok` control
+   verified like a case. The record gives x_pad, m_res and the dv margin at x_pad, the
+   slope s = |dm_res/dx| from the control's own logged evaluations
+   (`offload.residual_slope_kg_per_kg`: the final search's bracket, else X2's, else
+   X1's) and, for `stage1`, the bound `final_payload_xtol_kg` / s of phase file SP1
+   section 5.3 with, for an `ok` control, whether 0 <= x_pad <= bound
+   (`within_bound`; None for any other status). A `no_offload` control with
+   -`final_payload_xtol_kg` < m_res(0) < 0 is flagged `resolution_effect` and printed
+   as "x_pad = 0, m_res(0) = ... kg: a resolution effect ..., not a failure" (the
+   measured -0.0016 kg on the gate fork, SP1 step 5). `consistency` holds the stage-1
+   verdict of "Pad control, and why" (`pass`, `fail` or `not_checked`; `n/a` for a
+   stage2 or both control, which has no consistency test); every recorded control run
+   carries `sim.OFFLOAD_ASSUMPTIONS`.
+2. **Cases.** A solved case: the solve of the case's start (its variant with the
+   case's stage-2 pre-offload and assumed dry mass) along its mode at P_ref; an `ok`
+   solve is verified by the payload search of `sim.run_resolved` on the offloaded
+   run's resolved config (`offload.with_verification`, flag `offload_verify_mismatch`
+   beyond `checks.search_final_flag_rel` x P_ref); its recorded run is the solve's own
+   (`sim.offload_run_result`: the solve's recorded trace, the vehicle offloaded by x*
+   flying exactly P_ref with 0 <= m_res < `final_payload_xtol_kg`, assembled by
+   `simulate_planar`, figure items `metrics_planar.offload_metrics` with
+   `figure_of_merit` `offload`, `payload_kg` = P_ref and the solve's flags); a
+   `no_offload` solve records its full-load run (x* = 0, short of the cutoff by the
+   evaluation's signed m_res). A fixed case: its start, the variant with the imposed
+   offload, runs its payload search (`sim.run_resolved`), and its figure is that P*
+   against P_ref; its recorded run is that search's, at its own P*. Each case's
+   decomposition is `compare.cross_vehicle_decomposition` against the baseline at
+   P_ref (a solved case's final evaluation, `offload_matched_run`; a fixed case's run
+   re-evaluated at P_ref, `sim.matched_run`), with the screening yardstick and the
+   ratio ("Cross-vehicle decomposition"). With `paired_pad` the pad is flown with the
+   same propellant change and no penalty (`<case>__<baseline>`, its P* against P_ref)
+   and compared with the case's own payload search on one vehicle
+   (`compare.attributed_comparison`: dP* and the matched-payload attribution at the
+   paired pad's P*), which separates the head start from the lighter stack that the
+   cross-vehicle gravity term mixes. A solved case of a mode with a pad control also
+   reports the net offload x - x_pad. Each case quotes one offload
+   (`quoted_offload_kg` with its basis `quoted_basis`, `results_io._quoted_offload`):
+   a stage-1 solve its x*, gross (the headline); a stage2 or both solve x* - x_pad, a
+   property of the vehicle model (none when the control has no finite x_pad,
+   `OFFLOAD_QUOTED_NO_CONTROL`); a solve whose own x* is not finite (it ended neither
+   `ok` nor `no_offload`) quotes none, with the basis `OFFLOAD_QUOTED_FAILED`, whatever
+   its pad control; a fixed case its imposed offload (its figure is its P*). The gross
+   removal per stage and its shares of the loads are printed for every case, after the
+   quoted figure and labelled gross. Every run the case writes carries
+   `sim.OFFLOAD_ASSUMPTIONS`; a penalty row's assisted run also carries
+   `sim.offload_penalty_assumption` (its paired pad, if any, never does: a penalty row
+   has none).
+3. **Sensitivity arms** (with sensitivity on; `--no-sensitivity` skips them): every
+   case of `sensitivity_of` rebuilt on its variant under each sensitivity parameter
+   (+ and -), against the pad under the same perturbation (a `vehicle.` parameter; a run
+   parameter leaves the pad alone), whose P* is the arm's P_ref
+   (`OFFLOAD_SENSITIVITY_BASIS`, printed). Arms are not verified (a payload search each
+   would double their cost). Runs of one trajectory key fly once per pass
+   (`compare.trajectory_key`; a reused run is `sim.rerun_resolved`), and a solve is
+   reused for a start of the same trajectory key at the same P_ref, so an energy-only
+   `assist.drive_efficiency` arm reuses the nominal x* and recomputes only its
+   electrical energy (by 1/efficiency), and a `vehicle.screening` arm moves only the
+   yardstick. An arm whose same-perturbation pad has no P* is `reference_failed` and
+   solves nothing. `sensitivity_of` names stage-1 solves and fixed cases only (a stage2
+   or both arm would need its own pad control).
+
+**Energy comparison** (`compare.offload_energy`, pure arithmetic). Per stage i, with
+m_p,i the full load of the experiment's vehicle (the baseline's, which the energy block
+is checked against), f_i the fuel (RP-1) mass of that load from the experiment's energy
+block and r_i the propellant removed (the mode's share of x plus a stage-2
+pre-offload):
+
+    fuel removed = sum_i r_i f_i / m_p,i,    oxidiser (LOX) removed = sum_i r_i - fuel removed,
+    heat = fuel removed x LHV,    ratio = heat / E_el
+
+(the mixture ratio of each stage kept). The fraction f_i / m_p,i is the experiment
+vehicle's even when the propellant comes from a vehicle with another load (a sweep
+point or a sensitivity arm on a `vehicle.` propellant path), so the ratio is kept on
+every load and a load below f_i is no error (r_i may then exceed m_p,i); with LHV the
+fuel's lower heating value [J/kg] (`units.mj_to_j` of the block's MJ/kg) and E_el the
+push's electrical energy of the offloaded run, its `electrical_energy_J` metric
+(positive drive work over the drive efficiency). The ratio is labelled "not an
+efficiency claim" and printed with what it leaves out
+(`compare.OFFLOAD_ENERGY_EXCLUSIONS`: producing the removed LOX; extracting, refining
+and delivering the fuel; generation, transmission and storage losses; the facility
+beyond the drive). kWh beside J; MJ in the summary.
+
+**Record and summary.** metrics.json gains the key `offload` (`offload_record`): the
+basis (`compare.OFFLOAD_COMPARISON_BASIS`: different vehicles, the same payload and
+orbit), the reference and P_ref, the caveats, the energy inputs with their provenance,
+the pad controls (with their consistency verdict), one record per case (the quoted
+offload and its basis; the fixed key and, for a fraction key, `fixed_fraction` (a mass
+key's value is `offload_kg`, in kg); what was taken from each stage, gross, and its
+share of the stage-1, stage-2 and total loads; the penalty fields
+`stage1_dry_mass_added_kg` and `assumed_penalty`; the payload flown and its difference
+from P_ref, the solve with its logged evaluations, the verification, the pad control's
+offload and the net value, the comparison with the pad: liftoff mass, MECO time, max-Q,
+peak felt g in flight, and the push: release speed, peak felt g on the track, peak
+interface force, facility length, electrical energy; the decomposition with its status,
+the yardstick and the ratio; the paired pad; the energy comparison; the flags), the
+sensitivity arms, the notes, and `runs`, the metrics record of every run the block
+writes. resolved_config.yaml gains `offload_runs` (each with its offloaded vehicle
+dict). The run directories: every case's recorded run (the case's name), every paired
+pad and every pad control's recorded run, each with timeseries.csv and events.csv.
+summary.md gains the section "Propellant saved at fixed payload" after the variants
+table: the basis line with P_ref, the sensitivity basis, the caveat list
+(`summary.offload_caveats`: first the vehicle's calibration, from
+`plots.CALIBRATION_RECORDS` (the gate fork's +14.3% high; a vehicle without a record is
+said to have none), then `summary.OFFLOAD_CAVEATS`: sweep-optimized and unthrottled
+guidance, no structural mass for the push except the assumed penalty rows, the
+prescribed-acceleration drive with a massless carriage and no shaft drag, max-Q against
+the pad's, partly filled tanks with the mixture ratio kept and no ullage or
+centre-of-gravity effect, stage 1 as the only headline with stage 2 and both quoted net
+of the pad control), the cases table (`summary.OFFLOAD_CASE_ROWS`: the quoted offload
+and its basis first, then the gross tonnes, % of each load and every item above; the
+energy rows when the block has energy inputs), the energy note with its exclusions, the
+decomposition table (m/s and kg of every term, the D_id change, the residual and the
+status), the pad controls (the table and one line each: x_pad, for stage 1 the bound of
+an `ok` control and the consistency verdict) and the sensitivity arms. The offload runs
+join the Flags and Assumptions sections. `--no-offload` skips the block; the section
+then says so. The console (`launchsim run`) prints one line per case (a stage-1 solve
+its gross tonnes; a fixed case its gross tonnes, then its figure P* - P_ref; a stage2
+or both solve leading with its net tonnes, labelled a property of the vehicle model,
+the gross after it; a solve that quotes nothing says "not quoted" and why: its own
+solve did not end ok, or the pad control has no offload to net it against) and per pad
+control (with its verdict).
+
+**Checks.** The per-run checks of every offload run (written ones, verification
+searches, arms) join the Checks section; under the heading `summary.OFFLOAD_CHECKS_TEXT`
+one line gives the stage-1 pad control's consistency verdict and one line per case and
+arm its decomposition status, residual and ratio. A stage-1 pad control that fails its
+consistency test (`summary.offload_blocking_controls`) gets a blocked-findings line of
+its own, apart from the runs and comparisons: "Findings are blocked until these are
+investigated (a stage-1 pad control failed its consistency test of the solver,
+docs/physics.md, 'Pad control, and why'): pad control stage1"
+(`summary.PAD_CONTROL_BLOCKED`); the headline rests on that solver. A decomposition that
+closes is `explained`; one that does not is `bug_suspect` and enters the
+blocked-findings line of the screening-beat rule (`<case> offload decomposition
+(comparison)`), as does a paired-pad comparison that is `bug_suspect`. Offload rows
+never enter the "Unexplained beats" list (a fixed case's comparison with the full-load
+pad is not a compare_planar comparison at all; its explanation is the decomposition).
+
+**Replay.** `replay.run_source` gives a run of `offload.runs` the role `offload`
+(`ROLE_OFFLOAD`, label "(offload)"): its metrics from the record, its config from
+`offload_runs`, a note saying how much propellant it carries less and the payload it
+flies against P_ref, and a caveat that its saving is propellant at the same payload, not
+a payload change, so an offloaded run can be replayed beside the full-load pad.
+
+**Sweeps.** A planar sweep that names offload cases (`SweepConfig.offload`) solves each
+at every point with the point's run in place of the case's `of`, against the point's
+baseline (the experiment's, or the paired baseline of a paired sweep) and its P* as
+P_ref, verified, without paired pads, pad controls or arms (`offload_sweep_point`; the
+energy at the experiment vehicle's mixture ratio). A sweep names stage-1 solves and
+fixed cases only, on a sweep of a variant, so every `offload_kg` column is a gross
+figure that needs no pad control. The cases' `<case>.<column>` columns
+(`OFFLOAD_SWEEP_COLUMNS`: status, x (a fixed case's imposed one), its share of the
+stage-1 and total loads, P_ref, the payload the recorded run flies and that less P_ref
+(`payload_kg`, `payload_delta_kg`: P_ref and 0 for a solved case, a fixed case's own
+P* and its figure P* - P_ref), the verification's P* - P_ref (a solved case's), the
+decomposition status, the ratio, the offloaded run's max-Q and electrical energy) are
+added to sweep_index.csv before `status`, and the sweep summary's Checks section lists
+each point's decomposition under `summary.OFFLOAD_SWEEP_CHECKS_TEXT` (the
+decomposition clause only: a sweep solves no pad control). A sweep without offload
+cases writes the columns it wrote before.
+
+**In memory.** `config.resolve_experiment` (dicts in), `sim.run_resolved` of the
+baseline and the variants and `planar_experiment_result` write nothing; the SP2 app
+calls them in that order, and `write_run` writes the result when asked.
 
 ## Thrust startup
 
@@ -5279,6 +5489,48 @@ reuse the nominal trajectories without flying (the `trajectory_key` memo, "Repor
 definitions (planar)"). A bound, by contrast, carries its paired baseline already
 (`BoundCase.baseline`).
 
+**Offload block (SP1 step 7).** A top-level `offload:` key, planar_2d only, not a
+shared block (nothing in it changes a run of the experiment, so `budget_id` and the
+pre-registered shared blocks are untouched; decision D-SP1-09). It needs
+`search.figure_of_merit: payload` (the solve and its verification are payload searches).
+What it reports is defined in "Reporting definitions (planar)", "Propellant saved at
+fixed payload"; the solver in "Figures of merit (planar)", "Propellant offload at fixed
+payload".
+
+| Key | Meaning and rules |
+|---|---|
+| `reference` | the baseline's name (refused otherwise): its payload capacity P* is the reference payload P_ref. Read into the field `OffloadConfig.reference_run` (a pydantic alias), because `reference` is a key name of the ignition time family, which no other config model may use as a field name (the family rule is by key name); the block is not a run dict, so the YAML key is never merged by that rule |
+| `cases` | at least one; each `{name, of, solve: stage1 / stage2 / both}` or `{name, of, fixed: {...}}` (exactly one of `solve` and `fixed`). `of` is a variant, never the baseline (the baseline's own offload is the pad control). `fixed` states exactly one of `stage1_t`, `stage2_t` (a mass [t] > 0), `stage1_fraction`, `stage2_fraction` (a fraction in (0, 1) of that stage's load) or `both_fraction` (the same fraction of each load, mode both); a key given as null counts as given and is refused. Optional: `stage2_offload_t` [t] > 0 taken from stage 2 before the case (a stage-1 case only: the frontier point of a both-stage offload), `stage1_dry_mass_added_t` [t] > 0 (an assumed structural penalty on the assisted run only, a penalty row), `paired_pad: true` (the pad flown with the same final propellant change, compared with the case on one vehicle by the matched-payload attribution; refused on a penalty row, whose dry mass is the assisted run's only). Names are unique and may not collide with run, bound or calibration-case names |
+| `pad_control` | true: solve every distinct solve mode of the cases once on the baseline at P_ref. Required by a `stage2` or `both` solve (refused otherwise), whose offload is quoted net of the pad control (D-SP1-10) |
+| `sensitivity_of` | case names (each once) re-solved under every parameter of the experiment's `sensitivity.params` (+ and -; the block is then required), the assisted run and the pad perturbed alike; `sensitivity.of` may be empty when only the arms are wanted. Stage-1 solves and fixed cases only: a `stage2` or `both` solve is refused (an arm solves no pad control to net it against) |
+| `energy` | `fuel_mass_t`: the fuel (RP-1) mass [t] of every stage's full load, keyed by stage name (every stage, no other key), each > 0 and no more than the stage's propellant (the oxidiser is the remainder); `heating_value_MJ_per_kg`: the fuel's lower heating value (> 0). Both sourced Quantities (`{value, source}` or `{value, assumed: true, note}`), because the vehicle file holds no fuel split and is never edited. They describe the experiment's vehicle: its fuel fraction f_i / m_p,i splits the propellant removed on any vehicle of the block (a sweep point or arm with another load keeps the mixture ratio) |
+
+**How the cases are resolved** (`config.offload_case_start`, `offload_solved_run`,
+`offload_overrides`; nothing flown). Every vehicle change goes through the
+`apply_overrides` machinery, as a bound's does, so each run's vehicle dict is explicit
+and written per run: a case's start is its variant with the stage-2 pre-offload, the
+assumed dry mass and, for a fixed case, the imposed offload taken along its mode
+(`vehicle.offload_split_kg` on the variant's vehicle); a paired pad's start is the
+baseline with the same propellant changes and no penalty; a solved case adds its x*
+when it is known (`offload_solved_run`). Each changed mass is restated as a Quantity
+`{value, assumed: true, note}`, the note naming the change and the vehicle's own value
+and provenance (a derived number is not the source's number); an offload at or beyond a
+stage's load is refused at resolve time. Sensitivity arms rebuild the case on its
+variant with the parameter moved and pair it with the baseline on the perturbed
+variant's vehicle dict for a `vehicle.` parameter (a run parameter leaves the pad
+alone). The names the block writes are each case's name, `<case>__<baseline>` for a
+paired pad and `<baseline>__offload_<mode>` for a pad control
+(`config.offload_run_names`); `results_io.check_result_names` checks them (a safe path
+component of at most `MAX_NAME_LEN` = 64 characters) and `sim.every_resolved_run` lists
+every start for the preflight, both before a results directory is made.
+
+**Sweeps.** `sweeps[].offload: [case names]` (planar only, each a case of the block,
+each once): every point resolves those cases on its own run (named
+`run_NNNN__<case>`, no paired pad), solved at the point (see "Reporting definitions
+(planar)"). Refused on a sweep whose `of` is the baseline (the baseline's own offload
+is the pad control) and for a `stage2` or `both` solve (quoted net of a pad control,
+which a sweep does not solve): a sweep names stage-1 solves and fixed cases.
+
 **Merge rule (both models).** The two override forms inherit differently:
 
 - A variant is a partial run dict merged over the baseline's (`merge_run_dicts`): per
@@ -5417,7 +5669,9 @@ the path.
   the comparison of silo_cold and to both comparisons of the sensitivity records: 18 run
   key paths and 15 others, additions only. No requested key appears (every run of the
   fast experiment states a time), and the files, the CSV columns and the summary digest
-  did not change (`output_summary.md` is still the step 1 text).
+  did not change (`output_summary.md` is still the step 1 text). SP1 step 7 adds nothing
+  to an experiment without an offload block and does not recapture: the fast experiment
+  declares none, and its outputs equal this capture.
 
 `tests/data/silo_screening_2d_record.json` holds the payload capacities of the shipped
 silo_screening_2d run at full precision (pad 26,054.396243494975 kg, silo_cold
@@ -5652,6 +5906,27 @@ A run whose figure of merit is searched (payload, residual) adds
   bounded Brent search at the first payload estimate, delta and (a, b) are solved for
   it, and P* is the largest verified payload with m_res >= 0 (not an optimal-control
   solution; Phase 5).
+
+An offloaded run of an experiment's offload block (SP1 step 7: a case's recorded run, a
+fixed case's run, a paired pad, a pad control's recorded run) adds, at the end of its
+list, `sim.OFFLOAD_ASSUMPTIONS`:
+
+- offload: the propellant removed from a full load leaves the tanks partly filled;
+  every dry mass (tank structure included), engine, the payload, the fairing and the
+  aerodynamics are unchanged and each stage keeps its mixture ratio; no ullage,
+  centre-of-gravity or tank-mass effect is modelled.
+
+and a penalty row's assisted run also `sim.offload_penalty_assumption`:
+
+- offload: stage-1 dry mass +<t> t is an assumed structural penalty (a parametric row),
+  not a structure sized for the push load.
+
+The summary block of the offload carries its own caveat list (`summary.offload_caveats`:
+the vehicle's calibration caveat, then `summary.OFFLOAD_CAVEATS`; "Reporting
+definitions (planar)"); the energy comparison's exclusions are
+`compare.OFFLOAD_ENERGY_EXCLUSIONS`, and it keeps each stage's mixture ratio at the
+experiment vehicle's fuel fraction on every load (assumed: the removed propellant
+leaves fuel and oxidiser in the full load's proportion).
 
 A run flown at the shared fixed guidance (figure_of_merit none, stage 1 lit) adds
 `sim.FIXED_GUIDANCE_ASSUMPTIONS` instead: gamma* and (a, b) are fixed inputs, only
@@ -5995,3 +6270,10 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_offload.py::test_offload_beyond_the_load_backs_off`, `::test_offload_problem_relabels_at_its_boundary`, `::test_nonmonotone_flags_on_synthetic_logs`, `::test_verification_mismatch_is_flagged`, `::test_a_failed_search_becomes_a_status_with_its_kind` | a first X1 high end of 1000 kg over the 800 kg stage-1 load fails typed (offload_range, an OffloadInfeasible among INFEASIBLE, pickles), backs off to 500 kg, is flagged with the abscissa note, and x* still matches the closed form; `OffloadProblem.evaluate` flies P_ref on the vehicle offloaded by x, one problem and fresh store per offload, relabels result, warm entry and seed, refuses a plain or foreign store; the sign-change rule on synthetic logs; a verification against a reference 5 kg off flags offload_verify_mismatch; a problem that never flies gives search_failed with kind grid and the marked message; a residual figure of merit refuses the verification ("Propellant offload at fixed payload") | exact; typed |
 | `test_offload.py::test_gate_silo_offload_recorded_run_and_verification`, `::test_gate_pad_control_is_within_the_bound`, `::test_gate_offload_converges_under_a_tightened_budget` (slow) | gate fork, P_ref = the pad's own P* at the same budget; the first two at the test budget (search rtol 1e-9, full grid), the third at the shipped budget against its tightening: silo_cold's stage-1 offload ok, its recorded run inserted with 0 <= m_res < 0.05 kg on the vehicle offloaded by x* (release mass = full-load liftoff mass - x*, written in the test), the verification payload search within checks.search_final_flag_rel x P_ref (2.6 kg, about 66 kg of offload) and, as a regression guard on the measured gap (+0.0084 kg), within 2 final_payload_xtol_kg; the stage-1 pad control 0 <= x_pad <= final_payload_xtol_kg / s with s from its own logs (measured no_offload, m_res(0) = -0.0017 kg from the warm-started LTG convergence, inside the symmetric bound |m_res(0)| < 0.05 kg); the 10x-tightened chain (pad P* and silo_cold x*, `SearchContext.tightened`) moves x* by less than 1e-3 relative (measured 0.051 kg, 1.2e-6) ("Propellant offload at fixed payload", "Convergence (planar)") | 1e-6 kg; the bounds; 0.1 kg; 1e-3 relative |
 | `test_silo_screening_record.py::test_recorded_payload_capacity_reproduces` (slow: pad, silo_cold) | regression of the search refactor of SP1 step 5 (not validation): the shipped silo_screening_2d experiment, resolved from its YAML files and run by `sim.run_resolved`, reproduces the recorded P* of tests/data/silo_screening_2d_record.json (26,054.396243494975 and 27,553.227114190096 kg) and its budget id ("Propellant offload at fixed payload", Search refactor) | 0.002 kg |
+| `test_offload_pipeline.py::test_offload_block_resolves_every_case_through_vehicle_overrides`, `::test_fixed_offload_masses_by_key`, `::test_solved_offload_run_restates_the_load` | the offload block on the gate fork: each case's start is its variant with the masses it changes restated as assumed Quantities against the vehicle file (a 10 % fixed case keeps 0.9 m_p1 and imposes 0.1 m_p1, the liftoff mass down by it; a +2 t penalty row m_d1 + 2 t; a 2 t stage-2 pre-offload m_p2 - 2 t), paired pads without the penalty, the pad-control modes, the arms (a vehicle parameter perturbs pad and assisted run by the same factor, a run parameter the assisted run only); `OffloadFixedConfig.offload_kg` (t x 1000, a fraction of its load, both of the two loads); `offload_solved_run` ((m_p1 x 1000 - x)/1000 t; the liftoff mass of `with_offload`; both by the loads' shares) ("Experiment schema (planar)", "Offload block") | 1e-12 t; 1e-15 relative; 1e-6 kg |
+| `test_offload_pipeline.py::test_offload_schema_refusals` (37 cases), `::test_offload_is_planar_only`, `::test_offload_run_names_are_checked`, `::test_offload_runs_are_preflighted` | the refusals: unknown variant, reference not the baseline, solve and fixed together or neither, two fixed keys, a null, fractions outside (0, 1), an offload beyond a stage's load (fixed or pre-offload), a pre-offload on a stage-2 case, a paired pad on a penalty row, a penalty not > 0, fuel above the propellant, missing or unknown stages, fuel or heating value not > 0, a case on the baseline, names used twice or named like a variant, sensitivity_of errors and without the sensitivity block, fixed guidance, unknown keys, no case, a sweep naming no case or without a block, a sweep of the baseline naming cases, a sweep naming a stage-2 solve, a stage-2 or both solve without pad_control, a stage-2 solve in sensitivity_of, a vertical_1d experiment; names over MAX_NAME_LEN refused by `check_result_names` and the CLI; every offload start in `sim.every_resolved_run` ("Experiment schema (planar)", "Offload block") | raises |
+| `test_offload_pipeline.py::test_offload_energy_against_hand_numbers`, `::test_unit_factors_of_the_energy_comparison` | a 10 % stage-1 offload of 410.9 t (123.5 t RP-1) removes 12,350 kg of RP-1 and 28,740 kg of LOX; with 2 t of stage 2 the RP-1 adds 2000 x 32.3/107.5 kg; 500 t from a larger load keeps the ratio (500 t x 123.5/410.9); heat = RP-1 x LHV, kWh at 3.6e6 J, the ratio heat / electricity, none without a positive electricity; MJ = 1e6 J, percent = 100 x fraction ("Reporting definitions (planar)", energy comparison) | 1e-15 relative (1e-14 for the two-stage sum) |
+| `test_offload_pipeline.py::test_offload_metrics_items`, `::test_verification_and_slope_helpers`, `::test_attribution_check_fails_a_nan_residual_anywhere` | the figure items of an offload run (SEARCH_METRIC_KEYS then OFFLOAD_METRIC_KEYS, payload = P_ref, the payload-term diagnostics None); `verification_from_record` (passed within rel x P_ref), `with_verification` (flags), `residual_slope_kg_per_kg` (the final bracket's secant 0.63/20, X2's 0.3/10, else None); KI-024: a NaN residual fails the attribution check in every position ("Propellant offload at fixed payload", "Screening-beat rule (2-D)") | exact; 1e-15 relative |
+| `test_offload_pipeline.py::test_offload_section_renders_every_row_and_caveat`, `::test_bug_suspect_decomposition_blocks_findings_and_no_offload_beat_is_unexplained`, `::test_replay_shows_an_offload_run_beside_the_pad`, `::test_sweep_index_gains_offload_columns_only_when_a_sweep_names_cases`, `::test_cli_offload_flags_and_console_lines`, `::test_metrics_and_resolved_config_keys_appear_only_with_the_block`, `::test_an_experiment_without_the_block_has_no_offload` | the summary block on a synthetic record (basis with P_ref, every caveat, row and exclusion, tonnes = kg/1000, percent = 100 x fraction, the quoted offload before the gross rows, the residual unrounded, the pad control's resolution effect and consistency verdict, one cell count per table); a bug_suspect decomposition or paired-pad comparison blocks findings, a failing stage-1 pad control gets a blocked line of its own (`summary.PAD_CONTROL_BLOCKED`, never labelled a comparison), no offload row is an unexplained beat; the replay's offload role and note; the sweep's `<case>.<column>` columns only when it solved a case (a solved case's payload delta 0, a fixed case's P* - P_ref = 0.5 kg with no verification delta), the sweep's Checks heading without the pad-control clause, the 1-D columns unchanged; `--no-offload`, the console lines with a fixed case's signed P* - P_ref and the control's verdict; the metrics.json and resolved_config.yaml keys only with the block ("Reporting definitions (planar)") | exact |
+| `test_offload_pipeline.py::test_offload_pass_records_each_case_against_hand_numbers`, `::test_offload_runs_carry_their_assumptions`, `::test_offload_pass_skips_what_it_cannot_solve`, `::test_stage1_pad_control_is_a_consistency_test` (6 cases), `::test_pad_control_consistency_rule`, `::test_stage2_and_both_cases_are_quoted_net_of_the_pad_control`, `::test_a_failed_case_solve_is_not_quoted_for_its_own_reason`, `::test_calibration_caveat_follows_the_vehicle`, `::test_sweep_point_energy_keeps_the_vehicle_files_mixture_ratio`, `::test_sweep_offload_columns_follow_the_offload_flag` | the pass on fake runs (the sim seams monkeypatched): per case the propellant removed per stage (a stage-2 pre-offload included; both by the loads' shares), its shares of the loads, x - x_pad, the quoted offload (stage 1 gross, stage 2 and both net, a fixed case imposed), the penalty fields and the energy at 123.5/410.9 and 32.3/107.5 RP-1, against hand numbers from the vehicle file; OFFLOAD_ASSUMPTIONS on every written run, the penalty line on the penalty rows' runs only; no arm without sensitivity (OFFLOAD_ARMS_SKIPPED, also through `planar_experiment_result`), a reference_failed arm and baseline solving nothing; the stage-1 control's bound xtol / s with s the secant of its logged bracket, its verdict (ok inside, outside, without a slope; no_offload by grams, by more than xtol; search_failed) and the blocking of a failing one (its own blocked line); a stage-2 case quoted net in the table and the console, "not quoted" with its reason from the basis; a case whose own solve ends search_failed (stage 2 beside an ok control, and stage 1) quoting nothing on the basis `OFFLOAD_QUOTED_FAILED`, not the pad control's, the console saying so; the calibration caveat 100 (26054.4/22800 - 1) % from the gate record, none for an unknown vehicle; an arm (its case record captured from `_offload_arm_record`) and a sweep point whose load is below the fuel mass keep the vehicle file's ratio; the sweep columns only with offload on ("Reporting definitions (planar)", "Propellant saved at fixed payload"; "Pad control, and why") | 1e-12 relative; exact |
+| `test_offload_pipeline.py::test_offload_in_memory_writes_nothing`, `::test_offload_cases_end_to_end`, `::test_offload_outputs_written_and_replayed`, `::test_no_offload_skips_the_block`, `::test_sweep_offload_columns_match_the_experiment_solve` (slow) | gate fork on a small searched grid (gamma* 18-28 deg, refine maxiter 3, search rtol 1e-9): the in-memory path writes nothing; the solved stage-1 case's recorded run flies exactly P_ref at the pad's liftoff mass (sum of the vehicle file's masses + P_ref) less x*, verified within search_final_flag_rel x P_ref, decomposition explained with the D_id change c1 ln(m0/(m0 - x*)) (c1 = g0 x 311 s), its shares and energy by hand arithmetic, the paired pad offloaded by x*; the fixed 5 % case (its margin term of the sign opposite to P* - P_ref); the pad control's verdict by the section 5.3 rule applied to its own fields (a failing one in a blocked line of its own, `summary.PAD_CONTROL_BLOCKED`); OFFLOAD_ASSUMPTIONS on every written run; the arms (efficiency arms reuse x* with the electrical energy x 1/(1 +/- 0.1)); the written outputs and the replay; --no-offload; a one-point sweep naming the case reproduces x* ("Reporting definitions (planar)", "Propellant saved at fixed payload") | 1e-6 kg; 1e-8 m/s; 1e-14 relative; 1e-12 relative (energy); 1e-9 kg (sweep) |

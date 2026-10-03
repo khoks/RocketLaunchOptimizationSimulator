@@ -16,8 +16,8 @@ Create these in Phase 0 and keep this list accurate.
 - Fast tests: `uv run pytest -q -m "not slow"`
 - All tests: `uv run pytest -q`
 - Lint and format: `uv run ruff check . && uv run ruff format .` (Windows PowerShell 5.1 has no `&&`: run the two commands separately, or use Git Bash)
-- One run: `uv run python -m launchsim run experiments/<name>.yaml`
-- Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml`
+- One run: `uv run python -m launchsim run experiments/<name>.yaml [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]` (`--no-offload` skips an experiment's offload block; `--no-sensitivity` also skips its sensitivity arms)
+- Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]`
 - Animate a 2-D run (MP4/GIF): `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 - Interactive replay page (HTML): `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 

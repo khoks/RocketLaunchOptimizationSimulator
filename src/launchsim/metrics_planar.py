@@ -91,6 +91,7 @@ from launchsim.vehicle import Vehicle
 if TYPE_CHECKING:
     from scipy.integrate import OdeSolution
 
+    from launchsim.offload import OffloadResult
     from launchsim.search import SearchRecord
 
 PeakFn = Callable[[float, np.ndarray, PlanarParams], float]
@@ -1214,6 +1215,76 @@ def search_metrics(record: SearchRecord, payload0_kg: float) -> dict[str, Any]:
         "search_failure_message": record.failure_message,
         "search_record": as_plain(record),
     }
+
+
+OFFLOAD_FIGURE = "offload"
+"""``figure_of_merit`` of the recorded run of an offload solve (SP1 step 7): the vehicle
+offloaded by x* flying the reference payload P_ref, not a payload search."""
+RESIDUAL_BASIS_OFFLOAD = "at the offload x* and P_ref (gamma*_ref of the offload solve)"
+"""``residual_propellant_basis`` of an offload solve's recorded run."""
+OFFLOAD_METRIC_KEYS: tuple[str, ...] = (
+    "offload_mode",
+    "offload_kg",
+    "offload_status",
+    "offload_reference_payload_kg",
+)
+"""The keys ``offload_metrics`` adds after SEARCH_METRIC_KEYS (offload runs only)."""
+
+
+def offload_metrics(offload: OffloadResult, payload0_kg: float) -> dict[str, Any]:
+    """The figure items of an offload solve's recorded run (docs/physics.md, "Reporting
+    definitions (planar)"): SEARCH_METRIC_KEYS as the run reports them, then
+    OFFLOAD_METRIC_KEYS. ``search_status`` is the solve's status (ok, no_offload,
+    search_failed) and ``figure_of_merit`` OFFLOAD_FIGURE; ``payload_kg`` is the payload
+    the run flies, P_ref [kg] (by construction the offloaded vehicle's capacity, to the
+    solve's resolution; the independent verification is reported beside it), with
+    ``payload_excess_kg`` = P0 - P_ref for the vehicle payload payload0_kg [kg];
+    ``residual_propellant_kg`` and ``dv_margin_mps`` the signed final-tolerance figures
+    at x* (RESIDUAL_BASIS_OFFLOAD); ``dv_shortfall_mps`` of a no_offload solve; gamma*_ref
+    of the solve, its best grid point, and the delta, LTG pair and rung of its final
+    evaluation; the recorded run's own m_res and dv margin; the failure kind and message
+    of a failed solve. The search diagnostics in payload terms (grid and refine payloads,
+    P2 - P1, search minus final payload) and ``search_record`` are None: inside a solve
+    they are offloads, not payloads (``offload.ABSCISSA_NOTE``). The offload keys: the
+    mode, x* [kg], the status and P_ref [kg]."""
+    at = offload.at_offload
+    recorded = offload.recorded
+    gamma = offload.inner_gamma
+    m_res = _finite_or_none(offload.m_res_kg)
+    ltg = None if at is None else at.ltg
+    p_ref = offload.reference_payload_kg
+    out: dict[str, Any] = dict.fromkeys(SEARCH_METRIC_KEYS)
+    out.update(
+        {
+            "search_status": offload.status,
+            "figure_of_merit": OFFLOAD_FIGURE,
+            "payload_kg": p_ref,
+            "payload_excess_kg": payload0_kg - p_ref,
+            "residual_propellant_kg": m_res,
+            "dv_margin_mps": _finite_or_none(offload.dv_margin_mps),
+            "residual_propellant_basis": RESIDUAL_BASIS_OFFLOAD,
+            "residual_propellant_virtual": None if m_res is None else m_res < 0.0,
+            "dv_shortfall_mps": _finite_or_none(offload.dv_shortfall_mps),
+            "gamma_star_rad": _finite_or_none(offload.gamma_star_rad),
+            "gamma_best_grid_rad": None if gamma is None else gamma.gamma_best_grid_rad,
+            "delta_rad": None if at is None else at.delta_rad,
+            "ltg_a": None if ltg is None else ltg[0],
+            "ltg_b_per_s": None if ltg is None else ltg[1],
+            "ltg_rung": None if at is None else at.rung,
+            "recorded_m_res_kg": None if recorded is None else _finite_or_none(recorded.m_res_kg),
+            "recorded_dv_margin_mps": (
+                None if recorded is None else _finite_or_none(recorded.dv_margin_mps)
+            ),
+            "recorded_figures_from": None if recorded is None else recorded.figures_from,
+            "search_failure_kind": offload.failure_kind,
+            "search_failure_message": offload.failure_message,
+            "offload_mode": offload.mode,
+            "offload_kg": _finite_or_none(offload.offload_kg),
+            "offload_status": offload.status,
+            "offload_reference_payload_kg": p_ref,
+        }
+    )
+    return out
 
 
 def empty_mass_kg(trace: RunTrace, vehicle: Vehicle) -> float:

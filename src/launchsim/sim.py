@@ -9,9 +9,11 @@ gravity, g_eff = mu/R_E^2, ignition specs, the assist model and its track throug
 (``search.run_search``) or the fixed guidance and ``simulate_planar`` (pure) assembles
 the Result of the recorded run (``metrics_planar``; ``PLANAR_ASSUMPTIONS``; the
 per-run checks of the screening-beat rule, status ``bug_suspect``);
-``rerun_resolved`` rebuilds an energy-only sensitivity case on a run already flown, and
+``rerun_resolved`` rebuilds an energy-only sensitivity case on a run already flown,
 ``matched_run`` executes the rung-2 runs of the matched-payload attribution for
-``compare.compare_planar`` (amendment 16). ``run_resolved`` wraps a Result with the
+``compare.compare_planar`` (amendment 16), and ``solve_resolved_offload`` and
+``offload_run_result`` solve an offload on a resolved run and assemble its recorded run
+(SP1 step 7). ``run_resolved`` wraps a Result with the
 run's name and config. Units are SI; frames: the +z-up ascent datum frame (1-D), planar
 ECI (2-D).
 
@@ -33,7 +35,10 @@ Monkeypatch seams: ``results_io`` and ``compare.run_sensitivity`` look ``run_res
 ``git_info`` and ``_git`` up on this module at call time, so patching ``sim.run`` (which
 ``run_resolved`` calls), ``sim.run_resolved``, ``sim.git_info`` or ``sim._git`` changes
 what the entry points execute, and patching a name that ``simulate`` or ``run`` calls
-reaches those two. These are the only live seams on ``sim``: every other reporting
+reaches those two. The offload pass of ``results_io`` (SP1 step 7) also looks up
+``solve_resolved_offload``, ``offload_run_result``, ``matched_run``, ``rerun_resolved``,
+``with_assumptions`` and the offload assumption texts here at call time. These are the
+only live seams on ``sim``: every other reporting
 function (``compare``, ``write_plots``, ``experiment_summary``, ``write_run``,
 ``metrics_record``, ...) is bound in its owning module, so patching it on ``sim`` has no
 effect on the pipeline; patch it on the owning module (``metrics``, ``compare``,
@@ -168,11 +173,18 @@ from launchsim.metrics_planar import (  # re-exported
     empty_planar_timeseries,
     events_frame_planar,
     fixed_guidance_metrics,
+    offload_metrics,
     planar_run_metrics,
     planar_track_metrics,
     ramp_start_metrics,
     sample_trace_planar,
     search_metrics,
+)
+from launchsim.offload import (
+    OffloadResult,
+    ProblemFactory,
+    planar_problem_factory,
+    solve_offload,
 )
 from launchsim.orbit import TargetOrbit
 from launchsim.phases import (
@@ -311,7 +323,7 @@ from launchsim.summary import (  # re-exported
     variant_rows,
     variants_table,
 )
-from launchsim.vehicle import Vehicle, with_payload
+from launchsim.vehicle import OffloadMode, Vehicle, with_payload
 
 # Every name sim.py defined before the split (Phase 1), whether defined here or
 # re-exported from the reporting modules, plus NoAssist (tests build a pad run with
@@ -353,6 +365,7 @@ __all__ = [
     "NOT_A_FIGURE_OF_MERIT",
     "NOT_A_REPO_MARKER",
     "NOT_UNTIL_PHASE2",
+    "OFFLOAD_ASSUMPTIONS",
     "OMEGA_P_PHASE1_RADS",
     "PHASE1_ASSUMPTIONS",
     "PLANAR_ASSUMPTIONS",
@@ -492,6 +505,9 @@ __all__ = [
     "matched_attribution",
     "matched_run",
     "metrics_record",
+    "offload_penalty_assumption",
+    "offload_problem_factory",
+    "offload_run_result",
     "payload_equiv_kg",
     "payload_yardstick_lines",
     "perturbed_value",
@@ -534,6 +550,7 @@ __all__ = [
     "si_value",
     "simulate",
     "simulate_planar",
+    "solve_resolved_offload",
     "step_startup_note",
     "sweep_index_frame",
     "sweep_point_header",
@@ -544,6 +561,7 @@ __all__ = [
     "utc_timestamp",
     "variant_rows",
     "variants_table",
+    "with_assumptions",
     "write_csv",
     "write_failure_marker",
     "write_json",
@@ -879,7 +897,9 @@ def every_resolved_run(resolved: ResolvedExperiment) -> list[tuple[str, Resolved
     """Every run an experiment resolves, labelled by where it comes from: the baseline
     and the variants (``run 'name'``), every sweep point and its paired baseline
     (``sweep k point run_NNNN``), every sensitivity run, every bound run with its
-    paired baseline and every calibration case."""
+    paired baseline, every calibration case and, with an offload block (SP1 step 7),
+    the start of every offload case of a sweep point and of the block, every paired-pad
+    start and every offload sensitivity run (its perturbed pad too)."""
     out = [(f"run {name!r}", run) for name, run in resolved.runs.items()]
     for points in resolved.sweeps:
         for point in points:
@@ -892,6 +912,20 @@ def every_resolved_run(resolved: ResolvedExperiment) -> list[tuple[str, Resolved
         for run in (*bound.runs.values(), bound.baseline):
             out.append((f"bound {bound.name!r} run {run.name!r}", run))
     out += [(f"case {name!r}", run) for name, run in resolved.cases.items()]
+    for points in resolved.sweeps:
+        for point in points:
+            for case in point.offload:
+                label = f"sweep {point.sweep_index} point {point.run.name} offload {case.name!r}"
+                out.append((label, case.start))
+    if resolved.offload is not None:
+        for case in resolved.offload.cases:
+            out.append((f"offload case {case.name!r}", case.start))
+            if case.pad_start is not None:
+                out.append((f"offload case {case.name!r} paired pad", case.pad_start))
+        for arm in resolved.offload.arms:
+            out.append((f"offload sensitivity run {arm.start.name!r}", arm.start))
+            if arm.pad_perturbed:
+                out.append((f"offload sensitivity run {arm.pad.name!r}", arm.pad))
     return out
 
 
@@ -1639,3 +1673,80 @@ def matched_run(
         if stage2 not in trace.burnouts:
             return None
     return as_matched(float(gamma), trace, near)
+
+
+# ------------------------------------------------------------ offload (SP1 step 7)
+
+OFFLOAD_ASSUMPTIONS: tuple[str, ...] = (
+    "offload: the propellant removed from a full load leaves the tanks partly filled; "
+    "every dry mass (tank structure included), engine, the payload, the fairing and the "
+    "aerodynamics are unchanged and each stage keeps its mixture ratio; no ullage, "
+    "centre-of-gravity or tank-mass effect is modelled",
+)
+"""The assumptions every offloaded run carries (a case's recorded run, a fixed case's
+run, a paired pad, a pad control's recorded run; docs/physics.md, "Assumptions")."""
+
+
+def offload_penalty_assumption(added_t: float) -> str:
+    """The assumption line of a run with an assumed stage-1 dry-mass penalty of added_t
+    [t] (an offload case's ``stage1_dry_mass_added_t``)."""
+    return (
+        f"offload: stage-1 dry mass +{added_t:g} t is an assumed structural penalty (a "
+        "parametric row), not a structure sized for the push load"
+    )
+
+
+def with_assumptions(rr: RunResult, lines: Sequence[str]) -> RunResult:
+    """rr with the assumption lines appended (each once, the order kept)."""
+    extra = [line for line in lines if line not in rr.result.assumptions]
+    if not extra:
+        return rr
+    result = replace(rr.result, assumptions=[*rr.result.assumptions, *extra])
+    return replace(rr, result=result)
+
+
+def offload_problem_factory(resolved: ResolvedRun) -> ProblemFactory:
+    """The planar problem factory of a resolved run (``offload.planar_problem_factory``
+    of its SearchContext, built as ``run_planar`` builds it: ``planar_setup`` and
+    ``search_context``), for an offload solve on that run's vehicle."""
+    vehicle = resolved.to_vehicle()
+    setup = planar_setup(resolved.run, vehicle)
+    return planar_problem_factory(search_context(setup, vehicle, resolved.run.end))
+
+
+def solve_resolved_offload(
+    resolved: ResolvedRun, mode: OffloadMode, reference_payload_kg: float
+) -> OffloadResult:
+    """``offload.solve_offload`` on a resolved run's vehicle along mode at the reference
+    payload P_ref [kg], without its built-in verification (the pipeline verifies with
+    ``run_resolved`` of the offloaded run, ``offload.with_verification``). Looked up on
+    this module at call time by ``results_io``."""
+    factory = offload_problem_factory(resolved)
+    return solve_offload(factory, resolved.to_vehicle(), mode, reference_payload_kg, verify=False)
+
+
+def offload_run_result(resolved: ResolvedRun, offload: OffloadResult) -> RunResult:
+    """The recorded run of an offload solve as a RunResult, flying nothing (pure): the
+    solve's recorded trace (the vehicle offloaded by x* flying P_ref, final tolerance,
+    dense output, the real depletion event) assembled by ``simulate_planar`` on that
+    vehicle at P_ref with resolved's run config (its assist, ignition and integrator
+    sample interval; resolved's vehicle dict is the offloaded vehicle's, for the record),
+    the figure items ``metrics_planar.offload_metrics``, the solve's flags and the
+    planar run assumptions plus OFFLOAD_ASSUMPTIONS. ValueError for a solve without a
+    recorded run (search_failed)."""
+    vehicle = offload.offloaded_vehicle
+    if offload.recorded is None or vehicle is None:
+        raise ValueError(f"offload solve of {resolved.name!r} has no recorded run")
+    run_config = resolved.run
+    setup = planar_setup(run_config, vehicle)
+    flown = with_payload(vehicle, offload.reference_payload_kg)
+    result = simulate_planar(
+        offload.recorded.trace,
+        flown,
+        setup,
+        sample_dt_s=run_config.integrator.sample_dt_s,
+        figure_items=offload_metrics(offload, vehicle.payload_mass_kg),
+        run_flags=[*offload.flags, *_run_flags(run_config)],
+        run_assumptions=planar_run_assumptions(run_config, vehicle, setup),
+    )
+    return with_assumptions(RunResult(resolved.name, resolved, result), OFFLOAD_ASSUMPTIONS)
