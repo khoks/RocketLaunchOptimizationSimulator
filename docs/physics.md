@@ -1945,6 +1945,210 @@ short of the cutoff.
 Results are "sweep-optimized": gamma* is the best point of a shared grid refined by
 a bounded Brent search, not an optimal-control solution (Phase 5).
 
+### Propellant offload at fixed payload
+
+Module: `offload.py` (`OffloadProblem`, `OffloadWarmStore`, `solve_offload`,
+`OffloadResult`), with `vehicle.with_offload`. Tests: `tests/test_offload.py`; the
+refactor guard of the search (below) is `tests/test_silo_screening_record.py`. SP1 step
+5 builds the solver; the experiment's `offload:` block, the pad controls per mode and
+the reporting arrive in SP1 step 7, so no run, metric or summary row carries an offload
+yet.
+
+**Definition.** The offload x >= 0 [kg] is propellant removed along a mode
+(`vehicle.OFFLOAD_MODES`):
+
+- `stage1`: all from stage 1;
+- `stage2`: all from stage 2;
+- `both`: the same fraction f = x / (m_p1 + m_p2) of each stage's load, stage 1
+  giving x1 = x m_p1 / (m_p1 + m_p2) and stage 2 x - x1, so the two add up to x (up to
+  floating-point rounding; `vehicle.offload_split_kg`).
+
+The tanks are partly filled: dry masses, engines, payload, fairing and aerodynamics are
+unchanged, so the liftoff mass falls by x, up to floating-point rounding
+(`with_offload`, built on `with_stage_propellant`). There is no tank mass that shrinks
+with the offload, no ullage, centre-of-gravity or mixture-ratio effect. An offload at
+or beyond a stage's load raises `OffloadRangeError` (`Stage` needs propellant > 0).
+The reference payload P_ref is the full-load pad's payload capacity P* on the same
+vehicle and orbit (the caller supplies it; SP1 step 7 takes it from the experiment's
+pad baseline). Then
+
+    F(x) = m_res(x; P_ref),    gamma* optimised,
+
+rung 2 of the vehicle offloaded by x flying P_ref, and the reported offload x* is the
+largest evaluated x with F(x) >= 0 at the final tolerance, the feasible-side convention
+of P* (rung 3). The recorded run at x* flies exactly P_ref on the offloaded vehicle and
+must end `inserted` with 0 <= m_res < `final_payload_xtol_kg` (0.05 kg), checked by
+the same `search._check_recorded` as a payload search. F(0) < 0, a vehicle that cannot
+carry P_ref even with full tanks, is the status `no_offload` with x* = 0 and the
+shortfall -dv_margin(0) [m/s].
+
+**Monotonicity is argued, not assumed.** Removing stage-1 propellant lowers the ideal
+delta-v by c1 ln(m0 / (m0 - x)) at fixed m1, and the lighter, higher-T/W stage 1
+recovers part of that in gravity loss, so F falls with x; on the gate fork the slope
+|dm_res/dx| is 0.031 kg/kg on the pad near x = 0 and 0.039 kg/kg on silo_cold near its
+x* (secants over the logged brackets), far below the payload slope of about 1 kg/kg.
+For `stage2` and `both` nothing guarantees it: stage-2 propellant is worth about
+nothing at the margin on this vehicle ("Virtual propellant": 975 kg more real stage-2
+propellant moved m_res from -975.0 to -990.3 kg). The solver needs only a single sign
+change on each bracket, and checks afterwards that the logged evaluations of each
+search in x (one gamma*, one mode) change sign at most once, from m_res >= 0 to m_res <
+0, as x grows, whatever the status; anything else is flagged `offload_nonmonotone`. A
+search with no change passes: a `no_offload` final search has none (its low end walks
+down to x = 0 without meeting m_res >= 0, so every evaluation is negative), while the
+same solve's X1 and X2 may still change sign once (the stage-1 pad control's X2 does,
+at its own gamma*). The check sees only the evaluated points, so it can miss a bump
+between them.
+
+**Pad control, and why.** The same solve is run on the pad in every mode (D-SP1-10;
+the experiment block of step 7 runs it). Because the stage-2 marginal value is near
+zero, the pad itself may fly P_ref with less stage-2 propellant; a stage-2 (or both)
+offload on an assisted run is then a property of the vehicle model, not of the assist,
+and is quoted only net of the pad's own. Stage 1 is the only headline. For `stage1`
+the pad control is a consistency test of the solver: the pad's reference run at P_ref
+keeps 0 <= m_res < `final_payload_xtol_kg`, which is all a stage-1 offload could
+remove, so the control must return 0 <= x_pad <= `final_payload_xtol_kg` / s with s =
+|dm_res/dx| from the control's own logged evaluations (phase file SP1 section 5.3).
+**Measured** (gate fork; the test budget, which the gate test flies, and the shipped
+budget alike): the control ends `no_offload`, x_pad = 0, with m_res(0) = -0.0017 kg
+(-0.0016 kg at the shipped budget). The cause is not its gamma*_ref (refined at its
+own X1 = 0, 22.993 deg), although that sits 0.004 deg from the pad search's (refined at
+the pad's P1, 22.989 deg). Cold final evaluations (fresh store each) at P_ref from
+22.90 to 23.08 deg in 0.02 deg steps fit a parabola in gamma* with second derivative
+-36.6 kg/deg^2 (the curvature of "Virtual propellant", there -36.8 kg/deg^2 in search
+mode at P1) and vertex 22.9939 deg (fit residual std 0.08 g, largest 0.12 g), the same
+at both budgets. The control's gamma*_ref lies 0.001 deg from that vertex and the pad
+search's 0.0047 deg, so by the fit the offset is worth +0.39 g toward the control's,
+and the cold evaluations measure +0.16 g at the pad's gamma*_ref and +0.53 g at the
+control's own, a gain of 0.37 g (+0.19 and +0.57 g, a gain of 0.38 g, at the shipped
+budget): the offset moves m_res up, not down, and a control whose final evaluation at
+x = 0 started cold would end `ok`. The solve's final evaluation at x = 0 is
+warm-started from X2's entry at x = 0.25 kg (the latest at the same gamma*), and the
+LTG shooting then converges to a different point inside its acceptance box ("LTG
+shooting": the kick delta agrees with the cold one to 4e-11 rad, the LTG pair differs
+by 7e-7 in a and 2.4e-9 1/s in b, inside the box-implied 1.34e-5 and 5.5e-8 1/s), 2.2
+g below the cold one at both budgets. That warm-start dependence is about 10 to 70
+times the final-mode noise std of "Virtual propellant" (3e-5 to 2.3e-4 kg, measured
+along one warm chain) and about 4 times the 6e-4 kg spread it measured from four
+different warm stores. The control's status is therefore decided by grams of
+warm-start-dependent convergence inside the LTG acceptance box, not by the gamma*
+offset. x_pad = 0 lies inside the bound (s = 0.031 kg/kg from the control's X2
+bracket, bound 1.6 kg), and the shortfall stays inside the symmetric half of it
+(|m_res(0)| < 0.05 kg). Under the 10x-tightened budget the same control ends `ok`
+with x_pad = 0.044 kg (m_res(0) = +0.0009 kg). A stage-1 pad control of `no_offload`
+by grams is the expected resolution of the feasible-side convention at the LTG
+acceptance box's resolution, not a failure.
+
+**Formulation on the protocols.** `OffloadProblem` implements `search.RecordingProblem`
+with the offload as the abscissa: `evaluate(x, gamma*, warm, mode)` flies the vehicle
+offloaded by x at P_ref, so `optimise_gamma` (find_payload=True) and `final_verify` run
+unchanged. The steps in x:
+
+1. the gamma* grid at x = 0 (the full load; `OffloadProblem.payload_kg`, the protocol's
+   grid abscissa, is 0, not a payload);
+2. X1 = the payload root in x at the best grid point from hint 0, with the shared
+   half-widths (2 t doubled up to 128 t) and backoffs;
+3. the bounded Brent refine of gamma* at X1, so gamma* is re-optimised for the
+   offloaded vehicle (on the gate fork silo_cold's gamma*_ref moves from 21.65 deg at
+   its own P* to 22.99 deg at its x*);
+4. X2 at gamma*_ref from X1;
+5. the final verification from X2: bracket 20 kg doubled up to 1 t, brentq xtol
+   min(0.05 kg, 0.05 kg / s) = 0.05 kg of x (s < 1), and the recorded run.
+
+An x at or beyond the mode's load raises `OffloadInfeasible` (a `PreludeFailure` of
+kind `offload_range`, so one of `INFEASIBLE`), and the bracket backs off from it like
+from any evaluation that cannot fly; in the toy a 1 t first half-width over an 800 kg
+stage-1 load does exactly that.
+
+**Problem factory.** `OffloadProblem` is built from a factory, a callable vehicle ->
+`RecordingProblem`, never from `SearchContext` internals (a requirement of the 3-D
+design, D-SP1-01): the planar factory (`planar_problem_factory`) returns the
+`SearchContext` with its vehicle replaced, and SP3's spatial context supplies its own.
+Each evaluated offload gets the factory's problem of its vehicle and that problem's own
+fresh `WarmStore`, kept in the solve's `OffloadWarmStore`: a kick point depends on the
+vehicle, so one store per problem (`WarmStore.claim`) holds across offloads too. The
+offload store keeps every solved evaluation labelled with its x, so the nearest-gamma*
+warm start runs across offloads as it runs across payloads in a payload search; the
+entry handed down as the seed is relabelled with P_ref. `record` asks the factory's
+problem of the vehicle at x to re-fly the evaluation relabelled with P_ref.
+
+**The abscissa, named honestly.** The protocol's payload slot carries x. Inside a
+solve every `payload_kg` field (ResidualResult, PayloadResult, PayloadEval, WarmEntry)
+and every "payload" or "P" in a search flag or failure message names x. `solve_offload`
+translates at the boundary: `OffloadResult.offload_kg` is x*, `at_offload` is the final
+evaluation relabelled with its true payload P_ref, the three searches' logs become
+`OffloadEval`s (searches `X1`, `X2`, `final`), and every inner flag and failure message
+carries the note "(P = offload x)". The search's own records stay available as
+`inner_gamma` and `inner_final`, documented as holding x.
+
+**Independent verification.** After an `ok` solve, a full payload search
+(`search.run_search`, a fresh store) on the factory's problem of the vehicle offloaded
+by x*, at that vehicle's own payload P0 as `sim.run_resolved` would run it, must end
+`ok` with |P* - P_ref| <= `checks.search_final_flag_rel` x P_ref (1e-4, 2.6 kg on the
+gate fork), else the flag `offload_verify_mismatch`. It catches a gamma* the offload
+search left suboptimal (risk 2 of the phase file: x* is then a flagged lower bound),
+but only a coarse one. A gamma* that costs dm of residual at x* lowers x* by dm /
+|dm_res/dx| and raises the verification's P* by dm / |dm_res/dP|, so the flag fires
+for dm above tolerance x |dm_res/dP|, an offload error of tolerance x |dm_res/dP| /
+|dm_res/dx|. On silo_cold (stage 1, final mode at x*: dm_res/dP = 0.993 kg/kg, dm_res/dx
+= 0.039 kg/kg) that is 2.6 kg of m_res and about 66 kg of offload, 1.6e-3 of x*: looser
+than the 1e-3 convergence rule. The verification needs figure_of_merit `payload`
+(ValueError otherwise). Its expected gap is the final tolerances': x* keeps up to 0.05
+kg of residual, worth 0.05 kg / |dm_res/dP| of payload, and the payload search ends up
+to 0.05 kg below its root, so about +/- 0.05 kg. Measured on silo_cold (stage 1): P* =
+26,054.4047 kg against P_ref = 26,054.3963 kg, +0.0084 kg at the test budget (+0.0085
+kg at the shipped budget), about 0.2 kg of offload. The gate test asserts the flag
+threshold as specified and, as a regression guard on that measured gap (not a second
+threshold), |P* - P_ref| < 2 `final_payload_xtol_kg` (0.1 kg, about 2.5 kg of offload).
+
+**Flags and statuses.** Every flag starts with `offload:`: the inner search's flags
+with the abscissa note (a backoff from an offload beyond the load reads `P1_backoff ...
+(offload_range)`), `offload_nonmonotone`, `offload_verify_mismatch`, and the
+verification search's own flags as `offload: verification: ...` (about true payloads).
+The inner `search_vs_final_payload` flag compares X2 with x* against
+`search_final_flag_rel` x x*, so near x* = 0 (a stage-1 pad control) it fires on
+differences of grams (seen once: 0.044 kg under the tightened budget); it is harmless
+there. Statuses: `ok`, `no_offload`, and `search_failed` when the search in x raises
+SearchFailed, with its kind (`edge`, `grid`, `bracket`, `root`, `final_bracket`,
+`final_run`) in `failure_kind` and its message, marked, in `failure_message`.
+
+**Cost per solve** (gate fork, measured on the development machine under load): the
+stage-1 pad control 27 evaluations, about 30 s; silo_cold's stage-1 offload 42
+evaluations plus one verification payload search, 87 to 89 s at the shipped budget and
+92 to 109 s at the test budget (two runs each). The design input estimated about 55 +
+38 evaluations and 33 s per case; the evaluation counts are lower, the wall time higher
+on this machine. Under the 10x-tightened budget: the pad search 75 s, silo_cold's
+offload 45 evaluations and 172 s with its verification.
+
+**Convergence** (CLAUDE.md's rule, `SearchContext.tightened` by the experiment's
+`checks.convergence`, each chain with its own pad P* as P_ref): the pad P* moves by
+0.0007 kg and silo_cold's stage-1 x* by 0.051 kg (1.2e-6 relative), against the 1e-3
+relative the test allows.
+
+**Validation budget.** The gate tests of the recorded run, the verification and the
+pad control fly the test budget (search rtol 1e-9, final 1e-10 as shipped; CLAUDE.md:
+rtol <= 1e-9 in tests) with the full shipped gamma* grid. The convergence test alone
+flies the shipped budget (search rtol 1e-8, the one the offload experiment of step 7
+will run), on its baseline side, as amendment 3 asks of the convergence tests
+("Convergence (planar)"). The search mode matters here: gamma*_ref, on which x*
+depends, is refined in it, and the pad control's slope s comes from its X2 search when
+it ends `no_offload`. The two budgets agree on silo_cold's x* to 0.0003 kg.
+
+**Search refactor.** The body of `SearchContext.evaluate` moved, unchanged, into
+`SearchContext.evaluate_planner` (rung 2 on a given planner and kick-cache key) and
+`SearchContext.solve_delta` (the cached kick point and the delta solve), which the
+test-only `joint_root_crosscheck` now shares instead of duplicating; `kick_cache_key`
+names the (payload, tolerance class) key. The offload solver does not use them (it goes
+through the factory). As a refactor of validated code it is guarded by the shipped
+silo_screening_2d experiment re-run through `resolve_experiment` and `sim.run_resolved`:
+pad and silo_cold reproduce their recorded P* (26,054.396243494975 and
+27,553.227114190096 kg, tests/data/silo_screening_2d_record.json) within 0.002 kg.
+
+**Validation measurement, not a finding.** silo_cold's stage-1 offload at the pad's P*
+solves to x* = 41,262.9 kg (test and shipped budgets agree to 0.0003 kg), a sanity
+check against the handoff probe, which read about 41.1 t off by hand. The finding comes
+from the pre-registered experiment of SP1 step 8, with the pad controls, the
+decomposition, the penalty rows and the caveats beside it.
+
 ## Virtual propellant
 
 In every search evaluation stage 2 has no depletion event: at the same thrust and mass
@@ -2241,8 +2445,11 @@ re-measured with the cap; gamma_xatol (0.01 deg) is kept as pre-registered.
 
 **Validation.** The planar tests fly the test budget: the shared search block with
 search_rtol 1e-9 (CLAUDE.md: rtol <= 1e-9 in tests; the plan's test_budget), final
-1e-10 as shipped; only the convergence tests fly the shipped 1e-8, because amendment 3
-asks for the convergence of the shipped budget itself. `tests/test_payload_search.py`:
+1e-10 as shipped. The shipped 1e-8 is flown only by the convergence tests (on their
+baseline side), because amendment 3 asks for the convergence of the shipped budget
+itself, and by the regression re-runs of recorded results (`tests/test_calibration.py`,
+`tests/test_silo_screening_record.py`; not validation), which must reproduce what that
+budget recorded. `tests/test_payload_search.py`:
 the toy two-stage rocket (c = 3000 m/s both stages, zero gravity, vacuum, thrust along
 v from rest, flown with `integrate_phase` and `rhs_planar` to a speed target V* with
 virtual propellant): `payload_capacity` finds P* with c ln(m0/m1) + c ln(m2/(m_d2 +
@@ -2346,8 +2553,11 @@ half the shipped one (measured: ASSIST 0.052146 -> 0.026073 s, the ramp KICK 0.2
 0.1 s, the lag KICK and GRAVITY_TURN 0.25 -> 0.125 s, every other flight phase 2 ->
 1 s). These tests fly the shipped search
 rtol of 1e-8 on the baseline side of each comparison (the budget itself is what
-amendment 3 asks to converge); every other planar test flies the test budget (search
-rtol 1e-9). The re-optimised test also compares the signed rung-2 figures at P0
+amendment 3 asks to converge), as does the offload's convergence test
+(`test_offload.py::test_gate_offload_converges_under_a_tightened_budget`); every other
+planar test flies the test budget (search rtol 1e-9), except the regression re-runs of
+recorded results (calibration, silo_screening_2d record), which reproduce the shipped
+budget's figures. The re-optimised test also compares the signed rung-2 figures at P0
 (`SearchRecord.at_p0`) and compares gravity plus steering jointly, not one by one
 (Finding below), at the steering term's own tolerance (1e-3 of |steering| or
 loss_floor_mps, about 0.09 m/s), not at 1e-3 of the sum (about 1.5 m/s), so the
@@ -5392,5 +5602,12 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_search.py::test_grid_retry_repeats_until_no_new_point_solves`, `::test_refine_capped_by_the_shifted_window_is_flagged`, `::test_payload_search_backoffs_are_flagged`, `::test_final_verification_backs_off_toward_the_hint_and_flags`, `::test_final_verification_failures_are_typed`, `::test_final_bisection_keeps_the_residual_rule`, `::test_whole_toy_searches_do_not_depend_on_the_run_order`, `::test_a_warm_store_serves_one_problem` | on the toy: a grid point whose neighbours converge only in a retry is retried in a second pass; an optimum drifting above P0 caps the refine at its shifted window (refine_capped, the shift flag with both results); P1 backoffs flagged with the failed payload and kind; the final verification's low end backs off toward the hint (final_backoff), expansions flag search_final_mismatch and search_vs_final_payload; final_bracket, and final_run for an off_target recorded run, m_res >= 0.05 kg, a short run with m_res >= 0 and a no_orbit run reaching the cutoff; a steep local slope bisected until 0 <= m_res < 0.05 kg (flagged); whole toy searches identical as plain data in both run orders; on the gate fork a WarmStore bound to its first context raises ValueError for another context or the same context tightened ("Payload and gamma* search", "Shared budget") | exact; 0.05 kg / slope; typed |
 | `test_search.py::test_residual_figure_short_of_orbit_is_signed` (slow) | figure_of_merit residual on the gate pad at a 30 t vehicle payload: no P1 or P2, the refine at P0, one final evaluation at P0 with m_res < 0: status short_of_orbit, the recorded run short of the cutoff with the evaluation's signed m_res and dv_margin ("Payload and gamma* search", Whole search) | exact |
 | `test_search.py::test_swapped_run_order_gives_identical_evaluations`; `::test_swapped_order_whole_searches_are_identical` (slow) | pad and silo_cold evaluated (and, slow, searched on a three-point grid) in both orders give bitwise-identical results ("Shared budget") | exact |
-| `test_convergence_2d.py::test_fixed_gamma_payload_and_margins_converge`, `::test_fixed_gamma_losses_and_max_q_converge` (slow since build step 26a; pad, silo_cold, silo_cold_lag); `::test_reoptimised_search_converges` (slow; pad, silo_cold, silo_cold_lag) | CLAUDE.md's convergence rule with amendment 3's floors: the shipped budget (search rtol 1e-8, the only planar tests at it) against its 10x tightening (the ramp, lag and push step counts doubled, the planar cap 2 s -> 1 s) at fixed gamma* 20 deg (P*, m_res and dv_margin at 22.8 t, every loss term one by one, max-Q value and time) and re-optimised (P*, m_res and dv_margin at P0, gamma*, J_vac, drag, back-pressure, gravity plus steering jointly, max-Q value and time); the recorded run pushes exactly on the silo runs, and the recorded traces fly finite max_step caps in exactly the expected kinds, halved when tightened; after a re-optimisation gravity plus steering is compared jointly at the steering term's tolerance and the split is not asserted ("Convergence (planar)", Finding) | rel 1e-3 with floors 0.5 kg and 1e-3 m/s; gamma* 0.1 deg (measured: fixed gamma* every term within 4.6e-5 m/s, P* within 1.0e-3 kg; re-optimised P* at most 3.4e-3 kg, gamma* at most 6.3e-3 deg, m_res at P0 at most 0.25 kg) |
+| `test_convergence_2d.py::test_fixed_gamma_payload_and_margins_converge`, `::test_fixed_gamma_losses_and_max_q_converge` (slow since build step 26a; pad, silo_cold, silo_cold_lag); `::test_reoptimised_search_converges` (slow; pad, silo_cold, silo_cold_lag) | CLAUDE.md's convergence rule with amendment 3's floors: the shipped budget (search rtol 1e-8; with the offload convergence test and the regression re-runs of recorded results, the only planar tests at it) against its 10x tightening (the ramp, lag and push step counts doubled, the planar cap 2 s -> 1 s) at fixed gamma* 20 deg (P*, m_res and dv_margin at 22.8 t, every loss term one by one, max-Q value and time) and re-optimised (P*, m_res and dv_margin at P0, gamma*, J_vac, drag, back-pressure, gravity plus steering jointly, max-Q value and time); the recorded run pushes exactly on the silo runs, and the recorded traces fly finite max_step caps in exactly the expected kinds, halved when tightened; after a re-optimisation gravity plus steering is compared jointly at the steering term's tolerance and the split is not asserted ("Convergence (planar)", Finding) | rel 1e-3 with floors 0.5 kg and 1e-3 m/s; gamma* 0.1 deg (measured: fixed gamma* every term within 4.6e-5 m/s, P* within 1.0e-3 kg; re-optimised P* at most 3.4e-3 kg, gamma* at most 6.3e-3 deg, m_res at P0 at most 0.25 kg) |
 | `test_calibration.py::test_record_matches_the_shipped_experiment`; `::test_calibration_payload_reproduces` (slow: pad, readme_loads, recorded_scope) | calibration regression (not validation): the record matches the shipped experiment and its clean pre-registration; P* reproduces tests/data/calibration_record.json and gamma*_ref within the 0.1 deg resolution; no band is asserted | P* 1e-3 relative |
+| `test_offload.py::test_with_offload_masses_by_mode`, `::test_with_offload_range_and_refusals` | `with_offload` at x = 120 kg on the toy (m_p1 800 kg, m_p2 150 kg): stage 1 keeps 680 kg, stage 2 keeps 30 kg, both keeps m_p (1 - 120/950) in each; the liftoff mass falls by x in every mode, dry masses, engines, payload and screening Isp unchanged; a stage's whole load or more is OffloadRangeError, 0.999 of it builds; negative, NaN, infinite, unknown modes and missing stages refused ("Propellant offload at fixed payload") | 1e-12 kg; exact; raises |
+| `test_offload.py::test_toy_offload_matches_the_closed_form` (stage1, stage2, both) | toy two-stage rocket of `test_payload_search.py` (c = 3000 m/s, zero gravity, vacuum, along v) with a 300 m/s head start at P_ref = 60 kg and a speed target V*(gamma*) = 4000 m/s + 1000 m/s/rad^2 (gamma* - 20.3 deg)^2: stage 1 x* = m0 - m1 exp((V* - v0 - c ln(m2/m3))/c), stage 2 and both by brentq in the test on v0 + c ln(m0'/m1') + c ln(m2'/m3) = V*, at the solve's own gamma*_ref; x* the largest final evaluation with m_res >= 0, below the root by less than final_payload_xtol_kg; every final evaluation's m_res = m2' exp(-(V* - v0 - c ln(m0'/m1'))/c) - m3; the recorded run inserted with 0 <= m_res < 0.05 kg at P_ref; the verification payload search within TOY_FLAG_REL (2e-3) x P_ref; no nonmonotone flag; gamma*_ref at the optimum ("Propellant offload at fixed payload") | x* in (root - 0.05 kg - 1e-6 kg, root + 1e-6 kg]; m_res 1e-6 kg; gamma* 0.01 deg |
+| `test_offload.py::test_vacuum_offload_equals_the_ideal_screening` | zero gravity, vacuum, screening Isp = engine Isp, P_ref = the toy's closed-form capacity from rest: the stage-1 x* for v0 = 300 m/s equals `vehicle.stage1_propellant_saved_kg` (the ideal-screening yardstick, an independent brentq on the ideal delta-v) | 0.05 kg plus the gamma* term (below 1e-3 m/s x m0/c) |
+| `test_offload.py::test_no_offload_above_the_capacity_from_rest`, `::test_own_capacity_as_reference_gives_an_offload_near_zero` | v0 = 0, P_ref 1 kg above the closed-form capacity: status no_offload, x* = 0, shortfall -dv_margin(0) = V*(gamma*_ref) - D_id(P_ref), the recorded run short of the target carrying the evaluation's figures; P_ref = the toy's own searched P*: ok with 0 <= x <= final_payload_xtol_kg / s, s the secant of the final bracket (the pad control's rule) | 1e-6 relative; exact |
+| `test_offload.py::test_offload_beyond_the_load_backs_off`, `::test_offload_problem_relabels_at_its_boundary`, `::test_nonmonotone_flags_on_synthetic_logs`, `::test_verification_mismatch_is_flagged`, `::test_a_failed_search_becomes_a_status_with_its_kind` | a first X1 high end of 1000 kg over the 800 kg stage-1 load fails typed (offload_range, an OffloadInfeasible among INFEASIBLE, pickles), backs off to 500 kg, is flagged with the abscissa note, and x* still matches the closed form; `OffloadProblem.evaluate` flies P_ref on the vehicle offloaded by x, one problem and fresh store per offload, relabels result, warm entry and seed, refuses a plain or foreign store; the sign-change rule on synthetic logs; a verification against a reference 5 kg off flags offload_verify_mismatch; a problem that never flies gives search_failed with kind grid and the marked message; a residual figure of merit refuses the verification ("Propellant offload at fixed payload") | exact; typed |
+| `test_offload.py::test_gate_silo_offload_recorded_run_and_verification`, `::test_gate_pad_control_is_within_the_bound`, `::test_gate_offload_converges_under_a_tightened_budget` (slow) | gate fork, P_ref = the pad's own P* at the same budget; the first two at the test budget (search rtol 1e-9, full grid), the third at the shipped budget against its tightening: silo_cold's stage-1 offload ok, its recorded run inserted with 0 <= m_res < 0.05 kg on the vehicle offloaded by x* (release mass = full-load liftoff mass - x*, written in the test), the verification payload search within checks.search_final_flag_rel x P_ref (2.6 kg, about 66 kg of offload) and, as a regression guard on the measured gap (+0.0084 kg), within 2 final_payload_xtol_kg; the stage-1 pad control 0 <= x_pad <= final_payload_xtol_kg / s with s from its own logs (measured no_offload, m_res(0) = -0.0017 kg from the warm-started LTG convergence, inside the symmetric bound |m_res(0)| < 0.05 kg); the 10x-tightened chain (pad P* and silo_cold x*, `SearchContext.tightened`) moves x* by less than 1e-3 relative (measured 0.051 kg, 1.2e-6) ("Propellant offload at fixed payload", "Convergence (planar)") | 1e-6 kg; the bounds; 0.1 kg; 1e-3 relative |
+| `test_silo_screening_record.py::test_recorded_payload_capacity_reproduces` (slow: pad, silo_cold) | regression of the search refactor of SP1 step 5 (not validation): the shipped silo_screening_2d experiment, resolved from its YAML files and run by `sim.run_resolved`, reproduces the recorded P* of tests/data/silo_screening_2d_record.json (26,054.396243494975 and 27,553.227114190096 kg) and its budget id ("Propellant offload at fixed payload", Search refactor) | 0.002 kg |

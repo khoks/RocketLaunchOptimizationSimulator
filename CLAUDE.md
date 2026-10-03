@@ -36,6 +36,7 @@ src/launchsim/
   guidance.py    steering laws (vertical rise, kick, gravity turn, linear-tangent), gamma* inner solve, LTG shooting
   orbit.py       circular target orbit and orbital elements
   search.py      figure-of-merit searches (residual, payload capacity, gamma* sweep, final verification); "sweep-optimized" until Phase 5
+  offload.py     fixed-payload propellant offload solver; pure
   losses.py      loss integrals, the budget check and the planar rocket-equation closure
   sim.py         run one configuration (vertical_1d or planar_2d dispatch) and return a Result; re-exports the split modules
   metrics.py     1-D metrics and time series

@@ -41,6 +41,11 @@ FairingDropKind = Literal["staging", "never"]
 FairingTrigger = Literal["staging", "never", "free_molecular_heating"]
 FAIRING_TRIGGERS: tuple[str, ...] = get_args(FairingTrigger)
 HEATING_TRIGGER: FairingTrigger = "free_molecular_heating"
+OffloadMode = Literal["stage1", "stage2", "both"]
+OFFLOAD_MODES: tuple[str, ...] = get_args(OffloadMode)
+"""Directions of a propellant offload (``with_offload``): from stage 1, from stage 2, or
+from both at the same fraction of each stage's load (docs/physics.md, "Propellant
+offload at fixed payload")."""
 CD_POLY_TERMS = 4
 """Coefficients per PCHIP interval: (c3, c2, c1, c0) of a cubic in M - M_i."""
 
@@ -597,6 +602,76 @@ def with_stage_propellant(vehicle: Vehicle, i: int, propellant_kg: float) -> Veh
     stages = list(vehicle.stages)
     stages[i] = dataclasses.replace(stages[i], propellant_mass_kg=propellant_kg)
     return dataclasses.replace(vehicle, stages=tuple(stages))
+
+
+class OffloadRangeError(ValueError):
+    """An offload [kg] at or beyond the load it is taken from (a stage needs propellant >
+    0): ``with_offload`` cannot build the vehicle. The offload solver turns it into a
+    typed infeasible evaluation (``offload.OffloadInfeasible``)."""
+
+
+def offload_split_kg(vehicle: Vehicle, mode: OffloadMode, offload_kg: float) -> tuple[float, ...]:
+    """The propellant [kg] taken from each stage (index 0 first) for an offload of
+    offload_kg [kg] along mode: ``stage1`` all from stage 0, ``stage2`` all from stage 1,
+    ``both`` the same fraction offload_kg / (m_p1 + m_p2) of each stage's load (stage 0
+    takes offload_kg m_p1 / (m_p1 + m_p2), stage 1 the rest, so the two add up to
+    offload_kg up to floating-point rounding). One entry per stage, zero for the stages
+    the mode leaves alone.
+    Raises ValueError for an unknown mode, a negative or non-finite offload, or a vehicle
+    without the stages the mode names (``both`` needs exactly two)."""
+    if mode not in OFFLOAD_MODES:
+        raise ValueError(f"offload mode must be one of {OFFLOAD_MODES}, got {mode!r}")
+    if not (math.isfinite(offload_kg) and offload_kg >= 0.0):
+        raise ValueError(f"offload must be finite and >= 0 kg, got {offload_kg!r}")
+    need = 2 if mode in ("stage2", "both") else 1
+    if vehicle.n_stages < need or (mode == "both" and vehicle.n_stages != 2):
+        raise ValueError(f"offload mode {mode!r} needs a two-stage vehicle")
+    split = [0.0] * vehicle.n_stages
+    if mode == "stage1":
+        split[0] = offload_kg
+    elif mode == "stage2":
+        split[1] = offload_kg
+    else:
+        m_p1, m_p2 = (s.propellant_mass_kg for s in vehicle.stages)
+        split[0] = offload_kg * m_p1 / (m_p1 + m_p2)
+        split[1] = offload_kg - split[0]
+    return tuple(split)
+
+
+def offload_load_kg(vehicle: Vehicle, mode: OffloadMode) -> float:
+    """The full propellant load [kg] an offload along mode is taken from: m_p1 for
+    ``stage1``, m_p2 for ``stage2``, m_p1 + m_p2 for ``both`` (``offload_split_kg``'s
+    rules on the mode and the vehicle apply)."""
+    offload_split_kg(vehicle, mode, 0.0)  # validates the mode and the stages
+    if mode == "stage1":
+        return vehicle.stages[0].propellant_mass_kg
+    if mode == "stage2":
+        return vehicle.stages[1].propellant_mass_kg
+    return vehicle.stages[0].propellant_mass_kg + vehicle.stages[1].propellant_mass_kg
+
+
+def with_offload(vehicle: Vehicle, mode: OffloadMode, offload_kg: float) -> Vehicle:
+    """Copy of vehicle with offload_kg [kg] of propellant removed along mode
+    (``offload_split_kg``: stage1, stage2, or both at the same fraction of each load),
+    built on ``with_stage_propellant``. The tanks are partly filled: dry masses, engines,
+    payload, fairing and aerodynamics are unchanged, so the liftoff mass falls by
+    offload_kg (up to floating-point rounding: each stage keeps load - share, and the
+    liftoff mass is a sum of rounded masses). An offload of 0 returns an equal vehicle.
+    Raises OffloadRangeError when a stage would keep no propellant (its share at or
+    beyond its load; ``Stage`` needs propellant > 0) and ValueError for the cases
+    ``offload_split_kg`` refuses."""
+    out = vehicle
+    for i, taken in enumerate(offload_split_kg(vehicle, mode, offload_kg)):
+        if taken == 0.0:
+            continue
+        load = vehicle.stages[i].propellant_mass_kg
+        if taken >= load:
+            raise OffloadRangeError(
+                f"an offload of {offload_kg:.6g} kg along {mode} takes {taken:.6g} kg from "
+                f"stage {vehicle.stages[i].name!r}, which carries {load:.6g} kg"
+            )
+        out = with_stage_propellant(out, i, load - taken)
+    return out
 
 
 def ideal_dv_mps(vehicle: Vehicle, payload_kg: float | None = None) -> float:
