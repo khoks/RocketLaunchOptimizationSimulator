@@ -128,7 +128,7 @@ RETRY_KINDS = ("nonconverged",)
 """GuidanceFailure kinds after which a failed grid point is retried from a converged
 neighbour's delta and LTG pair: an exhausted LTG ladder depends on its starting pair
 (docs/physics.md, "LTG shooting", Cold-ladder coverage); the stage-1 failures
-(gamma_unattainable, false_root, no_kick) and lofted_overshoot do not."""
+(gamma_unattainable, false_root, no_kick, no_ignition) and lofted_overshoot do not."""
 RULE_INFEASIBLE_POINT = "not_direct_root"
 """Grid-point label: the LTG ladder converged only to roots the pre-registered
 direct-root rule rejects (b <= 0 or the pitch window; docs/physics.md, "LTG shooting",
@@ -606,11 +606,13 @@ class SearchContext:
 
     def _kick(self, planner: PlanarPlanner) -> KickPoint:
         """The prelude and the vertical rise of one payload (PreludeFailure when no
-        flight follows or stage 1 does not light)."""
+        flight follows or stage 1's ignition fails; a stage 1 that lights at an altitude,
+        ``FlightStart.stage1_lights``, flies on, and GuidanceFailure("no_ignition") when
+        its coast never reaches that altitude)."""
         start = planner.start(self.assist, self.track)
         if start.status != "nominal":
             raise PreludeFailure(start.status, f"the prelude ended with status {start.status}")
-        if start.t_ign1_s is None:
+        if not start.stage1_lights:
             raise PreludeFailure("ignition", "stage 1's ignition fails")
         return planner.to_kick(start)
 

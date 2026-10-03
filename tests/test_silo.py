@@ -977,8 +977,9 @@ def test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_r
     """A conversion within ZERO_SPAN_S (1e-12 s) of the release snaps to (0, release):
     depth 0, the exit speed itself and a speed a rounding above it. A speed whose time
     lies further after the release (v > v_exit), a depth below the push start, a height
-    at or above the drag-free apex V_E^2 / (2 g_eff), a height with g_eff <= 0 and a
-    height reached by an event (SP1 step 4) are refused."""
+    at or above the drag-free apex V_E^2 / (2 g_eff) and a height with g_eff <= 0 are
+    refused; since SP1 step 4 a height reached by an event is refused at the same apex
+    (and resolves to a height_event spec below it)."""
     for block in ({"at_depth_m": 0.0}, {"at_speed_mps": V_E}, {"at_speed_mps": V_E * (1 + 1e-15)}):
         spec = _resolve(block)
         assert (spec.t_ign_s, spec.reference) == (0.0, "release"), block
@@ -993,9 +994,10 @@ def test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_r
             _resolve({"at_height_m": height, "height_method": "closed_form"})
     with pytest.raises(ValueError, match="needs g_eff > 0"):
         _resolve({"at_height_m": 40.0, "height_method": "closed_form"}, g_eff=0.0)
-    event = IgnitionConfig.model_construct(at_height_m=40.0, height_method="event")
-    with pytest.raises(ValueError, match="arrives in SP1 step 4"):
-        resolve_ignition(event, RAMP, _assist(), TRACK, G_EFF)
+    for height in (apex, 1.01 * apex):
+        with pytest.raises(ValueError, match="at or above the drag-free apex"):
+            _resolve({"at_height_m": height, "height_method": "event"})
+    assert _resolve({"at_height_m": 40.0, "height_method": "event"}).lights_at_height
 
 
 def test_resolve_needs_the_constant_accel_drive_and_leaves_time_specs_alone() -> None:

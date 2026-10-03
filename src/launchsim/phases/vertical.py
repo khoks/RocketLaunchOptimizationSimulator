@@ -29,6 +29,7 @@ from launchsim.dynamics import (
     VERTICAL_STATE_NAMES,
     Gravity,
     StateLayout,
+    VerticalDynamics1D,
     VerticalParams,
     rhs_vertical,
 )
@@ -42,6 +43,7 @@ from launchsim.phases.engine import (
     PhaseSpec,
     _pass_through,
     atol_for,
+    ev_altitude_up,
     ev_apex,
     ev_impact,
     ev_propellant,
@@ -49,6 +51,7 @@ from launchsim.phases.engine import (
     integrate_phase,
 )
 from launchsim.phases.prelude import (
+    IGNITION_HEIGHT_EVENT,
     VERTICAL_PRELUDE,
     VERTICAL_TRACK_TOL_RAD,
     HoldParams,
@@ -249,6 +252,8 @@ class VerticalPlanner:
         spec = self.ignition[stage0.name]
         if spec.reference != "release":
             raise ValueError("a pad run has no push: use reference 'release' for the first stage")
+        if spec.lights_at_height:
+            raise ValueError("a pad run has no track exit: a ramp start by height needs a push")
         tr = self.new_builder()
         t_release = 0.0
         t_ign = spec.t_ign_abs_s(t_release)
@@ -300,7 +305,9 @@ class VerticalPlanner:
         ``propellant`` (ValueError) events. At release the state maps into the ascent
         frame (``map_release``), t_release is the track-end root, and ``ascend`` runs
         the flight. Events logged on the track: push_start, ignition (when inside the
-        push), ramp_end, drive_limit, release.
+        push), ramp_end, drive_limit, release. A first stage stated by
+        ``height_method: event`` flies the push unlit and is lit by ``ascend`` at the
+        altitude event z_exit + h after the release (a pending ignition).
         """
         stage0 = self.vehicle.stages[0]
         spec = self.ignition[stage0.name]
@@ -323,7 +330,10 @@ class VerticalPlanner:
         tr.t_release_s = t
         tr.y_release = y_rel.copy()
         tr.add_event("release", t, ASSIST_KIND, 0, y_rel)
-        self.ascend(tr, t, y_rel)
+        ign_alt = None
+        if spec.lights_at_height and not spec.fails and spec.trigger_value is not None:
+            ign_alt = exit_.z_exit_m + spec.trigger_value
+        self.ascend(tr, t, y_rel, ign_alt_m=ign_alt)
         return tr.finish()
 
     def _track_params(
@@ -340,6 +350,7 @@ class VerticalPlanner:
         y: np.ndarray,
         *,
         sigma_hint: int | None = None,
+        ign_alt_m: float | None = None,
     ) -> None:
         """Run the ascent from the released state into the builder.
 
@@ -348,15 +359,21 @@ class VerticalPlanner:
         it; otherwise it is t_release + t_ign_s); t_start_s, the absolute time [s] the
         free flight starts (t_release, or the liftoff time after an extended hold); y,
         the ascent state then; sigma_hint, the velocity sign of the first phase when the
-        caller knows it (+1 after a liftoff root). Records t_flight_start_s and
+        caller knows it (+1 after a liftoff root); ign_alt_m, the altitude [m] above the
+        datum at which a first stage stated by ``height_method: event`` lights (the
+        track exit plus the height; required for such a stage, ValueError otherwise,
+        and None for every other). Records t_flight_start_s and
         y_flight_start (where the loss accounting begins), then runs COAST_PRE_IGN,
         BURN, STAGING, COAST_STAGING, ... and the terminal coast the run's ``end`` asks
         for; sets tr.status ("nominal", "impact") and tr.burnouts. The first stage's
         ignition event is logged here only when its burn starts at ignition and the
         caller has not logged it (a hold or a track logs an earlier ignition itself).
-        A stage whose ignition fails (``IgnitionSpec.fails``; the run must end at
-        impact) gets no ignition time and no burn: ``_fail_ignition`` records it and
-        the terminal coast (COAST to apex, FALL to the ground) follows at once.
+        A first stage that lights at an altitude (a pending ignition) coasts to the
+        ``ignition_height`` event (``_coast_to_ignition``) and lights at its root, which
+        becomes its ignition time. A stage whose ignition fails
+        (``IgnitionSpec.fails``; the run must end at impact) gets no ignition time and
+        no burn: ``_fail_ignition`` records it and the terminal coast (COAST to apex,
+        FALL to the ground) follows at once.
         """
         t = t_start_s
         tr.t_flight_start_s = t
@@ -364,9 +381,10 @@ class VerticalPlanner:
         n = self.vehicle.n_stages
         for k, stage in enumerate(self.vehicle.stages):
             spec = self.ignition[stage.name]
+            t_ign: float | None
             if k == 0:
                 t_ign = tr.t_ign_abs_s.get(stage.name)
-                if t_ign is None:
+                if t_ign is None and not spec.lights_at_height and not spec.fails:
                     t_ign = spec.t_ign_abs_s(tr.t_release_s)
             else:
                 if spec.reference != "release" or spec.t_ign_s < 0.0:
@@ -394,6 +412,17 @@ class VerticalPlanner:
                 self._fail_ignition(tr, k, t, y, sigma_hint)
                 self._terminal_coast(tr, k, t, y, sigma_hint)
                 return
+            if t_ign is None:  # a pending ignition: stage 1 lights at the altitude event
+                if ign_alt_m is None:
+                    raise ValueError(
+                        f"stage {stage.name!r} lights at the altitude of height_method: "
+                        "event, but no ignition altitude was given (a track run passes the "
+                        "track exit plus the height)"
+                    )
+                t, y, coasted = self._coast_to_ignition(tr, k, t, y, sigma_hint, ign_alt_m)
+                t_ign = t
+                if coasted:
+                    sigma_hint = None
             tr.t_ign_abs_s[stage.name] = t_ign
             if t_ign > t + ZERO_SPAN_S:
                 t, y, how = self._coast(
@@ -422,6 +451,50 @@ class VerticalPlanner:
                 continue
             self._terminal_coast(tr, k, t, y, None)
             return
+
+    def _coast_to_ignition(
+        self,
+        tr: TraceBuilder,
+        k: int,
+        t: float,
+        y: np.ndarray,
+        sigma_hint: int | None,
+        ign_alt_m: float,
+    ) -> tuple[float, np.ndarray, bool]:
+        """A pending ignition of stage k (``height_method: event``): COAST_PRE_IGN from
+        t [s] (state y, the release) to the ``ignition_height`` event (``ev_altitude_up``:
+        z - ign_alt_m crossing upward, ign_alt_m [m] above the datum), listed in the
+        rising sub-phase beside the apex (z is monotone there: the sigma partition).
+        Returns (t, y, coasted): the event root and the state there with coasted True (a
+        COAST_PRE_IGN phase was flown), or the start itself with coasted False when it is
+        already within the event's zero_tol (ATOL_M) below the altitude or above it
+        (decided here, so no zero-length phase is issued; the same flag, with the same
+        meaning, as ``PlanarPlanner._coast_to_ignition``).
+        Raises ValueError when the coast reaches its apex first (or falls): the 1-D coast
+        has no drag, and from a track exit at or above the datum mu/r^2 is never stronger
+        than the track's g_eff = mu/R_E^2, so its apex lies at or above the drag-free
+        apex v_e^2 / (2 g_eff) that the resolver refuses. An apex below the height means
+        the flight's gravity exceeds g_eff on the coast (a track exit below the datum, or
+        an injected test gravity) or the numerical edge of that refusal. Frame: the +z-up
+        datum frame."""
+        event = ev_altitude_up(VerticalDynamics1D(), ign_alt_m, IGNITION_HEIGHT_EVENT)
+        if event.fn(t, y) >= -event.zero_tol:
+            return t, y, False
+        kinds = ("COAST_PRE_IGN", "FALL_PRE_IGN")
+        t, y, how = self._coast(
+            tr, kinds, k, t, None, y, sigma_hint, stop_at_apex=True, extra=(event,)
+        )
+        if how == IGNITION_HEIGHT_EVENT:
+            return t, y, True
+        z = float(y[_IZ])
+        raise ValueError(
+            f"stage {self.vehicle.stages[k].name!r} never reaches its ignition altitude "
+            f"{ign_alt_m:.9g} m (height_method: event): the coast after release ended by "
+            f"{how} at z = {z:.9g} m, {ign_alt_m - z:.6g} m below it (the resolver refuses "
+            "a height at or above the drag-free apex v_e^2 / (2 g_eff); a lower apex means "
+            "the flight's gravity exceeds g_eff on the coast, e.g. a track exit below the "
+            "datum, or the numerical edge of that refusal)"
+        )
 
     @staticmethod
     def _flag_ignored_ignition_settings(
@@ -569,11 +642,18 @@ class VerticalPlanner:
         sigma_hint: int | None,
         *,
         stop_at_apex: bool = False,
+        extra: tuple[EventSpec, ...] = (),
     ) -> tuple[float, np.ndarray, str]:
         """Unpowered flight from t to t_end (None: open-ended). kinds = (rising kind,
         falling kind). Rising phases list apex; falling ones impact. Returns (t, y, how)
-        with how in {"time", "apex", "impact"}; an apex flips sigma and continues unless
-        stop_at_apex; an impact sets tr.status. The event lists are partitioned by
+        with how in {"time", "apex", "impact"} or the name of an ``extra`` event; an
+        apex flips sigma and continues unless stop_at_apex; an impact sets tr.status.
+        extra: terminal events listed after ``apex`` in the rising phases only (none by
+        default, which leaves every event list as before), where z rises monotonically,
+        so an event of the altitude is monotone where it is listed (the step that
+        overshoots the apex is covered by the fold of ``engine.ev_altitude_up``,
+        docs/physics.md, "Event rules"); when one fires the coast returns at its root
+        with how = its name. The event lists are partitioned by
         sigma, and that partition is what keeps the event that ended the previous phase
         off the next one's list: an apex hands over sigma = -1, whose list has no apex;
         a coast never lists a turnaround; the propellant event belongs to burns only.
@@ -582,11 +662,12 @@ class VerticalPlanner:
         sinking) is the "phase starting on the event surface moving into it" case the
         engine's disarm rule cannot resolve (``integrate_phase``), so it is the impact
         itself: the phase is a zero-length pass-through ended by impact at t0."""
+        extra_names = {ev.name for ev in extra}
         while True:
             sigma = self._sigma(y, None, t, sigma_hint)
             if sigma == 1:
                 kind = kinds[0]
-                events: tuple[EventSpec, ...] = (ev_apex(),)
+                events: tuple[EventSpec, ...] = (ev_apex(), *extra)
             else:
                 kind = kinds[1]
                 events = (ev_impact(self.z_ground_m),)
@@ -615,6 +696,8 @@ class VerticalPlanner:
             t, y = res.t_end, res.y_end
             if res.ended_by in ("t_end", "zero_span"):
                 return t, y, "time"
+            if res.ended_by in extra_names:
+                return t, y, res.ended_by
             if res.ended_by == "apex":
                 if stop_at_apex:
                     return t, y, "apex"

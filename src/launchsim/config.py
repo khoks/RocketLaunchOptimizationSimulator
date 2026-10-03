@@ -119,25 +119,25 @@ on the resolved model. The ignition group's fields exist since SP1 step 3:
 ``IgnitionConfig`` takes ``t_ign_s``/``reference``, ``at_depth_m``, ``at_speed_mps`` or
 ``at_height_m`` with ``height_method``, and its validator enforces "at most one family
 given" (none given is the time family at its defaults)."""
-RampStartTrigger = Literal["time", "depth", "speed", "height_closed_form"]
+RampStartTrigger = Literal["time", "depth", "speed", "height_closed_form", "height_event"]
 """How the stage-1 thrust ramp start is stated, the vocabulary of ``IgnitionConfig.ramp_start``,
 of ``phases.prelude.IgnitionSpec.trigger_kind`` and of the planar metric
 ``ramp_start_trigger``: by time (``t_ign_s`` with ``reference``), by depth below the
-track exit, by speed on the push, or by height above the track exit through the closed
-form of a drag-free coast (docs/physics.md, "Silo model"). SP1 step 4 adds the height
-reached by an altitude event."""
+track exit, by speed on the push, by height above the track exit through the closed
+form of a drag-free coast, or by height above the track exit reached by an altitude
+event in flight (SP1 step 4; docs/physics.md, "Silo model")."""
 RAMP_START_TIME: RampStartTrigger = "time"
 RAMP_START_DEPTH: RampStartTrigger = "depth"
 RAMP_START_SPEED: RampStartTrigger = "speed"
 RAMP_START_HEIGHT_CLOSED_FORM: RampStartTrigger = "height_closed_form"
+RAMP_START_HEIGHT_EVENT: RampStartTrigger = "height_event"
 RAMP_START_TRIGGERS: tuple[str, ...] = get_args(RampStartTrigger)
 HeightMethod = Literal["event", "closed_form"]
 """How ``at_height_m`` is reached: ``closed_form`` (converted to a time after release
-before the run) or ``event`` (an altitude event in flight, SP1 step 4)."""
+before the run) or ``event`` (an altitude event in flight: stage 1 lights at the root
+of altitude = track exit + h on the coast after release, SP1 step 4)."""
 HEIGHT_METHOD_EVENT: HeightMethod = "event"
 HEIGHT_METHOD_CLOSED_FORM: HeightMethod = "closed_form"
-HEIGHT_EVENT_STEP = "SP1 step 4"
-"""The step that brings ``height_method: event`` (the altitude event); refused until then."""
 LATITUDE_RANGE_DEG = (-90.0, 90.0)
 AZIMUTH_RANGE_DEG = (0.0, 360.0)
 VERTICAL_TRACK_DEG = 90.0
@@ -762,12 +762,13 @@ class IgnitionConfig(_Model):
     - by ``at_speed_mps`` [m/s] (>= 0): the speed along the track at which it starts;
     - by ``at_height_m`` [m] (> 0) with ``height_method``: the height above the track
       exit after release, ``closed_form`` (the drag-free constant-g_eff coast) or
-      ``event`` (an altitude event, refused until HEIGHT_EVENT_STEP).
+      ``event`` (an altitude event in flight).
 
     The last three are for the first stage of a run with a ``constant_accel`` assist
-    only (RunConfig and ``resolve_run`` refuse a pad and a later stage); they are
-    converted to a (t_ign_s, reference) pair before the run
-    (``phases.prelude.resolve_ignition``). At most one family is given: a key counts as
+    only (RunConfig and ``resolve_run`` refuse a pad and a later stage); depth, speed
+    and the closed-form height are converted to a (t_ign_s, reference) pair before the
+    run (``phases.prelude.resolve_ignition``), and the event height is found in flight
+    by the planners. At most one family is given: a key counts as
     given when it is present, an explicit null included (``model_fields_set``; the merge
     rule of EXCLUSIVE_KEY_FAMILIES counts it the same way), so the defaults of t_ign_s
     and reference never count, and the keys of the other families must hold a value
@@ -790,8 +791,7 @@ class IgnitionConfig(_Model):
     def _one_ramp_start(self) -> IgnitionConfig:
         """At most one family of IGNITION_KEY_FAMILIES given (present, a null counting
         as given); the keys of a non-time family hold a value; ``at_height_m`` and
-        ``height_method`` together; ``height_method: event`` refused until
-        HEIGHT_EVENT_STEP."""
+        ``height_method`` together."""
         given_keys = self.model_fields_set
         named = [f for f in IGNITION_KEY_FAMILIES if any(k in given_keys for k in f)]
         if len(named) > 1:
@@ -811,11 +811,6 @@ class IgnitionConfig(_Model):
             raise ValueError(
                 "ignition at_height_m and height_method come together: the height above "
                 "the track exit and how it is reached (closed_form or event)"
-            )
-        if self.height_method == HEIGHT_METHOD_EVENT:
-            raise ValueError(
-                f"ignition height_method: event (an altitude event in flight) arrives in "
-                f"{HEIGHT_EVENT_STEP}; use height_method: closed_form until then"
             )
         return self
 
@@ -846,12 +841,16 @@ class IgnitionConfig(_Model):
     def ramp_start(self) -> tuple[RampStartTrigger, float | None]:
         """(trigger, requested value) of the ramp start: (RAMP_START_TIME, None) for the
         time family, (RAMP_START_DEPTH, at_depth_m [m]), (RAMP_START_SPEED, at_speed_mps
-        [m/s]) or (RAMP_START_HEIGHT_CLOSED_FORM, at_height_m [m])."""
+        [m/s]), or for a height (RAMP_START_HEIGHT_CLOSED_FORM, at_height_m [m]) with
+        ``height_method: closed_form`` and (RAMP_START_HEIGHT_EVENT, at_height_m [m])
+        with ``height_method: event``."""
         if self.at_depth_m is not None:
             return RAMP_START_DEPTH, self.at_depth_m
         if self.at_speed_mps is not None:
             return RAMP_START_SPEED, self.at_speed_mps
         if self.at_height_m is not None:
+            if self.height_method == HEIGHT_METHOD_EVENT:
+                return RAMP_START_HEIGHT_EVENT, self.at_height_m
             return RAMP_START_HEIGHT_CLOSED_FORM, self.at_height_m
         return RAMP_START_TIME, None
 

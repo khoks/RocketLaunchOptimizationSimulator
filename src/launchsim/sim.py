@@ -819,8 +819,10 @@ def ignition_specs(
     through ``phases.prelude.resolve_stage_ignitions`` (``resolve_ignition`` per stage):
     startup overrides resolved against the vehicle's own Startup, and a ramp start
     stated by depth, speed or closed-form height converted to a time with the run's
-    assist model, its track and the track's g_eff [m/s^2] (ValueError when the
-    conversion is refused, and for such a ramp start on a stage after the first)."""
+    assist model, its track and the track's g_eff [m/s^2] (a height reached by the
+    altitude event stays a height, checked against the same drag-free apex; ValueError
+    when the conversion or that check is refused, and for such a ramp start on a stage
+    after the first)."""
     return resolve_stage_ignitions(run_config, vehicle, assist, track, g_eff_mps2)
 
 
@@ -1407,7 +1409,10 @@ def _solve_fixed_delta(
     setup: PlanarSetup, vehicle: Vehicle, end: str, gamma_star_rad: float
 ) -> float | None:
     """The kick angle delta [rad] that reaches the fixed gamma* at MECO (the inner solve
-    at the final tolerance, dense output off); None when the prelude gives no flight."""
+    at the final tolerance, dense output off); None when the prelude gives no flight or
+    stage 1 does not light (``FlightStart.stage1_lights``: a stage that lights at an
+    altitude does). Raises GuidanceFailure from the flight (no_ignition when a pending
+    ignition's coast never reaches its altitude)."""
     b = setup.budget
     settings = replace(
         setup.settings, rtol=b.final_rtol, atol_scale=b.final_atol_scale, dense_output=False
@@ -1423,7 +1428,7 @@ def _solve_fixed_delta(
         ltg=b.ltg_for(FINAL_MODE),
     )
     start = solver.start(setup.assist, setup.track)
-    if start.status != "nominal":
+    if start.status != "nominal" or not start.stage1_lights:
         return None
     kick = solver.to_kick(start)
     sol = solve_delta_for_gamma(lambda d: solver.from_kick(d, kick), gamma_star_rad, b.delta)

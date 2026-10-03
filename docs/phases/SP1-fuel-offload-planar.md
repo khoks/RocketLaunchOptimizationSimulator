@@ -1124,7 +1124,9 @@ Step 4 (2026-10-02):
 1. **Two existing test files changed, both forced by retiring the step-3 refusal** (step 3:
    "until step 4 it is refused"). tests/test_config.py:
    `test_ignition_states_its_ramp_start_one_way` (RAMP_STARTS gains a height_event entry
-   and the RAMP_START_TRIGGERS assertion gains "height_event") and
+   and the RAMP_START_TRIGGERS assertion gains "height_event"; RAMP_STARTS also
+   parametrizes `test_ignition_dump_states_the_ramp_start_by_its_one_family`, whose body
+   is unchanged and which gains the height_event cases, python and json) and
    `test_ignition_ramp_start_refusals` (the case `{at_height_m: 40, height_method:
    event}` -> "arrives in SP1 step 4" is replaced by `{height_method: event}` without a
    height -> "at_height_m and height_method come together").
@@ -1137,17 +1139,57 @@ Step 4 (2026-10-02):
    (written by `fly_track`, which both models share), the same reading as step 2
    deviation 4 and step 3 deviation 3: existing 1-D runs and the golden outputs are
    unchanged, and no 1-D metric or summary row is added.
-3. **The preflight bound is conservative for the event method** (review round 1). It
-   refuses h >= v_e^2 / (2 g_eff), the apex of a drag-free coast at constant g_eff, for
-   both methods, as the brief requires. Under mu/r^2 a coast without drag peaks about
-   1.4 cm higher (1-D: 300.270 m against 300.256 m), so heights in that band are
-   refused although a drag-free coast would reach them. Documented in docs/physics.md
-   ("Silo model") and tested (`test_one_d_flown_apex_lies_above_the_preflight_bound`).
+3. **The preflight bound is conservative for the event method only without drag;
+   with drag it is permissive** (review rounds 1 and 2). It refuses h >= v_e^2 /
+   (2 g_eff), the apex of a drag-free coast at constant g_eff, for both methods, as the
+   brief requires. Without drag (vertical_1d) it is conservative: under mu/r^2 such a
+   coast peaks about 1.4 cm higher (1-D: 300.270 m against 300.256 m; the gate fork
+   with C_D x 1e-12: 301.075 m against 301.061 m), so heights in that band are refused
+   although the coast would reach them
+   (`test_one_d_flown_apex_lies_above_the_preflight_bound`). With drag (every planar_2d run) it is permissive: the gate fork at its file payload
+   peaks at 300.647 m, so the bound admits [300.647, 301.061) m, a band about 0.41 m
+   wide of heights that resolve but never light (GuidanceFailure `no_ignition`;
+   `test_planar_apex_below_the_height_is_no_ignition` and the two run-status tests).
+   Documented in docs/physics.md ("Silo model", the conversion table and the height by
+   event).
 4. **For step 8:** the flown apex, and so the `no_ignition` band, moves with payload and
    C_D (gate fork: 300.629 m at P = 0 to 300.653 m at 30 t; 300.605 to 300.690 m for
    C_D +/-10%). A height-event variant within a few centimetres of the apex can fail in
    a sensitivity arm or at a lighter payload (reported as `search_failed` or
    `guidance_failed`). Heights chosen well below the apex avoid it.
+5. **`ev_altitude_up` is not the plain mirror of `ev_ground`: it folds its function past
+   an apex** (an events-rule addition beyond the brief's "modelled on ev_ground,
+   direction +1, tolerance ATOL_M"). g = altitude - z + k min(w, 0)^2, w the altitude
+   rate (v_r planar, v on 1-D), k = `APEX_FOLD_GAIN_S2PM` = 1 / (2 a_min) with a_min =
+   `APEX_FOLD_ACCEL_MPS2` = 1 m/s^2, two new event-solver constants in engine.py (not
+   physics). Why: scipy tests an event's sign only at step ends, and the apex split cuts
+   the phase after the step; a step that overshoots the apex has the altitude back below
+   z at its end when z lies just below the apex, so the plain mirror loses the crossing
+   and the coast ends at the apex (measured on the uncapped 1-D coast: z = 299 m against
+   a 300.27 m apex was missed). The fold is zero while w >= 0 and continuous at the
+   apex, so inside the rising phase g is the altitude difference exactly and the root is
+   unchanged; past the apex (downward acceleration >= a_min) it keeps g >= apex - z and
+   rising, so a crossing before the apex is found, and an apex below z still ends the
+   coast first. Documented in docs/physics.md ("Event rules", the altitude event) and
+   pinned by `test_ev_altitude_up_is_the_altitude_crossing_with_a_fold_past_the_apex` and
+   `test_ev_altitude_up_finds_a_crossing_just_below_the_apex` (with the gain set to 0
+   the crossings 1, 1e-2 and 1e-4 m below the apex are missed).
+6. **Step-3 text and the spec contract changed with the new trigger.** The summary row
+   labels of `RAMP_START_ROWS` name height_event ("stated by (time, depth, speed,
+   height_closed_form or height_event)", the requested-height row adds "event: the
+   flown coast", the converted-time row adds "(none for height_event)"); they appear
+   only in tables that carry the step-3 rows (a run stated by a trigger), which a
+   depth, speed or closed-form run now renders with the new labels; no recorded summary
+   or pinned output carries them, so output_summary.md does not change
+   (`test_height_event.py::test_ramp_start_rows_of_a_height_event_run`). The g_eff
+   refusal, now shared by both height methods (`prelude._drag_free_exit_speed`), reads
+   "a ramp start by height needs g_eff > 0" instead of "a closed-form height needs
+   g_eff > 0" (the step-3 test matches "needs g_eff > 0" and is unchanged).
+   `IgnitionSpec` now refuses a height_event spec whose t_ign_s or reference is away
+   from the defaults (0.0, "release") or whose trigger_value is not a finite height,
+   and `IgnitionSpec.t_ign_abs_s` raises on a height_event spec, which has no time
+   before the flight finds it (`test_a_height_event_spec_has_no_time_and_needs_a_push`);
+   time-stated and converted specs are unaffected.
 
 Step 6 (2026-10-02, commit 9ca508b on branch sp1-step5):
 

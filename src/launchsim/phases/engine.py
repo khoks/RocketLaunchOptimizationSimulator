@@ -5,9 +5,10 @@ A run is a sequence of phases joined by events. This module holds the model-agno
 engine (``integrate_phase``), the specs it consumes (``EventSpec``, ``PhaseSpec``), what
 it returns (``PhaseResult``), the integrator settings, the per-state absolute
 tolerances (``atol_for``), the event-state lookup (``event_state``), the output sample
-grid, and the event factories (the 1-D ones, and the planar ones of the stage-1
-guidance: ``ev_ground``, ``ev_radial_apex``, ``ev_radial_turnaround``,
-``ev_kick_start``, ``ev_kick_aligned``, ``ev_time``). The planners that string phases
+grid, and the event factories (the 1-D ones, the model-agnostic altitude events
+``ev_ground`` and ``ev_altitude_up``, and the planar ones of the stage-1 guidance:
+``ev_radial_apex``, ``ev_radial_turnaround``, ``ev_kick_start``, ``ev_kick_aligned``,
+``ev_time``). The planners that string phases
 together live in ``phases.vertical`` (1-D) and ``phases.planar`` (2-D) and share the
 hold and track prelude in ``phases.prelude``; the run trace they write is
 ``phases.trace``.
@@ -77,6 +78,15 @@ ATOL_RAD = ATOL_M / R_EARTH_M
 """Absolute tolerance for angle states [rad]: the angle that one length tolerance
 (ATOL_M) subtends at the Earth's surface, about 1.57e-13 rad (the planar downrange
 angle theta, Phase 2)."""
+APEX_FOLD_ACCEL_MPS2 = 1.0
+"""The smallest downward acceleration [m/s^2] past an apex for which the fold of
+``ev_altitude_up`` keeps its function rising (gravity alone is about 9.8 m/s^2; drag on a
+vehicle falling from an apex for one step relieves it by millimetres per second
+squared): an event solver setting, not physics."""
+APEX_FOLD_GAIN_S2PM = 1.0 / (2.0 * APEX_FOLD_ACCEL_MPS2)
+"""The fold gain k = 1 / (2 a_min) [s^2/m] of ``ev_altitude_up``: past an apex it adds
+k w^2 to the altitude, and w^2 >= 2 a_min (apex - altitude) there, so the folded value
+never falls below apex - z."""
 _ATOL_BY_SUFFIX: dict[str, float] = {
     "_m": ATOL_M,
     "_mps": ATOL_MPS,
@@ -720,6 +730,51 @@ def ev_ground(model: DynamicsModel, z_ground_m: float) -> EventSpec:
         return float(model.altitude(y)) - z_ground_m
 
     return EventSpec("impact", fn, terminal=True, direction=-1, zero_tol=ATOL_M)
+
+
+def _altitude_rate_index(layout: StateLayout) -> int:
+    """Index of the signed altitude rate in a flight layout: v_r [m/s] (planar, dr/dt)
+    or v [m/s] (1-D, dz/dt); ValueError for a layout with neither."""
+    for name in ("v_r_mps", "v_mps"):
+        if name in layout.names:
+            return layout.index(name)
+    raise ValueError(f"layout {layout.names} has no altitude rate (v_r_mps or v_mps)")
+
+
+def ev_altitude_up(model: DynamicsModel, z_m: float, name: str) -> EventSpec:
+    """An altitude reached on the way up (terminal; the mirror of ``ev_ground``):
+    g = model.altitude(y) - z_m + APEX_FOLD_GAIN_S2PM min(w, 0)^2 crosses zero upward,
+    w the signed altitude rate (v_r on the planar model, v on the 1-D one).
+
+    Inputs: the dynamics model whose ``altitude`` reads the state (``VerticalDynamics1D``:
+    z [m]; ``PlanarDynamics2D``: h = r - r_datum [m], geometric) and whose ``layout``
+    holds the rate; z_m, the altitude [m] above the datum (finite); name, the event's
+    label (``prelude.IGNITION_HEIGHT_EVENT`` for the ramp start of ``height_method:
+    event``: the track exit's altitude plus the requested height). Listed only in rising
+    unpowered sub-phases, which end at the apex (w = 0), so inside the phase g is the
+    altitude minus z_m exactly and its root is the altitude crossing. The fold term
+    (zero while w >= 0, continuous at the apex) is for the step that overshoots the
+    apex before the phase is cut there: scipy tests a sign change only at step ends,
+    and a crossing just below the apex has the altitude back below z_m at the end of
+    such a step. With the fold, g keeps rising past the apex (dg/dt = w (1 - 2 k |a|) >
+    0 for a downward acceleration |a| > 1 / (2 k), and g(t_end) >= apex - z_m), so the
+    crossing is found; with the apex below z_m any root lies after the apex root, which
+    ends the phase first (scipy drops events later than a terminal one). A state already
+    within zero_tol below z_m or above it is the planner's to decide (it lights at once)
+    and is never handed to a phase listing the event (the engine would end the phase at
+    t0 by its already-past rule). zero_tol = ATOL_M; as for ``ev_ground``, a planar root
+    is located to the integrator's resolution of r (~rtol R_E), not to ATOL_M.
+    """
+    if not math.isfinite(z_m):
+        raise ValueError(f"z_m must be finite, got {z_m!r}")
+    i_w = _altitude_rate_index(model.layout)
+    k = APEX_FOLD_GAIN_S2PM
+
+    def fn(t: float, y: np.ndarray) -> float:
+        w = min(float(y[i_w]), 0.0)
+        return float(model.altitude(y)) - z_m + k * w * w
+
+    return EventSpec(name, fn, terminal=True, direction=+1, zero_tol=ATOL_M)
 
 
 def ev_radial_apex(layout: StateLayout = PLANAR_LAYOUT) -> EventSpec:

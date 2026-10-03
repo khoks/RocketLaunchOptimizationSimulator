@@ -44,6 +44,7 @@ from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.config import (
     RAMP_START_DEPTH,
     RAMP_START_HEIGHT_CLOSED_FORM,
+    RAMP_START_HEIGHT_EVENT,
     RAMP_START_SPEED,
     RAMP_START_TIME,
 )
@@ -1043,13 +1044,15 @@ RAMP_START_REQUEST_METRICS: tuple[str, ...] = (
     "ramp_start_requested_speed_mps",
     "ramp_start_requested_height_m",
 )
-"""The requested ramp start of a run whose config states it by depth, speed or
-closed-form height (absent for a time-stated run): the trigger, the ignition time it was
-converted to and the requested value in its own key (the other two None)."""
+"""The requested ramp start of a run whose config states it by depth, speed or height
+(absent for a time-stated run): the trigger, the ignition time it was converted to (None
+for a height reached by the altitude event, which is not converted) and the requested
+value in its own key (the other two None)."""
 _REQUESTED_KEYS: dict[str, str] = {
     RAMP_START_DEPTH: "ramp_start_requested_depth_m",
     RAMP_START_SPEED: "ramp_start_requested_speed_mps",
     RAMP_START_HEIGHT_CLOSED_FORM: "ramp_start_requested_height_m",
+    RAMP_START_HEIGHT_EVENT: "ramp_start_requested_height_m",
 }
 _ON_TRACK_KINDS: frozenset[str] = frozenset({HOLD_KIND, ASSIST_KIND})
 """Phase kinds of an ignition record on the track (clamped in the shaft, or on the push)."""
@@ -1077,8 +1080,10 @@ def ramp_start_metrics(
     |v_rel| [m/s] (|sdot| on the track) and the phase kind of the record. With a non-time
     trigger also RAMP_START_REQUEST_METRICS: the trigger, the converted ignition time
     relative to release (t_ign_s for reference release, t_ign_s - t_push for
-    push_start) [s], and the requested depth [m], speed [m/s] or height [m] in its own
-    key. Frame: planar ECI states; altitudes from the datum, speeds Earth-relative."""
+    push_start) [s]; None for a height reached by the altitude event, which has no
+    converted time (its achieved values above are the event root's), and the requested
+    depth [m], speed [m/s] or height [m] (either height method) in its own key. Frame:
+    planar ECI states; altitudes from the datum, speeds Earth-relative."""
     out: dict[str, Any] = dict.fromkeys(RAMP_START_METRICS)
     record = next((e for e in trace.events if e.name == "ignition" and e.stage == stage_name), None)
     if record is not None:
@@ -1102,10 +1107,10 @@ def ramp_start_metrics(
         return out
     out["ramp_start_trigger"] = spec.trigger_kind
     out["ramp_start_requested_t_s"] = (
-        None if t_push_s is None else spec.t_ign_abs_s(t_push_s) - t_push_s
+        None if t_push_s is None or spec.lights_at_height else spec.t_ign_abs_s(t_push_s) - t_push_s
     )
-    for kind, key in _REQUESTED_KEYS.items():
-        out[key] = spec.trigger_value if kind == spec.trigger_kind else None
+    out.update(dict.fromkeys(_REQUESTED_KEYS.values()))
+    out[_REQUESTED_KEYS[spec.trigger_kind]] = spec.trigger_value
     return out
 
 

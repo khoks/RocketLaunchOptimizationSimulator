@@ -1,7 +1,8 @@
 """The hold and track prelude shared by the planners: how and when stage 1 lights
 (``IgnitionSpec``, built by ``resolve_ignition``, which converts a ramp start stated by
-depth, speed or closed-form height to a time before the run), the hold-down
-(closed-form clamp and the liftoff extension) and the
+depth, speed or closed-form height to a time before the run; a height reached by an
+altitude event stays a height, and the planners light stage 1 at that event after the
+release), the hold-down (closed-form clamp and the liftoff extension) and the
 track push up to the track exit (``fly_track`` -> ``TrackExit``), docs/physics.md,
 "Phases and events" and "Silo model".
 
@@ -29,10 +30,9 @@ import numpy as np
 from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.assist.track import StraightTrack
 from launchsim.config import (
-    HEIGHT_EVENT_STEP,
-    HEIGHT_METHOD_EVENT,
     RAMP_START_DEPTH,
     RAMP_START_HEIGHT_CLOSED_FORM,
+    RAMP_START_HEIGHT_EVENT,
     RAMP_START_SPEED,
     RAMP_START_TIME,
     RAMP_START_TRIGGERS,
@@ -78,8 +78,13 @@ TRIGGER_KEYS: dict[str, str] = {
     RAMP_START_DEPTH: "at_depth_m",
     RAMP_START_SPEED: "at_speed_mps",
     RAMP_START_HEIGHT_CLOSED_FORM: "at_height_m",
+    RAMP_START_HEIGHT_EVENT: "at_height_m",
 }
 """The config key that states each non-time ramp-start trigger (for messages)."""
+IGNITION_HEIGHT_EVENT = "ignition_height"
+"""Name of the altitude event (``engine.ev_altitude_up``) at which a first stage stated
+by ``height_method: event`` lights: the root of altitude = track exit + h, crossed
+upward on the coast after release."""
 VERTICAL_TRACK_TOL_RAD = 1e-12
 """|phi - pi/2| within which a track exit counts as vertical: ``map_release`` refuses
 any other angle (the 1-D map is exact only for a vertical track; the planar branch
@@ -102,12 +107,17 @@ class IgnitionSpec:
     engines never light (T identically 0). trigger_kind: how the config stated the ramp
     start (``config.RampStartTrigger``: "time", or "depth", "speed" or
     "height_closed_form", which ``resolve_ignition`` has already converted to the
-    t_ign_s and reference above); trigger_value: the requested depth [m], speed [m/s]
-    or height [m] of a non-time trigger, None for "time". The two are a record of the
-    request for the metrics and messages: every consumer of the spec reads t_ign_s and
-    reference only, and their defaults leave every time-stated spec as it was (equal
-    and hashing alike). Built from ``config.IgnitionConfig`` at the boundary by
-    ``resolve_ignition`` (``from_config`` for the time family only).
+    t_ign_s and reference above, or "height_event"); trigger_value: the requested depth
+    [m], speed [m/s] or height [m] of a non-time trigger, None for "time". For the
+    converted triggers the two are a record of the request for the metrics and
+    messages: every consumer of such a spec reads t_ign_s and reference only, and their
+    defaults leave every time-stated spec as it was (equal and hashing alike).
+    "height_event" is not a time (``lights_at_height``): the stage lights at the
+    altitude event track exit + trigger_value after the release, which the planner
+    finds in flight; t_ign_s and reference keep their defaults (0.0, "release"; any
+    other value is refused) and are not read, and ``t_ign_abs_s`` refuses such a spec.
+    Built from ``config.IgnitionConfig`` at the boundary by ``resolve_ignition``
+    (``from_config`` for the time family only).
     """
 
     t_ign_s: float = 0.0
@@ -127,6 +137,23 @@ class IgnitionSpec:
                 "trigger_value is the requested depth, speed or height of a non-time "
                 "trigger, and None for a time trigger"
             )
+        if self.lights_at_height and (
+            self.t_ign_s != _TIME_DEFAULTS[0] or self.reference != _TIME_DEFAULTS[1]
+        ):
+            raise ValueError(
+                "a height_event spec lights at an altitude event, not at a time: t_ign_s "
+                f"and reference keep their defaults {_TIME_DEFAULTS}"
+            )
+        if self.lights_at_height and not (
+            self.trigger_value is not None and math.isfinite(self.trigger_value)
+        ):
+            raise ValueError("a height_event spec needs a finite height trigger_value [m]")
+
+    @property
+    def lights_at_height(self) -> bool:
+        """True when the stage lights at the altitude event of ``height_method: event``
+        (trigger_kind "height_event") rather than at a time."""
+        return self.trigger_kind == RAMP_START_HEIGHT_EVENT
 
     @classmethod
     def from_config(cls, cfg: IgnitionConfig, base_startup: Startup) -> IgnitionSpec:
@@ -146,11 +173,21 @@ class IgnitionSpec:
 
     def t_ign_abs_s(self, t_release_s: float, t_push_start_s: float = 0.0) -> float:
         """Absolute ignition time [s] of a first stage: t_release + t_ign_s for reference
-        "release", t_push_start + t_ign_s for "push_start"."""
+        "release", t_push_start + t_ign_s for "push_start". Raises ValueError for a spec
+        that lights at the altitude event (``lights_at_height``), which has no time
+        before the flight finds it."""
+        if self.lights_at_height:
+            raise ValueError(
+                "this stage lights at the altitude event of height_method: event, which "
+                "the planner finds in flight; it has no ignition time before that"
+            )
         origin = t_release_s if self.reference == "release" else t_push_start_s
         return origin + self.t_ign_s
 
 
+_TIME_DEFAULTS: tuple[float, str] = (IgnitionSpec.t_ign_s, IgnitionSpec.reference)
+"""The (t_ign_s, reference) field defaults of IgnitionSpec (0.0, "release"), which a
+height_event spec keeps (they are not read for it)."""
 _DEFAULT_IGNITION = IgnitionSpec()
 """The field defaults of IgnitionSpec, the reference for "set away from the default"."""
 
@@ -201,10 +238,11 @@ def resolve_ignition(
     """The IgnitionSpec of one stage from its validated IgnitionConfig, with a ramp
     start stated by depth, speed or closed-form height converted to the (t_ign_s,
     reference) pair before anything is integrated (docs/physics.md, "Silo model",
-    ramp-start conversions). The one resolver of both spec build sites
-    (``sim.ignition_specs`` and ``search.SearchContext.from_run``, through
-    ``resolve_stage_ignitions``, which also refuses a non-time trigger on a later
-    stage).
+    ramp-start conversions), and one stated by a height reached by an altitude event
+    (``height_method: event``) kept as that height for the planners. The one resolver
+    of both spec build sites (``sim.ignition_specs`` and
+    ``search.SearchContext.from_run``, through ``resolve_stage_ignitions``, which also
+    refuses a non-time trigger on a later stage).
 
     Inputs: cfg, the stage's IgnitionConfig; startup, the stage's own Startup (the
     config's override is resolved against it); assist and track, the run's assist
@@ -219,19 +257,28 @@ def resolve_ignition(
     (``time_to_speed_s``); height h above the exit, closed form -> dt = (v_e -
     sqrt(v_e^2 - 2 g_eff h)) / g_eff after release (the drag-free constant-g_eff coast;
     exact only there). A result within ZERO_SPAN_S of the release snaps to (0,
-    "release"). The spec records the request (trigger_kind, trigger_value). Raises
-    ValueError for a non-time trigger without the ``constant_accel`` drive and its
-    track (the conversion is exact only for a prescribed acceleration), for d > L, for
-    a speed whose time v / a lies more than ZERO_SPAN_S after the release (v > v_e),
-    for h at or above the drag-free apex v_e^2 / (2 g_eff), for g_eff <= 0 with a
-    height, and for ``height_method: event`` (HEIGHT_EVENT_STEP). Frame: the flat track
-    frame; times on the internal clock (t = 0 at push start)."""
+    "release"). A height by event is not converted: the spec is (0.0, "release") with
+    trigger "height_event" (``IgnitionSpec.lights_at_height``), refused like the
+    closed form when h lies at or above the drag-free apex v_e^2 / (2 g_eff). That
+    preflight bound is the apex of a drag-free coast at the constant g_eff, not the
+    flown apex, and it is conservative only for a coast without drag: under mu/r^2
+    such a coast peaks slightly higher (about 1.4 cm on the 3 g0, 100 m silo), so on
+    vertical_1d the event method also refuses that thin band of reachable heights.
+    With drag (every planar_2d run) it is permissive: the flown apex is lower (about
+    0.41 m on the gate fork at its file payload), and a height between it and the
+    bound resolves but never lights, which the planner reports in flight
+    (GuidanceFailure "no_ignition"). The spec records the request
+    (trigger_kind, trigger_value). Raises ValueError for a non-time trigger without the
+    ``constant_accel`` drive and its track (the conversion is exact only for a
+    prescribed acceleration, and the apex check needs v_e), for d > L, for a speed
+    whose time v / a lies more than ZERO_SPAN_S after the release (v > v_e), for h at
+    or above the drag-free apex v_e^2 / (2 g_eff) by either height method, and for
+    g_eff <= 0 with a height. Frame: the flat track frame; times on the internal clock
+    (t = 0 at push start)."""
     kind, value = cfg.ramp_start
     if kind == RAMP_START_TIME or value is None:
         return IgnitionSpec.from_config(cfg, startup)
     key = TRIGGER_KEYS[kind]
-    if cfg.height_method == HEIGHT_METHOD_EVENT:
-        raise ValueError(f"ignition height_method: event arrives in {HEIGHT_EVENT_STEP}")
     if not isinstance(assist, ConstantAccelAssist) or track is None:
         name = "none" if assist is None else assist.name
         raise ValueError(
@@ -239,8 +286,39 @@ def resolve_ignition(
             f"model {name!r}): the conversion to a time is exact only for a prescribed "
             "acceleration (force-limited drives arrive in Phase 3)"
         )
+    override = _startup_override(cfg, startup)
+    if kind == RAMP_START_HEIGHT_EVENT:
+        _drag_free_exit_speed(value, assist, track, g_eff_mps2)
+        return IgnitionSpec(*_TIME_DEFAULTS, override, cfg.fails, kind, value)
     t_ign, reference = _ramp_start_time(kind, value, assist, track, g_eff_mps2)
-    return IgnitionSpec(t_ign, reference, _startup_override(cfg, startup), cfg.fails, kind, value)
+    return IgnitionSpec(t_ign, reference, override, cfg.fails, kind, value)
+
+
+def _drag_free_exit_speed(
+    height_m: float, assist: ConstantAccelAssist, track: TrackGeometry, g_eff_mps2: float
+) -> float:
+    """The exit speed v_e = sqrt(2 a L) [m/s] of the constant_accel push on track, after
+    checking that a height height_m [m] above the track exit lies below the drag-free
+    apex v_e^2 / (2 g_eff) of the coast after release (g_eff [m/s^2], the track's
+    constant). Raises ValueError for g_eff <= 0 and for a height at or above that apex,
+    by either height method. For the closed form the bound is where its root ceases to
+    exist; for the event method it is a preflight bound, the apex of a drag-free coast
+    at constant g_eff, conservative only for a coast without drag (one under mu/r^2
+    exceeds it slightly: vertical_1d) and permissive with drag (every planar_2d run:
+    the flown apex lies below it, and a height between the two fails in flight with
+    GuidanceFailure "no_ignition"; docs/physics.md, "Silo model", the height by
+    event)."""
+    if not g_eff_mps2 > 0.0:
+        raise ValueError(f"a ramp start by height needs g_eff > 0, got {g_eff_mps2:g}")
+    v_e = assist.exit_speed_mps(track.length_m)
+    apex = v_e * v_e / (2.0 * g_eff_mps2)
+    if height_m >= apex:
+        raise ValueError(
+            f"at_height_m {height_m:g} m is at or above the drag-free apex v_e^2 / "
+            f"(2 g_eff) = {apex:.9g} m of the coast after release (v_e = {v_e:.9g} "
+            f"m/s, g_eff = {g_eff_mps2:.9g} m/s^2)"
+        )
+    return v_e
 
 
 def _ramp_start_time(
@@ -250,9 +328,10 @@ def _ramp_start_time(
     track: TrackGeometry,
     g_eff_mps2: float,
 ) -> tuple[float, str]:
-    """(t_ign_s [s], reference) of a non-time ramp start on the constant_accel drive
-    (see ``resolve_ignition`` for the closed forms, the snap and the refusals): value is
-    the depth [m], speed [m/s] or height [m] of trigger ``kind``."""
+    """(t_ign_s [s], reference) of a ramp start by depth, speed or closed-form height on
+    the constant_accel drive (see ``resolve_ignition`` for the closed forms, the snap
+    and the refusals): value is the depth [m], speed [m/s] or height [m] of trigger
+    ``kind``."""
     length = track.length_m
     t_push = assist.push_time_estimate(track)
     if kind == RAMP_START_DEPTH:
@@ -267,16 +346,7 @@ def _ramp_start_time(
                 f"{assist.exit_speed_mps(length):.9g} m/s: the push never reaches it"
             )
     else:  # RAMP_START_HEIGHT_CLOSED_FORM
-        if not g_eff_mps2 > 0.0:
-            raise ValueError(f"a closed-form height needs g_eff > 0, got {g_eff_mps2:g}")
-        v_e = assist.exit_speed_mps(length)
-        apex = v_e * v_e / (2.0 * g_eff_mps2)
-        if value >= apex:
-            raise ValueError(
-                f"at_height_m {value:g} m is at or above the drag-free apex v_e^2 / "
-                f"(2 g_eff) = {apex:.9g} m of the coast after release (v_e = {v_e:.9g} "
-                f"m/s, g_eff = {g_eff_mps2:.9g} m/s^2)"
-            )
+        v_e = _drag_free_exit_speed(value, assist, track, g_eff_mps2)
         # (v_e - sqrt(v_e^2 - 2 g h)) / g, rationalised: no cancellation at small h
         t = 2.0 * value / (v_e + math.sqrt(v_e * v_e - 2.0 * g_eff_mps2 * value))
         reference = "release"
@@ -288,13 +358,23 @@ def _ramp_start_time(
 
 def ramp_start_assumption(spec: IgnitionSpec, g_eff_mps2: float) -> str | None:
     """The assumption line of a first stage whose ramp start the config stated by
-    depth, speed or closed-form height (``resolve_ignition``): the request, the
-    converted time and the closed form behind it (for the height also the track's
-    constant g_eff [m/s^2] it used, and that the flown coast reaches a slightly
-    different height, recorded by the ignition event). None for a time-stated or a
-    failed stage (whose settings ``flag_ignored_ignition_settings`` flags)."""
+    depth, speed or height (``resolve_ignition``): the request, the converted time and
+    the closed form behind it (for the closed-form height also the track's constant
+    g_eff [m/s^2] it used, and that the flown coast reaches a slightly different
+    height, recorded by the ignition event); for a height reached by the altitude event,
+    that nothing is converted and stage 1 lights at the event root on the flown coast.
+    None for a time-stated or a failed stage (whose settings
+    ``flag_ignored_ignition_settings`` flags)."""
     if spec.fails or spec.trigger_kind == RAMP_START_TIME:
         return None
+    if spec.lights_at_height:
+        return (
+            f"ramp start: stage-1 ignition stated by height {spec.trigger_value:g} m above "
+            "the track exit, reached by an altitude event: nothing is converted before the "
+            "run; stage 1 lights at the root where the flown coast after release (mu/r^2, "
+            "and on planar_2d drag and rotation) crosses that height upward (an apex below "
+            "it is a failure, not an ignition)"
+        )
     when = "after push start" if spec.reference == "push_start" else "after release"
     converted = f"converted before the run to t_ign = {spec.t_ign_s:.9g} s {when}"
     value = spec.trigger_value
@@ -715,10 +795,15 @@ def fly_track(
     The first stage's ignition time
     resolves against the model's push-time estimate (``push_time_estimate``, exact for
     the prescribed-acceleration drive) for reference ``release`` and against t = 0 for
-    ``push_start`` (a ramp start the config stated by depth, speed or height arrives
-    here already converted to that pair, ``resolve_ignition``, and adds its
-    ``ramp_start_assumption`` line to tr.assumptions). With t_ign < 0 the vehicle is
-    clamped to the carriage from ignition
+    ``push_start`` (a ramp start the config stated by depth, speed or closed-form
+    height arrives here already converted to that pair, ``resolve_ignition``, and adds
+    its ``ramp_start_assumption`` line to tr.assumptions). A first stage that lights
+    at the altitude event (``IgnitionSpec.lights_at_height``; a pending ignition) has
+    no time yet: the push runs unlit, on the schedule of a failed ignition (the
+    validated unlit path), no ignition time is written, nothing is flagged as failed,
+    and the planner lights the stage at the event after the release (its assumption
+    line is added here too). With t_ign < 0 the vehicle is clamped to the carriage
+    from ignition
     to the push start (closed-form HOLD carrying the weight component along the track,
     m g_eff sin phi; no liftoff extension: the push starts at t = 0 regardless of the
     thrust). The ASSIST phase integrates the track state (``rhs_track``) from s = 0 at
@@ -738,17 +823,22 @@ def fly_track(
     t_push_est = assist.push_time_estimate(track)
     if t_push_est <= 0.0:
         raise ValueError(f"assist model {assist.name!r} estimates no push (t_push <= 0)")
-    t_ign = spec.t_ign_abs_s(t_push_est, t_push_start)
-    if not spec.fails:
+    if spec.lights_at_height:
+        # Pending ignition: no time before the altitude event; the push is unlit. The
+        # schedule's ignition time is a placeholder that a failed schedule never reads.
+        t_ign, unlit = t_push_est, True
+    else:
+        t_ign, unlit = spec.t_ign_abs_s(t_push_est, t_push_start), spec.fails
+    if not unlit:
         tr.t_ign_abs_s[stage0.name] = t_ign
     flag_ignored_ignition_settings(tr, stage0.name, spec)
     stated = ramp_start_assumption(spec, g_eff_mps2)
     if stated is not None:
         tr.assumptions.append(stated)
-    schedule = stage0.schedule(t_ign, spec.startup, spec.fails)
+    schedule = stage0.schedule(t_ign, spec.startup, unlit)
     m0 = vehicle.liftoff_mass_kg()
     y_hold = prelude.hold_state(track.start_altitude_m, m0)
-    if t_ign < t_push_start and not spec.fails:
+    if t_ign < t_push_start and not unlit:
         # A failed engine has no ignition to hold through (see run_pad).
         # The clamp carries the weight component along the track, m g_eff sin phi.
         g_axial = g_eff_mps2 * math.sin(track.phi(0.0))

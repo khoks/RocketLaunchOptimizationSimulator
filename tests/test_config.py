@@ -1134,6 +1134,7 @@ RAMP_STARTS: list[tuple[dict[str, Any], str, float | None]] = [
     ({"at_depth_m": 0}, "depth", 0.0),
     ({"at_speed_mps": 30.0}, "speed", 30.0),
     ({"at_height_m": 40.0, "height_method": "closed_form"}, "height_closed_form", 40.0),
+    ({"at_height_m": 40.0, "height_method": "event"}, "height_event", 40.0),
 ]
 """(ignition block, trigger, requested value): every family of IGNITION_KEY_FAMILIES."""
 
@@ -1155,7 +1156,13 @@ def test_ignition_states_its_ramp_start_one_way(
         assert cfg.t_ign_s == 0.0 and cfg.reference == "release"
         assert not {"t_ign_s", "reference"} & cfg.model_fields_set
     assert {k for f in IGNITION_FAMILIES for k in f} <= set(IgnitionConfig.model_fields)
-    assert config.RAMP_START_TRIGGERS == ("time", "depth", "speed", "height_closed_form")
+    assert config.RAMP_START_TRIGGERS == (
+        "time",
+        "depth",
+        "speed",
+        "height_closed_form",
+        "height_event",
+    )
 
 
 @pytest.mark.parametrize(
@@ -1175,7 +1182,7 @@ def test_ignition_states_its_ramp_start_one_way(
         ({"at_height_m": 40.0, "height_method": None}, "height_method is null"),
         ({"at_height_m": 40.0}, "at_height_m and height_method come together"),
         ({"height_method": "closed_form"}, "at_height_m and height_method come together"),
-        ({"at_height_m": 40.0, "height_method": "event"}, "event.*arrives in SP1 step 4"),
+        ({"height_method": "event"}, "at_height_m and height_method come together"),
         ({"at_height_m": 40.0, "height_method": "hover"}, "closed_form"),
         ({"at_depth_m": -1.0}, "greater than or equal to 0"),
         ({"at_speed_mps": -1.0}, "greater than or equal to 0"),
@@ -1188,8 +1195,8 @@ def test_ignition_ramp_start_refusals(block: dict[str, Any], message: str) -> No
     """At most one family is given, a key counting as given when present (a null
     included, as in the merge rule), so a time key beside another family's key is
     refused even at its default value, and a null never unsets a key; at_height_m and
-    height_method come together; height_method event (the altitude event) is refused
-    until SP1 step 4, naming it; depth and speed >= 0, height > 0, all finite. The same
+    height_method come together (height_method event, the altitude event of SP1 step 4,
+    is accepted with a height); depth and speed >= 0, height > 0, all finite. The same
     through RunConfig."""
     with pytest.raises(ValidationError, match=message):
         IgnitionConfig.model_validate(block)

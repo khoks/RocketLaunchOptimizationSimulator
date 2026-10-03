@@ -882,18 +882,23 @@ run's config states, ``time`` included, so a run without a recorded trace still 
 it)."""
 RAMP_START_ROWS: tuple[VariantRow, ...] = (
     (
-        "stage-1 ramp start: stated by (time, depth, speed or height_closed_form)",
+        "stage-1 ramp start: stated by (time, depth, speed, height_closed_form or height_event)",
         RAMP_TRIGGER_SOURCE,
         "",
     ),
     ("  requested depth below the track exit [m]", "m", "ramp_start_requested_depth_m"),
     ("  requested speed on the push [m/s]", "m", "ramp_start_requested_speed_mps"),
     (
-        "  requested height above the track exit [m] (closed form: drag-free, constant g_eff)",
+        "  requested height above the track exit [m] (closed form: drag-free, constant "
+        "g_eff; event: the flown coast)",
         "m",
         "ramp_start_requested_height_m",
     ),
-    ("  converted t_ign relative to release [s]", "m", "ramp_start_requested_t_s"),
+    (
+        "  converted t_ign relative to release [s] (none for height_event)",
+        "m",
+        "ramp_start_requested_t_s",
+    ),
     ("  achieved (ignition event): t relative to release [s]", "m", "ramp_start_t_rel_release_s"),
     ("  achieved: altitude [m] (datum; negative in the shaft)", "m", "ramp_start_alt_m"),
     ("  achieved: depth below the track exit [m]", "m", "ramp_start_depth_m"),
@@ -919,7 +924,7 @@ def _states_ramp_trigger(er: ExperimentResult) -> bool:
 
 def _ramp_trigger_cell(er: ExperimentResult, name: str) -> str:
     """The trigger a run's config states for its first stage's ramp start (time, depth,
-    speed or height_closed_form)."""
+    speed, height_closed_form or height_event)."""
     return er.runs[name].resolved.run.ignition_for(first_stage_name(er)).ramp_start[0]
 
 

@@ -51,14 +51,17 @@ GUIDANCE_FAILURE_KINDS = (
     "gamma_unattainable",
     "false_root",
     "lofted_overshoot",
+    "no_ignition",
 )
 """Kinds of ``GuidanceFailure``: the plan's seven (impact before the end of the flight
 segment, no stage-2 cutoff, the search mass floor, the kick time limit, no kick by the
 deadline, LTG non-convergence, an indirect LTG root), the two outcomes of the gamma*
 inner solve (no sign change of gamma_MECO - gamma* inside the delta bracket, and a root
-that brentq returned across a discontinuity) and the stage-2 pre-screen
+that brentq returned across a discontinuity), the stage-2 pre-screen
 ``lofted_overshoot`` (the orbital energy already at or above the target's at stage-2
-ignition, so the energy cutoff cannot mark an insertion)."""
+ignition, so the energy cutoff cannot mark an insertion) and ``no_ignition`` (SP1 step
+4: a first stage stated by ``height_method: event`` whose coast after release reaches
+its apex below the ignition height, so it never lights)."""
 IMPACT_GAMMA_RAD = -0.5 * math.pi
 """The flight-path angle [rad] the gamma* inner solve assigns to a flight that hits
 the ground before its end (straight down): before MECO, or, for a flight through the

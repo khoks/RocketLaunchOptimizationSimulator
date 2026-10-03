@@ -951,9 +951,11 @@ Modules: `guidance.py` (the steering laws `Radial`, `FixedTilt`, `AlongVrel`,
 `PlanarEnvironment`, `FlightStart`, `KickPoint`, `Handover`, `map_staging_planar`,
 `fmh_rate_W_m2`, `resume_builder`), `phases/engine.py` (the planar event factories
 `ev_ground`, `ev_radial_apex`, `ev_radial_turnaround`, `ev_kick_start`,
-`ev_kick_aligned`, `ev_time`). Tests: `tests/test_planar_events.py`,
+`ev_kick_aligned`, `ev_time`, and `ev_altitude_up` for the ramp start at a height, SP1
+step 4). Tests: `tests/test_planar_events.py`,
 `tests/test_gravity_turn.py`, `tests/test_guidance.py`, `tests/test_planar_reductions.py`
-(planner level). Frame: planar ECI; every angle and speed below is Earth-relative
+(planner level), `tests/test_height_event.py` (the altitude event). Frame: planar ECI;
+every angle and speed below is Earth-relative
 (v_rel) unless it says inertial. The stage-2 burn (linear-tangent steering, the energy
 cutoff, the fairing event, insertion) is "Stage 2 and insertion (planar)".
 
@@ -992,7 +994,7 @@ also carries the planar cap `planar_max_step_s`, 2 s, "Integrator"):
 |---|---|---|---|
 | HOLD (pad) | the prelude in `PLANAR_LAYOUT`: mass only | `liftoff`: T(t, p(0)) - m g_ref (+), the delivered thrust at the pad pressure, g_ref = g(R_E) - omega_p^2 R_E | flight start (t_fs, theta = 0) |
 | ASSIST (track) | the prelude's flat 1-DOF track, g_eff = g_ref, p = p(z_exit) | `track_end`, `propellant`, `drive_limit` | `map_release_planar`, flight start |
-| COAST_PRE_IGN | unpowered (a release before ignition) | rising: `apex` (v_r, -), a split; falling: `impact`; t_end = t_ign | VERTICAL_RISE at ignition |
+| COAST_PRE_IGN | unpowered (a release before ignition) | rising: `apex` (v_r, -), a split; falling: `impact`; t_end = t_ign. A pending ignition (`height_method: event`): open-ended, stopped at the apex, rising: `apex` and `ignition_height` (+): h - (z_mouth + h_req), folded past an apex (`ev_altitude_up`) | VERTICAL_RISE (or KICK at once) at ignition, which for the pending ignition is the `ignition_height` root; GuidanceFailure `no_ignition` when the apex comes first |
 | VERTICAL_RISE | `Radial` | `propellant` (-); rising: `apex` as a split; falling: `impact` and `turnaround` (v_r, +) as a split; `kick_start` (+): min(V - v_k, w); `kick_deadline` (+): t - (t_ign + deadline) | KICK (with no rise at all when the trigger is already past at the first lit instant); GuidanceFailure `no_kick` at the deadline or at burnout before the trigger; status impact |
 | KICK | `FixedTilt(delta)` | `propellant` (MECO), `impact`, `kick_end` (+): (u cos delta - w sin delta)/V = sin(beta_rel - delta), `kick_timeout` (+): t - (t_kick + kick_max) | GRAVITY_TURN; GuidanceFailure `kick_timeout` |
 | GRAVITY_TURN | `AlongVrel` | `propellant` (MECO), `impact` | STAGING |
@@ -1029,6 +1031,24 @@ vehicle (w < 0) never kicks, whatever its speed: g = w < 0 until the lit rise ha
 turned the fall around (split at the radial `turnaround`), after which the trigger is
 V = v_k with w > 0. The pre-ignition coast does not list the trigger, so the unlit
 flight after a release never kicks.
+
+**Ignition at a height (SP1 step 4).** A first stage stated by `height_method: event`
+starts the flight with a pending ignition: `FlightStart.t_ign1_s` is None and
+`FlightStart.ign1_alt_m` holds z_mouth + h, and `FlightStart.stage1_lights` (True for
+an ignition time or an ignition altitude, False only for a failed ignition) is what
+`to_kick`, `run`, `search.SearchContext._kick` and `sim._solve_fixed_delta` test, so a
+stage that lights at a height is never taken for one that fails (no `ignition_failed`
+event, no failed-ignition flag, no terminal coast). `_fly_to_kick` coasts to the
+`ignition_height` event (`_coast_to_ignition`: COAST_PRE_IGN, open-ended, stopped at the
+apex, the event listed beside the apex in the rising sub-phase, where the altitude is
+monotone; "Event rules" for the fold that guards a step overshooting the apex), sets
+t_ign to the root, records it in `RunTrace.t_ign_abs_s`, logs `ignition` there and then
+builds the thrust schedule, its step caps and the kick deadline t_ign + deadline exactly
+as for a time-lit stage; the kick at the first lit instant is judged at the root as
+usual (at 40 m above the gate fork's mouth the vehicle still moves at about 71 m/s
+and kicks at once; at 200 m and above, below v_k, it rises vertically first). A flight
+start already within `ATOL_M` of the altitude lights at once, which the planner decides
+itself. An apex below the altitude raises GuidanceFailure("no_ignition").
 
 **Event rules** ("Event rules", rule 4). The phase after one a terminal event ended
 never lists that event (the kick trigger is gone after the kick starts, the alignment
@@ -1094,7 +1114,9 @@ None, and `from_kick` and `run` refuse a kick angle (ValueError).
 (kind, message), so it pickles): `impact`, `no_kick`, `kick_timeout` (this step);
 `no_cutoff`, `mass_floor`, `nonconverged`, `not_direct_root` and `lofted_overshoot`
 (the stage-2 burn and its shooting, "Stage 2 and insertion (planar)" and "LTG
-shooting"); `gamma_unattainable` and `false_root` (the inner solve, next section).
+shooting"); `gamma_unattainable` and `false_root` (the inner solve, next section);
+`no_ignition` (SP1 step 4: a pending ignition whose coast peaks below its altitude,
+raised by `to_kick` before any kick angle is flown).
 They are typed outcomes a search turns into a penalty, never warnings.
 
 **Measured on the gate fork** (28.5 deg east, rotation, ICAO, Braeunig drag, v_k 50
@@ -1165,6 +1187,16 @@ both with dense output off.
   falling-start runs); and dense-off hand-overs identical to dense-on ones.
 - `test_planar_reductions.py::test_planner_reduces_to_the_vertical_planner`: the
   planner-level reduction ("Planar reductions").
+- `test_height_event.py` (SP1 step 4): on the gate fork with drag and rotation the
+  ignition at h = 5, 40, 200 and 280 m above the mouth lies at the altitude within
+  `ATOL_M`, at the `ignition_height` root, after an unlit push and a pending flight start
+  (no flag, no failed ignition), and the ramp ends t_ramp after the root; the kick
+  deadline counts from the root (at 200 m, a deadline 0.25 s past the trigger kicks and
+  one 0.75 s short raises `no_kick`); a height 0.5, 1e-2 and 1e-4 m below the flown apex
+  lights before any apex; one between the flown apex (with drag, measured from a failed
+  ignition's coast) and the drag-free apex raises `no_ignition` in `to_kick` and `run`;
+  a start within `ATOL_M` lights at once; `_coast` at its default extra keeps its event
+  lists and its samples bit for bit.
 
 ## gamma* inner solve
 
@@ -2276,7 +2308,8 @@ vehicle's payload for the run's first payload search, then P1.
    starting pair) is retried from each adjacent converged grid point whose solution it
    did not start from (a cold `nonconverged` is not evidence of infeasibility, "LTG
    shooting", Cold-ladder coverage); stage-1 failures (`gamma_unattainable`,
-   `false_root`, `no_kick`) and `lofted_overshoot` do not depend on the starting pair
+   `false_root`, `no_kick`, `no_ignition`) and `lofted_overshoot` do not depend on the
+   starting pair
    and are not retried. The retry pass repeats until a pass solves no new point, so a
    point whose neighbours converge only in a retry gets its turn (bounded: each
    neighbour seeds a point once; deterministic). Points solved only after a retry are
@@ -3177,7 +3210,8 @@ the fixed gamma* at the final tolerance, the fixed LTG pair; `none (fixed guidan
 whose residual propellant and margin are the recorded run's own at its cutoff (m_empty
 = m_d2 + P, plus the fairing still carried), and which may end off target. A typed
 guidance failure of a fixed-guidance run (`search.INFEASIBLE`: GuidanceFailure, such as
-no_kick when v_k is never reached, or PreludeFailure), which a search would turn into a
+no_kick when v_k is never reached or no_ignition when a ramp start by height event is
+never reached, or PreludeFailure), which a search would turn into a
 penalty, gives status `guidance_failed` (`sim.guidance_failed_result`: empty frames, the
 fixed gamma* and LTG pair, `guidance_failure_kind` and `_message`, a flag) instead of
 aborting the experiment.
@@ -3244,10 +3278,14 @@ release; else null), `ramp_start_speed_mps` (abs(v_rel): abs(sdot) on the track)
 `ramp_start_phase`, read from that record; a pad has no mouth, so its depth and height
 are null (its other values are those of the HOLD record at the pad), and a run whose
 stage 1 never lit has every one null; a run that states its ramp start by depth, speed
-or height also carries `ramp_start_trigger`, `ramp_start_requested_t_s` (the converted
-ignition time after release: t_ign_s for `release`, t_ign_s - t_push for `push_start`)
-and the requested `ramp_start_requested_depth_m`, `_speed_mps` or `_height_m`, the other
-two null; none of these is in `PLANAR_REQUIRED_METRICS`, and the numeric achieved ones
+or height also carries `ramp_start_trigger` (depth, speed, height_closed_form or, SP1
+step 4, height_event), `ramp_start_requested_t_s` (the converted
+ignition time after release: t_ign_s for `release`, t_ign_s - t_push for `push_start`;
+null for height_event, which is not converted: its achieved values are those of the
+altitude event's root, so `ramp_start_height_m` is the requested height within
+`ATOL_M`) and the requested `ramp_start_requested_depth_m`, `_speed_mps` or `_height_m`
+(either height method), the other two null; none of these is in
+`PLANAR_REQUIRED_METRICS`, and the numeric achieved ones
 that a variant and its baseline both carry get a `delta_` item like every metric); the
 closure items (`closure_metrics`); `trace_status`, `run_checks` and `nfev_total`.
 `PLANAR_REQUIRED_METRICS` (amendment 10: the 1-D REQUIRED_METRICS plus
@@ -3505,6 +3543,7 @@ lists only the events that can end it. Factories:
 | `liftoff` | T(t) - m(t) g_eff, T = max(0, T_vac - p_amb A_e) | +1 | `ATOL_KG` g_eff [N] | a hold-down extended past t = 0 |
 | `track_end` | s - L | +1 | `ATOL_M` 1e-6 m | the push (RELEASE follows) |
 | `drive_limit` | F_drive(t, y), the assist model's drive force at the delivered thrust | -1 | `ATOL_KG` g_eff [N] | the push (status `drive_limit`); listed only when the model forbids a negative drive force |
+| `ignition_height` (`ev_altitude_up(model, z, name)`, either model) | altitude - z + k min(w, 0)^2, w the altitude rate (v on 1-D, v_r planar), k = `APEX_FOLD_GAIN_S2PM` | +1 | `ATOL_M` 1e-6 m | the rising pre-ignition coast of a first stage stated by `height_method: event` (SP1 step 4): stage 1 lights at the root |
 
 The two track events read the track state (`ev_track_end`, `ev_drive_limit`; "Silo
 model" for the drive-limit threshold and its disarm behaviour). An event built
@@ -3614,6 +3653,31 @@ which flatters the pad baseline.
    "Stage 2 and insertion (planar)") do not rely on it, and the cap moved no event
    rule.
 
+   **An event beside a terminal one: the altitude event (SP1 step 4).** Monotone
+   within its phase is not enough when another terminal event cuts the phase inside
+   a step: scipy integrates the whole step and tests every event's sign only at the
+   step's ends, and the cut comes afterwards. The altitude event of a ramp start by
+   height, `ignition_height`, sits in the rising pre-ignition coast beside the apex
+   split (both `_coast` functions take extra terminal events for their rising phases
+   only, none by default, which leaves every other event list as it was). Altitude is
+   monotone up to the apex, but a step that overshoots the apex has the altitude back
+   below z at its end when z lies within the last stretch before the apex, so the
+   crossing would be lost and the coast would end at the apex (measured on the
+   uncapped 1-D coast: z = 299 m against a 300.27 m apex was missed). `ev_altitude_up`
+   therefore folds its function past an apex: g = altitude - z + k min(w, 0)^2 with
+   the altitude rate w and k = `APEX_FOLD_GAIN_S2PM` = 1 / (2 a_min), a_min =
+   `APEX_FOLD_ACCEL_MPS2` = 1 m/s^2. The fold is zero while w >= 0 and continuous at
+   the apex, so inside the phase g is the altitude difference exactly and its root is
+   the crossing. Past the apex, under a downward acceleration |a| >= a_min (gravity is
+   ~9.8 m/s^2, the drag on a vehicle falling from an apex for one step mm/s^2),
+   w^2 >= 2 a_min (apex - altitude), so g >= apex - z, and dg/dt = w (1 - 2 k |a|) > 0:
+   when the crossing precedes the apex the step's end value is positive and the root
+   is found on the rising part, the only root of a monotone g; when the apex lies below
+   z, any root lies after the apex root, and scipy drops events later than the first
+   terminal one, so the apex ends the coast. On the gate fork the planar steps shrink
+   near the apex anyway (the drag direction turns as |v_rel| goes to 0), so there the
+   fold is a guard; the 1-D coast needs it.
+
 Validation (`test_events.py`): the propellant event lands with |m - m_dry| < 1e-6 kg;
 the apex event does not re-fire at the start of a fall from v = 0 (engine robustness
 check) and the fall reaches the ground at sqrt(2 z0 / g); apex residues of +/-2e-12 and
@@ -3632,7 +3696,11 @@ rejected; a `PhaseSpec` whose sigma disagrees with `params.v_sign` is rejected; 
 liftoff event uses the delivered thrust when a pad pressure is given;
 `planar_rotation_rate(0, pi/2) R_E = 465.101 m/s`,
 `planar_rotation_rate(28.5 deg, 90 deg) = 6.408435e-5 rad/s`, `g_eff_track(0) =
-9.7982855`, `g_eff_track(6.408435e-5) = 9.7720917 m/s^2`.
+9.7982855`, `g_eff_track(6.408435e-5) = 9.7720917 m/s^2`. The altitude event
+(`test_height_event.py`): the folded function's values, never below apex - z past an
+apex; on an uncapped constant-g coast a crossing 10, 1, 1e-2 and 1e-4 m below the apex
+lands at the closed-form time (1e-9 s), the last three missed with the fold switched
+off; an altitude above the apex is never logged; a start above it is already past.
 
 The RHS branches a rising vacuum burn never touches are covered in
 `test_vertical_burn.py`: a 10 s burn while falling at -300 m/s (sigma = -1) gives
@@ -3644,7 +3712,9 @@ integral dt/m in closed form; both close the per-phase identity
 in `rhs_vertical` is checked against `ThrustSchedule.thrust_N`.
 
 **Planar event factories (build step 21).** `ev_ground(model, z_ground)` (called
-`impact`: model.altitude(y) - z_ground, -1, `ATOL_M`), `ev_radial_apex` and
+`impact`: model.altitude(y) - z_ground, -1, `ATOL_M`; with `ev_altitude_up(model, z,
+name)` of SP1 step 4, its upward mirror with the apex fold above, it takes any
+`DynamicsModel`), `ev_radial_apex` and
 `ev_radial_turnaround` (`apex` and `turnaround`: v_r, -1 and +1, `ATOL_MPS`),
 `ev_kick_start(v_k, omega_p)` (min(V - v_k, w), +1, `ATOL_MPS`),
 `ev_kick_aligned(delta, omega_p)` (called `kick_end`: sin(beta_rel - delta), +1,
@@ -3727,7 +3797,12 @@ trigger_value only record the request (for the metrics, the flag and the assumpt
 line), and their defaults ("time", None) leave every time-stated spec equal to what it
 was. First stage: t_ign_abs = t_release + t_ign_s for reference `release`,
 t_ign_abs = t_ign_s for `push_start` (t_release = sqrt(2L/a) is closed-form for the
-constant-acceleration drive, so both resolve before anything is integrated). Stage
+constant-acceleration drive, so both resolve before anything is integrated). The one
+exception is a height reached by the altitude event (`height_method: event`, trigger
+`height_event`, SP1 step 4): it has no time before the flight. Its push is unlit and
+writes no ignition time (a pending ignition, which nothing reads as a failed one), and
+the planner lights the stage at the root of the `ignition_height` event on the coast
+after release, which then becomes t_ign_abs ("Silo model"). Stage
 k > 0: t_ign_abs = end of its staging coast + t_ign_s, with t_ign_s >= 0 and reference
 `release` (the staging coast is unpowered; a later stage is never stated by depth,
 speed or height, which `config.resolve_run` and the spec build,
@@ -3760,7 +3835,7 @@ omega_p from the single `OMEGA_P_PHASE1_RADS` = 0 it quotes in the assumptions.
 | HOLD extension (pad, vehicle at rest on the ground, T(0) < m g_eff) | split at the thrust kinks. Before the ignition kink the sub-phase is *unlit* (`HoldParams.lit = False`: T = 0, nothing changes, sampled directly, no events), and at the start of every lit sub-phase the balance T - m g_eff is re-evaluated with the lit schedule, so a step whose thrust exceeds the weight lifts off exactly at its kink with the mass untouched (no root search across the discontinuity; the integrator's last stage never sees the step's f(0) = 1 from the left, which would bias the mass by 5e-6 kg, above `ATOL_KG`). A lit sub-phase integrates the mass alone (`rhs_hold`), max_step as in a burn. An ignition inside the extension is logged in the HOLD | `liftoff` (T - m g_eff, +1) -> "hold extended to t = X s for liftoff (TWR < 1 at release)" in the assumptions; `propellant` -> ValueError; t_max -> status `no_liftoff` (no exception) | BURN from the liftoff root, sigma = +1 |
 | ASSIST (track) | state [s, sdot, m_v, *extra, E_drive, W_thrust, J_mass] in the track layout (`dynamics.rhs_track`, "Silo model" below); sub-phases split at the thrust kinks inside the push (ignition, ramp end); a sub-phase that ends at the ignition kink is *unlit* (T = 0 whatever the schedule says at its closing boundary, as for the HOLD); max_step = t_push/push_steps, tightened by the ramp or lag cap once lit; the ignition, ramp_end and drive_limit events are logged with the ascent-frame view of the track state (`track_to_vertical`: z = start altitude + z(s), v = sdot sin phi); a ramp that ends at the very instant of release (`silo_hot_ramp_on_track`) logs its ramp_end on the track, right before the release, and the flight's burn skips the finished segment, so the event appears once | `track_end` (s - L, +1) -> RELEASE; `drive_limit` (F_drive, -1; not listed when the model allows a negative drive force) -> status `drive_limit`, the run stops on the track (a push that starts with F_drive already negative ends at t0 by the engine's already-past rule); `propellant` -> ValueError (exhausted on the track) | RELEASE |
 | RELEASE (map) | pad: z = z0, v = v0 of the `AscentStart` (0, 0 for the pad; only a start at rest *on the ground* is held down, one at rest above it falls; a *moving* start lit before release is a test-only emulation of "lit on the carriage" without a track: the HOLD burns mass only and its rows keep v0, which is not a physical state but reproduces the straddle form exactly), m = m(0); track: `map_release` (z = exit altitude, v = sdot, m; a track angle other than pi/2 raises: projecting sdot onto the vertical would silently discard the downrange component, so the 1-D map is exact for a vertical track only and a tilted exit waits for the planar branch); quadratures reset; t_release recorded | | COAST_PRE_IGN or BURN |
-| COAST_PRE_IGN | T = 0, sigma = +1 | t = t_ign_abs (a ramp start stated by a closed-form height is such a time, converted before the run: the coast ends at the closed-form time, not at an altitude, so the height reached there is the flown coast's; the altitude event of `height_method: event` is SP1 step 4); `apex` -> FALL_PRE_IGN (sigma = -1, `impact` listed) | BURN; impact -> status `impact` |
+| COAST_PRE_IGN | T = 0, sigma = +1 | t = t_ign_abs (a ramp start stated by a closed-form height is such a time, converted before the run: the coast ends at the closed-form time, not at an altitude, so the height reached there is the flown coast's); for a first stage stated by `height_method: event` (a pending ignition, SP1 step 4) the coast is open-ended and its rising phase also lists `ignition_height` (z - (z_exit + h), +1, `ev_altitude_up`): its root is the ignition time; an apex first raises ValueError (stage 1 never lights); `apex` -> FALL_PRE_IGN (sigma = -1, `impact` listed) | BURN; impact -> status `impact` |
 | BURN k | ramp sub-phase (ends at t_ign + t_ramp, max_step t_ramp/ramp_steps) then the full burn (open-ended); lag: one burn with max_step tau/lag_steps_per_tau; step: one burn; `propellant` always listed | sigma = +1: `apex` -> same burn with sigma = -1 (`turnaround`, `impact` listed); sigma = -1: `turnaround` -> sigma = +1 (`apex` listed), `impact` -> status `impact`; `propellant` -> burnout | STAGING, or end |
 | STAGING (map) | m -= dry mass of stage k (+ fairing when `fairing_drop: staging` and k = 0): `map_staging`; z, v, quadratures unchanged | | COAST_STAGING |
 | COAST_STAGING / FALL_STAGING | T = 0 for stage k+1's `coast_before_ignition_s` (zero-length pass-through when 0); events by sigma as for COAST_PRE_IGN | t = coast end | COAST_PRE_IGN (t_ign_s > 0) or BURN k+1 |
@@ -3797,7 +3872,9 @@ ascent quadratures at 0 (the accounting starts at release). Both ends of a phase
 boundary are kept (the staging mass drop is visible, and the release row appears
 once in the track frame and once in the ascent frame). Events (t_s, event, phase,
 stage, z_m, v_mps, m_kg): push_start, ignition, release, liftoff, ramp_end,
-drive_limit, ignition_failed, propellant, apex, turnaround, staging, impact, end. The
+drive_limit, ignition_failed, propellant, apex, turnaround, staging, impact, end, and
+`ignition_height` (the altitude event's root, right before the ignition it triggers, on
+runs stated by `height_method: event` only). The
 `phase` of an event is the phase it ended or started; a pad's release row is labelled
 HOLD when a hold ran before t = 0 and RELEASE (`phases.trace.RELEASE_LABEL`, not a phase
 kind) when nothing was lit before release, since it then belongs to no phase; a
@@ -4040,12 +4117,15 @@ or by its exit speed; `IgnitionConfig`: the ramp start stated by time, depth, sp
 height), `metrics_planar.py` (`push_setting_metrics` and `ramp_start_metrics`, planar
 only), `phases/prelude.py` (`resolve_ignition`, `resolve_stage_ignitions`,
 `ramp_start_assumption`), `sim.py` (`check_resolved`, the preflight, also run by
-`cli.load_experiment`).
+`cli.load_experiment`); the height reached by an altitude event (SP1 step 4) in
+`phases/engine.py` (`ev_altitude_up`), `phases/planar.py` and `phases/vertical.py`
+(the pending ignition and its coast).
 Tests: `tests/test_silo.py`, `tests/test_assist_energy.py`,
 `tests/test_events.py` (release map from a track), `tests/test_loss_identity.py` (a),
 `tests/test_ignition_loss.py` (straddle through the silo), `tests/test_config.py` and
 `tests/test_planar_pipeline.py` (the exit-speed form; the ramp-start forms, with
-`tests/test_release_planar.py`, `tests/test_results_io.py` and `tests/test_cli.py`).
+`tests/test_release_planar.py`, `tests/test_results_io.py` and `tests/test_cli.py`;
+the altitude event in `tests/test_height_event.py`).
 
 **Model.** The drive prescribes the net acceleration along the track, sddot = a
 exactly, and the drive force is solved from the track equation at every instant:
@@ -4142,9 +4222,11 @@ the first stage's thrust ramp starts in one of four ways (the ignition group of 
 exclusive key families, "Experiment schema (planar)"): by time (`t_ign_s` with
 `reference`, the Phase 1 form, unchanged), by `at_depth_m` d >= 0 below the mouth (the
 track exit), by `at_speed_mps` v >= 0 on the push, or by `at_height_m` h > 0 above the
-mouth with `height_method`. `phases.prelude.resolve_ignition` converts the last three to
-the (t_ign_s, reference) pair before anything is integrated, so the planners, the
-search and every other consumer of the spec see a time, as before. With the stroke L,
+mouth with `height_method`. `phases.prelude.resolve_ignition` converts depth, speed and
+the closed-form height to the (t_ign_s, reference) pair before anything is integrated,
+so the planners, the search and every other consumer of the spec see a time, as before;
+a height by event stays a height, which the planners reach in flight (SP1 step 4,
+below). With the stroke L,
 the net acceleration a, the exit speed v_e = sqrt(2 a L), the push time t_push =
 sqrt(2 L / a) and the track's constant g_eff = mu/R_E^2 - omega_p^2 R_E (the value the
 planner hands `fly_track`: mu/R_E^2 on vertical_1d, the site's g_ref on planar_2d):
@@ -4154,7 +4236,7 @@ planner hands `fly_track`: mu/R_E^2 on vertical_1d, the site's g_ref on planar_2
 | `at_depth_m: d` | time from push start (`push_start`) | t = sqrt(2 (L - d) / a) (`ConstantAccelAssist.push_time_s(L - d)`: the push from rest reaches s = L - d) | d > L (`RunConfig` and the resolver) |
 | `at_speed_mps: v` | time from push start | t = v / a (`ConstantAccelAssist.time_to_speed_s`) | t > t_push + ZERO_SPAN_S: v above v_e by more than a ZERO_SPAN_S (3e-11 m/s at 3 g0), which the push never reaches |
 | `at_height_m: h`, `height_method: closed_form` | time after release (`release`) | dt = (v_e - sqrt(v_e^2 - 2 g_eff h)) / g_eff, the smaller root of v_e t - g_eff t^2/2 = h (evaluated as 2 h / (v_e + sqrt(v_e^2 - 2 g_eff h)), the same number without the cancellation at small h) | h >= v_e^2 / (2 g_eff), the drag-free apex; g_eff <= 0 |
-| `at_height_m: h`, `height_method: event` | not converted: an altitude event at mouth + h (SP1 step 4) | none | refused until step 4 (the config's message names it) |
+| `at_height_m: h`, `height_method: event` | not converted: the altitude event `ignition_height` at z_mouth + h on the coast after release (SP1 step 4) | none (the root is found in flight) | h >= v_e^2 / (2 g_eff), the drag-free apex, as for the closed form (for the event conservative only without drag: a coast under mu/r^2 without drag peaks about 1.4 cm higher; with drag, on every planar_2d run, permissive: the gate fork's flown apex lies about 0.41 m below it; below); g_eff <= 0. An apex below z_mouth + h in flight: GuidanceFailure `no_ignition` (planar), ValueError (1-D) |
 
 - A result within ZERO_SPAN_S (1e-12 s) of the release snaps to (0, `release`): depth 0,
   the exit speed itself and a speed above it by rounding. (On a push stated by
@@ -4187,12 +4269,67 @@ planner hands `fly_track`: mu/R_E^2 on vertical_1d, the site's g_ref on planar_2
   below h by 2e-6 m at h = 1 m, 6e-5 m at 5 m, 2.4e-4 m at 10 m, 3.8 mm at 40 m, 25 mm at
   100 m, 0.11 m at 200 m and 0.27 m at 280 m; drag dominates. Requested and achieved
   heights are both reported (`ramp_start_requested_height_m`, `ramp_start_height_m`) and
-  the assumption line says the flown coast differs. The event form (SP1 step 4) will be
-  exact to the event tolerance.
-- The spec records the request (`IgnitionSpec.trigger_kind`: depth, speed or
-  height_closed_form; `trigger_value`). With `fails: true` the conversion still runs (a
-  request out of range is refused on a failed stage too), and the request is flagged as
-  ignored by its key ("ignored: at_depth_m = 50", `flag_ignored_ignition_settings`).
+  the assumption line says the flown coast differs. The event form (SP1 step 4, next
+  item) is exact to the event tolerance.
+- **The height by event (SP1 step 4).** The spec is (0.0, `release`) with trigger
+  `height_event` (`IgnitionSpec.lights_at_height`; t_ign_s and reference keep their
+  defaults, any other value is refused, and `t_ign_abs_s` refuses the spec: it has no
+  time before the flight finds it). `fly_track` flies the push unlit, on the schedule of
+  a failed ignition (the validated unlit path: no kinks, push cap only), writes no
+  ignition time, flags nothing and logs no ignition: a *pending* ignition, never a
+  failed one. The planner starts the flight with the ignition altitude z_mouth + h
+  (planar: `FlightStart.ign1_alt_m`, with `t_ign1_s` None and `stage1_lights` True; 1-D:
+  `VerticalPlanner.ascend(..., ign_alt_m)`), coasts COAST_PRE_IGN to the
+  `ignition_height` event (`engine.ev_altitude_up`, listed beside the apex in the rising
+  sub-phase only) and lights stage 1 at its root, which becomes its ignition time
+  (`RunTrace.t_ign_abs_s`): the thrust schedule, its ramp and lag step caps and (planar)
+  the kick deadline count from it exactly as for a time-lit stage, and the `ignition`
+  event is logged there (after the `ignition_height` record of the same instant). A
+  flight start already within the event's zero_tol (`ATOL_M`) below the altitude or
+  above it lights at once, decided by the planner (no zero-length phase, no engine
+  note). The resolver refuses h at or above v_e^2 / (2 g_eff), as for the closed form.
+  For the event method that bound is a preflight check, not the flown apex: it is the
+  apex of a drag-free coast at the constant g_eff, conservative only for a coast
+  without drag (vertical_1d) and permissive with drag (every planar_2d run), as
+  follows. Under mu/r^2 a coast without drag peaks slightly higher: on the 1-D model
+  from a mouth at the datum energy conservation gives the apex h_0 / (1 - h_0 / R_E)
+  with h_0 = v_e^2 / (2 g_eff), which is 300.270237 m against the bound 300.256102 m
+  for the 3 g0, 100 m silo (`test_height_event.py`); the planar gate fork with C_D
+  scaled by 1e-12 peaks at 301.0751 m against its bound 301.0609 m (probe). Without
+  drag the event method therefore refuses a band about 1.4 cm wide of heights that the
+  coast would reach. With drag the flown apex is lower than the bound (planar:
+  300.647 m against 301.061 m on the gate fork at its file payload, so the bound admits
+  [300.647, 301.061) m, a band about 0.41 m wide), and a gravity stronger than g_eff
+  lowers it as well, so a height between the flown apex and the bound resolves but
+  never lights:
+  GuidanceFailure `no_ignition` on the planar model (a fixed-guidance run reports
+  status `guidance_failed`, kind `no_ignition`; in a search every evaluation at that
+  payload is infeasible, so at P0 the grid fails and the run reports `search_failed`,
+  kind `grid`, naming no_ignition), a ValueError on the 1-D model, whose coast has no
+  drag and, from a mouth at or above the datum, a gravity mu/r^2 no stronger than its
+  g_eff = mu/R_E^2, so its apex lies at or above the bound and an apex below the
+  height can only be the numerical edge of the refusal, a mouth below the datum or an
+  injected test gravity. The flown planar apex, and so the `no_ignition` band, depends
+  on the payload and C_D through D/m (a failed ignition's coast to apex on the gate
+  fork, rtol 1e-10, probe): 300.629 m at P = 0, 300.645 m at 20 t, 300.647 m at the
+  file's 22.8 t and 300.653 m at 30 t; 300.690 m at C_D x 0.9 and 300.605 m at C_D x
+  1.1. A height within a few centimetres of the apex can therefore light at one payload
+  or sensitivity arm and fail at another (a height in [300.605, 300.647) m lights at the
+  file values but fails in the C_D +10% arm). A lighter payload peaks lower and fails
+  first, so for such a height feasibility is not monotone in payload: a payload search scores a lighter end
+  infeasible (as if too heavy) and backs it off toward a heavier payload that flew, or,
+  when none flew, toward 0, where it fails again and the search ends `search_failed`.
+  Such runs are reported as `search_failed` (or `guidance_failed` under fixed
+  guidance), never hidden. Measured on the gate fork: the event lights 0.0654566 s after
+  release at h = 5 m, 0.540094 s at 40 m (the closed form: 0.540041 s, 3.8 mm low),
+  3.30421 s at 200 m and 5.78692 s at 280 m, the ignition record's altitude equal to h
+  to rounding (the r of the root carries ulp(R_E) = 9.3e-10 m).
+- The spec records the request (`IgnitionSpec.trigger_kind`: depth, speed,
+  height_closed_form or height_event; `trigger_value`). With `fails: true` the
+  conversion (or the apex check) still runs (a request out of range is refused on a
+  failed stage too), and the request is flagged as ignored by its key ("ignored:
+  at_depth_m = 50", `flag_ignored_ignition_settings`): a failed stage stated by a height
+  event is a failed-ignition run as before, with no altitude event.
 - Check values of the handoff table (3 g0, L = 100 m, t_push = 2.6073 s;
   `test_planar_pipeline.py::test_handoff_table_rows_from_closed_forms`): `t_ign_s: -2.0`
   from release starts the ramp 0.6073 s after push start at z = -L + a t^2/2 = -94.574 m
@@ -4216,9 +4353,11 @@ planner hands `fly_track`: mu/R_E^2 on vertical_1d, the site's g_ref on planar_2
 A first stage whose lit ramp start is stated by depth, speed or height adds one
 assumption line on both models (`phases.prelude.ramp_start_assumption`, written by
 `fly_track` into the trace): the request, the converted time and its reference, and the
-closed form; for a height also the g_eff it used and that the flown coast reaches a
-slightly different height, which the ignition event records. A time-stated run, every
-shipped run and the golden 1-D outputs have no such line.
+closed form; for a closed-form height also the g_eff it used and that the flown coast
+reaches a slightly different height, which the ignition event records; for a height
+reached by the altitude event, that nothing is converted and stage 1 lights at the
+event root of the flown coast. A time-stated run, every shipped run and the golden 1-D
+outputs have no such line.
 
 **Reported quantities** (F9, 542,570 kg, a = 3 g0 = 29.41995 m/s^2, L = 100 m,
 m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening_1d.yaml`):
@@ -4242,7 +4381,7 @@ m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening
 | energy closure (`assist_energy_residual_rel`) | "Assist energy identity" | 1e-16 |
 | geometry (`track_start_altitude_m`, `carriage_mass_kg`) | exit_altitude - L sin phi; m_c | -100 m; 0 |
 | push settings, planar_2d only (`stroke_m`, `net_accel_mps2`, `net_accel_g`; `metrics_planar.PUSH_SETTING_METRICS`) | L; the prescribed a, whichever way the config states it (a = v^2 / (2 L) for `exit_speed_mps`); a / g0 (g0 as the unit). Settings as flown, not results: no summary row, not in `PLANAR_REQUIRED_METRICS`, no `delta_` item against a pad, and not written by the 1-D `track_metrics` (the golden 1-D outputs are unchanged). Both accelerations are null for a drive that prescribes none (Phase 3) | 100 m; 29.41995 m/s^2; 3 g0 (planar `silo_cold`) |
-| ramp start, planar_2d only (`metrics_planar.RAMP_START_METRICS` and `RAMP_START_REQUEST_METRICS`; "Reporting definitions (planar)") | achieved, from the stage-1 ignition event: time after release, altitude, depth below the mouth on the track or height above it after release, abs(v_rel), phase; requested (a ramp start stated by depth, speed or height only): trigger, converted time after release, requested value. Not required, not written by the 1-D model (its events.csv holds the same record) | `silo_hot_ramp_on_track`: -2.0 s, -94.574 m, depth 94.574 m, 17.867 m/s, ASSIST |
+| ramp start, planar_2d only (`metrics_planar.RAMP_START_METRICS` and `RAMP_START_REQUEST_METRICS`; "Reporting definitions (planar)") | achieved, from the stage-1 ignition event: time after release, altitude, depth below the mouth on the track or height above it after release, abs(v_rel), phase; requested (a ramp start stated by depth, speed or height only): trigger, converted time after release (null for height_event, which is not converted; its achieved values are the altitude event root's), requested value. Not required, not written by the 1-D model (its events.csv holds the same record) | `silo_hot_ramp_on_track`: -2.0 s, -94.574 m, depth 94.574 m, 17.867 m/s, ASSIST |
 
 Where a row lists two keys for one number (`drive_energy_J` and `assist_energy_J`,
 `drive_power_peak_W` and `peak_drive_power_W`, `interface_force_peak_N` and
@@ -4993,17 +5132,21 @@ both scoped by key name within one dict level and both declared once in `config.
   ramp-start conversions): an ignition block states its ramp start by `t_ign_s` and
   `reference` (the defaults, 0 s after release, when no family is given), by
   `at_depth_m` (>= 0), by `at_speed_mps` (>= 0) or by `at_height_m` (> 0) with
-  `height_method` (`closed_form`; `event` is refused until SP1 step 4, the altitude
-  event, and the message says so). The validator of `IgnitionConfig` allows at most one
+  `height_method` (`closed_form`, or since SP1 step 4 `event`, the altitude event;
+  `IgnitionConfig.ramp_start` names the two height_closed_form and height_event). The
+  validator of `IgnitionConfig` allows at most one
   family, counting a key as given when it is present (a null included), so the
   defaults of the time keys never count but a time key written beside a depth is
   refused, a null never unsets a key, and `at_height_m` and `height_method` come
   together. The run-level rules: a ramp start by depth, speed or height needs an
   assist model (`RunConfig`, as `push_start` does) and a depth no deeper than
   `stroke_m`; it is for the first stage only (`resolve_run`); a request the push cannot
-  reach (a speed above the exit speed, a height at or above the drag-free apex) is
-  refused when the specs are built, which the preflight `sim.check_resolved` does for
-  every run before a results directory is made. `model_dump` leaves out the keys of the
+  reach (a speed above the exit speed, a height at or above the drag-free apex, by
+  either height method) is refused when the specs are built, which the preflight
+  `sim.check_resolved` does for every run before a results directory is made; a height
+  by event below that apex that the flown coast still does not reach (drag) is a
+  failure of the run (`no_ignition`, "Silo model"), not of the config. `model_dump`
+  leaves out the keys of the
   families not in use (`IgnitionConfig._dump_one_ramp_start`), so a dump states the
   ramp start by its one family and validates again to an equal model; a time-family
   dump is the dict it was before. Through `resolve_experiment` a sweep axis
@@ -5168,7 +5311,7 @@ appended after the failed-ignition blocks, before the drive's):
 - hold extended to t = <t_liftoff> s for liftoff (TWR < 1 at release).
 
 A track run whose first stage lights with a ramp start stated by depth, speed or
-closed-form height (SP1 step 3; `phases.prelude.ramp_start_assumption`, written into the
+height (SP1 steps 3 and 4; `phases.prelude.ramp_start_assumption`, written into the
 trace by `fly_track`, so on both models and in the same place as the line above; never
 on a time-stated run, a failed stage or a pad), one of:
 
@@ -5183,6 +5326,10 @@ on a time-stated run, a failed stage or a pad), one of:
   at the track's constant g_eff = <g> m/s^2, dt = (v_e - sqrt(v_e^2 - 2 g_eff h)) /
   g_eff; the flown coast (mu/r^2, and on planar_2d drag and rotation) reaches a slightly
   different height, which the ignition event records.
+- ramp start: stage-1 ignition stated by height <h> m above the track exit, reached by
+  an altitude event: nothing is converted before the run; stage 1 lights at the root
+  where the flown coast after release (mu/r^2, and on planar_2d drag and rotation)
+  crosses that height upward (an apex below it is a failure, not an ignition).
 
 The `constant_accel` drive (`ConstantAccelAssist.assumptions`; every parameter is an
 assumption in Phase 1, and `NoAssist` emits nothing):
@@ -5424,7 +5571,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_config.py::test_constant_accel_exit_speed_derives_the_acceleration` | "Silo model", two ways to state the push: a = v^2 / (2 L) from `exit_speed_mps` (v = 76.71 m/s, L = 200 m: 14.71106025 m/s^2 as a hand number; half the stroke, twice a); `net_accel_g` = v^2 / (2 g0 L) gives the same a; on the `net_accel_g` path a = `net_accel_g` x g0 exactly, as before the option | 1e-15 relative (hand number 1e-9); exact (`==`) on the `net_accel_g` path |
 | `test_config.py::test_constant_accel_needs_exactly_one_push_key`, `::test_constant_accel_push_keys_are_the_assist_family_table`, `::test_constant_accel_dump_states_the_push_by_its_one_key` | "Silo model", rules of the config: exactly one of the two keys, a null counting as given (both, neither, a null of either, both null are refused, alone and through RunConfig); > 0, the exit speed finite, the derived v^2 / (2 L) finite and > 0 (v = 1e200, 1e-200 and an infinite stroke refused); the push keys are the assist group of `ASSIST_KEY_FAMILIES`; `model_dump` (python and json) holds only the key in use and validates again to an equal model, alone and in a RunConfig, and the `net_accel_g` dump has the pre-option key list (written out) | raises / exact |
 | `test_config.py::test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone`, `::test_exit_speed_variant_over_a_silo_baseline_resolves_to_the_exit_speed_alone` | "Experiment schema (planar)", merge rule with the fields in place: a sweep axis `assist.exit_speed_mps` (with `assist.stroke_m`) over the shipped silo_cold of silo_screening_1d and silo_screening_2d, and a variant `{assist: {exit_speed_mps: v}}` (stroke inherited and its own) over a baseline silo stated by `net_accel_g`, resolve to a ConstantAccelConfig with only the exit speed (not in the run dict, not in `model_fields_set`) and a = v^2 / (2 L) computed in the test, the rest of the parent's block inherited; back the other way, a `net_accel_g` axis over an exit-speed parent; a +/-10 % sensitivity case perturbs v (read as m/s), a following as (1 +/- 0.1)^2; a variant restating `net_accel_g` beside the exit speed raises ExclusiveKeysError, a baseline writing both the validator's error | 1e-15 relative; 1e-12 (sensitivity) / raises |
-| `test_config.py::test_ignition_states_its_ramp_start_one_way`, `::test_ignition_ramp_start_refusals`, `::test_ramp_start_refused_on_a_pad_and_on_a_later_stage`, `::test_depth_deeper_than_the_stroke_is_refused` | "Experiment schema (planar)" and "Silo model", ramp-start conversions, rules of the config: each family of the ignition group validates alone and `ramp_start` gives its trigger and value (the time family when none is given, its defaults not counting as given); two families, a null, a height without its method or the reverse, `height_method: event` (naming SP1 step 4), a negative depth or speed, a zero height and a non-finite value are refused, alone and through RunConfig; a depth, speed or height is refused on a pad and on stage2, a depth deeper than `stroke_m` refused (0 and the stroke accepted) | raises / exact |
+| `test_config.py::test_ignition_states_its_ramp_start_one_way`, `::test_ignition_ramp_start_refusals`, `::test_ramp_start_refused_on_a_pad_and_on_a_later_stage`, `::test_depth_deeper_than_the_stroke_is_refused` | "Experiment schema (planar)" and "Silo model", ramp-start conversions, rules of the config: each family of the ignition group validates alone and `ramp_start` gives its trigger and value (height_closed_form or height_event by `height_method`, SP1 step 4) (the time family when none is given, its defaults not counting as given); two families, a null, a height without its method or the reverse (either method), a negative depth or speed, a zero height and a non-finite value are refused, alone and through RunConfig; a depth, speed or height is refused on a pad and on stage2, a depth deeper than `stroke_m` refused (0 and the stroke accepted) | raises / exact |
 | `test_config.py::test_ignition_dump_states_the_ramp_start_by_its_one_family`, `::test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` | "Experiment schema (planar)", the dump and the merge rule with the ignition fields in place: `model_dump` (python and json) holds the keys of the one family in use and validates again to an equal model with the same trigger, alone and in a RunConfig (the time-family key list written out, as before the step); a sweep axis `ignition.stage1.at_depth_m` over the shipped silo_hot_ramp_on_track (t_ign_s -2.0, reference release) and silo_cold (t_ign_s 0.5, the reference inherited from the baseline) of silo_screening_1d and silo_screening_2d gives points stated by the depth alone (run dict and `model_fields_set`), stage2 untouched; a variant `{at_speed_mps: 30}` the speed alone | exact |
 | `test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`, `::test_pinned_digest_is_the_sha256_of_the_json_text` | "Experiment schema (planar)", regression pins: every run and vehicle dict of the four shipped planar experiments has the sha256 of its `json.dumps` text captured before SP1 step 1; the number of pinned dicts equals the count the YAML declares (1 + variants + grid points, twice when paired, + 2 per sensitivity run and parameter + bound re-runs and their baselines + cases: 16, 60, 4, 10); the digest equals hashlib's of the literal JSON text and moves with a value, an added key or the key order | exact (sha256) |
 | `test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`, `::test_summary_matches_the_capture_in_the_capture_environment`, `::test_capture_helpers_see_added_keys_columns_and_files`, `::test_output_capture_records_the_git_state_it_was_taken_in`, `::test_recorded_silo_payloads_carry_their_provenance` | regression pins: the fast experiment writes the captured files, metrics.json key paths, resolved_config.yaml keys and CSV columns (the planar column constants); its provenance-free summary.md has the captured sha256 (capture environment only; skipped elsewhere, failed with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) and the tracked text is the one that digest belongs to; the helpers on hand-written records (key paths in first-seen order, an added key, a removed column, a reordered list, a new file); output_capture.json carries `captured_at` (keys `git`, `dirty`, `launchsim_from_checkout`, the hash not `no-git`) and no `reference_commit`, which only resolved_digests.json holds (c587a08, the helper's `REFERENCE_COMMIT`), and `capture_provenance` returns `no-git`, not dirty, not from the checkout for a directory outside any checkout and the hash and dirty flag of `results_io.git_info` for this one; the recorded silo_screening_2d P* (silo_cold 27,553.227114190096 kg as the phase file quotes it; the pad's equal to the calibration record's amended re-run) round to the cells of the tracked summary.md, within half its last printed decimal (0.05 kg), and equal the untracked metrics.json where it is on disk | exact / 0.05 kg against the printed cells |
@@ -5506,7 +5653,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_silo.py::test_hot_push_peak_power_from_the_dense_output` | 0.6 g0 hot: vertex value F_drive(0)^2 a/(4 mdot (a + g)) at t* = F_drive(0)/(2 mdot (a + g)) inside the push; braking minimum at release | 1e-9 relative (t* to 1e-6 s abs; the sampled maximum within 1e-3; measured 3e-14) |
 | `test_silo.py::test_exit_speed_push_closed_forms`, `::test_exit_speed_vertical_1d_run_from_the_experiment_file` | "Silo model", the push stated by its exit speed (v = 76.71 m/s, L = 200 m, cold, mu/r^2, through `ConstantAccelConfig` and `build_assist`): integrated exit speed v, push time 2 L / v; at every sample s = v^2 t^2 / (4 L), sdot = v^2 t / (2 L); felt (v^2 / (2 L) + g_eff)/g0; drive and interface force m0 (v^2 / (2 L) + g_eff); E_drive = m0 (v^2 / 2 + g_eff L); P_peak = F_drive v; braking v^2 / (2 a_brake), facility L + that; the 1-D metrics carry no push-setting key; end to end on vertical_1d from silo_screening_1d (a variant restating silo_cold by exit speed, `resolve_experiment`, `sim.run_resolved`): exit speed v, push time 2 L / v, the exit-speed assumption line written out | 1e-10 relative (felt 2.4993 g0 as a hand number to 1e-4) |
 | `test_silo.py::test_exit_speed_run_is_the_equivalent_net_accel_run`, `::test_net_accel_assumptions_keep_their_phase_1_text` | "Silo model", the same push stated two ways, cold and lit 1 s before release on the track: for this (v, L) v^2 / (2 L) and (v^2 / (2 g0 L)) g0 are the same double (asserted), and the time series, events and metrics are identical; the assumptions differ by the one exit-speed line, after the net-acceleration line; the nine Phase 1 lines written out for a model without a configured exit speed, the tenth line written out with one, a non-positive or non-finite one refused | exact (frames and metrics compared bit for bit) / raises |
-| `test_silo.py::test_resolve_depth_is_the_time_from_push_start_to_that_depth`, `::test_resolve_speed_is_the_time_from_push_start_to_that_speed`, `::test_resolve_closed_form_height_is_the_drag_free_coast_time`, `::test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_reach`, `::test_resolve_needs_the_constant_accel_drive_and_leaves_time_specs_alone`, `::test_ignition_spec_trigger_defaults_keep_every_time_spec_as_it_was` | "Silo model", ramp-start conversions (`resolve_ignition` on the 3 g0, 100 m silo): depth d -> (sqrt(2 (L - d) / a), push_start), d = L the push start; speed v -> (v / a, push_start); closed-form height h -> (the smaller root of v_e t - g t^2/2 = h, release) for two g_eff; depth 0, the exit speed and a rounding above it snap to (0, release); v_exit (1 + 1e-9), a depth below the push start, the apex and above, g_eff 0 and an event refused; a pad's NoAssist, no model or no track refused for a trigger, while a time config gives `from_config` unchanged on any model; the new IgnitionSpec fields keep every time spec equal and hashing alike | 1e-15 relative (depth, speed), 1e-12 (height) / exact / raises |
+| `test_silo.py::test_resolve_depth_is_the_time_from_push_start_to_that_depth`, `::test_resolve_speed_is_the_time_from_push_start_to_that_speed`, `::test_resolve_closed_form_height_is_the_drag_free_coast_time`, `::test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_reach`, `::test_resolve_needs_the_constant_accel_drive_and_leaves_time_specs_alone`, `::test_ignition_spec_trigger_defaults_keep_every_time_spec_as_it_was` | "Silo model", ramp-start conversions (`resolve_ignition` on the 3 g0, 100 m silo): depth d -> (sqrt(2 (L - d) / a), push_start), d = L the push start; speed v -> (v / a, push_start); closed-form height h -> (the smaller root of v_e t - g t^2/2 = h, release) for two g_eff; depth 0, the exit speed and a rounding above it snap to (0, release); v_exit (1 + 1e-9), a depth below the push start, the apex and above (by either height method, SP1 step 4; below it an event resolves to a height_event spec) and g_eff 0 refused; a pad's NoAssist, no model or no track refused for a trigger, while a time config gives `from_config` unchanged on any model; the new IgnitionSpec fields keep every time spec equal and hashing alike | 1e-15 relative (depth, speed), 1e-12 (height) / exact / raises |
 | `test_silo.py::test_one_d_ignition_event_lies_at_the_requested_depth`, `::test_one_d_ignition_event_lies_at_the_requested_speed`, `::test_one_d_closed_form_height_is_exact_under_constant_gravity` | "Silo model", ramp-start conversions on vertical_1d (F9, mu/r^2 or the injected ConstantGravity): the stage-1 ignition event of a depth d at z = -d, v = sqrt(2 a (L - d)), t = sqrt(2 (L - d) / a); of a speed v at v, z = -L + v^2 / (2 a), t = v / a; of a closed-form height under ConstantGravity = g_eff (no drag) at z = h, v = sqrt(v_e^2 - 2 g h) and t - t_release = the smaller root; no ramp-start metric on the 1-D model | 1e-9 absolute (m, m/s, s) |
 | `test_silo.py::test_one_d_depth_and_height_count_from_a_raised_mouth` | "Silo model", ramp-start conversions on vertical_1d with the mouth 30 m above the datum (track start at 30 - L): the ignition event of depth 50 at z = 30 - 50, v = sqrt(2 a (L - 50)) (mu/r^2); of a closed-form height 40 under ConstantGravity = g_eff at z = 30 + 40, v = sqrt(v_e^2 - 2 g 40), t - t_release the smaller root | 1e-9 absolute (m, m/s, s) |
 | `test_silo.py::test_a_later_stage_ramp_start_is_refused_where_the_specs_are_built` | "Silo model", ramp-start conversions: a stage-2 depth, speed or closed-form height is refused by `resolve_run` and, for a `RunConfig` validated without it, by `sim.run` and `sim.run_ignition_specs` (`resolve_stage_ignitions`) before anything is integrated; `IgnitionSpec.from_config` refuses every non-time config | raises |
@@ -5553,6 +5700,15 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_release_planar.py::test_radial_rise_earth_fixed_downrange` | amendment 11: the Earth-fixed downrange of a radial rise, R (h0 int dt/r^2 - omega t) in closed form for r = R + a t^2/2 (test gravity h0^2/r^3 + g_c); the leading Coriolis term -omega a t^3/3 (1 - 0.9 h/R) | 1e-7 relative (measured 1.2e-8); altitude 1e-9; (h/R)^2 |
 | `test_release_planar.py::test_planar_ignition_event_lies_at_the_requested_depth`, `::test_planar_ignition_event_lies_at_the_requested_speed` | "Silo model", ramp-start conversions on planar_2d (gate fork, 28.5 deg, 3 g0, 100 m; `resolve_ignition` with the site's g_ref): the ignition event of a depth d on the push at alt -d, abs(v_rel) sqrt(2 a (L - d)), t = sqrt(2 (L - d) / a); of a speed v at abs(v_rel) v, alt -L + v^2 / (2 a), t = v / a | 1e-9 absolute (the altitude passes through r = R_E + z: ulp(R_E) = 9.3e-10 m) |
 | `test_release_planar.py::test_planar_closed_form_height_is_reached_at_the_closed_form_time` | "Silo model", the closed-form height on planar_2d (h = 5, 40, 200 m): stage 1 lights at dt = (v_e - sqrt(v_e^2 - 2 g h)) / g after release with the site's g = mu/R_E^2 - omega_p^2 R_E, above the mouth; the height reached there differs from h (drag, mu/r^2, rotation), reported, not asserted to vanish (measured -6e-5, -3.8e-3 and -0.11 m) | 1e-9 s (time); 1e-6 m < abs(miss) < 0.5 m |
+| `test_height_event.py::test_ev_altitude_up_is_the_altitude_crossing_with_a_fold_past_the_apex`, `::test_ev_altitude_up_finds_a_crossing_just_below_the_apex` | "Event rules", the altitude event (SP1 step 4): g = altitude - z rising or at rest on both models, plus k w^2 past an apex, never below apex - z for a fall at a >= a_min (w^2 = 2 a (apex - z) computed in the test); on an uncapped constant-g vacuum coast from 60 m/s a crossing at apex - d (d = 10, 1, 1e-2, 1e-4 m) lands at t = (v0 - sqrt(v0^2 - 2 g z)) / g, z = apex - d; with the fold off (gain 0) the last three end at the apex instead; an altitude above the apex is never logged; a start above it is already past | 1e-12 (values); 1e-9 s, 1e-9 m; exact |
+| `test_height_event.py::test_one_d_event_lies_at_the_requested_height`, `::test_one_d_event_counts_from_a_raised_mouth` | "Silo model", the height by event on vertical_1d under mu/r^2 (h = 5, 40, 200, 299 m; and 40 m with the mouth 30 m above the datum): ignition in BURN at z = z_mouth + h at the `ignition_height` root, after an unlit push (nothing burned before release), no flag, no failed ignition, one assumption line, no ramp-start metric | `ATOL_M` (altitude); exact |
+| `test_height_event.py::test_one_d_event_time_is_the_closed_form_in_a_drag_free_constant_g_coast` | "Silo model": under an injected ConstantGravity = g_eff (no drag) the event lights at the smaller root of v_e t - g t^2/2 = h after release with v = sqrt(v_e^2 - 2 g h), and the closed-form method at the same time and state (h = 5, 40, 200, 299 m and 1 mm below v_e^2 / (2 g)); the thrust schedule counts from the event root: the ramp ends t_ramp after it and stage 1 burns out t_ramp / 2 + m_prop / mdot_full after it (mdot_full = n T_vac / (g0 Isp), computed in the test), and the ramp-end and burnout rows of the two methods agree | 1e-9 s, 1e-9 m/s, 1e-9 m; ramp end 1e-12 s; burnout 1e-9 s, 1e-9 relative (z, v) |
+| `test_height_event.py::test_one_d_flown_apex_lies_above_the_preflight_bound` | "Silo model", the preflight bound is conservative for the event on the 1-D model (no drag; with drag it is permissive: `::test_planar_apex_below_the_height_is_no_ignition`): the 1-D coast from the mouth at the datum under mu/r^2 (a failed ignition) peaks at h_0 / (1 - h_0 / R_E), h_0 = v_e^2 / (2 g_eff) (energy conservation: 300.270237 m against 300.256102 m), and a height between the two is refused by either method | 1e-6 m; raises |
+| `test_height_event.py::test_one_d_apex_below_the_height_is_refused`, `::test_one_d_failed_stage_flags_the_event_height_as_ignored`, `::test_planar_failed_stage_flags_the_event_height_as_ignored`, `::test_a_start_within_the_tolerance_lights_at_once`, `::test_one_d_coast_events_are_unchanged_by_the_default_extra`, `::test_planar_coast_events_are_unchanged_by_the_default_extra` | "Silo model" and "Phases and events": a 1-D coast under 1.01 g_eff peaks at v_e^2 / (2 x 1.01 g_eff), below the resolver's apex; a height between the two raises ValueError; `fails: true` with a height event is a failed-ignition run with "ignored: at_height_m = 40" and no altitude event, on both models (planar: no ignition time and no ignition altitude at the flight start); h = 1e-7 m lights at release on both models (no COAST_PRE_IGN, no event, no flag); both `_coast` functions at their default extra (and extra=()) list (apex,) rising and (impact,) falling with bit-identical samples, an extra event that never fires is listed rising only and changes no sample | raises / exact |
+| `test_height_event.py::test_planar_event_lies_at_the_requested_height`, `::test_planar_event_just_below_the_flown_apex_lights`, `::test_flight_start_tells_a_pending_ignition_from_a_failed_one`, `::test_a_height_event_spec_has_no_time_and_needs_a_push` | "Stage-1 guidance and events (planar)", ignition at a height, on the gate fork (drag, mu/r^2, rotation): a pending flight start (t_ign1_s None, ign1_alt_m = z_mouth + h, stage1_lights) after an unlit push; ignition at alt = h for h = 5, 40, 200, 280 m at the root, recorded as the ignition time, no flag, not the closed-form time, with stage 1's ramp ending t_ramp after the root; 0.5, 1e-2 and 1e-4 m below the flown apex lit before any apex; `FlightStart` refuses a time and an altitude together; a height_event spec has no time (refused t_ign_s or reference away from the defaults; `t_ign_abs_s` raises), and both planners and `RunConfig` refuse it on a pad | `ATOL_M`; ramp end 1e-12 s; exact / raises |
+| `test_height_event.py::test_planar_kick_deadline_counts_from_the_event_root` | "Stage-1 guidance and events (planar)", the kick deadline t_ign + deadline with t_ign the event root (as `test_planar_events.py::test_kick_deadline_counts_from_ignition` for a time-lit stage): at h = 200 m the rise's schedule is lit at the root (recorded as the ignition time) and the trigger comes at t_k; a deadline of t_k - t_root + 0.25 s kicks at t_k, one of t_k - t_root - 0.75 s raises no_kick (the root lies 3.30 s after the release, so a deadline counted from the release fails the first) | exact; typed |
+| `test_height_event.py::test_planar_apex_below_the_height_is_no_ignition`, `::test_a_fixed_guidance_run_that_never_lights_is_guidance_failed`, `::test_a_searched_run_that_never_lights_is_search_failed` | "Silo model": a height between the flown coast's apex (with drag: a failed ignition's coast to apex, measured in the test) and the drag-free apex v_e^2 / (2 g_ref) resolves but raises GuidanceFailure no_ignition in `to_kick` and `run`; through `sim.run_resolved` a fixed-guidance run reports guidance_failed (kind no_ignition) and a searched run search_failed (kind grid, naming no_ignition) | typed |
+| `test_height_event.py::test_planar_ramp_start_metrics_of_a_height_event`, `::test_ramp_start_rows_of_a_height_event_run`, `::test_the_preflight_refuses_a_height_at_the_drag_free_apex_for_both_methods`, `::test_a_searched_run_with_a_height_event_ramp_start_completes` (slow) | "Reporting definitions (planar)" and "Silo model": trigger height_event, requested height 40, requested time null, achieved height 40 within `ATOL_M` after release at the stage-1 ignition time; in the summary table (beside a closed-form 40 m run) the ramp-start rows follow the ignition rows, the trigger cells read height_closed_form and height_event, the requested height 40 and 40, the converted t_ign the closed form (v_e - sqrt(v_e^2 - 2 g_ref h)) / g_ref and n/a, the achieved height not 40 and 40 (6 digits); the preflight refuses the drag-free apex and 1.001 of it by either method, naming the run, and accepts 0.999 of it; a searched run (shipped budget) lit at 40 m by event inserts with its checks passing | `ATOL_M`; raises; exact |
 | `test_planar_events.py::test_liftoff_with_back_pressure_and_rotation` | the liftoff root of T_vac t/t_r - p0 A_e = (m0 - mdot t^2/(2 t_r)) g_ref (quadratic solved in the test), g_ref = mu/R_E^2 - omega_p^2 R_E; the mass there; the Earth-fixed pad state; the rise from the root lists no ground event and raises no flag ("Stage-1 guidance and events (planar)") | 1e-9 s; 1e-12 relative; exact |
 | `test_planar_events.py::test_kick_trigger_and_alignment`, `::test_kick_at_the_first_lit_instant_when_already_past`, `::test_falling_vehicle_never_kicks` | the kick trigger at V = v_k with w > 0; the alignment at gamma_rel = pi/2 - delta and the continuous thrust direction into the turn; the kick at the first lit instant (cold and hot silo starts; no VERTICAL_RISE phase, no run flag); no kick while falling, before the turnaround | 1e-9 m/s; 1e-9 rad; 1e-12 s; exact order |
 | `test_planar_events.py::test_kick_timeout_and_deadline_are_typed`, `::test_kick_deadline_counts_from_ignition`, `::test_a_dive_ends_at_the_ground` | GuidanceFailure kick_timeout and no_kick (deadline, burnout before the trigger); the deadline counts from stage-1 ignition, not from the flight start; a dive ends at the ground event (status impact; GuidanceFailure impact on the search path) | typed; altitude 1e-3 m |

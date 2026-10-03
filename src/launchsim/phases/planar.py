@@ -14,7 +14,10 @@ to the energy cutoff E = E* of the target orbit, with the fairing dropped at the
 heating-criterion event (the FAIRING map) and, in a search, virtual propellant under a
 mass floor; ``solve_stage2`` solves the steering pair (a, b) by shooting
 (``guidance.solve_ltg``). A failed ignition coasts unpowered to the apex and falls to
-the ground.
+the ground. A first stage stated by ``height_method: event`` (a pending ignition) lights
+where its pre-ignition coast crosses the requested altitude upward (the
+``ignition_height`` event), or fails with GuidanceFailure("no_ignition") at an apex
+below it.
 
 ``PlanarView`` is the planar ``StateView`` (alt_m, downrange_m, speed_rel_mps,
 speed_inertial_mps, gamma_rel_rad, m_kg); ``PlanarEnvironment`` holds what every
@@ -77,6 +80,7 @@ from launchsim.phases.engine import (
     PhaseSpec,
     _pass_through,
     atol_for,
+    ev_altitude_up,
     ev_ground,
     ev_kick_aligned,
     ev_kick_start,
@@ -88,6 +92,7 @@ from launchsim.phases.engine import (
     integrate_phase,
 )
 from launchsim.phases.prelude import (
+    IGNITION_HEIGHT_EVENT,
     VERTICAL_TRACK_TOL_RAD,
     HoldParams,
     IgnitionSpec,
@@ -554,7 +559,11 @@ class FlightStart:
     "no_liftoff" / "drive_limit" (no flight follows); t_fs_s [s] and y_fs (planar
     state, theta = 0): the flight start (release, or the liftoff root of an extended
     hold), None without a flight; t_ign1_s [s]: stage 1's absolute ignition time, None
-    when its ignition fails.
+    when its ignition fails or when it lights at an altitude; ign1_alt_m [m]: the
+    altitude above the datum at which stage 1 lights (the track exit plus the height of
+    ``height_method: event``, a pending ignition the planner resolves in flight), None
+    otherwise. ``stage1_lights`` tells the two None cases apart: a stage that lights at
+    a height never counts as a failed ignition.
     """
 
     prefix: RunTrace
@@ -562,6 +571,17 @@ class FlightStart:
     t_fs_s: float | None
     y_fs: np.ndarray | None
     t_ign1_s: float | None
+    ign1_alt_m: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.t_ign1_s is not None and self.ign1_alt_m is not None:
+            raise ValueError("stage 1 lights at a time or at an altitude, not both")
+
+    @property
+    def stage1_lights(self) -> bool:
+        """Whether stage 1 lights: at its ignition time, or at its ignition altitude (a
+        pending ignition); False only for a failed ignition (or no flight)."""
+        return self.t_ign1_s is not None or self.ign1_alt_m is not None
 
 
 @dataclass(frozen=True, eq=False)
@@ -831,6 +851,8 @@ class PlanarPlanner:
         spec = self.ignition[stage0.name]
         if spec.reference != "release":
             raise ValueError("a pad run has no push: use reference 'release' for the first stage")
+        if spec.lights_at_height:
+            raise ValueError("a pad run has no track exit: a ramp start by height needs a push")
         tr = self.new_builder()
         g_ref = self.env.g_ref_mps2
         p0 = self.env.ambient_pa(0.0)
@@ -887,7 +909,10 @@ class PlanarPlanner:
         PLANAR_LAYOUT with the track's constant g_eff = g_ref and the constant ambient
         pressure p(z_exit), then ``map_release_planar`` (vertical tracks only in Phase 2)
         at the track-end root; the flight starts at release (t_fs = t_release, theta =
-        0). A drive-limit stop on the track ends the start with status drive_limit."""
+        0). A drive-limit stop on the track ends the start with status drive_limit. A
+        first stage stated by ``height_method: event`` flies the push unlit and starts
+        the flight with a pending ignition at the altitude z_exit + h
+        (``FlightStart.ign1_alt_m``), which ``_fly_to_kick`` resolves."""
         stage0 = self.vehicle.stages[0]
         spec = self.ignition[stage0.name]
         tr = self.new_builder()
@@ -911,16 +936,28 @@ class PlanarPlanner:
         tr.y_release = y_rel.copy()
         tr.add_event("release", t, ASSIST_KIND, 0, y_rel)
         t_ign = tr.t_ign_abs_s.get(stage0.name)
-        return self._begin_flight(tr, t, y_rel, t_ign)
+        ign_alt = None
+        if spec.lights_at_height and not spec.fails and spec.trigger_value is not None:
+            ign_alt = exit_.z_exit_m + spec.trigger_value
+        return self._begin_flight(tr, t, y_rel, t_ign, ign_alt)
 
     def _begin_flight(
-        self, tr: TraceBuilder, t: float, y: np.ndarray, t_ign: float | None
+        self,
+        tr: TraceBuilder,
+        t: float,
+        y: np.ndarray,
+        t_ign: float | None,
+        ign_alt_m: float | None = None,
     ) -> FlightStart:
-        """Record the flight start (t_fs, theta = 0 there) and bind the view to it."""
+        """Record the flight start (t_fs, theta = 0 there) and bind the view to it.
+        t_ign [s]: stage 1's ignition time, or ign_alt_m [m]: the altitude above the
+        datum at which it lights (a pending ignition); both None for a failed one."""
         tr.t_flight_start_s = t
         tr.y_flight_start = np.array(y, dtype=float, copy=True)
         tr.rebind_view(PlanarView(self.env.omega_p_rads, self.env.r_datum_m, t))
-        return FlightStart(tr.finish(), "nominal", t, tr.y_flight_start.copy(), t_ign)
+        return FlightStart(
+            tr.finish(), "nominal", t, tr.y_flight_start.copy(), t_ign, ign1_alt_m=ign_alt_m
+        )
 
     # ---------------------------------------------------------------------- stage 1
 
@@ -929,7 +966,11 @@ class PlanarPlanner:
 
         An unpowered COAST_PRE_IGN runs from t_fs to the ignition time when it is
         later (apex split, ground event; no kick trigger: the trigger is judged from
-        the first lit instant on). At the first lit instant the planner evaluates the
+        the first lit instant on); with a pending ignition (``FlightStart.ign1_alt_m``,
+        ``height_method: event``) it runs instead to the ``ignition_height`` event,
+        the altitude crossed upward, listed in its rising sub-phase, and stage 1 lights
+        at that root (at once when the flight start is already within ATOL_M of it).
+        At the first lit instant the planner evaluates the
         trigger g = min(V - v_k, w) itself: g > zero_tol (a release or an ignition
         already faster than v_k while rising) logs ``kick_start`` there and the kick
         starts at once, with no VERTICAL_RISE phase. Otherwise VERTICAL_RISE with
@@ -937,16 +978,19 @@ class PlanarPlanner:
         listing propellant, the rising apex split or (falling) the ground and the
         turnaround split, ``kick_start`` and ``kick_deadline`` (t_ign + deadline). Raises
         GuidanceFailure: "impact" (the ground before the kick), "no_kick" (the deadline,
-        or burnout before the trigger). With vertical-only guidance the rise runs to
-        burnout (KickPoint.kicked False). ValueError when the start has no flight or
-        stage 1's ignition fails.
+        or burnout before the trigger), "no_ignition" (a pending ignition whose coast
+        reaches its apex below the ignition altitude). With vertical-only guidance the
+        rise runs to burnout (KickPoint.kicked False). ValueError when the start has no
+        flight or stage 1's ignition fails.
         """
         if start.status != "nominal" or start.t_fs_s is None or start.y_fs is None:
             raise ValueError(f"no flight to guide: the prelude ended with status {start.status!r}")
-        if start.t_ign1_s is None:
+        if not start.stage1_lights:
             raise ValueError("stage 1's ignition fails: there is nothing to guide")
         tr = resume_builder(start.prefix, self.vehicle.stage_names)
-        how, t, y, schedule = self._fly_to_kick(tr, start.t_fs_s, start.y_fs, start.t_ign1_s)
+        how, t, y, schedule = self._fly_to_kick(
+            tr, start.t_fs_s, start.y_fs, start.t_ign1_s, start.ign1_alt_m
+        )
         if how == "impact":
             raise GuidanceFailure(
                 "impact", f"the vehicle hit the ground at t = {t:.6g} s before the kick"
@@ -1029,18 +1073,20 @@ class PlanarPlanner:
         lit stage 2 that reaches the energy cutoff, apex and impact end the run at the
         cutoff like insertion (status inserted or off_target, with a flag): there is no
         terminal coast. An impact before the end ends the run with status impact. Other
-        GuidanceFailure kinds (no_kick, kick_timeout, lofted_overshoot) propagate.
+        GuidanceFailure kinds (no_kick, no_ignition, kick_timeout, lofted_overshoot)
+        propagate. A stage 1 that lights at an altitude (a pending ignition) is a lit
+        stage 1, never a failed one.
         """
         start = self.start(assist, track)
         tr = resume_builder(start.prefix, self.vehicle.stage_names)
         if start.status != "nominal" or start.t_fs_s is None or start.y_fs is None:
             return tr.finish()
         t, y = start.t_fs_s, start.y_fs
-        if start.t_ign1_s is None:
+        if not start.stage1_lights:
             self._fail_ignition(tr, 0, t, y)
             self._terminal_coast(tr, 0, t, y)
             return tr.finish()
-        how, t, y, schedule = self._fly_to_kick(tr, t, y, start.t_ign1_s)
+        how, t, y, schedule = self._fly_to_kick(tr, t, y, start.t_ign1_s, start.ign1_alt_m)
         kick_info = _no_kick_info()
         if how == "kick":
             delta_rad = _check_delta(delta_rad)
@@ -1352,20 +1398,29 @@ class PlanarPlanner:
         *,
         hint: bool | None = None,
         stop_at_apex: bool = False,
+        extra: tuple[EventSpec, ...] = (),
     ) -> tuple[float, np.ndarray, str]:
         """Unpowered flight of kind ``kind`` from t to t_end (None: open-ended) [s],
         split at the radial apex: a rising phase lists ``apex``, a falling one the
-        ground. Returns (t, y, how), how in {"time", "apex", "impact"}; an apex
-        continues falling unless stop_at_apex; an impact sets tr.status. A falling
-        phase that starts on the ground (within ATOL_M, moving down) is the impact
-        itself (a zero-length pass-through), as in the 1-D planner. Every sub-phase
-        integrates with max_step = planar_max_step_s (``_step_cap``)."""
+        ground. Returns (t, y, how), how in {"time", "apex", "impact"} or the name of
+        an ``extra`` event; an apex continues falling unless stop_at_apex; an impact
+        sets tr.status. extra: terminal events listed after ``apex`` in the rising
+        sub-phases only (none by default, which leaves every event list as before),
+        so an event of the altitude is monotone where it is listed (the altitude rises
+        monotonically up to the apex split; the step that overshoots the apex is
+        covered by the fold of ``engine.ev_altitude_up``, docs/physics.md, "Event
+        rules"); when one fires the coast returns at its root with how = its name. A
+        falling phase that starts on
+        the ground (within ATOL_M, moving down) is the impact itself (a zero-length
+        pass-through), as in the 1-D planner. Every sub-phase integrates with max_step
+        = planar_max_step_s (``_step_cap``)."""
         params = self._unpowered()
+        extra_names = {ev.name for ev in extra}
         while True:
             rising = self._rising(t, y, params, hint)
             hint = None
             events: tuple[EventSpec, ...] = (
-                (ev_radial_apex(),) if rising else (ev_ground(self.model, self.z_ground_m),)
+                (ev_radial_apex(), *extra) if rising else (ev_ground(self.model, self.z_ground_m),)
             )
             spec = PhaseSpec(
                 kind, k, t, t_end, rhs_planar, params, events, self.atol, self._step_cap(None, t)
@@ -1383,6 +1438,8 @@ class PlanarPlanner:
             t, y = res.t_end, res.y_end
             if res.ended_by in ("t_end", "zero_span"):
                 return t, y, "time"
+            if res.ended_by in extra_names:
+                return t, y, res.ended_by
             if res.ended_by == "apex":
                 if stop_at_apex:
                     return t, y, "apex"
@@ -1444,13 +1501,22 @@ class PlanarPlanner:
             return res.ended_by, t, y
 
     def _fly_to_kick(
-        self, tr: TraceBuilder, t: float, y: np.ndarray, t_ign: float
+        self,
+        tr: TraceBuilder,
+        t: float,
+        y: np.ndarray,
+        t_ign: float | None,
+        ign_alt_m: float | None = None,
     ) -> tuple[str, float, np.ndarray, ThrustSchedule]:
         """The pre-ignition coast and the vertical rise (see ``to_kick``) from the flight
         start t [s] (planar state y, theta = 0) with stage 1 lit at the absolute time
-        t_ign [s] (the callers have checked that a flight exists and stage 1 lights).
-        Returns (how, t, y, schedule), how in {"kick", "meco", "impact"} ("meco" only
-        for vertical-only guidance). Raises GuidanceFailure("no_kick").
+        t_ign [s], or, when t_ign is None, at the altitude ign_alt_m [m] above the datum
+        (a pending ignition: ``_coast_to_ignition``, which sets t_ign to the event root
+        and records it in tr.t_ign_abs_s); the callers have checked that a flight exists
+        and stage 1 lights. From the ignition on, the thrust schedule, its step caps and
+        the kick deadline are built from t_ign exactly as for a time-lit stage. Returns
+        (how, t, y, schedule), how in {"kick", "meco", "impact"} ("meco" only for
+        vertical-only guidance). Raises GuidanceFailure("no_kick", "no_ignition").
 
         The kick at the first lit instant is decided here, not by a zero-length rise
         ended through the engine's already-past rule, so this nominal case (every
@@ -1460,8 +1526,16 @@ class PlanarPlanner:
         altitude stay at zero and disarm the event with a spurious flag."""
         stage0 = self.vehicle.stages[0]
         spec = self.ignition[stage0.name]
-        schedule = stage0.schedule(t_ign, spec.startup, spec.fails)
         hint: bool | None = True  # a flight starts at a liftoff root or a release moving up
+        if t_ign is None:
+            if ign_alt_m is None:
+                raise ValueError("stage 1 needs an ignition time or an ignition altitude")
+            t, y, coasted = self._coast_to_ignition(tr, t, y, ign_alt_m)
+            if coasted:
+                hint = None
+            t_ign = t
+            tr.t_ign_abs_s[stage0.name] = t_ign
+        schedule = stage0.schedule(t_ign, spec.startup, spec.fails)
         if t_ign > t + ZERO_SPAN_S:
             t, y, how = self._coast(tr, COAST_PRE_IGN, 0, t, t_ign, y, hint=hint)
             hint = None
@@ -1508,6 +1582,41 @@ class PlanarPlanner:
                     f"{g.kick_deadline_s:.6g} s of stage-1 ignition",
                 )
             hint = ended == "turnaround"  # an apex hands over falling, a turnaround rising
+
+    def _coast_to_ignition(
+        self, tr: TraceBuilder, t: float, y: np.ndarray, ign_alt_m: float
+    ) -> tuple[float, np.ndarray, bool]:
+        """A pending stage-1 ignition (``height_method: event``): COAST_PRE_IGN from the
+        flight start t [s] (planar state y, moving up) to the ``ignition_height`` event
+        (``ev_altitude_up``: alt - ign_alt_m crossing upward, ign_alt_m [m] above the
+        datum), listed in the rising sub-phase beside the apex split (the altitude is
+        monotone there). Returns (t, y, coasted): the event root and the state there with
+        coasted True (a COAST_PRE_IGN phase was flown), or the flight start itself with
+        coasted False when it is already within the event's zero_tol (ATOL_M) below the
+        altitude or above it, which the planner decides here, as it decides the kick at
+        the first lit instant, so no zero-length phase and no engine note is involved
+        (the same flag, with the same meaning, as ``VerticalPlanner._coast_to_ignition``).
+        Raises GuidanceFailure("no_ignition") when the coast reaches its apex first: the
+        stage never gets to its ignition altitude (drag, mu/r^2 and rotation put the real
+        apex off the drag-free apex v_e^2 / (2 g_eff), which the resolver checks before
+        the run). Frame: planar ECI; altitudes above the datum."""
+        event = ev_altitude_up(self.model, ign_alt_m, IGNITION_HEIGHT_EVENT)
+        if event.fn(t, y) >= -event.zero_tol:
+            return t, y, False
+        t, y, how = self._coast(
+            tr, COAST_PRE_IGN, 0, t, None, y, hint=True, stop_at_apex=True, extra=(event,)
+        )
+        if how == IGNITION_HEIGHT_EVENT:
+            return t, y, True
+        if how != "apex":
+            raise RuntimeError(f"the pre-ignition coast ended by {how!r} (planner bug)")
+        alt = float(self.model.altitude(y))
+        raise GuidanceFailure(
+            "no_ignition",
+            f"the coast after release reached its apex at {alt:.9g} m (t = {t:.6g} s), "
+            f"{ign_alt_m - alt:.6g} m below the ignition altitude {ign_alt_m:.9g} m of "
+            "height_method: event: stage 1 never lights",
+        )
 
     def _fly_kick_turn(
         self,
