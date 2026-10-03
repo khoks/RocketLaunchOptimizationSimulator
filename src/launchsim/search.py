@@ -49,6 +49,7 @@ from launchsim.constants import MU_EARTH_M3S2
 from launchsim.dynamics import PLANAR_LAYOUT, InverseSquareGravity
 from launchsim.guidance import (
     LTG_B_SCALE_S,
+    DeltaSolution,
     DeltaSolveSettings,
     GuidanceFailure,
     GuidanceSpec,
@@ -61,6 +62,7 @@ from launchsim.phases.planar import (
     INSERTED_STATUS,
     OFF_TARGET_STATUS,
     SHORT_OF_ORBIT_STATUS,
+    Handover,
     KickPoint,
     PlanarEnvironment,
     PlanarPlanner,
@@ -408,6 +410,13 @@ class WarmStore:
         return hit
 
 
+def kick_cache_key(payload_kg: float, mode: str) -> tuple[float, str]:
+    """The WarmStore kick-cache key of an evaluation at payload_kg [kg] in mode: (payload,
+    tolerance class), the class FINAL_MODE for final mode and SEARCH_MODE for grid and
+    search, which share the search tolerances (``SearchContext.settings_for``)."""
+    return (payload_kg, FINAL_MODE if mode == FINAL_MODE else SEARCH_MODE)
+
+
 # -------------------------------------------------------------------- problem protocol
 
 
@@ -621,17 +630,65 @@ class SearchContext:
         (warm pair likewise; at most grid_max_rungs rungs in grid mode) with virtual
         propellant, and m_res and dv_margin of the accepted shot. The solved evaluation is
         added to warm. Raises GuidanceFailure or PreludeFailure, and ValueError when warm
-        belongs to another problem (``WarmStore.claim``)."""
+        belongs to another problem (``WarmStore.claim``). The body is
+        ``evaluate_planner`` with this payload's planner and kick-cache key."""
         warm.claim(self)
-        planner = self.planner(payload_kg, mode)
-        tol_class = FINAL_MODE if mode == FINAL_MODE else SEARCH_MODE
-        kick = warm.kick_point((payload_kg, tol_class), lambda: self._kick(planner))
+        return self.evaluate_planner(
+            self.planner(payload_kg, mode),
+            kick_cache_key(payload_kg, mode),
+            payload_kg,
+            gamma_star_rad,
+            warm,
+            mode,
+            seed=seed,
+        )
+
+    def solve_delta(
+        self,
+        planner: PlanarPlanner,
+        kick_key: tuple[float, str],
+        gamma_star_rad: float,
+        warm: WarmStore,
+        delta_warm_rad: float | None,
+    ) -> DeltaSolution[Handover]:
+        """Stage 1 of one evaluation on planner: its kick point (the prelude and the
+        vertical rise, ``_kick``), cached in warm under kick_key (payload [kg], tolerance
+        class; ``kick_cache_key``), then the delta solve for gamma* [rad] through the
+        staging coast, warm from delta_warm_rad [rad] (None: cold). The kick point depends
+        on planner's vehicle, ignition and tolerances, not only on the key: a caller that
+        evaluates another vehicle or tolerance class under the same key must use another
+        store. Raises GuidanceFailure or PreludeFailure, and ValueError when warm belongs
+        to another problem (``WarmStore.claim``)."""
+        warm.claim(self)
+        kick = warm.kick_point(kick_key, lambda: self._kick(planner))
+        return solve_delta_for_gamma(
+            lambda d: planner.from_kick(d, kick), gamma_star_rad, self.budget.delta, delta_warm_rad
+        )
+
+    def evaluate_planner(
+        self,
+        planner: PlanarPlanner,
+        kick_key: tuple[float, str],
+        payload_kg: float,
+        gamma_star_rad: float,
+        warm: WarmStore,
+        mode: str,
+        *,
+        seed: WarmEntry | None = None,
+    ) -> ResidualResult:
+        """Rung 2 on a given planner (the body of ``evaluate``, which passes the planner
+        of payload_kg [kg] in mode and ``kick_cache_key(payload_kg, mode)``): stage 1 by
+        ``solve_delta`` (the kick point cached under kick_key; delta warm from seed, else
+        from the entry of warm with the nearest gamma* [rad], cold when none), the LTG
+        shooting from the hand-over (that entry's (a, b) as the warm pair) with virtual
+        propellant, and m_res and dv_margin of the accepted shot. payload_kg labels the
+        result and the warm entry; it must be the planner's payload. The solved evaluation
+        is added to warm. Raises GuidanceFailure or PreludeFailure, and ValueError when
+        warm belongs to another problem."""
         near = seed if seed is not None else warm.nearest(gamma_star_rad)
         d_warm = None if near is None else near.delta_rad
         l_warm = None if near is None else near.ltg
-        sol = solve_delta_for_gamma(
-            lambda d: planner.from_kick(d, kick), gamma_star_rad, self.budget.delta, d_warm
-        )
+        sol = self.solve_delta(planner, kick_key, gamma_star_rad, warm, d_warm)
         lt = planner.solve_stage2(sol.handover, warm=l_warm)
         warm.add(WarmEntry(gamma_star_rad, payload_kg, sol.delta_rad, (lt.a, lt.b_per_s)))
         return ResidualResult(
@@ -1841,13 +1898,12 @@ def joint_root_crosscheck(
     def shot(x: np.ndarray) -> tuple[Stage2Result, np.ndarray]:
         p = float(x[2]) * JOINT_P_SCALE_KG
         planner = ctx.planner(p, mode)
-        tol_class = FINAL_MODE if mode == FINAL_MODE else SEARCH_MODE
-        kick = warm.kick_point((p, tol_class), lambda: ctx._kick(planner))
         near = warm.nearest(gamma_star_rad)
-        sol = solve_delta_for_gamma(
-            lambda d: planner.from_kick(d, kick),
+        sol = ctx.solve_delta(
+            planner,
+            kick_cache_key(p, mode),
             gamma_star_rad,
-            ctx.budget.delta,
+            warm,
             None if near is None else near.delta_rad,
         )
         warm.add(WarmEntry(gamma_star_rad, p, sol.delta_rad, None))
