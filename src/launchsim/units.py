@@ -3,9 +3,10 @@
 Internally everything is SI and radians. Degrees, km, kN, tonnes, g, kWh and MJ appear
 only in configuration files, plot labels and reports and are converted here. Nothing
 else in the package multiplies by 1000, 1e6, pi/180 or g0. Percent is a reporting
-format, not covered by that rule: the offload reports use ``to_percent``, other labels
-Python's ``%`` format spec or a factor 100 of their own (the calibration footnote in
-plots.py). All functions accept floats or numpy arrays.
+format, not covered by that rule: the offload reports and the calibration footnote in
+plots.py use ``to_percent``, other labels Python's ``%`` format spec or a factor 100 of
+their own (the replay page's labels in replay.py). All functions accept floats or numpy
+arrays.
 """
 
 from __future__ import annotations

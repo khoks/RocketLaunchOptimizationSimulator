@@ -1332,6 +1332,67 @@ Step 8 (2026-10-03):
    stage-1 headline; the pre-registration note states it as a tested expectation. Stage 1
    stays the only headline either way (D-SP1-10).
 
+Step 8a (2026-10-03):
+
+1. **The footnote calls a recorded vehicle other than the gate "This vehicle".** With its
+   name the README-loads fork's footnote line ran to 1416 px in the 1280 px frame (right
+   margin 1261 px; measured at the frame geometry), so `plots.calibration_caveat` names
+   the gate "Gate vehicle" (its sentence unchanged word for word) and any other recorded
+   vehicle "This vehicle", adding "inside the +/-10% band" for a record inside it; a
+   test renders every record's line at the frame geometry and checks it ends inside the
+   frame. The replay caveat already said "within the gate" for a record inside the band
+   and is unchanged; the offload block's caveat ("a documented calibration result")
+   reads correctly either way and is unchanged.
+2. **Shared calibration helpers.** `CALIBRATION_BAND` moved from replay.py to plots.py,
+   beside `CALIBRATION_RECORDS`, with `CALIBRATION_GATE_VEHICLE`, `calibration_gap` and
+   `inside_calibration_band`, used by both caveats (replay's text unchanged). The
+   footnote now calls `units.to_percent` (KI-027, "when plots.py is next touched"; the
+   output is identical, the product being the same double), and the units.py docstring
+   says so.
+3. **An existing test changed, as the brief asked:**
+   `tests/test_animate.py::test_calibration_record_matches_its_findings_note`. Its two
+   assertions ("P* = X kg", "+gap% against reference") match only the gate's
+   one-paragraph result; CAL-f9-leo-2d.md gives the README-loads fork in its results
+   table only. Every record is now checked against its case's results row (P* to 0.1
+   kg, the gap to 0.01 points, inside or outside the band) and against the case's
+   recorded P* in tests/data/calibration_record.json; the gate's two paragraph
+   assertions are kept.
+4. **The empty-`of` note covers more than the brief's case.** A block whose `of` lists
+   no run always gets "no run has payload sensitivity cases ..." (with offload arms it
+   adds where they are, or that `--no-offload` skipped them); a block with an empty
+   `of` and no arms is not reported as undeclared either. No block, a block whose `of`
+   lists runs and `--no-sensitivity` keep their notes.
+5. **Every sweep point's case gets a flag line**, also one without a decomposition (a
+   reference_failed point: "n/a: nothing solved"), so a point's flags are on disk
+   whatever its outcome. A solve that ended search_failed has no flags of its own, so
+   its line adds the status and failure kind ("none (solve search_failed: bracket)"),
+   and a fixed case whose payload search did not end ok adds that status (review
+   round 1).
+6. **A fourth reporting fix, beyond the brief's three: the stage-2 caveat** (review
+   round 1). `summary.OFFLOAD_CAVEATS` ended with "total tonnes are maximised by a
+   stage-1-only offload, so 'both' cannot beat the headline", the section 5.3 sentence
+   step 8 corrected (step 8, item 7) and the pre-registration tests rather than assumes;
+   it would have shipped in every offload summary of the pre-registered run. It now
+   says that a stage-1-only offload is not assumed to maximise the total tonnes and
+   that stage 1 stays the only headline, and it places the marginal value of stage-2
+   propellant on the gate vehicle instead of "this vehicle" (the bridge prints the same
+   caveat of the README-loads fork). Pre-registration Amendment 1, item 4; a test pins
+   the wording. The session lead may move it to a step of its own.
+7. **Amendment 1 keeps every registered verdict** (review round 1). The first draft
+   read sweep 2's spread against a narrower R from the recorded gamma*_ref (section 3's
+   first branch), which turned some spreads section 7 calls unresolved into defects
+   while saying no criterion changed. The amendment now keeps section 3's branch
+   assignment (sweep points at the cap) and section 7's 2.55 kg verdict, and reports
+   the first-branch reading, R_rec = 0.25 kg + min(65.7 kg/deg x |dgamma*_ref|,
+   2.30 kg), beside it; sweeps 4 and 5 stay at the cap with no second reading.
+   Adopting R_rec as the verdict would be a change of a pre-registered reading: a
+   decision for the user, logged in TODO.md, before the run.
+8. **The calibration band includes its edges.** `plots.inside_calibration_band`
+   compares with a relative tolerance of 1e-12 (`CALIBRATION_BAND_EDGE_REL_TOL`), so a
+   record exactly at +10% (25,080 kg, whose P*/22,800 - 1 rounds to just above 0.1)
+   reads inside like one at -10% (review round 1). Neither shipped record is near an
+   edge, so no output changes.
+
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
 deviation.

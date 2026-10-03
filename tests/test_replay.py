@@ -42,6 +42,8 @@ EVENT_COLUMNS = ["t_s", "event", "phase", "stage", "alt_m", "downrange_m", "spee
 RUNS = ("pad", "silo", "silo_step")
 BOUND_AND_CASE_RUNS = {"pad__aero_bound": False, "silo__aero_bound": True, "alt_low": False}
 """Run folders outside metrics.json runs: a bound re-run, its paired baseline, a case."""
+PLUS_MINUS_SIGN = "\u00b1"
+"""The plus-minus sign the replay page prints (U+00B1), written by its code point."""
 
 
 def _row(t_rel: float, offset: float, assist: bool) -> dict[str, object]:
@@ -334,6 +336,25 @@ def test_calibration_caveat_is_conditional_on_the_vehicle() -> None:
     gate = replay.calibration_caveat("generic_f9_class_2d")
     assert "+14.3% high" in gate and "documented miss" in gate
     assert "no calibration record" in replay.calibration_caveat("some_other_vehicle")
+
+
+def test_calibration_caveat_says_within_the_band_for_the_readme_loads_fork() -> None:
+    """SP1 step 8a: the README-loads fork's record, 100 (24,700/22,800 - 1) = +8.3 % high,
+    reads within the +/-10 % gate with its masses and is not called a miss; the gate's
+    caveat is word for word what it was before the record was added."""
+    text = replay.calibration_caveat("generic_f9_class_2d_readme_loads")
+    gap = 100.0 * (24700.0 / 22800.0 - 1.0)
+    assert f"{gap:+.1f}% high" in text and "+8.3% high" in text
+    pm = PLUS_MINUS_SIGN
+    assert f"within the {pm}10% gate" in text
+    assert "miss" not in text and "outside" not in text
+    assert "carries 24,700 kg against the published 22,800 kg" in text
+    assert replay.calibration_caveat("generic_f9_class_2d") == (
+        "The vehicle (generic_f9_class_2d) calibrates +14.3% high: its calibration run "
+        f"carries 26,054 kg against the published 22,800 kg, outside the {pm}10% gate, a "
+        "documented miss (docs/findings/CAL-f9-leo-2d). Read these numbers as differences "
+        "between runs."
+    )
 
 
 def test_embedded_json_cannot_close_its_script_and_rejects_nan() -> None:

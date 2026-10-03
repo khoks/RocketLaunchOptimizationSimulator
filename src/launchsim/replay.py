@@ -85,8 +85,6 @@ TRACK_ANGLE_TOL_DEG = 1e-6
 """Tolerance [deg] on the vertical-track test."""
 INSTANT_IGNITION_TOL_S = 1e-6
 """|t_ign| [s] below which a stage-1 ignition counts as at release."""
-CALIBRATION_BAND = 0.10
-"""Relative payload band of the calibration gate (CLAUDE.md, Calibration)."""
 DRY_MASS_PARAM = "vehicle.stages.stage1.dry_mass_t"
 """Sensitivity parameter whose +/- cases give dP*/d(stage-1 dry mass)."""
 INSERTED = "inserted"
@@ -664,8 +662,9 @@ def fraction_text(lo: float, hi: float) -> str:
 
 
 def calibration_caveat(vehicle: str) -> str:
-    """The calibration caveat of a vehicle from plots.CALIBRATION_RECORDS, or a note
-    that it has no calibration record."""
+    """The calibration caveat of a vehicle from plots.CALIBRATION_RECORDS: its gap and
+    whether it lies within the gate band (``plots.inside_calibration_band``) or outside
+    it, a documented miss; or a note that it has no calibration record."""
     record = plots.CALIBRATION_RECORDS.get(vehicle)
     if record is None:
         return (
@@ -673,12 +672,13 @@ def calibration_caveat(vehicle: str) -> str:
             "differences between runs, not as absolute payloads."
         )
     model_kg, reference_kg, note = record
-    gap = model_kg / reference_kg - 1.0
+    gap = plots.calibration_gap(model_kg, reference_kg)
     side = "high" if gap >= 0.0 else "low"
+    band_pct = 100 * plots.CALIBRATION_BAND
     band = (
-        f"outside the {PLUS_MINUS}{100 * CALIBRATION_BAND:.0f}% gate, a documented miss"
-        if abs(gap) > CALIBRATION_BAND
-        else f"within the {PLUS_MINUS}{100 * CALIBRATION_BAND:.0f}% gate"
+        f"within the {PLUS_MINUS}{band_pct:.0f}% gate"
+        if plots.inside_calibration_band(gap)
+        else f"outside the {PLUS_MINUS}{band_pct:.0f}% gate, a documented miss"
     )
     return (
         f"The vehicle ({vehicle}) calibrates {100 * gap:+.1f}% {side}: its calibration "

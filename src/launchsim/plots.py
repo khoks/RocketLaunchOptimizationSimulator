@@ -49,7 +49,7 @@ from launchsim.phases.planar import (
     LTG_BURN,
     VERTICAL_RISE,
 )
-from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, rad_to_deg
+from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
     from launchsim.sim import Result
@@ -473,13 +473,42 @@ PHASE_LABELS: dict[str, str] = {
 
 CALIBRATION_RECORDS: dict[str, tuple[float, float, str]] = {
     "generic_f9_class_2d": (26054.4, 22800.0, "docs/findings/CAL-f9-leo-2d"),
+    "generic_f9_class_2d_readme_loads": (24700.0, 22800.0, "docs/findings/CAL-f9-leo-2d"),
 }
 """Calibration record per vehicle (resolved_config.yaml vehicle.name) for the footnote:
 (model payload capacity P* [kg] of its calibration run, published reference [kg], the
-findings note). generic_f9_class_2d: results/calibration_f9_2d/20260930T100100Z, gate
-vehicle (mass set C), P* 26,054.4 kg against 22,800 kg to LEO (spacex.com, expendable).
-A re-run calibration must update this entry; tests/test_animate.py checks it against the
-note. A vehicle not listed gets a 'no calibration record' caveat."""
+findings note). Both from results/calibration_f9_2d/20260930T100100Z against 22,800 kg
+to LEO (spacex.com, expendable): generic_f9_class_2d, the gate vehicle (mass set C, run
+pad), P* 26,054.4 kg, +14.27%, outside the band (a documented miss, accepted
+2026-09-30); generic_f9_class_2d_readme_loads (mass set A, README loads, case
+readme_loads; SP1 step 8a), P* 24,700.0 kg, +8.33%, inside the band. A re-run
+calibration must update these entries; tests/test_animate.py checks each against the
+note and tests/data/calibration_record.json. A vehicle not listed gets a 'no calibration
+record' caveat."""
+CALIBRATION_BAND = 0.10
+"""Relative payload band of the calibration gate (CLAUDE.md, Calibration: within +/-10%
+of the published figure); the footnote and the replay page say when a record lies
+inside it (``inside_calibration_band``)."""
+CALIBRATION_BAND_EDGE_REL_TOL = 1e-12
+"""Relative tolerance [-] on the band's edges: P*/reference - 1 rounds either way in
+floating point (25,080 kg against 22,800 kg, exactly +10%, computes to
+0.10000000000000009; 20,520 kg, exactly -10%, to -0.09999999999999998), so both edges
+count as inside, as "within +/-10%" says. 1e-12 of the band is 2.3e-9 kg at 22,800 kg."""
+CALIBRATION_GATE_VEHICLE = "generic_f9_class_2d"
+"""The pre-registered calibration gate (mass set C), named "Gate vehicle" in the footnote."""
+
+
+def calibration_gap(model_kg: float, reference_kg: float) -> float:
+    """The relative gap of a calibration record: model payload capacity model_kg [kg]
+    over the published reference reference_kg [kg], less 1 [-] (positive: the model
+    carries more)."""
+    return model_kg / reference_kg - 1.0
+
+
+def inside_calibration_band(gap: float) -> bool:
+    """True when a calibration gap [-] (``calibration_gap``) lies inside the gate band,
+    edges included: abs(gap) <= CALIBRATION_BAND (1 + CALIBRATION_BAND_EDGE_REL_TOL)."""
+    return abs(gap) <= CALIBRATION_BAND * (1.0 + CALIBRATION_BAND_EDGE_REL_TOL)
 
 
 @dataclass(frozen=True)
@@ -926,15 +955,23 @@ def _legend_label(run: AnimationRun, base: AnimationRun | None) -> str:
 
 def calibration_caveat(vehicle_name: str | None) -> str:
     """The footnote's calibration sentence of a vehicle, from CALIBRATION_RECORDS: the
-    gap between its calibration P* and the published reference [%], or a note that the
-    vehicle has no calibration record."""
+    gap between its calibration P* and the published reference [%] and, for a record
+    inside the gate band (``inside_calibration_band``), that it is inside; or a note that
+    the vehicle has no calibration record. The gate vehicle (CALIBRATION_GATE_VEHICLE) is
+    called "Gate vehicle", any other "This vehicle" (a full vehicle name would push the
+    footnote line past the frame's right edge at 1280 px)."""
     record = CALIBRATION_RECORDS.get(vehicle_name or "")
     if record is None:
         return f"Vehicle {vehicle_name}: no calibration record on file."
     model_kg, reference_kg, note = record
-    gap = 100.0 * (model_kg / reference_kg - 1.0)
+    fraction = calibration_gap(model_kg, reference_kg)
+    gap = float(to_percent(fraction))
     side = "high" if gap >= 0.0 else "low"
-    return f"Gate vehicle calibrates {gap:+.1f}% {side} on payload ({note})."
+    who = "Gate vehicle" if vehicle_name == CALIBRATION_GATE_VEHICLE else "This vehicle"
+    band = ""
+    if inside_calibration_band(fraction):
+        band = f", inside the +/-{to_percent(CALIBRATION_BAND):.0f}% band"
+    return f"{who} calibrates {gap:+.1f}% {side} on payload{band} ({note})."
 
 
 def animation_caveats(runs: Sequence[AnimationRun], vehicle_name: str | None) -> list[str]:

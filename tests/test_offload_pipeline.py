@@ -32,7 +32,12 @@ Fast:
   run, the skipped arms and the reference_failed paths, the stage-1 pad control as a
   consistency test (its bound, verdict and its own blocked line), stage-2 cases quoted
   net, a failed case solve not quoted for its own reason (not the pad control's), the
-  calibration caveat by vehicle, and the sweep columns following the offload flag.
+  calibration caveat by vehicle, and the sweep columns following the offload flag;
+- SP1 step 8a: the payload Sensitivity note of a block with an empty `of` (with and
+  without offload arms, and with --no-offload); each sweep point's solve gamma*_ref and
+  flag count in sweep_index.csv, with the flag lines in the sweep's Checks section (a
+  failed solve's status said); the README-loads fork's calibration caveat; the stage-2
+  caveat that no longer assumes a stage-1-only offload maximises the total tonnes.
 
 Slow (a small searched grid on the gate fork, gamma* 18-28 deg): the experiment run in
 memory writes nothing; the solved case, its verification, recorded run, decomposition
@@ -41,7 +46,7 @@ energy; the fixed case; the pad control; the sensitivity arms (an energy-only ar
 reuses the solve and scales the electrical energy by the efficiency ratio); the written
 outputs and the replay of the pad beside the offloaded run; --no-offload; a sweep that
 names a case gets its columns, with the same x* as the experiment's solve at the same
-inputs.
+inputs, and (SP1 step 8a) the same solve gamma*_ref, its flag count and its flag line.
 
 Expected values are computed here from the vehicle file and closed forms. The fuel
 masses and the heating value are test inputs (TEST_LHV_MJ_PER_KG is a test constant, not
@@ -96,6 +101,7 @@ from launchsim.results_io import (
     InvalidNameError,
     OffloadReport,
 )
+from launchsim.search import SEARCH_FAILED_STATUS
 from launchsim.vehicle import offload_load_kg, with_offload
 
 EXPERIMENT = Path("experiments") / "silo_screening_2d.yaml"
@@ -116,6 +122,8 @@ LOAD_PARAM = "vehicle.stages.stage1.propellant_mass_t"
 FRACTION = 0.1
 GATE = "generic_f9_class_2d"
 """The gate vehicle's name (its calibration record: plots.CALIBRATION_RECORDS)."""
+README_FORK = "generic_f9_class_2d_readme_loads"
+"""The README-loads fork's name (its calibration record since SP1 step 8a)."""
 
 
 # ------------------------------------------------------------------------ helpers
@@ -1170,6 +1178,200 @@ def test_sweep_index_gains_offload_columns_only_when_a_sweep_names_cases(tmp_pat
     assert "pad control" not in text
 
 
+SWEEP_COLUMNS_BEFORE_8A = (
+    "status",
+    "offload_kg",
+    "stage1_fraction",
+    "total_fraction",
+    "reference_payload_kg",
+    "payload_kg",
+    "payload_delta_kg",
+    "verification_delta_kg",
+    "decomposition_status",
+    "screening_ratio",
+    "max_q_pa",
+    "electrical_energy_J",
+)
+"""OFFLOAD_SWEEP_COLUMNS as step 7 shipped them (commit 6719f92), in order."""
+CSV_SIGNIFICANT_DIGITS = 12
+"""Significant digits of a float in sweep_index.csv (results_io.write_csv's %.12g)."""
+
+
+def test_sweep_index_records_each_point_solves_gamma_star_and_flags(tmp_path: Path) -> None:
+    """KI-028 (SP1 step 8a): every offload case of a sweep point records its solve's own
+    gamma*_ref [rad] (the record's ``solve.gamma_star_rad``, here 23.4 deg, not the
+    point's payload-search ``gamma_star_rad``, here 22.0 deg) and its flag count as two
+    columns appended after step 7's twelve, which keep their names and order; a fixed
+    case (no solve) leaves gamma*_ref empty and counts its flags (0 here); a
+    reference_failed point (no flag list) leaves both empty. The CSV keeps gamma*_ref to
+    12 significant digits. The sweep's Checks section lists each
+    point's flags (joined by "; ", ``none`` for an empty list, OFFLOAD_SWEEP_NO_FLAG_LIST
+    without a list) under OFFLOAD_SWEEP_FLAGS_TEXT, apart from the decomposition lines; a
+    solve that ended search_failed (an empty flag list, no gamma*_ref, as
+    ``_case_record`` builds it) says so with its failure kind, never a bare "none"."""
+    assert OFFLOAD_SWEEP_COLUMNS == (*SWEEP_COLUMNS_BEFORE_8A, "solve_gamma_star_rad", "n_flags")
+    gamma_solve, gamma_point = math.radians(23.4), math.radians(22.0)
+    flags = ["offload: a flag", "offload_verify_mismatch: a second"]
+    record, fixed = _synthetic_record()["cases"][:2]
+    s1 = {**record, "solve": {"status": "ok", "gamma_star_rad": gamma_solve}, "flags": flags}
+    fixed = {**fixed, "flags": []}
+    failed = {"name": "s1", "status": results_io.REFERENCE_FAILED_STATUS}
+    search_failed = {
+        **record,
+        "status": SEARCH_FAILED_STATUS,
+        "solve": {
+            "status": SEARCH_FAILED_STATUS,
+            "gamma_star_rad": math.nan,
+            "failure_kind": "bracket",
+            "flags": [],
+        },
+        "decomposition_status": None,
+        "flags": [],
+    }
+    point = SimpleNamespace(point_index=1, overrides={"assist.stroke_m": 100})
+    rr = SimpleNamespace(
+        name="run_0001",
+        result=SimpleNamespace(
+            metrics={"gamma_star_rad": gamma_point, "run_checks": "ok"}, status="inserted"
+        ),
+    )
+    names = ("run_0001", "run_0002", "run_0003")
+    sweep = results_io.SweepResult(
+        1,
+        "silo_cold",
+        ["assist.stroke_m"],
+        [point] * 3,
+        [rr, *(SimpleNamespace(name=n, result=rr.result) for n in names[1:])],
+        [{}, {}, {}],  # type: ignore[list-item]
+        [tmp_path / "sweep_1" / n for n in names],
+        [None, None, None],
+        [{"s1": s1, "f10": fixed}, {"s1": failed}, {"s1": search_failed}],
+        [{}, {}, {}],
+    )
+    frame = results_io.planar_sweep_index_frame(sweep, tmp_path)  # type: ignore[arg-type]
+    added = [f"{n}.{c}" for n in ("s1", "f10") for c in OFFLOAD_SWEEP_COLUMNS]
+    assert [c for c in frame.columns if "." in c and c.split(".")[0] in ("s1", "f10")] == added
+    first, second, third = frame.iloc[0], frame.iloc[1], frame.iloc[2]
+    assert first["s1.solve_gamma_star_rad"] == gamma_solve and first["s1.n_flags"] == len(flags)
+    assert first["gamma_star_rad"] == gamma_point  # the point's own payload search
+    assert pd.isna(first["f10.solve_gamma_star_rad"]) and first["f10.n_flags"] == 0
+    assert pd.isna(second["s1.solve_gamma_star_rad"]) and pd.isna(second["s1.n_flags"])
+    assert second["s1.status"] == results_io.REFERENCE_FAILED_STATUS
+    assert third["s1.status"] == SEARCH_FAILED_STATUS and third["s1.n_flags"] == 0
+    assert pd.isna(third["s1.solve_gamma_star_rad"])
+    path = results_io.write_csv(tmp_path / "sweep_index.csv", frame)
+    written = pd.read_csv(path)
+    assert written["s1.solve_gamma_star_rad"][0] == pytest.approx(
+        gamma_solve, rel=0.5 * 10.0 ** (1 - CSV_SIGNIFICANT_DIGITS)
+    )
+    assert written["s1.n_flags"][0] == len(flags)
+    text = summary.sweep_checks_section([sweep], _fake_run("pad"))  # type: ignore[arg-type]
+    lines = text.splitlines()
+    heading = lines.index(f"{summary.OFFLOAD_SWEEP_FLAGS_TEXT}:")
+    assert lines.index(f"{summary.OFFLOAD_SWEEP_CHECKS_TEXT}:") < heading
+    assert lines[heading + 1 : heading + 5] == [
+        f"- sweep_1/run_0001 s1 offload flags: {flags[0]}; {flags[1]}",
+        "- sweep_1/run_0001 f10 offload flags: none",
+        f"- sweep_1/run_0002 s1 offload flags: {summary.OFFLOAD_SWEEP_NO_FLAG_LIST}",
+        "- sweep_1/run_0003 s1 offload flags: none (solve search_failed: bracket)",
+    ]
+    fixed_failed = {**fixed, "status": SEARCH_FAILED_STATUS}
+    assert summary.offload_sweep_flag_line("p f10", fixed_failed) == (
+        "- p f10 offload flags: none (payload search search_failed)"
+    )
+    assert "pad control" not in text
+    plain = summary.sweep_checks_section([_sweep(tmp_path, [])], _fake_run("pad"))  # type: ignore[arg-type]
+    assert summary.OFFLOAD_SWEEP_FLAGS_TEXT not in plain
+
+
+def test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms(
+    repo_root: Path, fake_sim: SimpleNamespace
+) -> None:
+    """SP1 step 8a: a sensitivity block whose ``of`` lists no run, kept for the offload
+    arms, is not reported as "no sensitivity block declared": the payload Sensitivity
+    note says no run has payload sensitivity cases and that the arms are in the section
+    "Propellant saved at fixed payload" (or that --no-offload skipped them); without
+    arms it says only the first. When the arms' case variant did not run (``run
+    --variant`` naming another variant), the note says none of the arms ran instead of
+    pointing to an arms table the offload section does not print. No block at all, a
+    block whose ``of`` lists runs, and --no-sensitivity keep their notes.
+    planar_experiment_result carries the note, which the Sensitivity section prints
+    when no case ran."""
+    cd = compare.CD_SENSITIVITY_NOTES[config.PLANAR_2D]
+    empty = "no run has payload sensitivity cases: the sensitivity block's `of` lists no run"
+    arms = (
+        "its params perturb the offload block's sensitivity arms, reported in the section "
+        '"Propellant saved at fixed payload"'
+    )
+    skipped = (
+        "its params perturb the offload block's sensitivity arms, which --no-offload "
+        "skipped with the block"
+    )
+    not_run = (
+        "its params perturb the offload block's sensitivity arms, none of which ran "
+        "(their case's variant did not run)"
+    )
+    assert summary.OFFLOAD_SECTION_TITLE == "## Propellant saved at fixed payload"
+    block = {
+        "reference": "pad",
+        "pad_control": True,
+        "sensitivity_of": ["s1"],
+        "cases": [{"name": "s1", "of": "silo_cold", "solve": "stage1"}],
+    }
+    resolved, baseline, variants, _masses = _fake_pass(repo_root, block)
+    assert set(variants) == {"silo_cold"}
+
+    def note(r: Any, *, sensitivity: bool, offload: bool, ran: Any = variants) -> str:
+        return results_io.planar_sensitivity_note(
+            r, sensitivity=sensitivity, offload=offload, variants=ran
+        )
+
+    assert note(resolved, sensitivity=True, offload=True) == f"({empty}; {arms}; C_D: {cd})"
+    assert note(resolved, sensitivity=True, offload=False) == f"({empty}; {skipped}; C_D: {cd})"
+    assert note(resolved, sensitivity=False, offload=True) == compare.SENSITIVITY_SKIPPED
+    assert note(resolved, sensitivity=True, offload=True, ran=[]) == (
+        f"({empty}; {not_run}; C_D: {cd})"
+    )
+    assert note(resolved, sensitivity=True, offload=False, ran=[]) == (
+        f"({empty}; {skipped}; C_D: {cd})"
+    )
+    for text in (note(resolved, sensitivity=True, offload=b) for b in (True, False)):
+        assert "no sensitivity block declared" not in text
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(results_io, "planar_comparisons", lambda *a, **k: {})
+        mp.setattr(results_io, "planar_bounds", lambda *a, **k: [])
+        er = results_io.planar_experiment_result(
+            resolved, baseline, variants, {}, "t", sensitivity=True, run_cases=False
+        )
+        er_other = results_io.planar_experiment_result(
+            resolved, baseline, {}, {}, "t", sensitivity=True, run_cases=False
+        )
+    assert er.sensitivity == [] and er.sensitivity_note == f"({empty}; {arms}; C_D: {cd})"
+    # a + and a - arm of s1 for each of _experiment's two sensitivity params
+    assert er.offload is not None and len(er.offload.record["sensitivity"]) == 2 * 2
+    assert summary.planar_sensitivity_table(er.sensitivity, er.sensitivity_note) == (
+        er.sensitivity_note
+    )
+    assert er_other.sensitivity_note == f"({empty}; {not_run}; C_D: {cd})"
+    assert er_other.offload is not None and er_other.offload.record["sensitivity"] == []
+    assert "### Sensitivity" not in summary.offload_section(er_other.offload.record)
+    exp, veh = _experiment(repo_root, {**block, "sensitivity_of": []})
+    no_arms = resolve_experiment(exp, veh)
+    assert note(no_arms, sensitivity=True, offload=True) == f"({empty}; C_D: {cd})"
+    assert note(no_arms, sensitivity=True, offload=True, ran=[]) == f"({empty}; C_D: {cd})"
+    exp, veh = _experiment(repo_root, {**block, "sensitivity_of": []})
+    exp.pop("sensitivity")
+    no_block = resolve_experiment(exp, veh)
+    declared = f"(no sensitivity block declared; C_D: {cd})"
+    assert note(no_block, sensitivity=True, offload=True) == declared
+    exp, veh = _experiment(repo_root, block)
+    exp["sensitivity"]["of"] = ["silo_cold"]
+    listed = resolve_experiment(exp, veh)
+    assert note(listed, sensitivity=True, offload=True) == (
+        f"(no sensitivity cases declared for the runs that ran; C_D: {cd})"
+    )
+
+
 def test_cli_offload_flags_and_console_lines() -> None:
     """``run`` and ``sweep`` take --no-offload (off by default); --no-sensitivity's help
     names the offload arms; the console lines of an offload block are ASCII: the skip
@@ -1829,6 +2031,38 @@ def test_calibration_caveat_follows_the_vehicle() -> None:
     assert summary.offload_caveats(GATE, record) == [gate, *summary.OFFLOAD_CAVEATS]
 
 
+def test_calibration_caveat_of_the_readme_loads_fork() -> None:
+    """SP1 step 8a: the README-loads fork has its calibration record (case readme_loads of
+    docs/findings/CAL-f9-leo-2d), so an offload block on it (the bridge) states
+    100 (24,700/22,800 - 1) = +8.3 % high with its masses, not "no calibration record"."""
+    record = plots.CALIBRATION_RECORDS[README_FORK]
+    text = summary.offload_calibration_caveat(README_FORK, record)
+    gap = 100.0 * (24700.0 / 22800.0 - 1.0)
+    assert f"{gap:+.1f}% high" in text and "+8.3% high" in text
+    assert "carries 24,700 kg in its calibration run against the published 22,800 kg" in text
+    assert "no calibration record" not in text and text.endswith(summary.OFFLOAD_MODEL_READING)
+
+
+def test_stage2_caveat_does_not_assume_a_stage1_offload_maximises_total_tonnes() -> None:
+    """SP1 step 8a (pre-registration Amendment 1, item 4): the stage-2 caveat printed with
+    every offload block no longer says that total tonnes are maximised by a stage-1-only
+    offload, so 'both' cannot beat the headline (the pre-registration, section 7, tests
+    that instead); it says that it is not assumed, keeps stage 1 as the only headline,
+    and places the measured marginal value of stage-2 propellant on the gate vehicle."""
+    stage2 = summary.OFFLOAD_CAVEATS[-1]
+    assert stage2 == (
+        "stage 1 is the headline: stage-2 and both-stage offloads are a property of the "
+        "vehicle model (stage-2 propellant is worth about nothing at the margin on the gate "
+        "vehicle), quoted net of the pad control (the gross rows beside them are not a "
+        "saving of the assist); a stage-1-only offload is not assumed to maximise the total "
+        "tonnes ('both' may remove more, its stage-2 share riding about free), and stage 1 "
+        "stays the only headline either way"
+    )
+    for caveat in summary.offload_caveats(GATE, plots.CALIBRATION_RECORDS[GATE]):
+        assert "cannot beat the headline" not in caveat
+        assert "are maximised by a stage-1-only offload" not in caveat
+
+
 def test_sweep_point_energy_keeps_the_vehicle_files_mixture_ratio(
     repo_root: Path, fake_sim: SimpleNamespace
 ) -> None:
@@ -2113,7 +2347,11 @@ def test_sweep_offload_columns_match_the_experiment_solve(
 ) -> None:
     """A one-point sweep of silo_cold at its own stroke that names s1 solves it against
     the same baseline: the same x* as the experiment's solve (identical inputs), in the
-    index's ``s1.*`` columns, and the decomposition line in the sweep's Checks."""
+    index's ``s1.*`` columns, and the decomposition line in the sweep's Checks. SP1 step
+    8a (KI-028): the index's ``s1.solve_gamma_star_rad`` is the run command's
+    ``solve.gamma_star_rad`` for the same flight, within the CSV's 12 significant digits,
+    ``s1.n_flags`` the length of the point's flag list, and the Checks section lists the
+    point's flag line under OFFLOAD_SWEEP_FLAGS_TEXT."""
     exp = copy.deepcopy(offload_e2e.exp)
     exp["sweeps"] = [{"of": "silo_cold", "axes": {"assist.stroke_m": [100]}, "offload": ["s1"]}]
     resolved = resolve_experiment(exp, offload_e2e.veh)
@@ -2123,5 +2361,14 @@ def test_sweep_offload_columns_match_the_experiment_solve(
     assert record["offload_kg"] == pytest.approx(nominal["offload_kg"], abs=1e-9)
     index = (out / "sweep_1" / "sweep_index.csv").read_text(encoding="utf-8").splitlines()
     assert all(f"s1.{c}" in index[0].split(",") for c in OFFLOAD_SWEEP_COLUMNS)
+    (row,) = pd.read_csv(out / "sweep_1" / "sweep_index.csv").to_dict("records")
+    assert row["s1.solve_gamma_star_rad"] == pytest.approx(
+        nominal["solve"]["gamma_star_rad"], rel=0.5 * 10.0 ** (1 - CSV_SIGNIFICANT_DIGITS)
+    )
+    assert row["s1.n_flags"] == len(record["flags"])
     text = (out / "summary.md").read_text(encoding="utf-8")
     assert "sweep_1/run_0001 s1 offload decomposition: explained" in text
+    lines = text.splitlines()
+    heading = lines.index(f"{summary.OFFLOAD_SWEEP_FLAGS_TEXT}:")
+    assert lines[heading + 1] == summary.offload_sweep_flag_line("sweep_1/run_0001 s1", record)
+    assert lines[heading + 1].startswith("- sweep_1/run_0001 s1 offload flags: ")

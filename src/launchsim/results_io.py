@@ -71,7 +71,7 @@ import math
 import re
 import subprocess
 import traceback
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -123,6 +123,7 @@ from launchsim.config import (
     ChecksConfig,
     OffloadEnergyConfig,
     ResolvedExperiment,
+    ResolvedOffload,
     ResolvedOffloadArm,
     ResolvedOffloadCase,
     ResolvedRun,
@@ -142,6 +143,7 @@ from launchsim.offload import (
 from launchsim.plots import CALIBRATION_RECORDS, write_plots
 from launchsim.search import OK_STATUS, as_plain
 from launchsim.summary import (
+    OFFLOAD_SECTION_NAME,
     experiment_summary,
     offload_caveats,
     planar_sweep_summary,
@@ -1656,6 +1658,17 @@ def _reference_failed_arm(run: str, arm: ResolvedOffloadArm, pad: RunResult) -> 
     }
 
 
+def offload_arms_that_run(
+    offload: ResolvedOffload, variants: Collection[str]
+) -> list[ResolvedOffloadArm]:
+    """The sensitivity arms of a resolved offload block that a pass solves when the
+    variants named in ``variants`` ran: those whose case's variant (its ``of``) ran and
+    that carry their perturbed variant, in the block's order. ``planar_offload`` solves
+    these and ``planar_sensitivity_note`` points to them, so the two cannot disagree."""
+    of = {case.name: case.config.of for case in offload.cases}
+    return [arm for arm in offload.arms if of[arm.case] in variants and arm.variant is not None]
+
+
 def _energy_inputs(energy: OffloadEnergyConfig | None) -> dict[str, Any] | None:
     """The energy inputs as recorded: each stage's fuel mass [kg] with its provenance and
     the lower heating value [J/kg] with its provenance (None without the block)."""
@@ -1743,10 +1756,9 @@ def planar_offload(
         checked.update(outcome.checked)
     arms: list[dict[str, Any]] = []
     nominal = {rec["name"]: rec for rec in cases}
-    for arm in ro.arms if sensitivity else ():
+    for arm in offload_arms_that_run(ro, variants) if sensitivity else ():
         case = next(c for c in ro.cases if c.name == arm.case)
-        if case.config.of not in variants or arm.variant is None:
-            continue
+        assert arm.variant is not None  # offload_arms_that_run keeps only these
         if arm.pad is baseline.resolved:
             pad = baseline
         else:
@@ -1839,6 +1851,8 @@ OFFLOAD_SWEEP_COLUMNS: tuple[str, ...] = (
     "screening_ratio",
     "max_q_pa",
     "electrical_energy_J",
+    "solve_gamma_star_rad",
+    "n_flags",
 )
 """The sweep_index.csv columns of each offload case a sweep names, written
 ``<case>.<column>`` (``offload_index_values``): the solve's (or fixed run's) status,
@@ -1847,13 +1861,25 @@ the total load, the point's P_ref [kg], the payload its recorded run flies [kg] 
 that less P_ref [kg] (a solved case flies P_ref, so 0; a fixed case its own payload
 capacity P*, so P* - P_ref is its figure), the verification's P* - P_ref [kg] (a solved
 case's; a fixed case has none), the decomposition status, the offload-to-screening
-ratio, and the offloaded run's max-Q [Pa] and electrical energy [J]."""
+ratio, the offloaded run's max-Q [Pa] and electrical energy [J], and (SP1 step 8a,
+KI-028; appended so every earlier column keeps its name and place) the solve's own
+gamma*_ref [rad] (Earth-relative flight-path angle at MECO, refined in search mode at
+X1, the root of the first search in x, and held for X2 and the final search at x*: the
+case record's ``solve.gamma_star_rad``, not the point's payload-search ``gamma_star_rad``
+column; a fixed case has no solve, so none, and a solve that ended search_failed NaN)
+and the number of the case record's flags (the solve's and its recorded run's; the
+flags themselves are listed in the sweep summary's Checks section,
+``summary.sweep_checks_section``, with a failed solve's status; none for a record
+without a flag list, such as a reference_failed point). A sweep point writes no offload run
+directory, so these columns are its solve's only record on disk."""
 
 
 def offload_index_values(record: Mapping[str, Any]) -> dict[str, Any]:
     """The OFFLOAD_SWEEP_COLUMNS values of one case record (None where it has none)."""
     verification = record.get("verification") or {}
     vs_pad = record.get("vs_pad") or {}
+    solve = record.get("solve") or {}
+    flags = record.get("flags")
     values = {
         "status": record.get("status"),
         "offload_kg": record.get("offload_kg"),
@@ -1867,6 +1893,8 @@ def offload_index_values(record: Mapping[str, Any]) -> dict[str, Any]:
         "screening_ratio": record.get("screening_ratio"),
         "max_q_pa": vs_pad.get("max_q_pa"),
         "electrical_energy_J": vs_pad.get("electrical_energy_J"),
+        "solve_gamma_star_rad": solve.get("gamma_star_rad"),
+        "n_flags": None if flags is None else len(flags),
     }
     return {key: values[key] for key in OFFLOAD_SWEEP_COLUMNS}
 
@@ -1878,6 +1906,68 @@ def offload_record(report: OffloadReport) -> dict[str, Any]:
         **report.record,
         "runs": {name: metrics_record(rr.result) for name, rr in report.runs.items()},
     }
+
+
+SENSITIVITY_EMPTY_OF = (
+    "no run has payload sensitivity cases: the sensitivity block's `of` lists no run"
+)
+"""How a planar Sensitivity note opens for a sensitivity block whose ``of`` is empty (SP1
+step 8a): the block is declared, its params serving only the offload block's arms, so
+"no sensitivity block declared" would be false."""
+SENSITIVITY_ARMS_REPORTED = (
+    "its params perturb the offload block's sensitivity arms, reported in the section "
+    f'"{OFFLOAD_SECTION_NAME}"'
+)
+"""Where the note sends the reader when some of the offload block's sensitivity arms ran."""
+SENSITIVITY_ARMS_SKIPPED = (
+    "its params perturb the offload block's sensitivity arms, which --no-offload skipped "
+    "with the block"
+)
+"""What the note says of those arms when the offload block was skipped."""
+SENSITIVITY_ARMS_NOT_RUN = (
+    "its params perturb the offload block's sensitivity arms, none of which ran (their "
+    "case's variant did not run)"
+)
+"""What the note says of those arms when the offload block ran but none of its arms did
+(``run --variant`` naming another variant): the offload section then has no arms table."""
+
+
+def planar_sensitivity_note(
+    resolved: ResolvedExperiment,
+    *,
+    sensitivity: bool,
+    offload: bool,
+    variants: Collection[str],
+) -> str:
+    """What a planar summary's payload Sensitivity section prints when no sensitivity case
+    ran (``ExperimentResult.sensitivity_note``), given the names of the variants that ran
+    (``variants``): SENSITIVITY_SKIPPED with sensitivity False; for a block whose ``of``
+    lists no run, SENSITIVITY_EMPTY_OF and, when the offload block has sensitivity arms
+    (``ResolvedOffload.arms``: its ``sensitivity_of`` under the block's params), what
+    became of them: SENSITIVITY_ARMS_SKIPPED with offload False, SENSITIVITY_ARMS_REPORTED
+    when some arm ran (``offload_arms_that_run``), SENSITIVITY_ARMS_NOT_RUN when none did;
+    with no resolved case otherwise (no block, or a block without params) "no sensitivity
+    block declared", as before; else (a block whose runs did not run) "no sensitivity
+    cases declared for the runs that ran". Each but the skip note closes with the planar
+    C_D note."""
+    cd_note = CD_SENSITIVITY_NOTES[PLANAR_2D]
+    block = resolved.experiment.sensitivity
+    if not sensitivity:
+        return SENSITIVITY_SKIPPED
+    if block is not None and not block.of:
+        parts = [SENSITIVITY_EMPTY_OF]
+        ro = resolved.offload
+        if ro is not None and ro.arms:
+            if not offload:
+                parts.append(SENSITIVITY_ARMS_SKIPPED)
+            elif offload_arms_that_run(ro, variants):
+                parts.append(SENSITIVITY_ARMS_REPORTED)
+            else:
+                parts.append(SENSITIVITY_ARMS_NOT_RUN)
+        return f"({'; '.join(parts)}; C_D: {cd_note})"
+    if not resolved.sensitivity:
+        return f"(no sensitivity block declared; C_D: {cd_note})"
+    return f"(no sensitivity cases declared for the runs that ran; C_D: {cd_note})"
 
 
 def planar_experiment_result(
@@ -1909,13 +1999,9 @@ def planar_experiment_result(
         if sensitivity
         else []
     )
-    cd_note = CD_SENSITIVITY_NOTES[PLANAR_2D]
-    if not sensitivity:
-        note = SENSITIVITY_SKIPPED
-    elif not resolved.sensitivity:
-        note = f"(no sensitivity block declared; C_D: {cd_note})"
-    else:
-        note = f"(no sensitivity cases declared for the runs that ran; C_D: {cd_note})"
+    note = planar_sensitivity_note(
+        resolved, sensitivity=sensitivity, offload=offload, variants=variants
+    )
     cases = {n: sim.run_resolved(r) for n, r in resolved.cases.items()} if run_cases else {}
     planar = resolved.baseline.run.planar
     comparison = planar_comparisons(resolved, baseline, variants)

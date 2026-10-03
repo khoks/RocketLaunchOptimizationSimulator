@@ -1488,7 +1488,10 @@ def cases_section(er: ExperimentResult) -> str:
 
 # ------------------------------------------------- propellant saved (offload, SP1 step 7)
 
-OFFLOAD_SECTION_TITLE = "## Propellant saved at fixed payload"
+OFFLOAD_SECTION_NAME = "Propellant saved at fixed payload"
+"""Name of the summary section of an experiment's offload block (the payload Sensitivity
+note points to it: ``results_io.planar_sensitivity_note``)."""
+OFFLOAD_SECTION_TITLE = f"## {OFFLOAD_SECTION_NAME}"
 """Title of the summary section of an experiment's offload block."""
 OFFLOAD_MODEL_READING = (
     "read every offload as a difference between runs of the vehicle model, not as a Falcon 9 figure"
@@ -1508,15 +1511,20 @@ OFFLOAD_CAVEATS: tuple[str, ...] = (
     "the tanks are partly filled: dry masses and tank structure unchanged, the mixture "
     "ratio kept, no ullage, centre-of-gravity or tank-mass effect",
     "stage 1 is the headline: stage-2 and both-stage offloads are a property of the "
-    "vehicle model (stage-2 propellant is worth about nothing at the margin on this "
+    "vehicle model (stage-2 propellant is worth about nothing at the margin on the gate "
     "vehicle), quoted net of the pad control (the gross rows beside them are not a "
-    "saving of the assist); total tonnes are maximised by a stage-1-only offload, so "
-    "'both' cannot beat the headline",
+    "saving of the assist); a stage-1-only offload is not assumed to maximise the total "
+    "tonnes ('both' may remove more, its stage-2 share riding about free), and stage 1 "
+    "stays the only headline either way",
 )
 """The vehicle-independent caveats printed with every offload block (phase file SP1,
 step 7 and section 10): guidance, structural mass, the drive model, max-Q, the tanks,
 and the stage-2 reading. ``offload_caveats`` puts the vehicle's calibration caveat
-first."""
+first. The stage-2 reading says that stage-2 propellant's marginal value was measured on
+the gate vehicle (docs/physics.md, "Virtual propellant") and, since SP1 step 8a, no
+longer that a stage-1-only offload maximises the total tonnes, which that measurement
+does not support (phase file section 5.3, corrected in step 8; pre-registration section
+7 tests it)."""
 
 
 def offload_calibration_caveat(
@@ -1586,6 +1594,17 @@ OFFLOAD_CHECKS_TEXT = (
 OFFLOAD_SWEEP_CHECKS_TEXT = f"Offload checks ({OFFLOAD_DECOMPOSITION_CHECK_CLAUSE})"
 """The heading of the offload lines of a sweep summary's Checks section (no pad
 control: a sweep names stage-1 solves and fixed cases only)."""
+OFFLOAD_SWEEP_FLAGS_TEXT = (
+    "Offload flags at each point (the case record's: its solve's and its recorded run's; "
+    "sweep_index.csv gives their number, `<case>.n_flags`, beside the solve's gamma*_ref, "
+    "`<case>.solve_gamma_star_rad`)"
+)
+"""The heading of the per-point offload flag lines of a sweep summary's Checks section
+(SP1 step 8a, KI-028: a sweep point writes no offload run directory, so its solve's
+flags are recorded here)."""
+OFFLOAD_SWEEP_NO_FLAG_LIST = "n/a: nothing solved"
+"""What a point's flag line says for a case record without a flag list (a
+reference_failed point solves nothing)."""
 PAD_CONTROL_BLOCKED = (
     "Findings are blocked until these are investigated (a stage-1 pad control failed its "
     "consistency test of the solver, docs/physics.md, 'Pad control, and why')"
@@ -2113,10 +2132,12 @@ def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> 
     bug_suspect (FINDINGS_BLOCKED) or that none is, the not_checked comparisons, the
     gamma*-sensitive verdicts and the failed checks of every point (each point's own
     summary.md has its full screening line); a sweep with offload cases also lists each
-    point's offload decompositions, a bug_suspect one blocking findings."""
+    point's offload decompositions, a bug_suspect one blocking findings, and every
+    point's offload flags (``offload_sweep_flag_line``)."""
     runs: dict[str, RunResult] = {baseline.name: baseline}
     comparisons: list[tuple[str, Mapping[str, Any]]] = []
     offload: list[tuple[str, Mapping[str, Any]]] = []
+    flagged: list[str] = []
     for sweep in sweeps:
         tag = f"sweep_{sweep.sweep_index}"
         paired = sweep.paired or [None] * len(sweep.results)
@@ -2133,12 +2154,35 @@ def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> 
                 if status is not None:
                     label = f"{tag}/{rr.name} {case} offload decomposition"
                     offload.append((label, {"screening_status": status}))
+                flagged.append(offload_sweep_flag_line(f"{tag}/{rr.name} {case}", rec))
     lines = [*run_check_lines(runs), ""]
     lines += [sweep_point_check_line(name, c) for name, c in comparisons]
     if offload:
         lines += ["", f"{OFFLOAD_SWEEP_CHECKS_TEXT}:"]
         lines += [f"- {label}: {c['screening_status']}" for label, c in offload]
+    if flagged:
+        lines += ["", f"{OFFLOAD_SWEEP_FLAGS_TEXT}:", *flagged]
     return "\n".join([*lines, "", *blocked_lines(runs, [*comparisons, *offload])])
+
+
+def offload_sweep_flag_line(label: str, record: Mapping[str, Any]) -> str:
+    """One sweep point's offload flag line: the case record's flags joined with "; ",
+    ``none`` when the list is empty, OFFLOAD_SWEEP_NO_FLAG_LIST without one. A record
+    with a flag list whose status is neither ok nor no_offload also gets that status,
+    so a failed solve (whose flag list is empty) never reads as clean: "(solve
+    search_failed: <failure kind>)" for a solved case (its ``solve.failure_kind``),
+    "(payload search <status>)" for a fixed case."""
+    flags = record.get("flags")
+    if flags is None:
+        return f"- {label} offload flags: {OFFLOAD_SWEEP_NO_FLAG_LIST}"
+    text = "; ".join(flags) or "none"
+    status = record.get("status")
+    if status not in (OK_STATUS, NO_OFFLOAD_STATUS):
+        solve = record.get("solve") or {}
+        kind = solve.get("failure_kind")
+        what = "solve" if record.get("kind") == "solve" else "payload search"
+        text += f" ({what} {status}" + ("" if kind is None else f": {kind}") + ")"
+    return f"- {label} offload flags: {text}"
 
 
 def sweep_point_check_line(name: str, c: Mapping[str, Any]) -> str:

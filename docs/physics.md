@@ -3568,7 +3568,20 @@ yardstick. The memo lives for one call, so no result depends on run order. The t
 prints P* and dP* against both baselines, and whether the comparison against the
 baseline of the case's own vehicle beats the yardstick with its screening status (that
 comparison is attributed: "Screening-beat rule (2-D)"); C_D is a real case
-(`vehicle.aero.cd_scale`), so there is no filler row.
+(`vehicle.aero.cd_scale`), so there is no filler row. When no case ran, the section
+prints why (`results_io.planar_sensitivity_note`, each note but the `--no-sensitivity`
+skip note closed by the planar C_D note): `--no-sensitivity` skipped them; no
+sensitivity block is declared ("no sensitivity block declared"); the block's `of` lists
+no run (SP1 step 8a, `SENSITIVITY_EMPTY_OF`: "no run has payload sensitivity cases";
+when the offload block has sensitivity arms, the note adds that the block's params
+perturb them and what became of them: reported in the section "Propellant saved at
+fixed payload" when one of them ran, skipped with the block by `--no-offload`, or none
+of them run because their case's variant did not, as under `run --variant` naming
+another variant, whose offload section prints no arms table; the arms that run are
+`results_io.offload_arms_that_run`, for the note and the offload pass alike); or the
+block names runs that did not run. A block whose `of` lists runs but which has no
+params resolves no case and keeps the "no sensitivity block declared" note it printed
+before.
 
 **Bounds, cases, paired sweeps.** A bound (amendment 6) re-runs the baseline with its
 overrides once (the pair) and each listed run, compared with the pair (attributed) and
@@ -3739,15 +3752,18 @@ pad and every pad control's recorded run, each with timeseries.csv and events.cs
 summary.md gains the section "Propellant saved at fixed payload" after the variants
 table: the basis line with P_ref, the sensitivity basis, the caveat list
 (`summary.offload_caveats`: first the vehicle's calibration, from
-`plots.CALIBRATION_RECORDS` (the gate fork's +14.3% high; a vehicle without a record is
-said to have none), then `summary.OFFLOAD_CAVEATS`: sweep-optimized and unthrottled
-guidance, no structural mass for the push except the assumed penalty rows, the
-prescribed-acceleration drive with a massless carriage and no shaft drag, max-Q against
-the pad's, partly filled tanks with the mixture ratio kept and no ullage or
-centre-of-gravity effect, stage 1 as the only headline with stage 2 and both quoted net
-of the pad control), the cases table (`summary.OFFLOAD_CASE_ROWS`: the quoted offload
-and its basis first, then the gross tonnes, % of each load and every item above; the
-energy rows when the block has energy inputs), the energy note with its exclusions, the
+`plots.CALIBRATION_RECORDS` (the gate fork's +14.3% high and, since SP1 step 8a, the
+README-loads fork's +8.3% high, the bridge's vehicle; a vehicle without a record is said
+to have none; "Calibration notes (build step 26)"), then `summary.OFFLOAD_CAVEATS`:
+sweep-optimized and unthrottled guidance, no structural mass for the push except the
+assumed penalty rows, the prescribed-acceleration drive with a massless carriage and no
+shaft drag, max-Q against the pad's, partly filled tanks with the mixture ratio kept
+and no ullage or centre-of-gravity effect, stage 1 as the only headline with stage 2 and
+both quoted net of the pad control, the marginal value of stage-2 propellant placed on
+the gate vehicle and, since SP1 step 8a, a stage-1-only offload not assumed to maximise
+the total tonnes), the cases table (`summary.OFFLOAD_CASE_ROWS`: the quoted offload and
+its basis first, then the gross tonnes, % of each load and every item above; the energy
+rows when the block has energy inputs), the energy note with its exclusions, the
 decomposition table (m/s and kg of every term, the D_id change, the residual and the
 status), the pad controls (the table and one line each: x_pad, for stage 1 the bound of
 an `ok` control and the consistency verdict) and the sensitivity arms. The offload runs
@@ -3791,11 +3807,26 @@ figure that needs no pad control. The cases' `<case>.<column>` columns
 stage-1 and total loads, P_ref, the payload the recorded run flies and that less P_ref
 (`payload_kg`, `payload_delta_kg`: P_ref and 0 for a solved case, a fixed case's own
 P* and its figure P* - P_ref), the verification's P* - P_ref (a solved case's), the
-decomposition status, the ratio, the offloaded run's max-Q and electrical energy) are
-added to sweep_index.csv before `status`, and the sweep summary's Checks section lists
-each point's decomposition under `summary.OFFLOAD_SWEEP_CHECKS_TEXT` (the
-decomposition clause only: a sweep solves no pad control). A sweep without offload
-cases writes the columns it wrote before.
+decomposition status, the ratio, the offloaded run's max-Q and electrical energy, and,
+appended in SP1 step 8a (KI-028) so the twelve before keep their names and order,
+`solve_gamma_star_rad`, the solve's own gamma*_ref [rad], refined in search mode at X1
+and held for X2 and the final search at x* ("Propellant offload at fixed payload",
+steps 3 to 5; the case record's `solve.gamma_star_rad`, not the point's payload-search
+`gamma_star_rad` column; an empty cell, NaN when read, both for a fixed case, which
+has no solve, and for a solve that ended search_failed; `<case>.status` tells them
+apart), and `n_flags`, the number of the case record's flags, its solve's and its
+recorded run's (empty for a point without a flag list, such as a reference_failed
+one)) are added to sweep_index.csv before `status` (floats at %.12g, so gamma*_ref to
+12 significant digits). A sweep point writes no offload run directory, so these columns
+are its solve's record on disk. The sweep summary's Checks section lists each point's
+decomposition under `summary.OFFLOAD_SWEEP_CHECKS_TEXT` (the decomposition clause only:
+a sweep solves no pad control) and then, under `summary.OFFLOAD_SWEEP_FLAGS_TEXT`, one
+line per point and case with the record's flags (`summary.offload_sweep_flag_line`:
+joined by "; ", `none` for an empty list, `summary.OFFLOAD_SWEEP_NO_FLAG_LIST` without a
+list; a record whose status is neither ok nor no_offload adds it, "(solve search_failed:
+<failure kind>)" for a solve, whose flag list is then empty, "(payload search
+<status>)" for a fixed case). A sweep without offload cases writes the columns and the
+Checks section it wrote before.
 
 **In memory.** `config.resolve_experiment` (dicts in), `sim.run_resolved` of the
 baseline and the variants and `planar_experiment_result` write nothing; the SP2 app
@@ -6005,6 +6036,28 @@ validation). Three observations from it belong with the model description:
   its location is set by the atmosphere model's derivative discontinuity. The value is
   above the flown range, as the unthrottled bias predicts.
 
+**Calibration records in the reports.** `plots.CALIBRATION_RECORDS` holds, per vehicle
+name, the calibration run's P* [kg], the published 22,800 kg and the note, for the
+caveats that travel with results: the animation footnote (`plots.calibration_caveat`),
+the replay page (`replay.calibration_caveat`) and an offload block
+(`summary.offload_calibration_caveat`). Two vehicles have one, both cases of the run
+results/calibration_f9_2d/20260930T100100Z: the gate `generic_f9_class_2d` (mass set C,
+run pad), 26,054.4 kg, +14.27%, outside the band (a documented miss, accepted
+2026-09-30), and, since SP1 step 8a, `generic_f9_class_2d_readme_loads` (mass set A,
+case readme_loads, the bridge's fork), 24,700.0 kg, +8.33%, inside. The band is
+`plots.CALIBRATION_BAND` = 0.10 (CLAUDE.md), and a record lies inside it when
+abs(P*/22,800 - 1) <= 0.10 (`plots.inside_calibration_band`), edges included: a
+relative tolerance of 1e-12 (`plots.CALIBRATION_BAND_EDGE_REL_TOL`) absorbs the
+rounding of the quotient, which puts 25,080 kg (exactly +10%) at 0.10000000000000009.
+The footnote names the gate "Gate vehicle" and keeps its sentence ("Gate vehicle
+calibrates +14.3% high on payload (docs/findings/CAL-f9-leo-2d).") and calls any other
+recorded vehicle "This vehicle" (its name would push the line past the frame's right
+edge), adding "inside the +/-10% band" for a record inside it; the replay page says
+that the record lies within the gate band or outside it, "a documented miss" (it
+prints the plus-minus sign); the offload caveat states P*, the reference and the
+signed gap. tests/test_animate.py checks every record against the findings note's
+results row and tests/data/calibration_record.json.
+
 ## Phase 2 research notes (build step 27)
 
 Details and numbers are in docs/findings/RQ3-silo-screening-2d.md, RQ2-ignition-timing-2d.md
@@ -6288,4 +6341,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_offload_pipeline.py::test_offload_metrics_items`, `::test_verification_and_slope_helpers`, `::test_attribution_check_fails_a_nan_residual_anywhere` | the figure items of an offload run (SEARCH_METRIC_KEYS then OFFLOAD_METRIC_KEYS, payload = P_ref, the payload-term diagnostics None); `verification_from_record` (passed within rel x P_ref), `with_verification` (flags), `residual_slope_kg_per_kg` (the final bracket's secant 0.63/20, X2's 0.3/10, else None); KI-024: a NaN residual fails the attribution check in every position ("Propellant offload at fixed payload", "Screening-beat rule (2-D)") | exact; 1e-15 relative |
 | `test_offload_pipeline.py::test_offload_section_renders_every_row_and_caveat`, `::test_bug_suspect_decomposition_blocks_findings_and_no_offload_beat_is_unexplained`, `::test_replay_shows_an_offload_run_beside_the_pad`, `::test_sweep_index_gains_offload_columns_only_when_a_sweep_names_cases`, `::test_cli_offload_flags_and_console_lines`, `::test_metrics_and_resolved_config_keys_appear_only_with_the_block`, `::test_an_experiment_without_the_block_has_no_offload` | the summary block on a synthetic record (basis with P_ref, every caveat, row and exclusion, tonnes = kg/1000, percent = 100 x fraction, the quoted offload before the gross rows, the residual unrounded, the pad control's resolution effect and consistency verdict, one cell count per table); a bug_suspect decomposition or paired-pad comparison blocks findings, a failing stage-1 pad control gets a blocked line of its own (`summary.PAD_CONTROL_BLOCKED`, never labelled a comparison), no offload row is an unexplained beat; the replay's offload role and note; the sweep's `<case>.<column>` columns only when it solved a case (a solved case's payload delta 0, a fixed case's P* - P_ref = 0.5 kg with no verification delta), the sweep's Checks heading without the pad-control clause, the 1-D columns unchanged; `--no-offload`, the console lines with a fixed case's signed P* - P_ref and the control's verdict; the metrics.json and resolved_config.yaml keys only with the block ("Reporting definitions (planar)") | exact |
 | `test_offload_pipeline.py::test_offload_pass_records_each_case_against_hand_numbers`, `::test_offload_runs_carry_their_assumptions`, `::test_offload_pass_skips_what_it_cannot_solve`, `::test_stage1_pad_control_is_a_consistency_test` (6 cases), `::test_pad_control_consistency_rule`, `::test_stage2_and_both_cases_are_quoted_net_of_the_pad_control`, `::test_a_failed_case_solve_is_not_quoted_for_its_own_reason`, `::test_calibration_caveat_follows_the_vehicle`, `::test_sweep_point_energy_keeps_the_vehicle_files_mixture_ratio`, `::test_sweep_offload_columns_follow_the_offload_flag` | the pass on fake runs (the sim seams monkeypatched): per case the propellant removed per stage (a stage-2 pre-offload included; both by the loads' shares), its shares of the loads, x - x_pad, the quoted offload (stage 1 gross, stage 2 and both net, a fixed case imposed), the penalty fields and the energy at 123.5/410.9 and 32.3/107.5 RP-1, against hand numbers from the vehicle file; OFFLOAD_ASSUMPTIONS on every written run, the penalty line on the penalty rows' runs only; no arm without sensitivity (OFFLOAD_ARMS_SKIPPED, also through `planar_experiment_result`), a reference_failed arm and baseline solving nothing; the stage-1 control's bound xtol / s with s the secant of its logged bracket, its verdict (ok inside, outside, without a slope; no_offload by grams, by more than xtol; search_failed) and the blocking of a failing one (its own blocked line); a stage-2 case quoted net in the table and the console, "not quoted" with its reason from the basis; a case whose own solve ends search_failed (stage 2 beside an ok control, and stage 1) quoting nothing on the basis `OFFLOAD_QUOTED_FAILED`, not the pad control's, the console saying so; the calibration caveat 100 (26054.4/22800 - 1) % from the gate record, none for an unknown vehicle; an arm (its case record captured from `_offload_arm_record`) and a sweep point whose load is below the fuel mass keep the vehicle file's ratio; the sweep columns only with offload on ("Reporting definitions (planar)", "Propellant saved at fixed payload"; "Pad control, and why") | 1e-12 relative; exact |
-| `test_offload_pipeline.py::test_offload_in_memory_writes_nothing`, `::test_offload_cases_end_to_end`, `::test_offload_outputs_written_and_replayed`, `::test_no_offload_skips_the_block`, `::test_sweep_offload_columns_match_the_experiment_solve` (slow) | gate fork on a small searched grid (gamma* 18-28 deg, refine maxiter 3, search rtol 1e-9): the in-memory path writes nothing; the solved stage-1 case's recorded run flies exactly P_ref at the pad's liftoff mass (sum of the vehicle file's masses + P_ref) less x*, verified within search_final_flag_rel x P_ref, decomposition explained with the D_id change c1 ln(m0/(m0 - x*)) (c1 = g0 x 311 s), its shares and energy by hand arithmetic, the paired pad offloaded by x*; the fixed 5 % case (its margin term of the sign opposite to P* - P_ref); the pad control's verdict by the section 5.3 rule applied to its own fields (a failing one in a blocked line of its own, `summary.PAD_CONTROL_BLOCKED`); OFFLOAD_ASSUMPTIONS on every written run; the arms (efficiency arms reuse x* with the electrical energy x 1/(1 +/- 0.1)); the written outputs and the replay; --no-offload; a one-point sweep naming the case reproduces x* ("Reporting definitions (planar)", "Propellant saved at fixed payload") | 1e-6 kg; 1e-8 m/s; 1e-14 relative; 1e-12 relative (energy); 1e-9 kg (sweep) |
+| `test_offload_pipeline.py::test_offload_in_memory_writes_nothing`, `::test_offload_cases_end_to_end`, `::test_offload_outputs_written_and_replayed`, `::test_no_offload_skips_the_block`, `::test_sweep_offload_columns_match_the_experiment_solve` (slow) | gate fork on a small searched grid (gamma* 18-28 deg, refine maxiter 3, search rtol 1e-9): the in-memory path writes nothing; the solved stage-1 case's recorded run flies exactly P_ref at the pad's liftoff mass (sum of the vehicle file's masses + P_ref) less x*, verified within search_final_flag_rel x P_ref, decomposition explained with the D_id change c1 ln(m0/(m0 - x*)) (c1 = g0 x 311 s), its shares and energy by hand arithmetic, the paired pad offloaded by x*; the fixed 5 % case (its margin term of the sign opposite to P* - P_ref); the pad control's verdict by the section 5.3 rule applied to its own fields (a failing one in a blocked line of its own, `summary.PAD_CONTROL_BLOCKED`); OFFLOAD_ASSUMPTIONS on every written run; the arms (efficiency arms reuse x* with the electrical energy x 1/(1 +/- 0.1)); the written outputs and the replay; --no-offload; a one-point sweep naming the case reproduces x* and (SP1 step 8a) the run command's solve gamma*_ref in `s1.solve_gamma_star_rad`, its flag count in `s1.n_flags` and its flag line under `summary.OFFLOAD_SWEEP_FLAGS_TEXT` ("Reporting definitions (planar)", "Propellant saved at fixed payload") | 1e-6 kg; 1e-8 m/s; 1e-14 relative; 1e-12 relative (energy); 1e-9 kg (sweep); 5e-12 relative (sweep gamma*_ref, CSV) |
+| `test_offload_pipeline.py::test_sweep_index_records_each_point_solves_gamma_star_and_flags`, `::test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms`, `::test_calibration_caveat_of_the_readme_loads_fork`, `::test_stage2_caveat_does_not_assume_a_stage1_offload_maximises_total_tonnes` | SP1 step 8a: OFFLOAD_SWEEP_COLUMNS is step 7's twelve (written out in the test, in order) followed by `solve_gamma_star_rad` and `n_flags`; a point's solved case records its solve's gamma*_ref (23.4 deg), not the point's payload-search gamma* (22.0 deg), and its two flags; a fixed case none and 0, a reference_failed point none and none, a search_failed solve NaN and 0; read back from the CSV, gamma*_ref within half a unit of its 12th significant digit; the Checks section lists each point's flags ("; "-joined, `none`, the no-list note, a search_failed solve's "none (solve search_failed: bracket)" and a failed fixed case's payload-search status) after the decomposition lines, and nothing new without offload cases; the payload Sensitivity note of a block with an empty `of` (the full texts written out: with the offload arms, with `--no-offload`, without arms, and with arms none of which ran because their case's variant did not, whose offload record has no arms and whose offload section no arms table) and the notes kept without a block, for a block naming runs and with `--no-sensitivity`, carried by `planar_experiment_result` and printed by the table; the README-loads fork's offload caveat 100 (24,700/22,800 - 1) = +8.3% high with its masses; the stage-2 caveat written out, never "cannot beat the headline" (pre-registration Amendment 1, item 4) ("Reporting definitions (planar)", "Propellant saved at fixed payload", "Calibration notes (build step 26)") | exact; 5e-12 relative (CSV) |
+| `test_config_planar.py::test_offload_reports_name_the_arms_and_the_bridge_calibration` | on the pre-registered files (nothing run): silo_offload_2d's empty `of` with offload arms gives the note that points to "Propellant saved at fixed payload", never "no sensitivity block declared"; the bridge's fork has a record with 100 (P*/reference - 1) within 10%, and its offload caveat states P* instead of "no calibration record"; the bridge, with no sensitivity block, keeps that note (SP1 step 8a) | exact |
+| `test_animate.py::test_calibration_record_matches_its_findings_note`, `::test_calibration_footnote_says_inside_the_band_when_it_is`, `::test_calibration_band_includes_both_edges`, `test_replay.py::test_calibration_caveat_says_within_the_band_for_the_readme_loads_fork` | every calibration record (the gate and, since SP1 step 8a, the README-loads fork): its vehicle is the case of tests/data/calibration_record.json whose vehicle file carries that name, its P* that case's recorded P* to 0.1 kg, and the findings note's results row of the case prints P* to 0.1 kg, 100 (P*/22,800 - 1) % to two decimals and inside or outside the 10% band; the gate's one-paragraph result; the footnote keeps the gate's sentence word for word, says "+8.3% high ... inside the +/-10% band" for the README-loads fork (not "Gate vehicle"), and each record's line ends left of the frame's right edge at 1280 px; both edges of the band, 22,800 +/- 2,280 kg, read inside (P*/22,800 - 1 rounds above 0.1 at the upper one) and 0.1 kg beyond either reads outside; the replay page says the fork lies within the gate band, never a miss, and keeps the gate's sentence word for word ("Calibration notes (build step 26)") | exact (0.1 kg; 0.01 percentage points) |

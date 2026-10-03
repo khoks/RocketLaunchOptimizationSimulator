@@ -25,7 +25,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from launchsim import cli, sim
+from launchsim import cli, plots, results_io, sim, summary
 from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.config import (
     BLOCKING_ROLE,
@@ -1352,3 +1352,32 @@ def test_offload_bridge_is_the_headline_case_on_the_readme_loads_fork(
     assert not resolved[OFFLOAD_BRIDGE].sweeps and not resolved[OFFLOAD_BRIDGE].sensitivity
     assert raw[OFFLOAD_BRIDGE]["vehicle"] == raw["silo_bridge_2d_readme"]["vehicle"]
     assert raw[OFFLOAD_EXPERIMENT]["vehicle"] == raw["silo_screening_2d"]["vehicle"]
+
+
+def test_offload_reports_name_the_arms_and_the_bridge_calibration(
+    resolved: dict[str, ResolvedExperiment],
+) -> None:
+    """SP1 step 8a, on the pre-registered files (nothing run): silo_offload_2d's
+    sensitivity block lists no run and serves the offload arms, so its payload
+    Sensitivity note points to the section "Propellant saved at fixed payload" instead of
+    saying no block is declared; the bridge's vehicle fork has a calibration record,
+    100 (P*/reference - 1) inside +/-10 %, so its offload caveat states it instead of "no
+    calibration record"; the bridge declares no sensitivity block and keeps that note."""
+    main = resolved[OFFLOAD_EXPERIMENT]
+    assert main.experiment.sensitivity is not None and main.experiment.sensitivity.of == []
+    assert main.offload is not None and main.offload.arms
+    note = results_io.planar_sensitivity_note(
+        main, sensitivity=True, offload=True, variants=main.variants
+    )
+    assert "no sensitivity block declared" not in note
+    assert '"Propellant saved at fixed payload"' in note
+    bridge = resolved[OFFLOAD_BRIDGE]
+    name = bridge.baseline.vehicle.name
+    model_kg, reference_kg, _note = plots.CALIBRATION_RECORDS[name]
+    assert abs(100.0 * (model_kg / reference_kg - 1.0)) <= 10.0
+    caveat = summary.offload_caveats(name, plots.CALIBRATION_RECORDS.get(name))[0]
+    assert "no calibration record" not in caveat and f"{model_kg:,.0f} kg" in caveat
+    bridge_note = results_io.planar_sensitivity_note(
+        bridge, sensitivity=True, offload=True, variants=bridge.variants
+    )
+    assert bridge_note.startswith("(no sensitivity block declared; ")

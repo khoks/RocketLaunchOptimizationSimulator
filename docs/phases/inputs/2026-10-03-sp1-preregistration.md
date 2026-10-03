@@ -456,3 +456,117 @@ records the departure as step 8 deviation 6 for the user to accept). Machine spe
 varies about 3 times under load; under a heavier load than the measured one the sweep
 could pass 90 minutes. `--no-plots` would shorten both commands without changing a
 number, but the findings need the plots.
+
+## Amendment 1 (2026-10-03, before any run)
+
+Made in SP1 step 8a, before either file was run, and committed with that step's code.
+The two experiment files are unchanged (byte for byte as in the pre-registration commit
+c2a4cf0), and so is every case, sweep, budget and solve: the step changes reporting code
+only (src/launchsim/results_io.py, summary.py, plots.py and replay.py), so that what the
+run writes is accurate. No pre-registered criterion or reading changes: every verdict of
+sections 3, 7 and 8 is taken as written, on the branch assignment section 3 gives.
+Sections 1 to 10 stay as written. Where a sentence there describes what the outputs will
+show (the two "reporting artefacts to expect" of sections 4 and 7, "no sweep point
+records its solve's gamma*_ref" in sections 3 and 7, and the summary caveat that
+section 7 says is tested, not assumed), it describes the reporting code of c2a4cf0;
+this section says what the outputs show now.
+
+1. **The payload Sensitivity note of an empty `of`** (section 4). silo_offload_2d's run
+   summary no longer prints "no sensitivity block declared" in its payload Sensitivity
+   section. It prints "(no run has payload sensitivity cases: the sensitivity block's
+   `of` lists no run; its params perturb the offload block's sensitivity arms, reported
+   in the section "Propellant saved at fixed payload"; C_D: ...)", and with
+   `--no-offload` "... which --no-offload skipped with the block" in place of the
+   pointer, or, with `run --variant` naming a variant other than silo_cold (not the
+   registered command), "... none of which ran (their case's variant did not run)",
+   since that offload section prints no arms table. The arms and the offload section
+   are unchanged. The bridge declares no
+   sensitivity block and keeps "no sensitivity block declared", which is true of it.
+2. **The calibration record of the README-loads fork** (section 7, "Bridge").
+   `plots.CALIBRATION_RECORDS` now holds generic_f9_class_2d_readme_loads: P* 24,700.0
+   kg against 22,800 kg, +8.33%, inside the +/-10% band (case readme_loads of
+   docs/findings/CAL-f9-leo-2d.md; 24,700.013 kg in tests/data/calibration_record.json).
+   The bridge summary's calibration caveat therefore says that the fork "carries 24,700
+   kg in its calibration run against the published 22,800 kg, +8.3% high, a documented
+   calibration result (docs/findings/CAL-f9-leo-2d)" instead of "no calibration record
+   on file"; the replay page of a bridge run says that the fork lies within the gate
+   band; the animation footnote reads "This vehicle calibrates +8.3% high on payload,
+   inside the +/-10% band (docs/findings/CAL-f9-leo-2d)." The gate fork's caveats are
+   unchanged word for word.
+3. **Sweep points record their solve's gamma*_ref and flags** (TODO.md KI-028; section
+   3, "Sweep points" and "Resolution"). Each offload case of a sweep point now writes two
+   more sweep_index.csv columns, appended after step 7's twelve (which keep their names
+   and order): `<case>.solve_gamma_star_rad`, the solve's own gamma*_ref [rad], refined
+   in search mode at X1 (the root of the first search in x) and held for X2 and the
+   final search at x*, to 12 significant digits (the point's `gamma_star_rad` column
+   stays its own payload search at its own P*), and `<case>.n_flags`, the number of the
+   case record's flags (its solve's and its recorded run's). The sweep summary's Checks
+   section lists the flags themselves, one line per point and case, with the status of a
+   solve that did not end ok or no_offload (a search_failed solve has no flags of its
+   own). The case is silo_cold_s1 in sweeps 1, 3, 4 and 5 and silo_cold_200m_s1 in
+   sweep 2.
+4. **The stage-2 caveat no longer states what section 7 tests** (section 7, "Stage 2,
+   both, and the frontier point"). The caveat list of every offload summary
+   (`summary.OFFLOAD_CAVEATS`) ended with "total tonnes are maximised by a stage-1-only
+   offload, so 'both' cannot beat the headline", the phase file's section 5.3 statement
+   that step 8 corrected and that section 7 tests rather than assumes. It now ends "a
+   stage-1-only offload is not assumed to maximise the total tonnes ('both' may remove
+   more, its stage-2 share riding about free), and stage 1 stays the only headline
+   either way", and it places the measured marginal value of stage-2 propellant on the
+   gate vehicle (it said "this vehicle", which the bridge summary would have printed of
+   the README-loads fork, where nothing measured it). Section 7's reading of the
+   both-stage case and the headline rule are unchanged.
+
+**How the readings use the recorded gamma*_ref.** Section 3's rule for G has two
+branches: G = min(65.7 kg/deg x |dgamma*_ref|, 2.30 kg) for two solves that share one
+vertex of m_res(gamma*) and both record gamma*_ref, and G = 0.5 k w^2 / s otherwise
+(2.30 kg at s = 0.039, 2.89 kg at s = 0.031). Section 3 assigns the pairs to the
+branches by name, and sections 3 and 7 state the readings on that assignment:
+silo_cold_200m_s1 against the headline in the first branch; every sweep point, every
+event-against-closed-form pair and the validation measurement in the second. The sweep
+points on the headline's flight after release (sweep 2's four points and sweep 1's 100 m
+point) were put in the second branch only because none recorded its gamma*_ref; the
+event-against-closed-form pairs and the other sweep points are there for their different
+flights as well, and the validation measurement because its gamma*_ref is on record only
+to 0.01 deg. This amendment moves no pair: every verdict keeps its registered branch.
+Where the recorded values allow it, they add a second reading, reported beside the
+registered one and never replacing it.
+
+- **Sweep 2 (the flatness test): the verdict at the cap, the recorded gamma*_ref
+  beside it.** The verdict is section 7's, on the spread (the largest x* less the
+  smallest of the four) against R = 2.55 kg: within 0.25 kg, flat to the solves' own
+  resolution; from 0.25 to 2.55 kg, flat within the refine's gamma* resolution, reported
+  as such; above 2.55 kg, a defect to find before any finding. Beside it the findings
+  note gives the recorded gamma*_ref of the two points that set the spread, their
+  difference dgamma*_ref [deg] and R_rec = 0.25 kg + min(65.7 kg/deg x |dgamma*_ref|,
+  2.30 kg), section 3's first branch. That branch holds under section 3's own
+  assumptions: the four points share one vertex (they fly the same flight after release,
+  section 7, to integrator noise of about 5e-8 relative, section 6), k is the same at
+  each, and |dg| <= w for each. R_rec is at most 2.55 kg and reaches it when the two
+  recorded values differ by 0.035 deg (2.30 / 65.7) or more. A spread from R_rec to
+  2.55 kg stays unresolved, as section 7 reads it; the note adds that the recorded
+  gamma*_ref difference does not account for it under those assumptions and examines
+  the assumptions (the shared vertex, the same k) before quoting the spread. It is not
+  read as a defect on that ground.
+- **Sweeps 4 and 5 (the sign test): the cap, with no second reading.** Both points of
+  each pair now record gamma*_ref, but they fly different flights (the closed form
+  lights 0.053 ms earlier at 40 m and 2.51 ms earlier at 200 m; section 7), so their
+  m_res(gamma*) curves need not share a vertex. The recorded difference bounds the
+  gamma* term only through a common vertex (section 3: only then is dg1 - dg2 the
+  recorded difference), and no output records either vertex. So G stays
+  0.5 k w^2 / s: R = 3.14 kg at 200 m (s = 0.031) and 2.55 kg at 40 m (s = 0.039), and
+  section 7's readings of both pairs are unchanged. The two points' recorded gamma*_ref
+  and flags are reported beside each pair; they do not enter R.
+- **Other pairs.** silo_cold_200m_s1 against the headline keeps section 3's first branch
+  (both recorded by the run command). A sweep point on the headline's flight (sweep 1's
+  100 m point, sweep 2's points) against silo_cold_s1 or silo_cold_200m_s1 keeps the cap
+  for its verdict (section 3, "any sweep point"; across the run and sweep commands with
+  R_P as section 3 gives it) and gets the first-branch reading beside it, as in sweep 2.
+  Pairs on different flights (the other points of sweeps 1, 3, 4 and 5 against each
+  other and against these) and the headline against the validation measurement get no
+  second reading.
+- **Flags.** A sweep point's flags (a capped gamma* refine, `offload_nonmonotone` and
+  `offload_verify_mismatch` among them) are now on disk and are disclosed beside the
+  point's reading. They block nothing that section 8 does not already block: its
+  headline-blocking flags apply to the headline case, and a sweep point's bug_suspect
+  decomposition blocks findings, as before.

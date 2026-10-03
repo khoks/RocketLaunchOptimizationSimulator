@@ -3,7 +3,8 @@ synthetic planar results directory: a GIF with the expected frames, default and 
 output paths, a vertical_1d run refused, unknown runs named, and the two-speed timeline
 monotone over the whole flight, the playback labels, GIF frame timing, event labels
 that name their runs and values, and the calibration caveat checked against its
-findings note. Nothing here needs ffmpeg (a stand-in writer tests its failure)."""
+findings note (every record; inside the band said when it is, and the line fits the
+frame). Nothing here needs ffmpeg (a stand-in writer tests its failure)."""
 
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import yaml
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from PIL import Image
 
 from launchsim import plots
@@ -31,6 +34,13 @@ PUSH_S = 2.0
 SERIES_COLUMNS = [*plots.ANIMATION_COLUMNS, "stage"]
 EVENT_COLUMNS = ["t_s", "event", "phase", "stage", "alt_m", "downrange_m", "speed_rel_mps", "m_kg"]
 REPO = Path(__file__).resolve().parents[1]
+CALIBRATION_RECORD = REPO / "tests" / "data" / "calibration_record.json"
+"""The recorded calibration run (case P*, case vehicle files): tests/test_calibration.py."""
+GATE_VEHICLE = "generic_f9_class_2d"
+README_VEHICLE = "generic_f9_class_2d_readme_loads"
+"""The calibrated vehicles: the gate (mass set C) and the README-loads fork (set A)."""
+CALIBRATION_BAND_PCT = 10.0
+"""The calibration band [%] (CLAUDE.md, Calibration: within +/-10 %)."""
 
 
 def _row(t_rel: float, offset: float, assist: bool) -> dict[str, object]:
@@ -270,12 +280,81 @@ def test_runs_are_read_on_the_time_after_release(tmp_path: Path) -> None:
 
 def test_calibration_record_matches_its_findings_note() -> None:
     """The footnote's calibration numbers are the ones the findings note reports, so a
-    re-run calibration that updates the note but not CALIBRATION_RECORDS fails here."""
-    for model_kg, reference_kg, note in plots.CALIBRATION_RECORDS.values():
+    re-run calibration that updates the note but not CALIBRATION_RECORDS fails here.
+    Every record is checked the same way (SP1 step 8a added the README-loads fork): its
+    vehicle is a case of the recorded calibration run (tests/data/calibration_record.json,
+    the case whose vehicle file carries that name), its P* is that case's recorded P* to
+    0.1 kg, and the note's results row of the case prints P* to 0.1 kg, the gap
+    100 (P*/reference - 1) % to two decimals and inside or outside the +/-10 % band; the
+    note quotes the reference. The gate's one-paragraph result is checked as before."""
+    calibration = json.loads(CALIBRATION_RECORD.read_text(encoding="utf-8"))
+    case_of = {
+        yaml.safe_load((REPO / path).read_text(encoding="utf-8"))["name"]: case
+        for case, path in calibration["vehicles"].items()
+    }
+    assert set(plots.CALIBRATION_RECORDS) == {GATE_VEHICLE, README_VEHICLE}
+    for vehicle, (model_kg, reference_kg, note) in plots.CALIBRATION_RECORDS.items():
         text = (REPO / f"{note}.md").read_text(encoding="utf-8")
         gap = 100.0 * (model_kg / reference_kg - 1.0)
-        assert f"P* = {model_kg:,.1f} kg" in text
-        assert f"{gap:+.2f}% against {reference_kg:,.0f} kg" in text
+        case = case_of[vehicle]
+        assert round(calibration["payload_kg"][case], 1) == model_kg, vehicle
+        band = "inside" if abs(gap) <= CALIBRATION_BAND_PCT else "outside"
+        assert f"| `{case}` | {model_kg:,.1f} | {gap:+.2f}% | {band}" in text, vehicle
+        assert f"against {reference_kg:,.0f} kg" in text, vehicle
+    model_kg, reference_kg, note = plots.CALIBRATION_RECORDS[GATE_VEHICLE]
+    text = (REPO / f"{note}.md").read_text(encoding="utf-8")
+    gap = 100.0 * (model_kg / reference_kg - 1.0)
+    assert f"P* = {model_kg:,.1f} kg" in text
+    assert f"{gap:+.2f}% against {reference_kg:,.0f} kg" in text
+
+
+def test_calibration_footnote_says_inside_the_band_when_it_is() -> None:
+    """The footnote's calibration sentence: the gate vehicle (+14.3 % high, outside the
+    band) keeps its sentence word for word; the README-loads fork, 100 (24,700/22,800 - 1)
+    = +8.3 % high, says it lies inside the +/-10 % band and is not called the gate
+    vehicle; a vehicle without a record says so. Rendered at the frame geometry, every
+    record's footnote line ends left of the frame's right edge."""
+    assert plots.calibration_caveat(GATE_VEHICLE) == (
+        "Gate vehicle calibrates +14.3% high on payload (docs/findings/CAL-f9-leo-2d)."
+    )
+    gap = 100.0 * (24700.0 / 22800.0 - 1.0)
+    readme = plots.calibration_caveat(README_VEHICLE)
+    assert f"{gap:+.1f}% high" in readme and "+8.3% high" in readme
+    assert "inside the +/-10% band" in readme and "Gate vehicle" not in readme
+    assert "band" not in plots.calibration_caveat(GATE_VEHICLE)
+    assert plots.calibration_caveat("toy_2d") == "Vehicle toy_2d: no calibration record on file."
+    size_in, dpi, (width_px, _height_px) = plots.frame_geometry(1280)
+    fig = Figure(figsize=size_in, dpi=dpi)
+    canvas = FigureCanvasAgg(fig)
+    for vehicle in plots.CALIBRATION_RECORDS:
+        line = plots.animation_caveats([], vehicle)[-1]
+        artist = fig.text(plots.ANIMATION_GRID["left"], 0.0, line, fontsize=plots.FONT_FOOTNOTE_PT)
+        canvas.draw()
+        right_px = artist.get_window_extent(renderer=canvas.get_renderer()).x1
+        assert right_px < width_px * plots.ANIMATION_GRID["right"], vehicle
+
+
+def test_calibration_band_includes_both_edges() -> None:
+    """A record exactly on an edge of the +/-10 % band, P* = 22,800 +/- 0.1 x 22,800 =
+    25,080 and 20,520 kg, reads inside, though P*/reference - 1 rounds to just above
+    0.1 at the upper edge; 0.1 kg beyond either edge reads outside. The footnote
+    follows the helper."""
+    reference_kg = 22800.0
+    band_kg = 0.1 * reference_kg
+    upper_kg, lower_kg = reference_kg + band_kg, reference_kg - band_kg
+    assert (upper_kg, lower_kg) == (25080.0, 20520.0)
+    assert abs(upper_kg / reference_kg - 1.0) > 0.1  # the rounding the helper absorbs
+    for model_kg in (upper_kg, lower_kg):
+        assert plots.inside_calibration_band(plots.calibration_gap(model_kg, reference_kg))
+    for model_kg in (upper_kg + 0.1, lower_kg - 0.1):
+        assert not plots.inside_calibration_band(plots.calibration_gap(model_kg, reference_kg))
+    edge = {"edge_2d": (upper_kg, reference_kg, "docs/findings/CAL-f9-leo-2d")}
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(plots, "CALIBRATION_RECORDS", edge)
+        assert plots.calibration_caveat("edge_2d") == (
+            "This vehicle calibrates +10.0% high on payload, inside the +/-10% band "
+            "(docs/findings/CAL-f9-leo-2d)."
+        )
 
 
 def test_timeline_is_monotone_covers_the_flight_and_plays_launch_near_real_time() -> None:
