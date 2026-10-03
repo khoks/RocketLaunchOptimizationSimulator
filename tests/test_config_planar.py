@@ -6,8 +6,10 @@ automatic search skip (amendment 4), sensitivity paths (amendment 5), the aero b
 (amendment 6) and baseline identity across experiments (amendment 15). The shipped
 Phase 2 experiments must resolve, the Phase 1 run dicts must stay byte-identical
 to the 1-D golden, and every run and vehicle dict the four shipped planar experiments
-resolve keeps its pinned sha256 (SP1 step 1; tests/planar_pin_support.py). Expected
-numbers are computed here from the YAML inputs."""
+resolve keeps its pinned sha256 (SP1 step 1; tests/planar_pin_support.py). The two
+pre-registered offload experiments of SP1 step 8 (silo_offload_2d and its README-loads
+bridge) are checked for the properties their design rests on. Expected numbers are
+computed here from the YAML inputs."""
 
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ import yaml
 from pydantic import ValidationError
 
 from launchsim import cli, sim
+from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.config import (
     BLOCKING_ROLE,
     BRENTQ_MIN_RTOL,
@@ -31,6 +34,7 @@ from launchsim.config import (
     PLANAR_SHARED_KEYS,
     SHARED_KEYS,
     ChecksConfig,
+    ConstantAccelConfig,
     ConvergenceConfig,
     ExperimentConfig,
     GuidanceConfig,
@@ -46,18 +50,22 @@ from launchsim.config import (
     Stage2GuidanceConfig,
     TrackConfig,
     inject_shared,
+    offload_run_names,
     resolve_experiment,
     resolve_run,
     shared_run_blocks,
 )
-from launchsim.constants import OMEGA_EARTH_RADS, R_EARTH_M
+from launchsim.constants import G0_MPS2, MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.phases import IntegratorSettings
+from launchsim.results_io import check_name
 
 PLANAR_EXPERIMENTS = (
     "calibration_f9_2d",
     "silo_screening_2d",
     "silo_bridge_2d_readme",
     "guidance_trigger_2d",
+    "silo_offload_2d",
+    "silo_offload_2d_readme",
 )
 SITE_LAT_DEG = 28.5
 KM = 1000.0
@@ -84,13 +92,13 @@ def _resolve_file(path: Path) -> ResolvedExperiment:
 
 @pytest.fixture(scope="module")
 def raw(repo_root: Path) -> dict[str, dict[str, Any]]:
-    """Raw dicts of the four shipped planar experiments."""
+    """Raw dicts of every shipped planar experiment (PLANAR_EXPERIMENTS)."""
     return {n: _load(_experiment_path(repo_root, n)) for n in PLANAR_EXPERIMENTS}
 
 
 @pytest.fixture(scope="module")
 def resolved(repo_root: Path) -> dict[str, ResolvedExperiment]:
-    """The four shipped planar experiments, resolved."""
+    """Every shipped planar experiment (PLANAR_EXPERIMENTS), resolved."""
     return {n: _resolve_file(_experiment_path(repo_root, n)) for n in PLANAR_EXPERIMENTS}
 
 
@@ -1087,3 +1095,260 @@ def test_sim_dispatches_planar_runs_to_the_planar_model(
     columns = set(out.result.timeseries.columns)
     assert "downrange_m" in columns, "sim.run ran a planar_2d run through the 1-D model"
     assert out.result.model == "planar_2d" and "z_m" not in columns
+
+
+# ------------------------------------- SP1 step 8: the pre-registered offload experiments
+
+OFFLOAD_EXPERIMENT = "silo_offload_2d"
+OFFLOAD_BRIDGE = "silo_offload_2d_readme"
+HEADLINE_CASE = "silo_cold_s1"
+"""The headline stage-1 case of both offload experiments (one name on both vehicles)."""
+SCREENED_RUNS: dict[str, tuple[str, tuple[str, ...]]] = {
+    OFFLOAD_EXPERIMENT: ("silo_screening_2d", ("pad", "silo_cold", "silo_hot_ramp_on_track")),
+    OFFLOAD_BRIDGE: ("silo_bridge_2d_readme", ("pad", "silo_cold")),
+}
+"""The runs each offload experiment shares with the experiment it builds on."""
+HEADLINE_SENSITIVITY_PARAMS = {
+    "vehicle.stages.stage1.dry_mass_t": 0.10,
+    "vehicle.stages.stage1.engine.isp_vac_s": 0.10,
+    "vehicle.aero.cd_scale": 0.10,
+    "assist.drive_efficiency": 0.10,
+}
+"""CLAUDE.md's headline sensitivity: +/-10% on stage-1 dry mass, Isp, C_D and drive
+efficiency."""
+GATE_LOX_T = {"stage1": 287.4, "stage2": 75.2}
+"""Oxidiser (LOX) of each gate-fork stage's full load [t], copied from the source strings
+of the vehicle file's propellant masses (Espace & Exploration No.39 via Wikipedia, Falcon
+9 Full Thrust: "<LOX> LOX + <RP-1> RP-1"), which the energy test reads back; the energy
+block gives the RP-1 and the vehicle the total."""
+SPLIT_TEXT = "{lox} LOX + {fuel} RP-1"
+"""How the gate fork's propellant sources (and the energy block's fuel sources, which quote
+them) write a stage's LOX/RP-1 split [t]."""
+RP1_NET_HEAT_BTU_PER_LB = 18_500.0
+"""Minimum net heat of combustion of RP-1 [Btu/lb] (MIL-DTL-25576E, by ASTM D240)."""
+KJ_PER_KG_PER_BTU_PER_LB = 2.326
+"""One International Table Btu per pound in kJ/kg (exact)."""
+KJ_PER_MJ = 1000.0
+LHV_WRITTEN_DECIMALS = 2
+"""The energy block writes the heating value to 0.01 MJ/kg."""
+NO_IGNITION_MARGIN_M = 100.0
+"""How far below the drag-free coast apex v_e^2 / (2 g_eff) [m] every ramp-start height
+of the offload sweeps lies. The flown apex sits about 0.4 m below that bound on the gate
+fork and moves by centimetres with payload and C_D (300.605-300.690 m; SP1 step 4,
+deviation 4), so no swept height comes near the no_ignition band."""
+
+
+@pytest.mark.parametrize("name", [OFFLOAD_EXPERIMENT, OFFLOAD_BRIDGE])
+def test_offload_experiments_fly_the_screened_runs(
+    resolved: dict[str, ResolvedExperiment], name: str
+) -> None:
+    """The offload is measured on the runs the earlier experiments screened: the pad and
+    the silo variants silo_offload_2d (its bridge) shares with silo_screening_2d
+    (silo_bridge_2d_readme) resolve to the very same run and vehicle dicts, key order
+    included, so writing the variants out in full changed nothing a run flies."""
+    source, names = SCREENED_RUNS[name]
+    for run in names:
+        new, old = resolved[name].runs[run], resolved[source].runs[run]
+        assert json.dumps(new.run_dict) == json.dumps(old.run_dict), (name, run)
+        assert json.dumps(new.vehicle_dict) == json.dumps(old.vehicle_dict), (name, run)
+
+
+def _push_settings(run_dict: dict[str, Any]) -> dict[str, Any]:
+    """A constant_accel run's assist block without the keys that state the push."""
+    push = ("net_accel_g", "exit_speed_mps", "stroke_m")
+    return {k: v for k, v in run_dict["assist"].items() if k not in push}
+
+
+def test_silo_cold_200m_releases_at_the_exit_speed_of_silo_cold(
+    resolved: dict[str, ResolvedExperiment],
+) -> None:
+    """silo_cold_200m states its push by silo_cold's exit speed v = sqrt(2 a g0 L), from
+    silo_cold's own a [g0] and L, written unrounded: the configured speed is that very
+    double, both built pushes release at it (silo_cold_200m over twice the stroke), and
+    the net acceleration v^2 / (2 x 2L) is half of silo_cold's (1.5 g0). Every other
+    assist and ignition setting is silo_cold's."""
+    r = resolved[OFFLOAD_EXPERIMENT]
+    cold, long = r.variants["silo_cold"], r.variants["silo_cold_200m"]
+    a_cold, a_long = cold.run.assist, long.run.assist
+    assert isinstance(a_cold, ConstantAccelConfig) and isinstance(a_long, ConstantAccelConfig)
+    assert a_cold.net_accel_g is not None
+    v_exit = math.sqrt(2.0 * a_cold.net_accel_g * G0_MPS2 * a_cold.stroke_m)
+    assert a_long.exit_speed_mps == v_exit
+    assert a_long.net_accel_g is None and a_long.stroke_m == 2.0 * a_cold.stroke_m
+    half = a_cold.net_accel_g * G0_MPS2 / 2.0
+    assert a_long.net_accel_mps2 == pytest.approx(half, rel=1e-15)
+    for run in (cold, long):
+        setup = sim.planar_setup(run.run, run.to_vehicle())
+        assert isinstance(setup.assist, ConstantAccelAssist) and setup.track is not None
+        released = setup.assist.exit_speed_mps(setup.track.length_m)
+        assert released == pytest.approx(v_exit, rel=1e-15), run.name
+    assert _push_settings(long.run_dict) == _push_settings(cold.run_dict)
+    assert long.run_dict["ignition"] == cold.run_dict["ignition"]
+
+
+def test_offload_sweeps_stay_inside_the_push_and_below_the_coast_apex(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """Every sweep of silo_offload_2d names one stage-1 case of the block built on the
+    sweep's own variant, rebuilt at each point on the point's run (``<run>__<case>``, the
+    point's vehicle). Ramp-start depths lie within the stroke L and convert to t =
+    sqrt(2 (L - d) / a) after push start (d = 0, a time at the release, snaps to it);
+    heights lie NO_IGNITION_MARGIN_M or more below the drag-free apex v_e^2 / (2 g_eff),
+    with v_e = sqrt(2 a L) and the track's g_eff = mu/R_E^2 - omega_p^2 R_E, omega_p =
+    omega_E cos(lat) sin(az) of the site; a closed-form height converts to dt = 2 h /
+    (v_e + sqrt(v_e^2 - 2 g_eff h)) after release, and the closed-form heights are event
+    heights too (point-for-point comparison). The fixed-exit-speed sweep keeps
+    silo_cold_200m's speed: a = a_cold L_cold / L."""
+    r = resolved[OFFLOAD_EXPERIMENT]
+    assert r.offload is not None
+    site = raw[OFFLOAD_EXPERIMENT]["site"]
+    lat, az = math.radians(site["latitude_deg"]), math.radians(site["azimuth_deg"])
+    omega_p = OMEGA_EARTH_RADS * math.cos(lat) * math.sin(az)
+    g_eff = MU_EARTH_M3S2 / R_EARTH_M**2 - omega_p**2 * R_EARTH_M
+    cold = r.variants["silo_cold"].run.assist
+    long = r.variants["silo_cold_200m"].run.assist
+    assert isinstance(cold, ConstantAccelConfig) and isinstance(long, ConstantAccelConfig)
+    assert cold.net_accel_g is not None
+    a_cold = cold.net_accel_g * G0_MPS2
+    depths: list[float] = []
+    heights: dict[str, set[float]] = {"event": set(), "closed_form": set()}
+    for sweep, points in zip(r.experiment.sweeps, r.sweeps, strict=True):
+        assert len(sweep.offload) == 1
+        case = r.offload.config.case(sweep.offload[0])
+        assert (case.solve, case.of) == ("stage1", sweep.of)
+        for point in points:
+            assert [c.name for c in point.offload] == [case.name]
+            start = point.offload[0].start
+            assert start.name == f"{point.run.name}__{case.name}"
+            assert json.dumps(start.vehicle_dict) == json.dumps(point.run.vehicle_dict)
+            assist = point.run.run.assist
+            assert isinstance(assist, ConstantAccelConfig)
+            length = assist.stroke_m
+            if assist.exit_speed_mps is not None:
+                assert assist.exit_speed_mps == long.exit_speed_mps
+                expected = a_cold * cold.stroke_m / length
+                assert assist.net_accel_mps2 == pytest.approx(expected, rel=1e-15)
+                continue
+            assert assist.net_accel_g == cold.net_accel_g
+            v_exit = math.sqrt(2.0 * a_cold * length)
+            ign = point.run.run.ignition_for("stage1")
+            spec = sim.run_ignition_specs(point.run.run, point.run.to_vehicle())["stage1"]
+            if ign.at_depth_m is not None:
+                depths.append(ign.at_depth_m)
+                assert 0.0 <= ign.at_depth_m <= length
+                if ign.at_depth_m == 0.0:
+                    assert (spec.t_ign_s, spec.reference) == (0.0, "release")
+                else:
+                    t_push = math.sqrt(2.0 * (length - ign.at_depth_m) / a_cold)
+                    assert spec.reference == "push_start"
+                    assert spec.t_ign_s == pytest.approx(t_push, rel=1e-12, abs=1e-12)
+            if ign.at_height_m is not None:
+                h = ign.at_height_m
+                assert ign.height_method is not None
+                heights[ign.height_method].add(h)
+                assert h <= v_exit**2 / (2.0 * g_eff) - NO_IGNITION_MARGIN_M, h
+                if ign.height_method == "closed_form":
+                    dt = 2.0 * h / (v_exit + math.sqrt(v_exit**2 - 2.0 * g_eff * h))
+                    assert spec.reference == "release"
+                    assert spec.t_ign_s == pytest.approx(dt, rel=1e-12)
+    assert depths and heights["event"] and heights["closed_form"]
+    assert heights["closed_form"] <= heights["event"]
+
+
+def test_offload_energy_inputs_close_on_the_gate_vehicle_and_its_sources(
+    resolved: dict[str, ResolvedExperiment],
+) -> None:
+    """The energy block of silo_offload_2d: each stage's RP-1 and the LOX of GATE_LOX_T
+    are the split the vehicle file's own propellant source states ("287.4 LOX + 123.5
+    RP-1", "75.2 LOX + 32.3 RP-1"), which the fuel's source quotes too, and they sum to
+    the vehicle's propellant load (410.9 and 107.5 t); the heating value is
+    MIL-DTL-25576E's 18,500 Btu/lb times 2.326 kJ/kg per Btu/lb (43.031 MJ/kg) written to
+    0.01 MJ/kg and not above it (a specification minimum; the rounding does not favour
+    the assist), sourced. The bridge declares no energy block (its fork has no sourced
+    fuel split)."""
+    r = resolved[OFFLOAD_EXPERIMENT]
+    assert r.offload is not None and r.offload.config.energy is not None
+    energy = r.offload.config.energy
+    for stage in r.baseline.vehicle.stages:
+        fuel = energy.fuel_mass_t[stage.name]
+        assert fuel.source and not fuel.assumed
+        split = SPLIT_TEXT.format(lox=GATE_LOX_T[stage.name], fuel=fuel.value)
+        load_source = stage.propellant_mass_t.source
+        assert load_source is not None and split in load_source, (stage.name, split)
+        assert split in fuel.source, (stage.name, split)
+        total = fuel.value + GATE_LOX_T[stage.name]
+        assert total == pytest.approx(stage.propellant_mass_t.value, rel=1e-12), stage.name
+    lhv = energy.heating_value_MJ_per_kg
+    expected_mj = RP1_NET_HEAT_BTU_PER_LB * KJ_PER_KG_PER_BTU_PER_LB / KJ_PER_MJ
+    assert lhv.source and not lhv.assumed
+    assert lhv.value == round(expected_mj, LHV_WRITTEN_DECIMALS) and lhv.value <= expected_mj
+    bridge = resolved[OFFLOAD_BRIDGE].offload
+    assert bridge is not None and bridge.config.energy is None
+
+
+def test_offload_block_cases_arms_and_derived_names(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """The block of silo_offload_2d: pad controls of the three solve modes (D-SP1-10);
+    the headline first and the only case with a paired pad; each penalty row adds its
+    assumed dry mass to stage 1 of the assisted run only (restated ``assumed: true``,
+    the vehicle's dry mass plus the row); each fixed case imposes its fraction of the
+    stage-1 load; the headline alone carries sensitivity arms, two per parameter of the
+    headline sensitivity, while the experiment's own sensitivity block lists no run; and
+    every name the block derives (case runs, paired pads, pad controls, arms with their
+    variants and pads, sweep-point cases) is a valid results name within MAX_NAME_LEN."""
+    r = resolved[OFFLOAD_EXPERIMENT]
+    block = r.offload
+    assert block is not None
+    cfg = block.config
+    assert block.pad_control_modes == ("stage1", "stage2", "both")
+    assert (cfg.cases[0].name, cfg.cases[0].solve) == (HEADLINE_CASE, "stage1")
+    assert [c.name for c in cfg.cases if c.paired_pad] == [HEADLINE_CASE]
+    base_vehicle = r.baseline.vehicle
+    dry_t = base_vehicle.stages[0].dry_mass_t.value
+    load_kg = r.baseline.to_vehicle().stages[0].propellant_mass_kg
+    for case in block.cases:
+        added = case.config.stage1_dry_mass_added_t
+        dry = case.start.vehicle_dict["stages"][0]["dry_mass_t"]
+        if added is None:
+            assert dry == r.baseline.vehicle_dict["stages"][0]["dry_mass_t"], case.name
+        else:
+            assert dry["assumed"] is True and case.config.solve == "stage1"
+            assert dry["value"] == pytest.approx(dry_t + added, rel=1e-15), case.name
+            assert case.pad_start is None
+        fixed = case.config.fixed
+        if fixed is not None:
+            assert fixed.stage1_fraction is not None and case.imposed_kg is not None
+            assert case.imposed_kg == pytest.approx(fixed.stage1_fraction * load_kg, rel=1e-15)
+    assert {c.config.stage1_dry_mass_added_t for c in block.cases} > {None}
+    assert any(c.config.fixed is not None for c in block.cases)
+    assert cfg.sensitivity_of == [HEADLINE_CASE]
+    sensitivity = r.experiment.sensitivity
+    assert sensitivity is not None and sensitivity.params == HEADLINE_SENSITIVITY_PARAMS
+    assert raw[OFFLOAD_EXPERIMENT]["sensitivity"]["of"] == [] and r.sensitivity == []
+    expected_arms = {(p, s * f) for p, f in HEADLINE_SENSITIVITY_PARAMS.items() for s in (1, -1)}
+    assert {(a.param, a.fraction) for a in block.arms} == expected_arms
+    assert len(block.arms) == len(expected_arms) and {a.case for a in block.arms} == {HEADLINE_CASE}
+    names = offload_run_names(cfg, r.baseline.name)
+    names += [n for a in block.arms for n in (a.start.name, a.pad.name)]
+    names += [a.variant.name for a in block.arms if a.variant is not None]
+    names += [c.start.name for points in r.sweeps for p in points for c in p.offload]
+    for name in names:
+        check_name(name, "derived offload run name")
+
+
+def test_offload_bridge_is_the_headline_case_on_the_readme_loads_fork(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """The README-loads bridge (D-SP1-13) solves exactly the headline case of
+    silo_offload_2d (same name, variant, mode and paired pad) with its stage-1 pad
+    control, on silo_bridge_2d_readme's vehicle fork, and nothing else: no sweep, no
+    sensitivity, no arm. The main experiment flies silo_screening_2d's vehicle file."""
+    main, bridge = resolved[OFFLOAD_EXPERIMENT].offload, resolved[OFFLOAD_BRIDGE].offload
+    assert main is not None and bridge is not None
+    headline = main.config.case(HEADLINE_CASE)
+    assert [c.model_dump() for c in bridge.config.cases] == [headline.model_dump()]
+    assert bridge.pad_control_modes == ("stage1",) and not bridge.arms
+    assert not resolved[OFFLOAD_BRIDGE].sweeps and not resolved[OFFLOAD_BRIDGE].sensitivity
+    assert raw[OFFLOAD_BRIDGE]["vehicle"] == raw["silo_bridge_2d_readme"]["vehicle"]
+    assert raw[OFFLOAD_EXPERIMENT]["vehicle"] == raw["silo_screening_2d"]["vehicle"]

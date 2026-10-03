@@ -1,0 +1,208 @@
+# RQ1 in 2-D ("Net benefit"; SP1, docs/phases/SP1-fuel-offload-planar.md): with the payload
+# and the 200 km circular orbit held fixed, how much rocket propellant does the vertical
+# constant-acceleration silo push replace? Gate vehicle generic_f9_class_2d.yaml (mass set
+# C), which calibrates +14.3% high (docs/findings/CAL-f9-leo-2d.md; accepted 2026-09-30).
+# The reference payload P_ref is the pad baseline's payload capacity P*; each solved case
+# removes propellant along its mode until its assisted run carries exactly P_ref to the
+# same orbit (docs/physics.md, "Figures of merit (planar)" and "Reporting definitions
+# (planar)"); a fixed case imposes the offload and reports its own P* against P_ref.
+#
+# Pre-registered (SP1 step 8): committed before any run. What each case and sweep is for,
+# what would undercut the hypothesis, the checks that block findings and the runtime
+# estimate are in docs/phases/inputs/2026-10-03-sp1-preregistration.md. Never edit after
+# the pre-registration commit: a change is an amendment (its own commit, logged).
+#
+# Shared blocks (dynamics, site, target_orbit, guidance, search, checks) and the baseline
+# with its integrator: copied verbatim from experiments/silo_screening_2d.yaml (a test
+# pins the shared blocks and the budget id across every planar experiment). Bare numbers
+# there, as in the other experiment files; the vehicle file carries the vehicle's sources
+# and the offload block below its own.
+name: silo_offload_2d
+vehicle: configs/vehicles/generic_f9_class_2d.yaml
+dynamics: planar_2d
+site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: true}
+target_orbit: {kind: circular, altitude_km: 200}
+guidance:
+  kick: {v_kick_mps: 50, mode: hold_to_alignment, max_duration_s: 60, deadline_s: 60}
+  stage1: gravity_turn
+  stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}
+search:
+  figure_of_merit: payload
+  gamma_grid_deg: [8, 36, 2]
+  gamma_refine_halfwidth_deg: 4
+  gamma_xatol_deg: 0.01
+  gamma_refine_maxiter: 30
+  gamma_root_tol_deg: 0.01
+  delta_bracket_deg: [0.1, 45]
+  delta_step_deg: 0.25
+  delta_xtol_rad: 1.0e-10
+  payload_half_bracket_t: 2.0
+  payload_max_expand: 6
+  payload_backoff_max: 4
+  payload_xtol_kg: 0.5
+  brentq_rtol: 8.881784197001252e-16         # 4 eps, scipy brentq's floor
+  final_payload_xtol_kg: 0.05
+  final_bracket_kg: [20, 1000]
+  search_rtol: 1.0e-8
+  search_atol_scale: 10
+  final_rtol: 1.0e-10
+  penalty: {base_kg: 1.0e6, per_deg_kg: 1.0e4}
+  ltg: {accept_r_m: 1.0, accept_vr_mps: 1.0e-3, r_scale_m: 1.0e4, vr_scale_mps: 100,
+        fd_step_search: 1.0e-4, fd_step_final: 1.0e-5, max_iters: 25, max_halvings: 6,
+        grid_max_rungs: 2, p0_offset_deg: 5, pf_deg: -1, steep_p0_deg: 35,
+        shallow_guess: [0.3, 0.3], pitch_bounds_deg: [-45, 75], tau_max_factor: 2.0,
+        mass_floor_factor: 0.5}
+checks:
+  closure_tol_mps: 1.0e-5
+  identity_tol_mps: 1.0e-5                 # 2-D loss-identity residual (plan section 11)
+  insertion_e_max: 1.0e-6                  # insertion eccentricity (plan section 11)
+  grav_ratio_bounds: [0.33, 3.0]
+  bp_ratio_bounds: [0.33, 3.0]
+  min_term_mps: 1.0
+  max_drag_steer_share: 0.5
+  anchor_margin_kg: 1.5
+  search_final_flag_rel: 1.0e-4
+  maxq_scan_points: 256
+  maxq_xatol_s: 1.0e-6
+  unconstrained_kick_mps: 120
+  vk_margin_kg: 5
+  convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
+                gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
+  gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+  m2_role: diagnostic                      # M2 reported, never bug_suspect (user decision 2026-09-30)
+baseline:                                  # pad: held down, full thrust exactly at release
+  name: pad
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: insertion
+  integrator: {method: DOP853, rtol: 1.0e-10, planar_max_step_s: 2.0, sample_dt_s: 0.05}
+# Variants. The silo is silo_screening_2d's (its *silo anchor; RQ3-2d): constant_accel, a
+# vertical 100 m stroke, exit at the mouth (z = 0), massless carriage, 5 g0 carriage brake,
+# drive efficiency 0.5 (assumed, as there), exhaust impingement 0 (the exhaust is assumed
+# to miss the carriage), vented shaft (no air column). Each variant writes its assist block
+# out in full: no YAML anchor merge, which would carry net_accel_g into the exit-speed
+# variant (SP1 step 1, deviation 6). Stage 1 takes the vehicle's 2 s linear ramp.
+variants:
+  # silo_screening_2d's silo_cold (same resolved run dict): 3 g0 net, exit 76.707 m/s =
+  # sqrt(2 x 3 g0 x 100 m), stage 1 lit 0.5 s after release. The headline variant.
+  silo_cold:
+    assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # silo_screening_2d's silo_hot_ramp_on_track (same resolved run dict): the same silo, the
+  # ramp started 2 s before release on the carriage (94.6 m below the mouth at 17.9 m/s;
+  # docs/physics.md, "Silo model"), so full thrust exactly at release.
+  silo_hot_ramp_on_track:
+    assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: -2.0, reference: release}}
+  # Twice the stroke at silo_cold's exit speed: exit_speed_mps = sqrt(2 x 3 x g0 x 100 m)
+  # with g0 = 9.80665 m/s^2, written unrounded (Python repr of math.sqrt(2 * 3 * 9.80665 *
+  # 100), 76.70717046013364 m/s; it parses to the same double), so it releases at the same
+  # speed as silo_cold (not at the rounded 76.71 m/s of the phase file, 0.0028 m/s higher)
+  # with a net acceleration v^2 / (2 L) = 1.5 g0 over 200 m (felt about 2.5 g0 instead of
+  # 4.0), a 5.21 s push and a 260 m facility (200 m + 60 m braking at 5 g0). Same ignition
+  # as silo_cold.
+  silo_cold_200m:
+    assist: {model: constant_accel, exit_speed_mps: 76.70717046013364, stroke_m: 200,
+             carriage_mass_t: 0, brake_decel_g: 5, drive_efficiency: 0.5,
+             exhaust_impingement_fraction: 0.0, shaft: vented,
+             track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+# Sweeps. Each solves its stage-1 case at every point (sweeps[].offload): the case is
+# rebuilt on the point's own run (its `of` is replaced by the point), solved at the
+# experiment pad's P_ref and verified by an independent payload search; a sweep point gets
+# no paired pad, no pad control and no sensitivity arms (docs/physics.md, "Experiment
+# schema (planar)" and "Reporting definitions (planar)").
+sweeps:
+  # 1. Silo depth at 3 g0 net: exit speed sqrt(2 x 3 g0 x L) = 38.35, 54.24, 76.71, 108.48
+  #    and 132.86 m/s. 100 m repeats silo_cold. The kick regime changes inside the sweep:
+  #    at 25 and 50 m the drag-free coast has slowed to v_e - 0.5 s x g_eff = 33.5 and
+  #    49.4 m/s by the ignition, below v_k = 50 m/s, so those points rise vertically under
+  #    thrust to v_k before the kick; 100-300 m kick at ignition (RQ3-2d found the same
+  #    change between 54 and 70 m/s in its accel x stroke sweep, with no kink resolved in
+  #    dP*). At 300 m the kick comes above checks.unconstrained_kick_mps (120 m/s): the
+  #    model has no angle-of-attack aerodynamics, so the fast kick costs nothing it would
+  #    in flight (amendment 13); read that point as an upper bound.
+  - {of: silo_cold, axes: {assist.stroke_m: [25, 50, 100, 200, 300]}, offload: [silo_cold_s1]}
+  # 2. Silo depth at silo_cold's exit speed (silo_cold_200m's unrounded 76.70717046013364
+  #    m/s): net v^2 / (2 L) = 6, 3, 1.5 and 1 g0, push 1.30, 2.61, 5.21 and 7.82 s,
+  #    facility L + 60 m. The flight after release is the same at every point, so the
+  #    offload is expected to be the same at every point, with lower felt g and peak power
+  #    and a longer facility as L grows; report it either way. 100 m equals silo_cold up
+  #    to the last bit of the acceleration.
+  - {of: silo_cold_200m, axes: {assist.stroke_m: [50, 100, 200, 300]}, offload: [silo_cold_200m_s1]}
+  # 3. Ramp start by depth below the mouth on silo_cold's 100 m push (within the stroke):
+  #    t = sqrt(2 (L - d) / a) from push start = 0, 1.304, 1.844, 2.258 and 2.607 s; 0 m
+  #    starts the ramp at release. 100 m lights stage 1 at the shaft floor (a hot start:
+  #    full thrust 0.61 s before release). exhaust_impingement_fraction 0 credits the whole
+  #    thrust against the drive force (lower drive energy and power) and nothing models the
+  #    exhaust in the shaft (back-pressure, heating, the carriage in the plume), which
+  #    favours hot starts; the push is prescribed, so the fraction does not move the
+  #    trajectory or the offload (RQ3-2d: silo_hot_full and silo_hot_full_impinged fly
+  #    identically).
+  - {of: silo_cold, axes: {ignition.stage1.at_depth_m: [100, 75, 50, 25, 0]}, offload: [silo_cold_s1]}
+  # 4. Ramp start by height above the mouth after release, found by the altitude event:
+  #    10, 40, 100 and 200 m, all well below the flown coast apex (about 300.65 m on the
+  #    gate fork, 300.61-300.69 m over payload 0-30 t and C_D +/-10%; SP1 step 4,
+  #    deviation 4) and the drag-free apex v_e^2 / (2 g_eff) = 301.06 m, so none is near
+  #    the no_ignition band. At 200 m the drag-free coast has slowed to about 44 m/s, below
+  #    v_k = 50 m/s, so that point rises vertically under thrust to v_k before the kick, as
+  #    the pad does; the lower heights kick at ignition. The height method rides as a
+  #    second axis of one value (a two-key family is set by two paths).
+  - {of: silo_cold, axes: {ignition.stage1.at_height_m: [10, 40, 100, 200],
+                           ignition.stage1.height_method: [event]}, offload: [silo_cold_s1]}
+  # 5. The same at 40 and 200 m by the closed form (drag-free, constant g_eff coast:
+  #    dt = 2 h / (v_e + sqrt(v_e^2 - 2 g_eff h)) = 0.540 and 3.302 s after release), two
+  #    of sweep 4's heights, so the methods compare point for point. Measured miss of the
+  #    closed form on the gate fork: -3.8 mm at 40 m, -0.11 m at 200 m (docs/physics.md,
+  #    "Silo model"; SP1 step 3, deviation 2), so it lights 0.05 ms and 2.5 ms before the
+  #    event; the expected payload consequence is in the pre-registration note, section 7.
+  - {of: silo_cold, axes: {ignition.stage1.at_height_m: [40, 200],
+                           ignition.stage1.height_method: [closed_form]}, offload: [silo_cold_s1]}
+# The +/-10% headline sensitivity of CLAUDE.md (stage-1 dry mass, stage-1 Isp, C_D and drive
+# efficiency), used by the offload block's sensitivity_of only. `of` is empty (the schema
+# allows it when only the offload arms are wanted): silo_cold's payload sensitivity on these
+# parameters is already in silo_screening_2d.
+sensitivity:
+  of: []
+  params: {vehicle.stages.stage1.dry_mass_t: 0.10, vehicle.stages.stage1.engine.isp_vac_s: 0.10,
+           vehicle.aero.cd_scale: 0.10, assist.drive_efficiency: 0.10}
+offload:
+  reference: pad                           # P_ref = the full-load pad's payload capacity P*
+  pad_control: true                        # every solve mode (stage1, stage2, both) also solved on the pad
+  sensitivity_of: [silo_cold_s1]           # the headline, re-solved at each +/-10% arm
+  cases:
+    # The headline: stage-1 propellant removed until silo_cold carries P_ref; the paired
+    # pad flies the same offload on the pad (separates the head start from the lighter
+    # stack, SP1 step 6, deviation 5).
+    - {name: silo_cold_s1, of: silo_cold, solve: stage1, paired_pad: true}
+    # Stage 2 and both stages (the same fraction of each load), quoted net of their pad
+    # controls: a property of the vehicle model, never a headline (D-SP1-10).
+    - {name: silo_cold_s2, of: silo_cold, solve: stage2}
+    - {name: silo_cold_both, of: silo_cold, solve: both}
+    # The both-stage frontier point: the largest stage-1 offload after 2 t taken from
+    # stage 2 (2 t: the phase file's choice, an assumed point, not a source).
+    - {name: silo_cold_s1_s2pre2t, of: silo_cold, solve: stage1, stage2_offload_t: 2}
+    # Structural penalty rows (D-SP1-04): 2, 4 and 8.1 t of stage-1 dry mass added to the
+    # assisted run only, each an ASSUMED penalty, not a sized structure (the restated dry
+    # mass is written assumed: true). 8.1 t is the linear break-even of silo_cold's payload
+    # gain in docs/findings/RQ3-silo-screening-2d.md (1,498.8 kg / 184 kg per t, an
+    # extrapolation beyond the +/-2.22 t tested).
+    - {name: silo_cold_s1_dry+2t, of: silo_cold, solve: stage1, stage1_dry_mass_added_t: 2}
+    - {name: silo_cold_s1_dry+4t, of: silo_cold, solve: stage1, stage1_dry_mass_added_t: 4}
+    - {name: silo_cold_s1_dry+8.1t, of: silo_cold, solve: stage1, stage1_dry_mass_added_t: 8.1}
+    # The plain "reduce stage-1 propellant by X" knob (phase file section 5.2): 5% and 10%
+    # of the stage-1 load imposed, nothing solved; each reports its own P* against P_ref.
+    - {name: silo_cold_fix5pct, of: silo_cold, fixed: {stage1_fraction: 0.05}}
+    - {name: silo_cold_fix10pct, of: silo_cold, fixed: {stage1_fraction: 0.10}}
+    # The ramp started on the carriage, and the twice-as-long, half-the-g silo.
+    - {name: silo_hot_ramp_s1, of: silo_hot_ramp_on_track, solve: stage1}
+    - {name: silo_cold_200m_s1, of: silo_cold_200m, solve: stage1}
+  energy:
+    fuel_mass_t:                           # RP-1 of each full load; the LOX is the rest of the stage's propellant
+      stage1: {value: 123.5, source: "Espace & Exploration No.39 via Wikipedia Falcon 9 Full Thrust (en.wikipedia.org/wiki/Falcon_9_Full_Thrust, first-stage propellant 287.4 LOX + 123.5 RP-1); the gate vehicle file's own propellant source"}
+      stage2: {value: 32.3, source: "Espace & Exploration No.39 via Wikipedia Falcon 9 Full Thrust (en.wikipedia.org/wiki/Falcon_9_Full_Thrust, second-stage propellant 75.2 LOX + 32.3 RP-1); the gate vehicle file's own propellant source"}
+    heating_value_MJ_per_kg: {value: 43.03, source: "MIL-DTL-25576E (14 April 2006), Propellant, Rocket Grade Kerosene: RP-1 net heat of combustion 18,500 Btu/lb minimum by ASTM D240, x 2.326 kJ/kg per Btu/lb (International Table Btu, exact) = 43,031 kJ/kg; a specification minimum (delivered lots run slightly higher), which slightly lowers the heat-to-electricity ratio; docs/phases/inputs/2026-10-02-source-rp1-heating-value.md"}

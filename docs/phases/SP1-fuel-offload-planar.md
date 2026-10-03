@@ -1271,6 +1271,57 @@ Step 7 (2026-10-03, commit 6719f92):
 8. **Layout.** No new module: the pipeline lives in results_io.py and helpers went into
    sim.py, metrics_planar.py and offload.py; tests are one new file.
 
+Step 8 (2026-10-03):
+
+1. **Unrounded exit speed.** silo_cold_200m and the fixed-exit-speed sweep state
+   `exit_speed_mps: 76.70717046013364` (the repr of sqrt(2 x 3 x 9.80665 x 100), which
+   parses to the same double), not the rounded 76.71 of section 7, so silo_cold_200m and
+   sweep 2 compare directly with silo_cold. Recorded in the file and in
+   docs/phases/inputs/2026-10-03-sp1-preregistration.md (section 6).
+2. **A test helper changed: tests/planar_pin_support.py `resolved_runs`** now lists the
+   offload starts (sweep-point cases, cases and paired pads, arms and perturbed pads) in
+   the order of `sim.every_resolved_run`. Without it the existing
+   `test_results_io.py::test_preflight_visits_every_resolved_run_and_passes_the_shipped_experiments`
+   fails on the first shipped experiment with an offload block: step 7 extended
+   `every_resolved_run` but not the pin's inventory, and no shipped file had a block
+   until now. The test itself is unchanged; the four pinned experiments declare no block,
+   so their inventory and digests are unchanged, and the offload attributes are read with
+   a default so the helper still runs against the reference commit's sources.
+3. **New tests in tests/test_config_planar.py** besides the `PLANAR_EXPERIMENTS` entries
+   (no existing test body changed; one sentence added to the module docstring, and the
+   `raw` and `resolved` fixtures' docstrings say every shipped planar experiment
+   instead of four): seven
+   tests of the properties the pre-registered design rests on (the screened runs reused,
+   the exit-speed closed form, depths within the stroke and heights below the apex with
+   their conversions, the energy inputs against their sources, the block's cases, arms
+   and derived names, the bridge).
+4. **`sensitivity.of` is empty** (the schema allows it): the block exists for the offload
+   arms only, so silo_cold's payload sensitivity of silo_screening_2d is not repeated.
+   The run summary's payload Sensitivity section will then print "no sensitivity block
+   declared" (step 7's note does not distinguish an empty `of`).
+5. **The bridge has no energy block** (optional in the schema; the README-loads fork has
+   no sourced fuel split). Its summary will say the fork has no calibration record on
+   file (`plots.CALIBRATION_RECORDS` lists the gate fork only), although case readme_loads
+   of CAL-f9-leo-2d calibrated it at +8.33%.
+6. **Runtime estimate replaced.** From measured costs (section 10 of the pre-registration
+   note): `run` about 30-50 min, `sweep` about 39-64 min, the bridge about 3-6 min,
+   against the 15 and 17 min of section 7 (which assumed about 33 s per solved case; step
+   5 measured 89 s). Neither command passes about 90 min, so nothing is trimmed. This
+   sets aside risk 10's resolution (section 10) and the design input's rule "if either
+   command exceeds 30 min, trim the fixed-exit-speed sweep"
+   (docs/phases/inputs/2026-09-30-design-settings-and-offload.md, step 8): both
+   estimates pass 30 min, and the session lead's step-8 brief replaced that threshold
+   with about 90 min, above which a trim is proposed in the step report rather than
+   applied. The fixed-exit-speed sweep is kept in full. The departure is the user's to
+   accept (at the tracker commit or before the pre-registration commit); a trim after
+   the pre-registration commit would be an amendment (risk 10).
+7. **Section 5.3's "total tonnes are maximised by a stage-1-only offload, so both cannot
+   beat the headline" is not assumed.** The recorded marginal value of stage-2
+   propellant on the gate pad is about zero or slightly negative (docs/physics.md,
+   "Virtual propellant"), so the both-stage solve may remove more total tonnes than the
+   stage-1 headline; the pre-registration note states it as a tested expectation. Stage 1
+   stays the only headline either way (D-SP1-10).
+
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
 deviation.

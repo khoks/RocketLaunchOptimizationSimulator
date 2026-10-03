@@ -133,8 +133,16 @@ def resolved_runs(resolved: Any) -> dict[str, Any]:
     """Every ResolvedRun of a ResolvedExperiment, keyed by a label that says where it
     comes from: ``run:<name>`` (baseline, variants), ``sweep_<k>:<point>`` and
     ``sweep_<k>:<point>__<baseline>`` (a point and its paired baseline),
-    ``sens:<label>``, ``bound:<bound>:<run>`` (each re-run and the paired baseline) and
-    ``case:<name>``. Raises ValueError on a repeated label."""
+    ``sens:<label>``, ``bound:<bound>:<run>`` (each re-run and the paired baseline),
+    ``case:<name>`` and, for an experiment with an offload block (SP1 step 7; the first
+    shipped ones arrived in step 8), the start of every offload case: ``offload_sweep_<k>:
+    <start>`` (a case a sweep names, at each point), ``offload:<start>`` (a case of the
+    block, then its paired pad's start) and ``offload_sens:<arm>`` (a sensitivity arm,
+    then ``offload_sens:<arm>:<pad>``, its perturbed pad), in the order of
+    ``sim.every_resolved_run``. The four PINNED_EXPERIMENTS declare no offload block, so
+    their inventory and digests are unchanged; the offload attributes are read with a
+    default so the helper still runs against REFERENCE_COMMIT's sources, which predate
+    them. Raises ValueError on a repeated label."""
     out: dict[str, Any] = {}
 
     def add(label: str, run: Any) -> None:
@@ -157,6 +165,20 @@ def resolved_runs(resolved: Any) -> dict[str, Any]:
             add(f"bound:{bound.name}:{run.name}", run)
     for name, run in resolved.cases.items():
         add(f"case:{name}", run)
+    for points in resolved.sweeps:
+        for point in points:
+            for case in getattr(point, "offload", ()):
+                add(f"offload_sweep_{point.sweep_index}:{case.start.name}", case.start)
+    block = getattr(resolved, "offload", None)
+    if block is not None:
+        for case in block.cases:
+            add(f"offload:{case.start.name}", case.start)
+            if case.pad_start is not None:
+                add(f"offload:{case.pad_start.name}", case.pad_start)
+        for arm in block.arms:
+            add(f"offload_sens:{arm.start.name}", arm.start)
+            if arm.pad_perturbed:
+                add(f"offload_sens:{arm.start.name}:{arm.pad.name}", arm.pad)
     return out
 
 
