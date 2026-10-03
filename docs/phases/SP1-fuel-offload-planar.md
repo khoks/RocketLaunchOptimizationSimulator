@@ -499,8 +499,8 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [x] | 1a0b2af |
 | 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [x] | a03e218 (branch sp1-step5) |
 | 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [x] | 9ca508b (branch sp1-step5) |
-| 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [~] | |
-| 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [ ] | |
+| 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [x] | 6719f92 |
+| 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [~] | |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
 | 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [ ] | |
 | P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [x] | 9024d40 (merged e0b9fd8) |
@@ -984,6 +984,13 @@ Further points and open questions:
   examples and manual checked in the browser). The fuel-offload question is shown there
   as not answered yet; step 10 refreshes the site, deck, gallery and manual with SP1's
   finding.
+- 2026-10-03: step 7 passed its gate: commit 6719f92 (offload: experiment block, pipeline
+  and reporting; replay offload role; --no-offload; KI-024 closed; tests/test_offload_
+  pipeline.py; full suite 1280 passed; two review rounds, 12 and 9 findings, all fixed).
+  For step 9: a failing stage-1 pad control now blocks findings; on the reduced test grid
+  the control missed by 0.128 kg (refine capped at 3 iterations), while step 5 measured
+  0.0016 kg at the shipped budget, so the shipped run must confirm it passes. Next: step 8
+  (experiment files, pre-registered).
 
 ## 12. Deviations from the plan
 
@@ -1233,6 +1240,36 @@ Step 6 (2026-10-02, commit 9ca508b on branch sp1-step5):
 6. **Noted, not changed:** `_attribution_check`, which the decomposition reuses, takes
    max(abs(...)) over a tuple, so a NaN residual that is not first could be skipped. This
    predates SP1 (KI-024).
+
+Step 7 (2026-10-03, commit 6719f92):
+
+1. **The YAML key `reference` is read through an alias into the field `reference_run`**,
+   because an existing test forbids any config model from using an ignition-family key name
+   as a field name. Experiment files still write `reference`.
+2. **A fixed case's recorded run is its own payload search, at its own P\*,** not a run at
+   P_ref: at P_ref that vehicle would fall short of orbit or carry surplus. Its
+   decomposition is taken at P_ref through `sim.matched_run`.
+3. **Verification goes through `sim.run_resolved` of the offloaded run** (the solver runs
+   with verify off; `offload.verification_from_record` and `with_verification` judge and
+   attach it); that run is also the assisted side of the paired-pad comparison.
+4. **New refusals.** `paired_pad` with `stage1_dry_mass_added_t` (the penalty belongs to
+   the assisted run only, so the pair would be across two vehicles); stage-2 and
+   both-stage solves require `pad_control` and are refused in sweeps and in
+   `sensitivity_of`; a baseline or sensitivity pad without a payload capacity is reported
+   `reference_failed` and nothing is solved.
+5. **Scope of verification and outputs.** Pad controls that end ok are verified like
+   cases; sensitivity arms are not verified (cost; stated in the basis line); sweep-point
+   solves are verified but get no paired pad, pad control or arms, and their runs are not
+   written as run directories (sweep_index.csv columns and checks only); pad-control runs
+   are written as `<baseline>__offload_<mode>`.
+6. **Solves with the same trajectory are flown once per pass**, so drive-efficiency and
+   screening-Isp sensitivity arms reuse the nominal solve (they change only energy or the
+   yardstick).
+7. **A failing stage-1 pad control blocks findings** (its own blocked line), beyond the
+   design's decomposition rule; the energy comparison uses the experiment vehicle's
+   mixture ratio on every load; with `--no-offload` the block writes a skip note.
+8. **Layout.** No new module: the pipeline lives in results_io.py and helpers went into
+   sim.py, metrics_planar.py and offload.py; tests are one new file.
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
