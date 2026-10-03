@@ -20,7 +20,16 @@ exact and the tests assert them at 1e-10 relative:
   g_eff L); where v^2 / (2 L) and (v^2 / (2 g0 L)) g0 are the same double (the
   tested 76.71 m/s over 200 m) the run flies exactly the run stated by net_accel_g =
   v^2 / (2 g0 L) and only its assumptions gain a line; otherwise the two differ by an
-  ulp or two in a and agree to integrator noise (docs/physics.md, "Silo model").
+  ulp or two in a and agree to integrator noise (docs/physics.md, "Silo model");
+- the ramp start stated by depth, speed or closed-form height (SP1 step 3), converted
+  by ``phases.prelude.resolve_ignition`` before the run: depth d -> sqrt(2 (L - d) / a)
+  and speed v -> v / a from push start, height h -> the smaller root of
+  v_exit t - g_eff t^2/2 = h after release, a start within ZERO_SPAN_S of the release
+  snapped to it, the unreachable refused; on the 1-D model the ignition event lies at
+  the requested depth or speed (1e-9), and at the requested height under an injected
+  ConstantGravity (1e-9), both counted from the mouth when it is raised above the
+  datum; the run equals the run stated by the converted time; a later stage's ramp
+  start by depth, speed or height is refused where the specs are built.
 
 The F9 numbers (542,570 kg, 3 g0, L = 100 m, g_eff = mu/R_E^2): 76.70717 m/s,
 2.60732 s, 3.9992 g0 felt, F_int 21.2786 MN, E 2.1279 GJ, P 1.6322 GW, braking 60 m.
@@ -28,6 +37,7 @@ The F9 numbers (542,570 kg, 3 g0, L = 100 m, g_eff = mu/R_E^2): 76.70717 m/s,
 
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 from typing import Any
@@ -42,10 +52,23 @@ from launchsim.assist import build_assist
 from launchsim.assist.base import normal_load_N
 from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.assist.track import VERTICAL, StraightTrack
-from launchsim.config import ConstantAccelConfig, resolve_experiment
+from launchsim.config import (
+    ConstantAccelConfig,
+    IgnitionConfig,
+    RunConfig,
+    resolve_experiment,
+    resolve_run,
+)
 from launchsim.constants import G0_MPS2, J_PER_KWH, MU_EARTH_M3S2, R_EARTH_M
-from launchsim.dynamics import InverseSquareGravity, TrackParams, rhs_track, track_layout
+from launchsim.dynamics import (
+    ConstantGravity,
+    InverseSquareGravity,
+    TrackParams,
+    rhs_track,
+    track_layout,
+)
 from launchsim.phases import ASSIST_KIND, HOLD_KIND, IgnitionSpec, IntegratorSettings
+from launchsim.phases.prelude import resolve_ignition
 from launchsim.vehicle import Startup, Vehicle
 
 G_EFF = MU_EARTH_M3S2 / R_EARTH_M**2
@@ -878,3 +901,321 @@ def test_net_accel_assumptions_keep_their_phase_1_text() -> None:
                 brake_decel_mps2=A_BRAKE,
                 exit_speed_input_mps=bad,
             )
+
+
+# ------------------------------------- ramp start by depth, speed and height (SP1 step 3)
+
+T_PUSH = math.sqrt(2.0 * L / A)
+"""Push time of the 3 g0, 100 m silo [s] (2.60732 s)."""
+V_E = math.sqrt(2.0 * A * L)
+"""Exit speed of the same silo [m/s] (76.70717 m/s)."""
+TRACK = StraightTrack(L, VERTICAL, -L)
+"""The buried vertical silo of ``_silo``: start at z = -L, mouth (track exit) at z = 0."""
+EVENT_ABS_M = 1e-9
+"""Tolerance of an ignition event's altitude [m], speed [m/s] and time [s] against its
+closed form (SP1 step 3 gate: 1e-9)."""
+RAMP = Startup("ramp", t_ramp_s=2.0)
+
+
+def _resolve(block: dict[str, Any], g_eff: float = G_EFF, **kw: Any) -> IgnitionSpec:
+    """resolve_ignition of an ignition block on the 3 g0, 100 m silo (``_assist`` and
+    TRACK unless given) with the 2 s ramp as the stage's own startup."""
+    assist = kw.get("assist", _assist())
+    track = kw.get("track", TRACK)
+    return resolve_ignition(IgnitionConfig.model_validate(block), RAMP, assist, track, g_eff)
+
+
+def _height_dt(h: float, g: float = G_EFF) -> float:
+    """Time after release [s] at which a drag-free coast at constant g from the mouth at
+    V_E reaches the height h [m] on the way up: the smaller root of V_E t - g t^2/2 = h."""
+    return (V_E - math.sqrt(V_E * V_E - 2.0 * g * h)) / g
+
+
+def _ignition_row(result: sim.Result) -> pd.Series:
+    """The stage-1 ignition row of a 1-D run's events."""
+    rows = result.events[
+        (result.events["event"] == "ignition") & (result.events["stage"] == "stage1")
+    ]
+    assert len(rows) == 1
+    return rows.iloc[0]
+
+
+@pytest.mark.parametrize("depth", [L, 75.0, 50.0, 25.0, 1e-3])
+def test_resolve_depth_is_the_time_from_push_start_to_that_depth(depth: float) -> None:
+    """at_depth_m d below the mouth: the push from rest at a reaches s = L - d at
+    t = sqrt(2 (L - d) / a) after push start, so the spec is (that t, push_start) and
+    records the request; d = L is the push start itself (t = 0)."""
+    spec = _resolve({"at_depth_m": depth})
+    assert spec.reference == "push_start"
+    assert math.isclose(spec.t_ign_s, math.sqrt(2.0 * (L - depth) / A), rel_tol=1e-15, abs_tol=0.0)
+    assert (spec.trigger_kind, spec.trigger_value) == ("depth", depth)
+    assert spec.startup is None and not spec.fails
+
+
+@pytest.mark.parametrize("speed", [0.0, 10.0, 30.0, 54.24, 76.0])
+def test_resolve_speed_is_the_time_from_push_start_to_that_speed(speed: float) -> None:
+    """at_speed_mps v on the push: sdot = a t, so t = v / a after push start."""
+    spec = _resolve({"at_speed_mps": speed})
+    assert spec.reference == "push_start"
+    assert math.isclose(spec.t_ign_s, speed / A, rel_tol=1e-15, abs_tol=0.0)
+    assert (spec.trigger_kind, spec.trigger_value) == ("speed", speed)
+
+
+@pytest.mark.parametrize("height", [5.0, 40.0, 200.0, 299.0])
+def test_resolve_closed_form_height_is_the_drag_free_coast_time(height: float) -> None:
+    """at_height_m h, closed form: the smaller root of V_E t - g_eff t^2/2 = h after
+    release, with g_eff the track's constant (here mu/R_E^2; any g_eff passed in)."""
+    block = {"at_height_m": height, "height_method": "closed_form"}
+    for g in (G_EFF, 9.7720917):
+        spec = _resolve(block, g_eff=g)
+        assert spec.reference == "release"
+        assert math.isclose(spec.t_ign_s, _height_dt(height, g), rel_tol=1e-12)
+        assert (spec.trigger_kind, spec.trigger_value) == ("height_closed_form", height)
+
+
+def test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_reach() -> None:
+    """A conversion within ZERO_SPAN_S (1e-12 s) of the release snaps to (0, release):
+    depth 0, the exit speed itself and a speed a rounding above it. A speed whose time
+    lies further after the release (v > v_exit), a depth below the push start, a height
+    at or above the drag-free apex V_E^2 / (2 g_eff), a height with g_eff <= 0 and a
+    height reached by an event (SP1 step 4) are refused."""
+    for block in ({"at_depth_m": 0.0}, {"at_speed_mps": V_E}, {"at_speed_mps": V_E * (1 + 1e-15)}):
+        spec = _resolve(block)
+        assert (spec.t_ign_s, spec.reference) == (0.0, "release"), block
+        assert spec.trigger_kind != "time"
+    with pytest.raises(ValueError, match=r"exceeds the exit speed 76\.70717"):
+        _resolve({"at_speed_mps": V_E * (1 + 1e-9)})
+    with pytest.raises(ValueError, match=r"at_depth_m 100\.001 m is deeper than the track"):
+        _resolve({"at_depth_m": 100.001})
+    apex = V_E * V_E / (2.0 * G_EFF)
+    for height in (apex, 1.01 * apex):
+        with pytest.raises(ValueError, match="at or above the drag-free apex"):
+            _resolve({"at_height_m": height, "height_method": "closed_form"})
+    with pytest.raises(ValueError, match="needs g_eff > 0"):
+        _resolve({"at_height_m": 40.0, "height_method": "closed_form"}, g_eff=0.0)
+    event = IgnitionConfig.model_construct(at_height_m=40.0, height_method="event")
+    with pytest.raises(ValueError, match="arrives in SP1 step 4"):
+        resolve_ignition(event, RAMP, _assist(), TRACK, G_EFF)
+
+
+def test_resolve_needs_the_constant_accel_drive_and_leaves_time_specs_alone() -> None:
+    """A depth, speed or height needs the constant_accel drive and its track (a pad's
+    NoAssist, no model or no track is refused, naming the key); a time-stated config
+    gives IgnitionSpec.from_config unchanged on any model, with the time trigger."""
+    for block in (
+        {"at_depth_m": 50.0},
+        {"at_speed_mps": 30.0},
+        {"at_height_m": 40.0, "height_method": "closed_form"},
+    ):
+        for assist, track in ((sim.NoAssist(), None), (None, None), (_assist(), None)):
+            with pytest.raises(ValueError, match="needs the constant_accel drive"):
+                _resolve(block, assist=assist, track=track)
+    for block in ({}, {"t_ign_s": -2.0}, {"t_ign_s": -2.0, "reference": "push_start"}):
+        cfg = IgnitionConfig.model_validate(block)
+        for assist, track in ((sim.NoAssist(), None), (_assist(), TRACK)):
+            spec = resolve_ignition(cfg, RAMP, assist, track, G_EFF)
+            assert spec == IgnitionSpec.from_config(cfg, RAMP)
+            assert (spec.trigger_kind, spec.trigger_value) == ("time", None)
+
+
+def test_ignition_spec_trigger_defaults_keep_every_time_spec_as_it_was() -> None:
+    """The two new IgnitionSpec fields default to the time trigger, so every existing
+    construction is equal to, and hashes like, the same spec written with them; a
+    non-time trigger needs its value and the time trigger none; an unknown kind is
+    refused."""
+    for spec in (IgnitionSpec(), IgnitionSpec(0.5), IgnitionSpec(-2.0, "push_start", RAMP, True)):
+        full = IgnitionSpec(spec.t_ign_s, spec.reference, spec.startup, spec.fails, "time", None)
+        assert spec == full and hash(spec) == hash(full)
+    with pytest.raises(ValueError, match="trigger_value"):
+        IgnitionSpec(1.0, "push_start", trigger_kind="depth")
+    with pytest.raises(ValueError, match="trigger_value"):
+        IgnitionSpec(trigger_value=50.0)
+    with pytest.raises(ValueError, match="trigger_kind"):
+        IgnitionSpec(trigger_kind="altitude", trigger_value=1.0)
+
+
+@pytest.mark.parametrize("depth", [L, 75.0, 50.0, 10.0])
+def test_one_d_ignition_event_lies_at_the_requested_depth(
+    depth: float, f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """On the vertical_1d model the stage-1 ignition event of a ramp start by depth d
+    lies on the push at z = z_mouth - d = -d, at the speed sqrt(2 a (L - d)) and the time
+    sqrt(2 (L - d) / a) after push start, all at 1e-9 (closed forms written here); the
+    run carries no ramp-start metric (1-D keeps its metric keys)."""
+    result = _silo(f9_vehicle, _resolve({"at_depth_m": depth}), tight_settings)
+    row = _ignition_row(result)
+    assert row["phase"] == ASSIST_KIND
+    assert abs(float(row["z_m"]) - (0.0 - depth)) < EVENT_ABS_M
+    assert abs(float(row["v_mps"]) - math.sqrt(2.0 * A * (L - depth))) < EVENT_ABS_M
+    assert abs(float(row["t_s"]) - math.sqrt(2.0 * (L - depth) / A)) < EVENT_ABS_M
+    assert not [k for k in result.metrics if k.startswith("ramp_start")]
+
+
+@pytest.mark.parametrize("speed", [0.0, 20.0, 54.24, 70.0])
+def test_one_d_ignition_event_lies_at_the_requested_speed(
+    speed: float, f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """On the vertical_1d model the ignition event of a ramp start by speed v lies on
+    the push at speed v, at z = -L + v^2 / (2 a) and at t = v / a, all at 1e-9."""
+    result = _silo(f9_vehicle, _resolve({"at_speed_mps": speed}), tight_settings)
+    row = _ignition_row(result)
+    assert row["phase"] == ASSIST_KIND
+    assert abs(float(row["v_mps"]) - speed) < EVENT_ABS_M
+    assert abs(float(row["z_m"]) - (-L + speed * speed / (2.0 * A))) < EVENT_ABS_M
+    assert abs(float(row["t_s"]) - speed / A) < EVENT_ABS_M
+
+
+@pytest.mark.parametrize("height", [5.0, 40.0, 200.0])
+def test_one_d_closed_form_height_is_exact_under_constant_gravity(
+    height: float, f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """With an injected ConstantGravity equal to the track's g_eff and no drag (the 1-D
+    model has no atmosphere), the coast after release is the drag-free constant-g coast
+    the closed form assumes, so the ignition event lies exactly at the requested height
+    h above the mouth: z = h, v = sqrt(V_E^2 - 2 g h) and t - t_release = the smaller
+    root of V_E t - g t^2/2 = h, all at 1e-9."""
+    specs = {name: IgnitionSpec() for name in f9_vehicle.stage_names}
+    specs["stage1"] = _resolve({"at_height_m": height, "height_method": "closed_form"})
+    result = sim.simulate(
+        vehicle=f9_vehicle,
+        ignition=specs,
+        gravity=ConstantGravity(G_EFF),
+        g_eff_mps2=G_EFF,
+        assist=_assist(),
+        track=TRACK,
+        start=None,
+        end="stage1_burnout",
+        settings=tight_settings,
+    )
+    row = _ignition_row(result)
+    assert row["phase"] == "BURN"
+    assert abs(float(row["z_m"]) - height) < EVENT_ABS_M
+    assert abs(float(row["v_mps"]) - math.sqrt(V_E * V_E - 2.0 * G_EFF * height)) < EVENT_ABS_M
+    t_rel = float(row["t_s"]) - result.metrics["t_release_s"]
+    assert abs(t_rel - _height_dt(height)) < EVENT_ABS_M
+
+
+RAISED_MOUTH_M = 30.0
+"""Altitude [m] of a raised track exit (silo mouth) above the datum: the depth and the
+height count from the mouth, not from the datum."""
+
+
+def test_one_d_depth_and_height_count_from_a_raised_mouth(
+    f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """With the mouth RAISED_MOUTH_M above the datum (track start at z = z_m - L), a
+    ramp start at depth 50 lights on the push at z = z_m - 50 with speed sqrt(2 a (L -
+    50)), and a closed-form height 40 under an injected ConstantGravity lights at z =
+    z_m + 40 with speed sqrt(V_E^2 - 2 g 40), at the closed-form time after release, all
+    at 1e-9: a resolver or event that measured from the datum would miss by z_m."""
+    z_m = RAISED_MOUTH_M
+    track = StraightTrack(L, VERTICAL, z_m - L)
+
+    def flown(block: dict[str, Any], gravity: Any) -> sim.Result:
+        specs = {name: IgnitionSpec() for name in f9_vehicle.stage_names}
+        specs["stage1"] = _resolve(block, track=track)
+        return sim.simulate(
+            vehicle=f9_vehicle,
+            ignition=specs,
+            gravity=gravity,
+            g_eff_mps2=G_EFF,
+            assist=_assist(),
+            track=track,
+            start=None,
+            end="stage1_burnout",
+            settings=tight_settings,
+        )
+
+    by_depth = flown({"at_depth_m": 50.0}, InverseSquareGravity(MU_EARTH_M3S2))
+    row = _ignition_row(by_depth)
+    assert row["phase"] == ASSIST_KIND
+    assert abs(float(row["z_m"]) - (z_m - 50.0)) < EVENT_ABS_M
+    assert abs(float(row["v_mps"]) - math.sqrt(2.0 * A * (L - 50.0))) < EVENT_ABS_M
+    by_height = flown({"at_height_m": 40.0, "height_method": "closed_form"}, ConstantGravity(G_EFF))
+    row = _ignition_row(by_height)
+    assert row["phase"] == "BURN"
+    assert abs(float(row["z_m"]) - (z_m + 40.0)) < EVENT_ABS_M
+    assert abs(float(row["v_mps"]) - math.sqrt(V_E * V_E - 2.0 * G_EFF * 40.0)) < EVENT_ABS_M
+    t_rel = float(row["t_s"]) - by_height.metrics["t_release_s"]
+    assert abs(t_rel - _height_dt(40.0)) < EVENT_ABS_M
+
+
+def test_a_later_stage_ramp_start_is_refused_where_the_specs_are_built(
+    repo_root: Path, f9_vehicle_dict: dict[str, Any], f9_vehicle: Vehicle
+) -> None:
+    """A ramp start by depth, speed or height on stage 2 is refused by resolve_run, and
+    also where the specs are built (``phases.prelude.resolve_stage_ignitions``), so a
+    RunConfig validated without resolve_run and handed to sim.run is refused before
+    anything is integrated (a closed-form height would otherwise convert with stage 1's
+    exit speed and fly as a silent staging-coast delay). IgnitionSpec.from_config
+    refuses every non-time config, which only resolve_ignition can convert."""
+    exp = yaml.safe_load(
+        (repo_root / "experiments" / "silo_screening_1d.yaml").read_text(encoding="utf-8")
+    )
+    for key in ("sweeps", "sensitivity"):
+        exp.pop(key, None)
+    run_dict = resolve_experiment(exp, f9_vehicle_dict).variants["silo_cold"].run_dict
+    blocks = {
+        "at_depth_m": {"at_depth_m": 50.0},
+        "at_speed_mps": {"at_speed_mps": 30.0},
+        "at_height_m": {"at_height_m": 40.0, "height_method": "closed_form"},
+    }
+    for key, block in blocks.items():
+        bad = copy.deepcopy(run_dict)
+        bad["ignition"]["stage2"] = block
+        refusal = rf"ignition stage2: a ramp start by {key} is only for the first stage"
+        with pytest.raises(ValueError, match=refusal):
+            resolve_run("bad", bad, f9_vehicle_dict)
+        cfg = RunConfig.model_validate(bad)
+        with pytest.raises(ValueError, match=refusal):
+            sim.run(cfg, f9_vehicle)
+        with pytest.raises(ValueError, match=refusal):
+            sim.run_ignition_specs(cfg, f9_vehicle)
+        with pytest.raises(
+            ValueError, match=rf"stated by {key} is converted by .*resolve_ignition"
+        ):
+            IgnitionSpec.from_config(IgnitionConfig.model_validate(block), RAMP)
+
+
+def test_one_d_depth_run_is_the_converted_time_run(
+    f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """A ramp start by depth is converted before the run and nothing else changes: the
+    run stated by at_depth_m 50 and the run stated by t_ign_s = sqrt(2 (L - 50) / a)
+    from push_start (computed here; the same double, asserted) have identical time
+    series, events and metrics (keys and values); the assumptions differ by exactly the
+    one ramp-start line, which names the depth and the converted time."""
+    depth = 50.0
+    t = math.sqrt(2.0 * (L - depth) / A)
+    spec = _resolve({"at_depth_m": depth})
+    assert spec.t_ign_s == t
+    by_depth = _silo(f9_vehicle, spec, tight_settings)
+    by_time = _silo(f9_vehicle, IgnitionSpec(t, "push_start", None), tight_settings)
+    pd.testing.assert_frame_equal(by_depth.timeseries, by_time.timeseries, check_exact=True)
+    pd.testing.assert_frame_equal(by_depth.events, by_time.events, check_exact=True)
+    assert by_depth.metrics == by_time.metrics and list(by_depth.metrics) == list(by_time.metrics)
+    extra = [line for line in by_depth.assumptions if line not in by_time.assumptions]
+    assert len(by_depth.assumptions) == len(by_time.assumptions) + 1 and len(extra) == 1
+    assert extra[0] == (
+        f"ramp start: stage-1 ignition stated by depth 50 m below the track exit, converted "
+        f"before the run to t_ign = {t:.9g} s after push start by t = sqrt(2 (L - d) / a) "
+        "(exact for the prescribed acceleration)"
+    )
+
+
+def test_failed_stage_flags_its_ramp_start_as_ignored(
+    f9_vehicle: Vehicle, tight_settings: IntegratorSettings
+) -> None:
+    """fails: true with a ramp start by depth: nothing burns, the depth is flagged as
+    ignored by its key and value (not the t_ign_s and reference it was converted to),
+    and no ramp-start assumption line is added."""
+    spec = _resolve({"at_depth_m": 50.0, "fails": True})
+    assert spec.fails and spec.trigger_kind == "depth"
+    result = _silo(f9_vehicle, spec, tight_settings, end="impact")
+    flags = [f for f in result.flags if f.startswith("ignition_failed")]
+    assert flags == [
+        "ignition_failed: stage 'stage1' has fails: true, so nothing burns; ignored: "
+        "at_depth_m = 50"
+    ]
+    assert not [line for line in result.assumptions if line.startswith("ramp start")]
+    assert "ignition" not in set(result.events["event"])

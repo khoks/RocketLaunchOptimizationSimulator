@@ -3,8 +3,11 @@ fail, Phase 1 limits raise with the phase named, the F9 file converts to SI corr
 the shipped experiment resolves every variant, sweep point and sensitivity case, and
 the merge and override rules (per-key merge, discriminator switches, and the exclusive
 key families of SP1 step 1: an override that states a setting another way displaces the
-base's parameterisation; two given together raise), and the silo push stated by exactly
-one of net_accel_g and exit_speed_mps (SP1 step 2)."""
+base's parameterisation; two given together raise), the silo push stated by exactly
+one of net_accel_g and exit_speed_mps (SP1 step 2), and the stage-1 ramp start stated
+by time, depth, speed or closed-form height (SP1 step 3: one family at most, refused on
+a pad, on a later stage and deeper than the stroke; the dump round trip; the family
+rule through resolve_experiment)."""
 
 from __future__ import annotations
 
@@ -1116,6 +1119,192 @@ def test_exit_speed_variant_over_a_silo_baseline_resolves_to_the_exit_speed_alon
     both["baseline"]["assist"]["exit_speed_mps"] = 30.0
     with pytest.raises(ValidationError, match="exactly one of net_accel_g or exit_speed_mps"):
         resolve_experiment(both, toy_dict)
+
+
+# ------------------------------------- ramp start by depth, speed and height (SP1 step 3)
+
+SILO_RUN = {"name": "silo", "assist": dict(SILO_ASSIST)}
+"""A run with the 3 g0, 100 m silo (stroke 100 m) and no ignition block."""
+RAMP_STARTS: list[tuple[dict[str, Any], str, float | None]] = [
+    ({}, "time", None),
+    ({"t_ign_s": -2.0}, "time", None),
+    ({"t_ign_s": -2.0, "reference": "push_start"}, "time", None),
+    ({"reference": "release"}, "time", None),
+    ({"at_depth_m": 50.0}, "depth", 50.0),
+    ({"at_depth_m": 0}, "depth", 0.0),
+    ({"at_speed_mps": 30.0}, "speed", 30.0),
+    ({"at_height_m": 40.0, "height_method": "closed_form"}, "height_closed_form", 40.0),
+]
+"""(ignition block, trigger, requested value): every family of IGNITION_KEY_FAMILIES."""
+
+
+@pytest.mark.parametrize(("block", "trigger", "value"), RAMP_STARTS)
+def test_ignition_states_its_ramp_start_one_way(
+    block: dict[str, Any], trigger: str, value: float | None
+) -> None:
+    """Each family of the ignition group validates alone; ``ramp_start`` names the
+    trigger and the requested value and ``ramp_start_keys`` the family, the time family
+    when none is given (its defaults, 0 s after release, counting as not given); the
+    time keys keep their defaults beside another family. The ignition group's keys are
+    all IgnitionConfig fields now, and the trigger names are config.RAMP_START_TRIGGERS."""
+    cfg = IgnitionConfig.model_validate(block)
+    assert cfg.ramp_start == (trigger, value)
+    family = next(f for f in IGNITION_FAMILIES if any(k in block for k in f)) if block else None
+    assert cfg.ramp_start_keys == (family or IGNITION_FAMILIES[0])
+    if trigger != "time":
+        assert cfg.t_ign_s == 0.0 and cfg.reference == "release"
+        assert not {"t_ign_s", "reference"} & cfg.model_fields_set
+    assert {k for f in IGNITION_FAMILIES for k in f} <= set(IgnitionConfig.model_fields)
+    assert config.RAMP_START_TRIGGERS == ("time", "depth", "speed", "height_closed_form")
+
+
+@pytest.mark.parametrize(
+    ("block", "message"),
+    [
+        ({"t_ign_s": 0.5, "at_depth_m": 50.0}, "more than one way.*given: t_ign_s, at_depth_m"),
+        ({"reference": "release", "at_speed_mps": 3.0}, "more than one way"),
+        ({"at_depth_m": 50.0, "at_speed_mps": 3.0}, "more than one way"),
+        (
+            {"at_depth_m": 5.0, "at_height_m": 4.0, "height_method": "closed_form"},
+            "more than one way",
+        ),
+        ({"t_ign_s": 0.0, "at_depth_m": None}, "more than one way"),
+        ({"at_depth_m": None}, "at_depth_m is null"),
+        ({"at_speed_mps": None}, "at_speed_mps is null"),
+        ({"at_height_m": None, "height_method": "closed_form"}, "at_height_m is null"),
+        ({"at_height_m": 40.0, "height_method": None}, "height_method is null"),
+        ({"at_height_m": 40.0}, "at_height_m and height_method come together"),
+        ({"height_method": "closed_form"}, "at_height_m and height_method come together"),
+        ({"at_height_m": 40.0, "height_method": "event"}, "event.*arrives in SP1 step 4"),
+        ({"at_height_m": 40.0, "height_method": "hover"}, "closed_form"),
+        ({"at_depth_m": -1.0}, "greater than or equal to 0"),
+        ({"at_speed_mps": -1.0}, "greater than or equal to 0"),
+        ({"at_height_m": 0.0, "height_method": "closed_form"}, "greater than 0"),
+        ({"at_depth_m": math.inf}, "finite number"),
+        ({"at_speed_mps": math.nan}, "finite number"),
+    ],
+)
+def test_ignition_ramp_start_refusals(block: dict[str, Any], message: str) -> None:
+    """At most one family is given, a key counting as given when present (a null
+    included, as in the merge rule), so a time key beside another family's key is
+    refused even at its default value, and a null never unsets a key; at_height_m and
+    height_method come together; height_method event (the altitude event) is refused
+    until SP1 step 4, naming it; depth and speed >= 0, height > 0, all finite. The same
+    through RunConfig."""
+    with pytest.raises(ValidationError, match=message):
+        IgnitionConfig.model_validate(block)
+    with pytest.raises(ValidationError, match=message):
+        RunConfig.model_validate({**SILO_RUN, "ignition": {"stage1": block}})
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"at_depth_m": 50.0},
+        {"at_speed_mps": 30.0},
+        {"at_height_m": 40.0, "height_method": "closed_form"},
+    ],
+)
+def test_ramp_start_refused_on_a_pad_and_on_a_later_stage(
+    block: dict[str, Any], toy_dict: dict[str, Any]
+) -> None:
+    """A ramp start by depth, speed or height needs an assist model (a pad has no push
+    and no track exit: RunConfig refuses it, as it refuses push_start) and is for the
+    first stage only (resolve_run, which knows the stage order, refuses it on stage2,
+    with a silo or without). On stage 1 of the silo it resolves."""
+    with pytest.raises(ValidationError, match="needs an assist model"):
+        RunConfig.model_validate({"name": "pad", "ignition": {"stage1": block}})
+    later = {**SILO_RUN, "ignition": {"stage2": block}}
+    with pytest.raises(ValueError, match=r"ignition stage2: a ramp start by .* first stage"):
+        resolve_run("silo", later, toy_dict)
+    first = resolve_run("silo", {**SILO_RUN, "ignition": {"stage1": block}}, toy_dict)
+    assert first.run.ignition_for("stage1").ramp_start[0] != "time"
+
+
+def test_depth_deeper_than_the_stroke_is_refused() -> None:
+    """at_depth_m may be anything from 0 (the track exit) to stroke_m (the push start),
+    both ends included; deeper than the stroke is refused by RunConfig, naming both."""
+    stroke = float(SILO_ASSIST["stroke_m"])
+    for depth in (0.0, 0.5 * stroke, stroke):
+        RunConfig.model_validate({**SILO_RUN, "ignition": {"stage1": {"at_depth_m": depth}}})
+    with pytest.raises(ValidationError, match=r"at_depth_m 100\.5 m is deeper.*stroke_m 100 m"):
+        RunConfig.model_validate({**SILO_RUN, "ignition": {"stage1": {"at_depth_m": 100.5}}})
+
+
+@pytest.mark.parametrize("mode", ["python", "json"])
+@pytest.mark.parametrize(("block", "trigger", "value"), RAMP_STARTS)
+def test_ignition_dump_states_the_ramp_start_by_its_one_family(
+    block: dict[str, Any], trigger: str, value: float | None, mode: str
+) -> None:
+    """``model_dump`` writes the keys of the one family that states the ramp start and
+    none of the others (a dumped t_ign_s beside at_depth_m, or a null, would be refused
+    on validation), so a dump validates again to an equal model with the same trigger,
+    alone and inside a RunConfig (python and json modes). A time-family dump has exactly
+    the keys it had before the other families existed (written out)."""
+    cfg = IgnitionConfig.model_validate(block)
+    dumped = cfg.model_dump(mode=mode)
+    family = cfg.ramp_start_keys
+    others = {k for f in IGNITION_FAMILIES if f != family for k in f}
+    assert not others & set(dumped)
+    assert set(family) <= set(dumped)
+    again = IgnitionConfig.model_validate(dumped)
+    assert again == cfg and again.ramp_start == (trigger, value)
+    if trigger == "time":
+        assert list(dumped) == ["t_ign_s", "reference", "startup", "fails"]
+    run = RunConfig.model_validate({**SILO_RUN, "ignition": {"stage1": block}})
+    run_dump = run.model_dump(mode=mode)
+    assert run_dump["ignition"]["stage1"] == dumped
+    assert RunConfig.model_validate(run_dump) == run
+
+
+@pytest.mark.parametrize(
+    ("experiment", "vehicle"),
+    [
+        ("silo_screening_1d", "generic_f9_class"),
+        ("silo_screening_2d", "generic_f9_class_2d"),
+    ],
+)
+def test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone(
+    repo_root: Path, experiment: str, vehicle: str
+) -> None:
+    """Resolved end to end, on both models: a sweep axis ``ignition.stage1.at_depth_m``
+    over the shipped silo_hot_ramp_on_track (t_ign_s -2.0, reference release, the
+    baseline's time keys restated) and over silo_cold (its own t_ign_s 0.5 and the
+    reference inherited from the baseline) gives, at every grid point, a validated
+    IgnitionConfig stated by the depth alone (the family rule removed t_ign_s and
+    reference from the run dict, and they are not in ``model_fields_set``); stage2 keeps
+    its own time. A variant ``{at_speed_mps: v}`` over the baseline's ignition block
+    resolves to the speed alone; the shipped file is read, never written."""
+    exp = _load(repo_root / "experiments" / f"{experiment}.yaml")
+    veh = _load(repo_root / "configs" / "vehicles" / f"{vehicle}.yaml")
+    for key in ("sensitivity", "bounds"):
+        exp.pop(key, None)
+    depths = [0.0, 25.0, 50.0, 100.0]
+    parents = {"silo_hot_ramp_on_track": -2.0, "silo_cold": 0.5}
+    exp["sweeps"] = [
+        {"of": name, "axes": {"ignition.stage1.at_depth_m": depths}} for name in parents
+    ]
+    parent_raw = exp["variants"]["silo_hot_ramp_on_track"]
+    exp["variants"]["silo_by_speed"] = {
+        "assist": parent_raw["assist"],
+        "ignition": {"stage1": {"at_speed_mps": 30.0}},
+    }
+    resolved = resolve_experiment(exp, veh)
+    for (name, t_ign), points in zip(parents.items(), resolved.sweeps, strict=True):
+        parent = resolved.variants[name]
+        timed = {"t_ign_s": t_ign, "reference": "release"}
+        assert parent.run_dict["ignition"]["stage1"] == timed
+        overrides = [{"ignition.stage1.at_depth_m": d} for d in depths]
+        assert [p.overrides for p in points] == overrides
+        for point, depth in zip(points, depths, strict=True):
+            ignition = point.run.run_dict["ignition"]
+            assert ignition["stage1"] == {"at_depth_m": depth}
+            assert ignition["stage2"] == parent.run_dict["ignition"]["stage2"]
+            ign = point.run.run.ignition_for("stage1")
+            assert ign.ramp_start == ("depth", depth) and ign.model_fields_set == {"at_depth_m"}
+    by_speed = resolved.variants["silo_by_speed"]
+    assert by_speed.run_dict["ignition"]["stage1"] == {"at_speed_mps": 30.0}
+    assert by_speed.run.ignition_for("stage1").ramp_start == ("speed", 30.0)
 
 
 def _keys_and_path_segments(node: Any) -> set[str]:

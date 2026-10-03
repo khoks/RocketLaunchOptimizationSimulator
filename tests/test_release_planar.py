@@ -6,6 +6,13 @@ Earth-fixed downrange of a radial rise (the Coriolis drift, amendment 11).
 Every expected value is computed here from its own inputs: omega_E R_E and omega_E
 cos(lat) R_E for the pad; a Cartesian projection for the general map; a closed-form
 integral for the drift.
+
+Also (SP1 step 3): a stage-1 ramp start stated by depth or speed on the 3 g0, 100 m silo
+lights at the requested depth or speed on the push (the ignition event against the
+closed forms of a push from rest, 1e-9); one stated by a closed-form height lights at
+the closed-form time after release, and the height it reaches there differs from the
+request by the drag, mu/r^2 and rotation the closed form leaves out (reported, bounded,
+not asserted to vanish).
 """
 
 from __future__ import annotations
@@ -20,7 +27,7 @@ import yaml
 
 from launchsim.assist import build_assist
 from launchsim.atmosphere import ambient_scalar
-from launchsim.config import ConstantAccelConfig, VehicleConfig
+from launchsim.config import ConstantAccelConfig, IgnitionConfig, VehicleConfig
 from launchsim.constants import G0_MPS2, MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.dynamics import (
     PLANAR_LAYOUT,
@@ -37,6 +44,7 @@ from launchsim.phases.planar import (
     planar_rest_state,
     release_state_planar,
 )
+from launchsim.phases.prelude import resolve_ignition
 from launchsim.vehicle import Engine, Stage, Startup, Vehicle
 
 P2 = PLANAR_LAYOUT
@@ -313,3 +321,98 @@ def test_radial_rise_earth_fixed_downrange() -> None:
     ratio = downrange / (-omega * a * t**3 / 3.0)
     assert abs(ratio - (1.0 - 0.9 * eps)) < eps * eps
     assert downrange < -700.0
+
+
+# ------------------------------------- ramp start by depth, speed and height (SP1 step 3)
+
+SILO_A_MPS2 = 3.0 * G0_MPS2
+"""Net acceleration of the 3 g0 silo [m/s^2]."""
+SILO_L_M = 100.0
+"""Its stroke [m]; the mouth (track exit) is at the datum, z = 0."""
+EVENT_ABS = 1e-9
+"""Tolerance of a planar ignition event's altitude [m], |v_rel| [m/s] and time [s]
+against its closed form (SP1 step 3 gate)."""
+HEIGHT_MISS_BOUND_M = 0.5
+"""A loose bound [m] on the achieved minus requested closed-form height up to 200 m: the
+flown coast has drag, mu/r^2 and rotation, the closed form none (measured: about -4 mm
+at 40 m and -0.1 m at 200 m; docs/physics.md, "Silo model")."""
+
+
+def _silo_start(gate_vehicle: Vehicle, block: dict) -> tuple[PlanarPlanner, object, object]:
+    """The planner of the gate fork at 28.5 deg with stage 1's IgnitionSpec resolved from
+    ``block`` on the 3 g0, 100 m silo (``resolve_ignition`` with the site's g_ref, as both
+    spec build sites do), and the silo's assist and track."""
+    omega = OMEGA_EARTH_RADS * math.cos(LAT_RAD)
+    env = PlanarEnvironment(InverseSquareGravity(MU_EARTH_M3S2), omega, ambient_scalar)
+    cfg = ConstantAccelConfig(
+        model="constant_accel",
+        net_accel_g=3.0,
+        stroke_m=SILO_L_M,
+        brake_decel_g=5.0,
+        drive_efficiency=0.5,
+    )
+    assist, track = build_assist(cfg, env.g_ref_mps2)
+    stage1 = gate_vehicle.stages[0]
+    spec = resolve_ignition(
+        IgnitionConfig.model_validate(block), stage1.startup, assist, track, env.g_ref_mps2
+    )
+    return _planner(gate_vehicle, omega, spec), assist, track
+
+
+@pytest.mark.parametrize("depth", [SILO_L_M, 75.0, 50.0, 25.0, 1.0])
+def test_planar_ignition_event_lies_at_the_requested_depth(
+    gate_vehicle: Vehicle, depth: float
+) -> None:
+    """On the planar model the stage-1 ignition event of a ramp start by depth d lies on
+    the push at alt = z_mouth - d = -d, |v_rel| = sqrt(2 a (L - d)) and t = sqrt(2 (L -
+    d) / a) after push start, all at 1e-9 (closed forms written here; the altitude
+    passes through r = R_E + z, so it carries ulp(R_E) = 9.3e-10 m of rounding)."""
+    planner, assist, track = _silo_start(gate_vehicle, {"at_depth_m": depth})
+    start = planner.start(assist, track)
+    ev = start.prefix.first_event("ignition")
+    assert ev is not None and ev.phase == "ASSIST" and ev.stage == "stage1"
+    a, length = SILO_A_MPS2, SILO_L_M
+    assert abs(ev.value("alt_m") - (0.0 - depth)) < EVENT_ABS
+    assert abs(ev.value("speed_rel_mps") - math.sqrt(2.0 * a * (length - depth))) < EVENT_ABS
+    assert abs(ev.t_s - math.sqrt(2.0 * (length - depth) / a)) < EVENT_ABS
+
+
+@pytest.mark.parametrize("speed", [0.0, 17.9, 54.24, 76.0])
+def test_planar_ignition_event_lies_at_the_requested_speed(
+    gate_vehicle: Vehicle, speed: float
+) -> None:
+    """On the planar model the ignition event of a ramp start by speed v lies on the push
+    at |v_rel| = v, alt = -L + v^2 / (2 a) and t = v / a after push start, at 1e-9."""
+    planner, assist, track = _silo_start(gate_vehicle, {"at_speed_mps": speed})
+    start = planner.start(assist, track)
+    ev = start.prefix.first_event("ignition")
+    assert ev is not None and ev.phase == "ASSIST"
+    a, length = SILO_A_MPS2, SILO_L_M
+    assert abs(ev.value("speed_rel_mps") - speed) < EVENT_ABS
+    assert abs(ev.value("alt_m") - (-length + speed * speed / (2.0 * a))) < EVENT_ABS
+    assert abs(ev.t_s - speed / a) < EVENT_ABS
+
+
+@pytest.mark.parametrize("height", [5.0, 40.0, 200.0])
+def test_planar_closed_form_height_is_reached_at_the_closed_form_time(
+    gate_vehicle: Vehicle, height: float
+) -> None:
+    """The closed-form height on the planar model: stage 1 lights exactly at the
+    closed-form time after release, dt = (v_e - sqrt(v_e^2 - 2 g h)) / g with v_e =
+    sqrt(2 a L) and the site's g = mu/R_E^2 - omega_p^2 R_E (1e-9 s), above the mouth.
+    The height it reaches there is not h: the flown coast has drag, mu/r^2 and rotation
+    and the closed form none, so achieved minus requested is reported, not asserted to
+    vanish: it is non-zero (above 1e-6 m) and within HEIGHT_MISS_BOUND_M."""
+    planner, assist, track = _silo_start(
+        gate_vehicle, {"at_height_m": height, "height_method": "closed_form"}
+    )
+    trace = planner.run(math.radians(3.0), assist, track)
+    ev = trace.first_event("ignition")
+    assert ev is not None and ev.phase not in ("HOLD", "ASSIST")
+    omega = OMEGA_EARTH_RADS * math.cos(LAT_RAD)
+    g = MU_EARTH_M3S2 / R_EARTH_M**2 - omega**2 * R_EARTH_M
+    v_e = math.sqrt(2.0 * SILO_A_MPS2 * SILO_L_M)
+    dt = (v_e - math.sqrt(v_e * v_e - 2.0 * g * height)) / g
+    assert abs((ev.t_s - trace.t_release_s) - dt) < EVENT_ABS
+    miss = ev.value("alt_m") - height
+    assert 1e-6 < abs(miss) < HEIGHT_MISS_BOUND_M

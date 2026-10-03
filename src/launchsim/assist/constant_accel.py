@@ -153,6 +153,12 @@ class ConstantAccelAssist:
         """Push duration [s] over length_m [m] from rest: sqrt(2 L / a)."""
         return math.sqrt(2.0 * length_m / self.net_accel_mps2)
 
+    def time_to_speed_s(self, speed_mps: float) -> float:
+        """Time [s] from rest at the push start to the speed speed_mps [m/s] along the
+        track: v / a (constant acceleration; valid up to the exit speed, which the
+        caller checks)."""
+        return speed_mps / self.net_accel_mps2
+
     def push_time_estimate(self, track: TrackGeometry) -> float:
         """Exact push duration [s] for the track: sqrt(2 L / a)."""
         return self.push_time_s(track.length_m)

@@ -107,6 +107,7 @@ from launchsim.config import (
     PLANAR_2D,
     SEARCHED_FIGURES,
     ChecksConfig,
+    ResolvedExperiment,
     ResolvedRun,
     RunConfig,
 )
@@ -169,6 +170,7 @@ from launchsim.metrics_planar import (  # re-exported
     fixed_guidance_metrics,
     planar_run_metrics,
     planar_track_metrics,
+    ramp_start_metrics,
     sample_trace_planar,
     search_metrics,
 )
@@ -182,6 +184,7 @@ from launchsim.phases import (
     VerticalPlanner,
 )
 from launchsim.phases.planar import PLANAR_MODEL, PlanarEnvironment, PlanarPlanner
+from launchsim.phases.prelude import resolve_stage_ignitions
 from launchsim.plots import (  # re-exported
     PLANAR_PLOT_PANELS,
     PLOT_ABSCISSA,
@@ -448,6 +451,7 @@ __all__ = [
     "assumptions_section",
     "carriage_park_altitude_m",
     "check_name",
+    "check_resolved",
     "check_result_names",
     "check_run_name",
     "checks_section",
@@ -462,6 +466,7 @@ __all__ = [
     "empty_timeseries",
     "events_frame",
     "events_frame_planar",
+    "every_resolved_run",
     "experiment_summary",
     "failed_ignition_flags",
     "failed_ignition_metrics",
@@ -496,6 +501,7 @@ __all__ = [
     "planar_experiment_result",
     "planar_experiment_summary",
     "planar_plot_panels",
+    "planar_ramp_start_items",
     "planar_run_assumptions",
     "planar_run_metrics",
     "planar_setup",
@@ -506,11 +512,13 @@ __all__ = [
     "plot_panels",
     "plot_stem",
     "provenance_lines",
+    "ramp_start_metrics",
     "reference_payload_kg",
     "rerun_planar",
     "rerun_resolved",
     "run",
     "run_experiment",
+    "run_ignition_specs",
     "run_metrics",
     "run_planar",
     "run_resolved",
@@ -800,13 +808,20 @@ def simulate(
     )
 
 
-def ignition_specs(run_config: RunConfig, vehicle: Vehicle) -> dict[str, IgnitionSpec]:
-    """One IgnitionSpec per stage from the run's ignition block (defaults when absent),
-    with startup overrides resolved against the vehicle's own Startup."""
-    return {
-        stage.name: IgnitionSpec.from_config(run_config.ignition_for(stage.name), stage.startup)
-        for stage in vehicle.stages
-    }
+def ignition_specs(
+    run_config: RunConfig,
+    vehicle: Vehicle,
+    assist: AssistModel,
+    track: TrackGeometry | None,
+    g_eff_mps2: float,
+) -> dict[str, IgnitionSpec]:
+    """One IgnitionSpec per stage from the run's ignition block (defaults when absent)
+    through ``phases.prelude.resolve_stage_ignitions`` (``resolve_ignition`` per stage):
+    startup overrides resolved against the vehicle's own Startup, and a ramp start
+    stated by depth, speed or closed-form height converted to a time with the run's
+    assist model, its track and the track's g_eff [m/s^2] (ValueError when the
+    conversion is refused, and for such a ramp start on a stage after the first)."""
+    return resolve_stage_ignitions(run_config, vehicle, assist, track, g_eff_mps2)
 
 
 def run(run_config: RunConfig, vehicle: Vehicle) -> Result:
@@ -826,7 +841,7 @@ def run(run_config: RunConfig, vehicle: Vehicle) -> Result:
     assist, track = build_assist(run_config.assist, g_eff)
     result = simulate(
         vehicle=vehicle,
-        ignition=ignition_specs(run_config, vehicle),
+        ignition=ignition_specs(run_config, vehicle, assist, track, g_eff),
         gravity=InverseSquareGravity(MU_EARTH_M3S2),
         g_eff_mps2=g_eff,
         assist=assist,
@@ -843,6 +858,55 @@ def run_resolved(resolved: ResolvedRun) -> RunResult:
     propagates (FAILED.txt is written by the caller)."""
     vehicle = resolved.to_vehicle()
     return RunResult(resolved.name, resolved, run(resolved.run, vehicle))
+
+
+def run_ignition_specs(run_config: RunConfig, vehicle: Vehicle) -> dict[str, IgnitionSpec]:
+    """The IgnitionSpecs a validated run will fly, built as ``run`` builds them, without
+    integrating anything: on planar_2d through ``planar_setup`` (the site's g_ref as the
+    track's g_eff; the assist model, its track, the guidance spec and the shared budget
+    are built on the way), on vertical_1d with g_eff_track(0) and ``build_assist``.
+    Raises ValueError where a run would (a refused ramp-start conversion)."""
+    if run_config.dynamics == PLANAR_2D:
+        return planar_setup(run_config, vehicle).ignition
+    g_eff = g_eff_track(OMEGA_P_PHASE1_RADS)
+    assist, track = build_assist(run_config.assist, g_eff)
+    return ignition_specs(run_config, vehicle, assist, track, g_eff)
+
+
+def every_resolved_run(resolved: ResolvedExperiment) -> list[tuple[str, ResolvedRun]]:
+    """Every run an experiment resolves, labelled by where it comes from: the baseline
+    and the variants (``run 'name'``), every sweep point and its paired baseline
+    (``sweep k point run_NNNN``), every sensitivity run, every bound run with its
+    paired baseline and every calibration case."""
+    out = [(f"run {name!r}", run) for name, run in resolved.runs.items()]
+    for points in resolved.sweeps:
+        for point in points:
+            out.append((f"sweep {point.sweep_index} point {point.run.name}", point.run))
+            if point.paired_baseline is not None:
+                paired = point.paired_baseline
+                out.append((f"sweep {point.sweep_index} point {paired.name}", paired))
+    out += [(f"sensitivity run {case.run.name!r}", case.run) for case in resolved.sensitivity]
+    for bound in resolved.bounds:
+        for run in (*bound.runs.values(), bound.baseline):
+            out.append((f"bound {bound.name!r} run {run.name!r}", run))
+    out += [(f"case {name!r}", run) for name, run in resolved.cases.items()]
+    return out
+
+
+def check_resolved(resolved: ResolvedExperiment) -> None:
+    """Preflight of an experiment (SP1 step 3; ``results_io.run_experiment`` and
+    ``run_sweep`` call it before they create the run directory): build the assist
+    model, its track and the IgnitionSpecs of every run the experiment resolves
+    (``every_resolved_run``: variants, sweep points, sensitivity runs, bounds, cases)
+    as the run will (``run_ignition_specs``), integrating nothing, so a configuration
+    refused only when its specs are built (a ramp start at a speed the push never
+    reaches, a height at or above the drag-free apex) writes nothing. Raises
+    ValueError naming the run and where it comes from."""
+    for label, run in every_resolved_run(resolved):
+        try:
+            run_ignition_specs(run.run, run.to_vehicle())
+        except ValueError as exc:
+            raise ValueError(f"{label}: {exc}") from exc
 
 
 # -------------------------------------------------------------------- planar model
@@ -969,7 +1033,7 @@ def planar_setup(run_config: RunConfig, vehicle: Vehicle) -> PlanarSetup:
         env=env,
         assist=assist,
         track=track,
-        ignition=ignition_specs(run_config, vehicle),
+        ignition=ignition_specs(run_config, vehicle, assist, track, env.g_ref_mps2),
         guidance=GuidanceSpec.from_config(planar.guidance),
         budget=SearchBudget.from_config(planar.search, planar.checks),
         target=None if target is None else TargetOrbit(target.radius_m),
@@ -1126,7 +1190,8 @@ def simulate_planar(
     ``fixed_guidance_metrics``); the SearchRecord (None without a search); run flags and
     run assumptions from the caller. Output: a Result with model planar_2d, the planar
     time series and events, the metrics (``planar_run_metrics``, the track items for a
-    push, the figure items, the closure items, ``trace_status``, ``run_checks`` and
+    push, how stage 1 starts and its ramp start (``planar_ramp_start_items``), the
+    figure items, the closure items, ``trace_status``, ``run_checks`` and
     ``run_checks_failed``), the loss budget from the flight start (|v_rel| speed), the
     push's AssistEnergyBudget, the rocket-equation closure (None without a stage-2 burn)
     and the attributed assumptions. status is the trace's (inserted, off_target,
@@ -1162,6 +1227,7 @@ def simulate_planar(
         metrics["failed_stage"] = trace.failed_stage
     assumptions = planar_assumption_list(trace, setup, run_assumptions)
     metrics.update(planar_startup_items(vehicle, setup))
+    metrics.update(planar_ramp_start_items(trace, vehicle, setup))
     metrics.update(figure_items)
     has_stage2 = vehicle.n_stages > 1 and vehicle.stage_names[1] in trace.burnouts
     closure = rocket_equation_closure(trace, vehicle) if has_stage2 else None
@@ -1225,6 +1291,20 @@ def planar_startup_items(vehicle: Vehicle, setup: PlanarSetup) -> dict[str, Any]
             kind, 0.0
         ),
     }
+
+
+def planar_ramp_start_items(
+    trace: RunTrace, vehicle: Vehicle, setup: PlanarSetup
+) -> dict[str, Any]:
+    """The requested and achieved stage-1 ramp start of a recorded planar run
+    (``metrics_planar.ramp_start_metrics``) with the track exit's altitude [m] and the
+    push time [s] the ignition time resolved against (``push_time_estimate``), both None
+    for a pad."""
+    track = setup.track
+    z_exit = None if track is None else track.start_altitude_m + track.z(track.length_m)
+    t_push = None if track is None else setup.assist.push_time_estimate(track)
+    stage0 = vehicle.stages[0]
+    return ramp_start_metrics(trace, stage0.name, setup.ignition[stage0.name], z_exit, t_push)
 
 
 def search_failed_result(

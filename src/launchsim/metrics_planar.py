@@ -18,7 +18,8 @@ amendment 14),
 ``events_frame_planar`` lists its events (PLANAR_EVENT_COLUMNS), ``planar_run_metrics``
 gives the flat metrics of the flight (loss budget, MECO, fairing, cutoff and its
 elements, max-Q, peak q-alpha, felt loads, kick), ``planar_track_metrics`` the items of
-a push, ``search_metrics`` and ``closure_metrics`` the figures of merit and the
+a push, ``ramp_start_metrics`` the requested and achieved stage-1 ramp start (SP1 step
+3), ``search_metrics`` and ``closure_metrics`` the figures of merit and the
 rocket-equation closure; PLANAR_REQUIRED_METRICS (amendment 10) are the keys every
 planar summary reports.
 
@@ -40,6 +41,12 @@ from scipy.optimize import minimize_scalar
 
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.config import (
+    RAMP_START_DEPTH,
+    RAMP_START_HEIGHT_CLOSED_FORM,
+    RAMP_START_SPEED,
+    RAMP_START_TIME,
+)
 from launchsim.constants import V_REL_EPS_MPS
 from launchsim.dynamics import PLANAR_LAYOUT, PlanarParams, TrackParams, planar_forces
 from launchsim.losses import (
@@ -63,6 +70,7 @@ from launchsim.phases import (
     ATOL_RAD,
     HOLD_KIND,
     HoldParams,
+    IgnitionSpec,
     PhaseResult,
     RunTrace,
 )
@@ -1013,6 +1021,91 @@ def planar_track_metrics(
     }
     out.update({alias: out[canonical] for alias, canonical in TRACK_METRIC_ALIASES.items()})
     out.update(push_setting_metrics(assist, track))
+    return out
+
+
+RAMP_START_METRICS: tuple[str, ...] = (
+    "ramp_start_t_rel_release_s",
+    "ramp_start_alt_m",
+    "ramp_start_depth_m",
+    "ramp_start_height_m",
+    "ramp_start_speed_mps",
+    "ramp_start_phase",
+)
+"""The achieved stage-1 ramp start, read from the stage-1 ``ignition`` event record of a
+planar run (SP1 step 3; ``ramp_start_metrics``). Planar only (the 1-D events.csv already
+holds the same record), not in PLANAR_REQUIRED_METRICS; summary rows only when some run
+states a non-time trigger (``summary.RAMP_START_ROWS``)."""
+RAMP_START_REQUEST_METRICS: tuple[str, ...] = (
+    "ramp_start_trigger",
+    "ramp_start_requested_t_s",
+    "ramp_start_requested_depth_m",
+    "ramp_start_requested_speed_mps",
+    "ramp_start_requested_height_m",
+)
+"""The requested ramp start of a run whose config states it by depth, speed or
+closed-form height (absent for a time-stated run): the trigger, the ignition time it was
+converted to and the requested value in its own key (the other two None)."""
+_REQUESTED_KEYS: dict[str, str] = {
+    RAMP_START_DEPTH: "ramp_start_requested_depth_m",
+    RAMP_START_SPEED: "ramp_start_requested_speed_mps",
+    RAMP_START_HEIGHT_CLOSED_FORM: "ramp_start_requested_height_m",
+}
+_ON_TRACK_KINDS: frozenset[str] = frozenset({HOLD_KIND, ASSIST_KIND})
+"""Phase kinds of an ignition record on the track (clamped in the shaft, or on the push)."""
+
+
+def ramp_start_metrics(
+    trace: RunTrace,
+    stage_name: str,
+    spec: IgnitionSpec,
+    z_exit_m: float | None,
+    t_push_s: float | None,
+) -> dict[str, Any]:
+    """The ramp-start metrics of a planar run (SI; docs/physics.md, "Reporting
+    definitions (planar)").
+
+    Inputs: the RunTrace; stage_name, the first stage's name; spec, its IgnitionSpec
+    (``phases.prelude.resolve_ignition``); z_exit_m [m], the altitude of the track exit
+    (the silo mouth) in the datum frame, None for a pad; t_push_s [s], the push time the
+    ignition time resolved against (``push_time_estimate``), None for a pad. Output:
+    RAMP_START_METRICS from the stage-1 ``ignition`` event record, every one None when
+    stage 1 never lit (a failed ignition): the time after release [s], the altitude
+    [m] (negative in the shaft), the depth below the exit z_exit - alt [m] when the
+    record is on the track (HOLD or ASSIST) and the height above it alt - z_exit [m]
+    after the release (the other one None; both None on a pad, which has no exit),
+    |v_rel| [m/s] (|sdot| on the track) and the phase kind of the record. With a non-time
+    trigger also RAMP_START_REQUEST_METRICS: the trigger, the converted ignition time
+    relative to release (t_ign_s for reference release, t_ign_s - t_push for
+    push_start) [s], and the requested depth [m], speed [m/s] or height [m] in its own
+    key. Frame: planar ECI states; altitudes from the datum, speeds Earth-relative."""
+    out: dict[str, Any] = dict.fromkeys(RAMP_START_METRICS)
+    record = next((e for e in trace.events if e.name == "ignition" and e.stage == stage_name), None)
+    if record is not None:
+        alt = record.value("alt_m")
+        on_track = record.phase in _ON_TRACK_KINDS
+        out.update(
+            {
+                "ramp_start_t_rel_release_s": _rel_release(trace, record.t_s),
+                "ramp_start_alt_m": alt,
+                "ramp_start_depth_m": (
+                    z_exit_m - alt if z_exit_m is not None and on_track else None
+                ),
+                "ramp_start_height_m": (
+                    alt - z_exit_m if z_exit_m is not None and not on_track else None
+                ),
+                "ramp_start_speed_mps": record.value("speed_rel_mps"),
+                "ramp_start_phase": record.phase,
+            }
+        )
+    if spec.trigger_kind == RAMP_START_TIME:
+        return out
+    out["ramp_start_trigger"] = spec.trigger_kind
+    out["ramp_start_requested_t_s"] = (
+        None if t_push_s is None else spec.t_ign_abs_s(t_push_s) - t_push_s
+    )
+    for kind, key in _REQUESTED_KEYS.items():
+        out[key] = spec.trigger_value if kind == spec.trigger_kind else None
     return out
 
 

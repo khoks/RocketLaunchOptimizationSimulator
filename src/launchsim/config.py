@@ -115,10 +115,29 @@ is nothing left for the rule to displace.
 
 The assist group's fields exist since SP1 step 2: ``ConstantAccelConfig`` takes
 ``net_accel_g`` or ``exit_speed_mps`` and its validator enforces "exactly one family"
-on the resolved model. The ignition group's table arrived before its fields (SP1
-step 1): ``at_depth_m``, ``at_speed_mps``, ``at_height_m`` and ``height_method`` come
-with step 3, with their validator. Until then a run dict that carries one of them is
-refused as an unknown key."""
+on the resolved model. The ignition group's fields exist since SP1 step 3:
+``IgnitionConfig`` takes ``t_ign_s``/``reference``, ``at_depth_m``, ``at_speed_mps`` or
+``at_height_m`` with ``height_method``, and its validator enforces "at most one family
+given" (none given is the time family at its defaults)."""
+RampStartTrigger = Literal["time", "depth", "speed", "height_closed_form"]
+"""How the stage-1 thrust ramp start is stated, the vocabulary of ``IgnitionConfig.ramp_start``,
+of ``phases.prelude.IgnitionSpec.trigger_kind`` and of the planar metric
+``ramp_start_trigger``: by time (``t_ign_s`` with ``reference``), by depth below the
+track exit, by speed on the push, or by height above the track exit through the closed
+form of a drag-free coast (docs/physics.md, "Silo model"). SP1 step 4 adds the height
+reached by an altitude event."""
+RAMP_START_TIME: RampStartTrigger = "time"
+RAMP_START_DEPTH: RampStartTrigger = "depth"
+RAMP_START_SPEED: RampStartTrigger = "speed"
+RAMP_START_HEIGHT_CLOSED_FORM: RampStartTrigger = "height_closed_form"
+RAMP_START_TRIGGERS: tuple[str, ...] = get_args(RampStartTrigger)
+HeightMethod = Literal["event", "closed_form"]
+"""How ``at_height_m`` is reached: ``closed_form`` (converted to a time after release
+before the run) or ``event`` (an altitude event in flight, SP1 step 4)."""
+HEIGHT_METHOD_EVENT: HeightMethod = "event"
+HEIGHT_METHOD_CLOSED_FORM: HeightMethod = "closed_form"
+HEIGHT_EVENT_STEP = "SP1 step 4"
+"""The step that brings ``height_method: event`` (the altitude event); refused until then."""
 LATITUDE_RANGE_DEG = (-90.0, 90.0)
 AZIMUTH_RANGE_DEG = (0.0, 360.0)
 VERTICAL_TRACK_DEG = 90.0
@@ -731,14 +750,110 @@ class StartupOverride(_Model):
 
 
 class IgnitionConfig(_Model):
-    """When a stage lights: t_ign_s [s] relative to ``release`` (stage 1: track exit or
-    hold-down release; later stages: end of their staging coast) or to ``push_start``
-    (first stage only, and only on a run with an assist model: a pad has no push)."""
+    """When a stage lights (the start of its thrust ramp), stated in one of four ways
+    (IGNITION_KEY_FAMILIES; docs/physics.md, "Silo model"):
+
+    - by time: ``t_ign_s`` [s] relative to ``reference``, ``release`` (stage 1: track
+      exit or hold-down release; later stages: end of their staging coast) or
+      ``push_start`` (first stage only, and only on a run with an assist model: a pad
+      has no push). The defaults (0 s after release) apply when no family is given;
+    - by ``at_depth_m`` [m] (>= 0): the depth d below the track exit at which the
+      ramp starts on the push;
+    - by ``at_speed_mps`` [m/s] (>= 0): the speed along the track at which it starts;
+    - by ``at_height_m`` [m] (> 0) with ``height_method``: the height above the track
+      exit after release, ``closed_form`` (the drag-free constant-g_eff coast) or
+      ``event`` (an altitude event, refused until HEIGHT_EVENT_STEP).
+
+    The last three are for the first stage of a run with a ``constant_accel`` assist
+    only (RunConfig and ``resolve_run`` refuse a pad and a later stage); they are
+    converted to a (t_ign_s, reference) pair before the run
+    (``phases.prelude.resolve_ignition``). At most one family is given: a key counts as
+    given when it is present, an explicit null included (``model_fields_set``; the merge
+    rule of EXCLUSIVE_KEY_FAMILIES counts it the same way), so the defaults of t_ign_s
+    and reference never count, and the keys of the other families must hold a value
+    (a null never unsets a key). ``at_height_m`` and ``height_method`` come together.
+    ``model_dump`` leaves out the keys of the families not in use
+    (``_dump_one_ramp_start``), so a dump states the ramp start as the input did and
+    validates again to an equal model; a time-family dump is the dict it was before
+    the other families existed."""
 
     t_ign_s: float = 0.0
     reference: Literal["release", "push_start"] = "release"
+    at_depth_m: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    at_speed_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    at_height_m: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    height_method: HeightMethod | None = None
     startup: StartupOverride | None = None
     fails: bool = False
+
+    @model_validator(mode="after")
+    def _one_ramp_start(self) -> IgnitionConfig:
+        """At most one family of IGNITION_KEY_FAMILIES given (present, a null counting
+        as given); the keys of a non-time family hold a value; ``at_height_m`` and
+        ``height_method`` together; ``height_method: event`` refused until
+        HEIGHT_EVENT_STEP."""
+        given_keys = self.model_fields_set
+        named = [f for f in IGNITION_KEY_FAMILIES if any(k in given_keys for k in f)]
+        if len(named) > 1:
+            found = ", ".join(k for f in named for k in f if k in given_keys)
+            options = " or ".join("{" + ", ".join(f) + "}" for f in IGNITION_KEY_FAMILIES)
+            raise ValueError(
+                f"ignition states the ramp start in more than one way (given: {found}; a "
+                f"key given as null counts as given); use one of {options}"
+            )
+        for key in (k for f in IGNITION_KEY_FAMILIES[1:] for k in f):
+            if key in given_keys and getattr(self, key) is None:
+                raise ValueError(
+                    f"ignition {key} is null: a key that states the ramp start must hold "
+                    "a value (a null does not unset a key)"
+                )
+        if ("at_height_m" in given_keys) != ("height_method" in given_keys):
+            raise ValueError(
+                "ignition at_height_m and height_method come together: the height above "
+                "the track exit and how it is reached (closed_form or event)"
+            )
+        if self.height_method == HEIGHT_METHOD_EVENT:
+            raise ValueError(
+                f"ignition height_method: event (an altitude event in flight) arrives in "
+                f"{HEIGHT_EVENT_STEP}; use height_method: closed_form until then"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _dump_one_ramp_start(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The default dump without the keys of the ramp-start families not in use
+        (``ramp_start_keys``), so ``model_dump`` states the ramp start by its one family
+        and ``model_validate`` of it gives an equal model (a dumped null or a dumped
+        t_ign_s beside at_depth_m would be refused). A time-family dump keeps t_ign_s
+        and reference, as before the other families existed."""
+        out: dict[str, Any] = handler(self)
+        used = self.ramp_start_keys
+        for key in (k for f in IGNITION_KEY_FAMILIES for k in f if k not in used):
+            out.pop(key, None)
+        return out
+
+    @property
+    def ramp_start_keys(self) -> tuple[str, ...]:
+        """The family of IGNITION_KEY_FAMILIES that states the ramp start: the first
+        family whose non-time keys hold a value, else the time family (t_ign_s,
+        reference), given or at its defaults."""
+        for family in IGNITION_KEY_FAMILIES[1:]:
+            if any(getattr(self, k) is not None for k in family):
+                return family
+        return IGNITION_KEY_FAMILIES[0]
+
+    @property
+    def ramp_start(self) -> tuple[RampStartTrigger, float | None]:
+        """(trigger, requested value) of the ramp start: (RAMP_START_TIME, None) for the
+        time family, (RAMP_START_DEPTH, at_depth_m [m]), (RAMP_START_SPEED, at_speed_mps
+        [m/s]) or (RAMP_START_HEIGHT_CLOSED_FORM, at_height_m [m])."""
+        if self.at_depth_m is not None:
+            return RAMP_START_DEPTH, self.at_depth_m
+        if self.at_speed_mps is not None:
+            return RAMP_START_SPEED, self.at_speed_mps
+        if self.at_height_m is not None:
+            return RAMP_START_HEIGHT_CLOSED_FORM, self.at_height_m
+        return RAMP_START_TIME, None
 
     def resolved_startup(self, base: Startup) -> Startup:
         """The stage's Startup after applying this ignition's override, if any."""
@@ -1280,6 +1395,10 @@ class RunConfig(_Model):
 
     @model_validator(mode="after")
     def _ignition_rules(self) -> RunConfig:
+        """``fails`` needs ``end: impact``; ``push_start`` and a ramp start stated by
+        depth, speed or height need an assist model (a pad has no push and no track
+        exit); a depth no deeper than the stroke (``at_depth_m <= stroke_m``). The
+        first-stage-only rule needs the vehicle's stage order (``resolve_run``)."""
         if any(ign.fails for ign in self.ignition.values()) and self.end != "impact":
             raise ValueError("ignition fails: true requires end: impact")
         pushed = [n for n, ign in self.ignition.items() if ign.reference == "push_start"]
@@ -1288,6 +1407,22 @@ class RunConfig(_Model):
                 f"ignition {pushed[0]}: reference push_start needs an assist model "
                 "(a pad run has no push)"
             )
+        for name, ign in self.ignition.items():
+            keys = ign.ramp_start_keys
+            if keys == IGNITION_KEY_FAMILIES[0]:
+                continue
+            if self.assist.model == "none":
+                raise ValueError(
+                    f"ignition {name}: a ramp start by {keys[0]} needs an assist model "
+                    "(a pad run has no push and no track exit)"
+                )
+            depth = ign.at_depth_m
+            if isinstance(self.assist, ConstantAccelConfig) and depth is not None:
+                if depth > self.assist.stroke_m:
+                    raise ValueError(
+                        f"ignition {name}: at_depth_m {depth:g} m is deeper than the "
+                        f"track (stroke_m {self.assist.stroke_m:g} m)"
+                    )
         return self
 
     def ignition_for(self, stage_name: str) -> IgnitionConfig:
@@ -1953,7 +2088,8 @@ def _check_planar_vehicle(name: str, run: RunConfig, vehicle: VehicleConfig) -> 
 
 def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any]) -> ResolvedRun:
     """Validate one run dict and its vehicle dict together (vertical_1d: no heating-rule
-    fairing; planar_2d: see _check_planar_vehicle)."""
+    fairing; planar_2d: see _check_planar_vehicle; every stage after the first ignites
+    by time, release-referenced and at t_ign_s >= 0, never by depth, speed or height)."""
     run_dict = {**copy.deepcopy(run_dict), "name": name}
     run = RunConfig.model_validate(run_dict)
     vehicle = VehicleConfig.model_validate(vehicle_dict)
@@ -1979,6 +2115,12 @@ def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any
             raise ValueError(
                 f"run {name!r}, ignition {stage.name}: a later stage ignites at t_ign_s "
                 ">= 0 after its staging coast"
+            )
+        if i > 0 and ignition.ramp_start_keys != IGNITION_KEY_FAMILIES[0]:
+            raise ValueError(
+                f"run {name!r}, ignition {stage.name}: a ramp start by "
+                f"{ignition.ramp_start_keys[0]} is only for the first stage (a later stage "
+                "ignites at t_ign_s >= 0 after its staging coast)"
             )
         try:  # startup overrides must resolve against this vehicle
             ignition.resolved_startup(stage.startup.to_startup())

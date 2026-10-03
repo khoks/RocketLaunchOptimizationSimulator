@@ -37,7 +37,13 @@ from launchsim.compare import (
     is_diagnostic,
     planar_comparison_basis,
 )
-from launchsim.config import CALIBRATION_LABEL, PLANAR_2D, SEARCHED_FIGURES, SweepPoint
+from launchsim.config import (
+    CALIBRATION_LABEL,
+    PLANAR_2D,
+    RAMP_START_TIME,
+    SEARCHED_FIGURES,
+    SweepPoint,
+)
 from launchsim.units import rad_to_deg
 
 if TYPE_CHECKING:
@@ -870,14 +876,66 @@ PLANAR_FAILED_ROWS: tuple[VariantRow, ...] = (
 metric names: the highest apex and the impact of the unpowered coast)."""
 
 
+RAMP_TRIGGER_SOURCE = "ramp_trigger"
+"""Row source of the ramp-start trigger cell (``_ramp_trigger_cell``: the trigger the
+run's config states, ``time`` included, so a run without a recorded trace still shows
+it)."""
+RAMP_START_ROWS: tuple[VariantRow, ...] = (
+    (
+        "stage-1 ramp start: stated by (time, depth, speed or height_closed_form)",
+        RAMP_TRIGGER_SOURCE,
+        "",
+    ),
+    ("  requested depth below the track exit [m]", "m", "ramp_start_requested_depth_m"),
+    ("  requested speed on the push [m/s]", "m", "ramp_start_requested_speed_mps"),
+    (
+        "  requested height above the track exit [m] (closed form: drag-free, constant g_eff)",
+        "m",
+        "ramp_start_requested_height_m",
+    ),
+    ("  converted t_ign relative to release [s]", "m", "ramp_start_requested_t_s"),
+    ("  achieved (ignition event): t relative to release [s]", "m", "ramp_start_t_rel_release_s"),
+    ("  achieved: altitude [m] (datum; negative in the shaft)", "m", "ramp_start_alt_m"),
+    ("  achieved: depth below the track exit [m]", "m", "ramp_start_depth_m"),
+    ("  achieved: height above the track exit [m]", "m", "ramp_start_height_m"),
+    ("  achieved: speed |v_rel| [m/s]", "m", "ramp_start_speed_mps"),
+    ("  achieved: phase", "m", "ramp_start_phase"),
+)
+"""Rows of the stage-1 ramp start (SP1 step 3; ``metrics_planar.RAMP_START_METRICS``
+and ``RAMP_START_REQUEST_METRICS``), inserted after the ignition rows only when some run
+of the table states its ramp start by depth, speed or height (``_states_ramp_trigger``),
+so the summary of an experiment that states every ramp start by time is unchanged."""
+
+
+def _states_ramp_trigger(er: ExperimentResult) -> bool:
+    """True when some run of the table (baseline or variant) states its first stage's
+    ramp start by depth, speed or height in its config (``IgnitionConfig.ramp_start``)."""
+    stage = first_stage_name(er)
+    return any(
+        rr.resolved.run.ignition_for(stage).ramp_start[0] != RAMP_START_TIME
+        for rr in er.runs.values()
+    )
+
+
+def _ramp_trigger_cell(er: ExperimentResult, name: str) -> str:
+    """The trigger a run's config states for its first stage's ramp start (time, depth,
+    speed or height_closed_form)."""
+    return er.runs[name].resolved.run.ignition_for(first_stage_name(er)).ramp_start[0]
+
+
 def planar_variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
     """PLANAR_VARIANT_ROWS with the stage-1 ignition rows (``ignition_rows``) after the
-    flags row, plus PLANAR_FAILED_ROWS when any run carries a failed ignition."""
+    flags row, followed by RAMP_START_ROWS when some run states its ramp start by depth,
+    speed or height (``_states_ramp_trigger``), plus PLANAR_FAILED_ROWS when any run
+    carries a failed ignition."""
     rows: list[VariantRow] = []
+    ramp = _states_ramp_trigger(er)
     for row in PLANAR_VARIANT_ROWS:
         rows.append(row)
         if row[1] == "flags":
             rows += ignition_rows(first_stage_name(er))
+            if ramp:
+                rows += RAMP_START_ROWS
     if any("failed_stage" in rr.result.metrics for rr in er.runs.values()):
         rows += PLANAR_FAILED_ROWS
     return tuple(rows)
@@ -894,6 +952,8 @@ def _planar_cell(
         if name == er.baseline.name:
             return "(baseline)"
         return screening_cell(er.comparison.get(name, {}))
+    if source == RAMP_TRIGGER_SOURCE:
+        return _ramp_trigger_cell(er, name)
     if source == PLANAR_DEG_SOURCE:
         value = runs[name].result.metrics.get(key)
         return _fmt(value if not _is_finite_number(value) else float(rad_to_deg(float(value))))

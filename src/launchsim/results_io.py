@@ -43,8 +43,11 @@ point of a paired sweep has its paired baseline written beside it
 (``sweep_<n>/run_NNNN__<baseline>/``). The comparisons are ``compare.compare_planar``
 with the matched-payload runs executed here through ``sim.matched_run``.
 
-Both entry points create the run directory before simulating anything, so an unwritable
-results root fails before a long run starts. summary.md is written last; if anything
+Both entry points first check the names and run the preflight ``sim.check_resolved``
+(the assist model and the ignition specs of every resolved run built, nothing
+integrated), so a configuration refused there writes nothing; then they create the run
+directory before simulating anything, so an unwritable results root fails before a
+long run starts. summary.md is written last; if anything
 raises before it, ``FAILED.txt`` with the traceback is written into the directory and the
 exception propagates, so a directory without summary.md is partial and never mistaken
 for a good run (the next run creates a sibling; nothing is ever overwritten).
@@ -716,7 +719,9 @@ def run_experiment(
     plots switch, an optional single variant name, the repository root for the git
     hash (default: the current directory) and the sensitivity switch. Output: the
     ExperimentResult and the run directory results/<experiment>/<timestamp>/, created
-    before any run starts; an exception after that leaves FAILED.txt in it
+    before any run starts and after the preflight (``sim.check_resolved``: every
+    resolved run's specs, so a refused configuration leaves no directory); an
+    exception after that leaves FAILED.txt in it
     (write_failure_marker) and propagates. Every variant is compared with ``compare``
     against the baseline, with its own vehicle and, when the experiment has a variant
     named INSTANT_VARIANT_NAME, that run as the integrated ignition-loss yardstick.
@@ -734,6 +739,7 @@ def run_experiment(
             )
         variants = {only_variant: variants[only_variant]}
     check_result_names(resolved)
+    sim.check_resolved(resolved)  # every run's specs build: a bad config writes nothing
     git = sim.git_info(_repo_root_of(repo_root))
     now = datetime.now(UTC)  # one clock read: the directory name and timestamp_utc agree
     out_dir = make_run_dir(Path(out_root), exp.name, now=now)
@@ -1076,13 +1082,15 @@ def run_sweep(
     Layout: results/<experiment>/<timestamp>/baseline/ (the pad baseline, flat layout),
     sweep_<n>/run_NNNN/ per grid point (flat layout, compared against the baseline),
     sweep_<n>/sweep_index.csv and a top-level summary.md. Returns the SweepResults and
-    the run directory, created before any run starts; an exception after that leaves
-    FAILED.txt in it (write_failure_marker) and propagates.
+    the run directory, created before any run starts and after the preflight
+    (``sim.check_resolved``: a refused configuration leaves no directory); an exception
+    after that leaves FAILED.txt in it (write_failure_marker) and propagates.
     """
     from launchsim import sim  # late: sim imports this module
 
     exp = resolved.experiment
     check_result_names(resolved)
+    sim.check_resolved(resolved)  # every run's specs build: a bad config writes nothing
     git = sim.git_info(_repo_root_of(repo_root))
     now = datetime.now(UTC)  # one clock read: the directory name and timestamp_utc agree
     timestamp = utc_timestamp(now)

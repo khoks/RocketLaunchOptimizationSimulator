@@ -29,6 +29,14 @@ equals the output capture taken before SP1 changed any code (files, metrics.json
 paths, CSV columns in every environment; the provenance-free summary.md by sha256 in
 the capture environment), and the tracked record of the shipped silo_screening_2d
 payload capacities carries its provenance.
+
+Also fast (SP1 step 3): the planar ramp-start metrics read from the stage-1 ignition
+event (requested and achieved depth, speed and closed-form height against closed
+forms; the pad and a failed ignition; depth and height counted from a mouth raised
+above the datum), the handoff table's check values, the ramp-start summary rows shown
+only when some run states a non-time trigger, both spec build sites giving the same
+resolved IgnitionSpecs and refusing a later stage's ramp start by depth, speed or
+height, and the step 3 additions to the output capture.
 """
 
 from __future__ import annotations
@@ -50,15 +58,26 @@ from scipy.integrate import quad
 
 from launchsim import cli, compare, sim, summary
 from launchsim.atmosphere import ATMOSPHERE_ASSUMPTIONS
-from launchsim.config import ChecksConfig, ResolvedExperiment, resolve_experiment
+from launchsim.config import (
+    ChecksConfig,
+    ResolvedExperiment,
+    RunConfig,
+    resolve_experiment,
+    resolve_run,
+)
 from launchsim.constants import G0_MPS2, MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.dynamics import PLANAR_STATE_NAMES
 from launchsim.metrics_planar import (
     PLANAR_REQUIRED_METRICS,
     PUSH_SETTING_METRICS,
+    RAMP_START_METRICS,
+    RAMP_START_REQUEST_METRICS,
     missing_required,
     unwrap_rad,
 )
+from launchsim.phases import IgnitionSpec
+from launchsim.phases.planar import PlanarPlanner
+from launchsim.search import SearchContext
 from launchsim.summary import PLANAR_VARIANT_ROWS
 from launchsim.vehicle import payload_gain_kg, with_payload
 
@@ -1317,6 +1336,321 @@ def test_recorded_silo_payloads_carry_their_provenance(repo_root: Path) -> None:
         for name, payload_kg in payloads.items():
             assert metrics["runs"][name]["payload_kg"] == payload_kg, name
             assert metrics["runs"][name]["gamma_star_rad"] == record["gamma_star_rad"][name]
+
+
+# ------------------------------------- ramp start by depth, speed and height (SP1 step 3)
+
+SILO_A_MPS2 = 3.0 * G0_MPS2
+"""Net acceleration of the shipped 3 g0 silo [m/s^2]."""
+SILO_L_M = 100.0
+"""Its stroke [m]; the mouth (track exit) is at the datum."""
+SILO_T_PUSH_S = math.sqrt(2.0 * SILO_L_M / SILO_A_MPS2)
+"""Its push time sqrt(2 L / a) [s] (2.6073 s)."""
+RAMP_ABS = 1e-9
+"""Tolerance of a ramp-start metric against its closed form (altitude [m], speed [m/s],
+time [s]; SP1 step 3 gate)."""
+
+
+@pytest.fixture(scope="module")
+def ramp_runs(repo_root: Path) -> dict[str, Any]:
+    """Fixed-guidance silo runs to stage-1 burnout (end stage1_burnout: the ramp start
+    is all they are for) whose stage-1 ramp start is stated three ways: ``hot`` (the
+    shipped silo_hot_ramp_on_track, t_ign_s -2.0 from release), ``depth50``
+    (at_depth_m 50) and ``height40`` (at_height_m 40, closed form). RunResults by name,
+    run in memory (nothing written). A speed is checked on the push alone
+    (``_push_only_ramp_items``), which needs no flight."""
+    exp, veh = _raw(repo_root)
+    exp = _fixed(exp, ("silo_hot_ramp_on_track",))
+    hot = exp["variants"]["silo_hot_ramp_on_track"]
+    silo, end = hot["assist"], "stage1_burnout"
+    exp["variants"] = {
+        "hot": {**hot, "end": end},
+        "depth50": {"assist": silo, "ignition": {"stage1": {"at_depth_m": 50.0}}, "end": end},
+        "height40": {
+            "assist": silo,
+            "ignition": {"stage1": {"at_height_m": 40.0, "height_method": "closed_form"}},
+            "end": end,
+        },
+    }
+    resolved = resolve_experiment(exp, veh)
+    return {name: sim.run_resolved(run) for name, run in resolved.variants.items()}
+
+
+def _push_only_ramp_items(base: Any, ignition: dict[str, Any]) -> dict[str, Any]:
+    """``sim.planar_ramp_start_items`` (what simulate_planar writes) of the run ``base``
+    (a RunResult) with its stage-1 ignition block replaced, on the trace of the push
+    alone (``PlanarPlanner.start``: the flight is not flown, so a ramp start on the push
+    is all it can report)."""
+    run_dict = copy.deepcopy(base.resolved.run_dict)
+    run_dict["ignition"]["stage1"] = ignition
+    resolved = resolve_run("push_only", run_dict, base.resolved.vehicle_dict)
+    vehicle = resolved.to_vehicle()
+    setup = sim.planar_setup(resolved.run, vehicle)
+    planner = PlanarPlanner(
+        vehicle, setup.ignition, setup.guidance, setup.env, "stage1_burnout", setup.settings
+    )
+    start = planner.start(setup.assist, setup.track)
+    return sim.planar_ramp_start_items(start.prefix, vehicle, setup)
+
+
+def test_ramp_start_metrics_read_the_ignition_event(
+    ramp_runs: dict[str, Any], fast_run: tuple[Any, Path]
+) -> None:
+    """The planar ramp-start metrics, against closed forms written here. Depth 50 m:
+    trigger depth, requested depth 50 and converted time sqrt(2 (L - 50) / a) - t_push
+    after release; achieved on the push (ASSIST) at that time, alt -50 = depth 50 below
+    the mouth, |v_rel| sqrt(2 a (L - 50)), no height. Speed 30 m/s (on the push alone):
+    trigger speed, converted and achieved t = 30 / a - t_push, |v_rel| 30 at alt
+    -L + 30^2 / (2 a). Height 40 m, closed form: achieved
+    after release at the closed-form time dt with the site's g_eff, the height above the
+    mouth within 0.05 m of 40 and not equal to it (drag, mu/r^2, rotation), no depth. A
+    time-stated run (hot, the pad, silo_failed) has no trigger or requested key; the pad's
+    ignition is in the HOLD at the pad (alt 0, speed 0, 2 s before release) with no
+    depth or height (a pad has no mouth); a failed ignition has every achieved value
+    None. None of the keys is required."""
+    a, length, t_push = SILO_A_MPS2, SILO_L_M, SILO_T_PUSH_S
+    m = ramp_runs["depth50"].result.metrics
+    assert (m["ramp_start_trigger"], m["ramp_start_requested_depth_m"]) == ("depth", 50.0)
+    assert m["ramp_start_requested_speed_mps"] is None
+    assert m["ramp_start_requested_height_m"] is None
+    t_rel = math.sqrt(2.0 * (length - 50.0) / a) - t_push
+    assert abs(m["ramp_start_requested_t_s"] - t_rel) < RAMP_ABS
+    assert abs(m["ramp_start_t_rel_release_s"] - t_rel) < RAMP_ABS
+    assert abs(m["ramp_start_alt_m"] - (-50.0)) < RAMP_ABS
+    assert abs(m["ramp_start_depth_m"] - 50.0) < RAMP_ABS and m["ramp_start_height_m"] is None
+    assert abs(m["ramp_start_speed_mps"] - math.sqrt(2.0 * a * (length - 50.0))) < RAMP_ABS
+    assert m["ramp_start_phase"] == "ASSIST"
+    m = _push_only_ramp_items(ramp_runs["depth50"], {"at_speed_mps": 30.0})
+    assert (m["ramp_start_trigger"], m["ramp_start_requested_speed_mps"]) == ("speed", 30.0)
+    assert m["ramp_start_requested_depth_m"] is None
+    assert abs(m["ramp_start_requested_t_s"] - (30.0 / a - t_push)) < RAMP_ABS
+    assert abs(m["ramp_start_speed_mps"] - 30.0) < RAMP_ABS
+    assert abs(m["ramp_start_alt_m"] - (-length + 30.0**2 / (2.0 * a))) < RAMP_ABS
+    assert abs(m["ramp_start_t_rel_release_s"] - (30.0 / a - t_push)) < RAMP_ABS
+    m = ramp_runs["height40"].result.metrics
+    assert (m["ramp_start_trigger"], m["ramp_start_requested_height_m"]) == (
+        "height_closed_form",
+        40.0,
+    )
+    g, v_e = _g_eff_track(), math.sqrt(2.0 * a * length)
+    dt = (v_e - math.sqrt(v_e * v_e - 2.0 * g * 40.0)) / g
+    assert abs(m["ramp_start_requested_t_s"] - dt) < RAMP_ABS
+    assert abs(m["ramp_start_t_rel_release_s"] - dt) < RAMP_ABS
+    assert m["ramp_start_depth_m"] is None and m["ramp_start_phase"] not in ("HOLD", "ASSIST")
+    assert 1e-6 < abs(m["ramp_start_height_m"] - 40.0) < 0.05
+    assert m["ramp_start_height_m"] == m["ramp_start_alt_m"]  # the mouth is the datum
+    er, _out = fast_run
+    request = set(RAMP_START_REQUEST_METRICS)
+    for rr in (ramp_runs["hot"], *er.runs.values()):
+        assert not request & set(rr.result.metrics), rr.name
+        assert set(RAMP_START_METRICS) <= set(rr.result.metrics), rr.name
+    pad = er.runs["pad"].result.metrics
+    assert pad["ramp_start_phase"] == "HOLD" and pad["ramp_start_t_rel_release_s"] == -2.0
+    assert pad["ramp_start_alt_m"] == 0.0 and pad["ramp_start_speed_mps"] == 0.0
+    assert pad["ramp_start_depth_m"] is None and pad["ramp_start_height_m"] is None
+    failed = er.runs["silo_failed"].result.metrics
+    assert all(failed[key] is None for key in RAMP_START_METRICS)
+    keys = {*RAMP_START_METRICS, *RAMP_START_REQUEST_METRICS}
+    assert not keys & set(PLANAR_REQUIRED_METRICS)
+
+
+RAISED_MOUTH_M = 30.0
+"""Altitude [m] of a raised track exit (silo mouth) above the datum: the depth and the
+height metrics count from the mouth, not from the datum."""
+
+
+@pytest.fixture(scope="module")
+def raised_mouth_run(repo_root: Path) -> Any:
+    """The fixed-guidance height40 run of ``ramp_runs`` (at_height_m 40, closed form, to
+    stage-1 burnout) on the same silo with its mouth RAISED_MOUTH_M above the datum
+    (track exit_altitude_m), run in memory."""
+    exp, veh = _raw(repo_root)
+    exp = _fixed(exp, ("silo_cold",))
+    silo = copy.deepcopy(exp["variants"]["silo_cold"]["assist"])
+    silo["track"]["exit_altitude_m"] = RAISED_MOUTH_M
+    ignition = {"stage1": {"at_height_m": 40.0, "height_method": "closed_form"}}
+    exp["variants"] = {"height40": {"assist": silo, "ignition": ignition, "end": "stage1_burnout"}}
+    return sim.run_resolved(resolve_experiment(exp, veh).variants["height40"])
+
+
+def test_ramp_start_depth_and_height_count_from_a_raised_mouth(raised_mouth_run: Any) -> None:
+    """With the mouth z_m = RAISED_MOUTH_M above the datum: at_depth_m 50 (on the push
+    alone) lights at alt z_m - 50 with depth 50 and speed sqrt(2 a (L - 50)), and
+    t_ign_s -2.0 from release at alt z_m - L + a t^2/2 (t = t_push - 2) with depth z_m
+    minus that; the closed-form height 40 lights at the closed-form time after release
+    with the height alt - z_m (within 0.05 m of 40, not equal: drag, mu/r^2, rotation),
+    all at 1e-9. A depth or height measured from the datum would miss by z_m."""
+    a, length, t_push, z_m = SILO_A_MPS2, SILO_L_M, SILO_T_PUSH_S, RAISED_MOUTH_M
+    m = raised_mouth_run.result.metrics
+    assert m["track_start_altitude_m"] == z_m - length
+    g, v_e = _g_eff_track(), math.sqrt(2.0 * a * length)
+    dt = (v_e - math.sqrt(v_e * v_e - 2.0 * g * 40.0)) / g
+    assert abs(m["ramp_start_t_rel_release_s"] - dt) < RAMP_ABS
+    assert abs(m["ramp_start_height_m"] - (m["ramp_start_alt_m"] - z_m)) < RAMP_ABS
+    assert 1e-6 < abs(m["ramp_start_height_m"] - 40.0) < 0.05
+    assert m["ramp_start_depth_m"] is None
+    m = _push_only_ramp_items(raised_mouth_run, {"at_depth_m": 50.0})
+    assert abs(m["ramp_start_alt_m"] - (z_m - 50.0)) < RAMP_ABS
+    assert abs(m["ramp_start_depth_m"] - 50.0) < RAMP_ABS and m["ramp_start_height_m"] is None
+    assert abs(m["ramp_start_speed_mps"] - math.sqrt(2.0 * a * (length - 50.0))) < RAMP_ABS
+    m = _push_only_ramp_items(raised_mouth_run, {"t_ign_s": -2.0})
+    t = t_push - 2.0
+    z = z_m - length + 0.5 * a * t * t
+    assert abs(m["ramp_start_alt_m"] - z) < RAMP_ABS
+    assert abs(m["ramp_start_depth_m"] - (z_m - z)) < RAMP_ABS
+
+
+def test_a_later_stage_ramp_start_is_refused_at_both_build_sites(repo_root: Path) -> None:
+    """A planar RunConfig validated without resolve_run whose stage 2 states its ramp
+    start by depth, speed or height is refused by both spec build sites
+    (``sim.planar_setup`` through sim.ignition_specs, and SearchContext.from_run), as
+    resolve_run refuses it, before anything is integrated."""
+    exp, veh = _raw(repo_root)
+    exp = _fixed(exp, ("silo_cold",))
+    run_dict = resolve_experiment(exp, veh).variants["silo_cold"].run_dict
+    for key, block in (
+        ("at_depth_m", {"at_depth_m": 50.0}),
+        ("at_speed_mps", {"at_speed_mps": 30.0}),
+        ("at_height_m", {"at_height_m": 40.0, "height_method": "closed_form"}),
+    ):
+        bad = copy.deepcopy(run_dict)
+        bad["ignition"]["stage2"] = block
+        refusal = rf"ignition stage2: a ramp start by {key} is only for the first stage"
+        with pytest.raises(ValueError, match=refusal):
+            resolve_run("bad", bad, veh)
+        cfg = RunConfig.model_validate(bad)
+        vehicle = resolve_run("good", run_dict, veh).to_vehicle()
+        with pytest.raises(ValueError, match=refusal):
+            sim.planar_setup(cfg, vehicle)
+        with pytest.raises(ValueError, match=refusal):
+            SearchContext.from_run(cfg, vehicle)
+
+
+def test_handoff_table_rows_from_closed_forms(ramp_runs: dict[str, Any]) -> None:
+    """The check values of the handoff table (docs/phases/SP1-fuel-offload-planar.md,
+    section 5.11; 3 g0, 100 m, t_push 2.607 s), computed here from the push from rest,
+    z = -L + a t^2/2 and sdot = a t: t_ign_s -2.0 from release starts the ramp at
+    t = t_push - 2 after push start, -94.6 m and 17.9 m/s; at_depth_m 50 starts it
+    sqrt(2 (L - 50) / a) = 1.844 s after push start, -0.764 s from release, at 54.2 m/s.
+    The run metrics equal the closed forms at 1e-9 and round to the table's digits."""
+    a, length, t_push = SILO_A_MPS2, SILO_L_M, SILO_T_PUSH_S
+    assert round(t_push, 3) == 2.607
+    hot = ramp_runs["hot"].result.metrics
+    t = t_push - 2.0
+    z, v = -length + 0.5 * a * t * t, a * t
+    assert abs(hot["ramp_start_alt_m"] - z) < RAMP_ABS
+    assert abs(hot["ramp_start_speed_mps"] - v) < RAMP_ABS
+    assert abs(hot["ramp_start_depth_m"] - (0.0 - z)) < RAMP_ABS
+    assert abs(hot["ramp_start_t_rel_release_s"] - (-2.0)) < RAMP_ABS
+    assert (round(hot["ramp_start_alt_m"], 1), round(hot["ramp_start_speed_mps"], 1)) == (
+        -94.6,
+        17.9,
+    )
+    depth = ramp_runs["depth50"].result.metrics
+    t = math.sqrt(2.0 * (length - 50.0) / a)
+    assert abs(depth["ramp_start_t_rel_release_s"] + t_push - t) < RAMP_ABS
+    assert abs(depth["ramp_start_speed_mps"] - a * t) < RAMP_ABS
+    assert round(t, 3) == 1.844 and round(depth["ramp_start_t_rel_release_s"], 3) == -0.764
+    assert round(depth["ramp_start_speed_mps"], 1) == 54.2
+
+
+def test_ramp_start_rows_appear_only_when_a_run_states_a_trigger(
+    ramp_runs: dict[str, Any], fast_run: tuple[Any, Path]
+) -> None:
+    """summary.RAMP_START_ROWS come right after the stage-1 ignition rows of the planar
+    table when some run states its ramp start by depth, speed or height, with each run's
+    stated trigger in the first row (time for the pad and for hot); the fast experiment,
+    whose runs all state a time, has none of them, so its summary is unchanged."""
+    er, out = fast_run
+    text = (out / "summary.md").read_text(encoding="utf-8")
+    labels = [label for label, _source, _key in summary.RAMP_START_ROWS]
+    assert not [label for label in labels if label in text]
+    assert summary.planar_variant_rows(er) == tuple(
+        row for row in summary.planar_variant_rows(er) if row not in summary.RAMP_START_ROWS
+    )
+    with_trigger = dataclasses.replace(er, variants=dict(ramp_runs), comparison={})
+    rows = summary.planar_variant_rows(with_trigger)
+    stage = summary.first_stage_name(er)
+    last_ignition = rows.index(summary.ignition_rows(stage)[-1])
+    block = rows[last_ignition + 1 : last_ignition + 1 + len(summary.RAMP_START_ROWS)]
+    assert block == summary.RAMP_START_ROWS
+    table = summary.planar_variants_table(with_trigger).splitlines()
+    cells = _summary_cells(table, labels[0])
+    assert cells == ["time", "time", "depth", "height_closed_form"]
+    assert _summary_cells(table, labels[1])[2] == "50"
+    assert _summary_cells(table, labels[-1])[2] == "ASSIST"
+
+
+def test_both_spec_build_sites_use_the_resolver(repo_root: Path) -> None:
+    """``sim.planar_setup`` (sim.ignition_specs) and ``search.SearchContext.from_run``
+    build the same IgnitionSpecs for a run whose ramp start is stated by depth, speed or
+    height: the converted (t_ign_s, reference) of resolve_ignition with the site's g_ref,
+    and the request; ``sim.run_ignition_specs`` (the preflight's) gives them too."""
+    exp, veh = _raw(repo_root)
+    silo = exp["variants"]["silo_cold"]["assist"]
+    exp["variants"] = {
+        "depth50": {"assist": silo, "ignition": {"stage1": {"at_depth_m": 50.0}}},
+        "speed30": {"assist": silo, "ignition": {"stage1": {"at_speed_mps": 30.0}}},
+        "height40": {
+            "assist": silo,
+            "ignition": {"stage1": {"at_height_m": 40.0, "height_method": "closed_form"}},
+        },
+    }
+    for key in ("sweeps", "sensitivity", "bounds"):
+        exp.pop(key, None)
+    resolved = resolve_experiment(exp, veh)
+    g = _g_eff_track()
+    v_e = math.sqrt(2.0 * SILO_A_MPS2 * SILO_L_M)
+    expected = {
+        "depth50": (math.sqrt(2.0 * 50.0 / SILO_A_MPS2), "push_start", "depth", 50.0),
+        "speed30": (30.0 / SILO_A_MPS2, "push_start", "speed", 30.0),
+        "height40": (
+            (v_e - math.sqrt(v_e * v_e - 2.0 * g * 40.0)) / g,
+            "release",
+            "height_closed_form",
+            40.0,
+        ),
+    }
+    for name, run in resolved.variants.items():
+        vehicle = run.to_vehicle()
+        by_setup = sim.planar_setup(run.run, vehicle).ignition
+        by_search = SearchContext.from_run(run.run, vehicle).ignition
+        assert dict(by_search) == by_setup == sim.run_ignition_specs(run.run, vehicle)
+        spec = by_setup["stage1"]
+        t, reference, kind, value = expected[name]
+        assert math.isclose(spec.t_ign_s, t, rel_tol=1e-12)
+        assert (spec.reference, spec.trigger_kind, spec.trigger_value) == (reference, kind, value)
+        assert by_setup["stage2"] == IgnitionSpec(0.0)
+
+
+def test_capture_holds_the_ramp_start_metrics_of_sp1_step_3(planar_pins: ModuleType) -> None:
+    """The recapture of SP1 step 3 added the RAMP_START_METRICS block right after the
+    startup items (t_startup_s_stage1) of every run, pad and failed silo included, and of
+    the sensitivity records, plus the delta_ items of the three numeric ramp-start
+    metrics that silo_cold and the pad both carry (time, altitude, speed; not depth or
+    height, which only one of the two has); no requested key, because every run of the
+    fast experiment states its ramp start by time."""
+    capture = planar_pins.read_json(planar_pins.CAPTURE_FILE)
+    added = list(RAMP_START_METRICS)
+    for name in ("pad", "silo_cold", "silo_failed"):
+        keys = capture["runs"][name]["metrics_keys"]
+        first = keys.index(added[0])
+        assert keys[first : first + len(added)] == added, name
+        assert keys[first - 1] == "t_startup_s_stage1", name
+        assert not set(RAMP_START_REQUEST_METRICS) & set(keys), name
+    outside = capture["metrics_keys"]
+    ramp = [path for path in outside if "ramp_start" in path]
+    deltas = [
+        "delta_ramp_start_t_rel_release_s",
+        "delta_ramp_start_alt_m",
+        "delta_ramp_start_speed_mps",
+    ]
+    assert ramp == [
+        *(f"comparison.silo_cold.{key}" for key in deltas),
+        *(f"sensitivity.[].metrics.{key}" for key in added),
+        *(f"sensitivity.[].comparison.{key}" for key in deltas),
+        *(f"sensitivity.[].comparison_vs_perturbed_baseline.{key}" for key in deltas),
+    ]
 
 
 # ---------------------------------------------------------------------------- slow

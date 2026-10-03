@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ import yaml
 
 from launchsim import sim
 from launchsim.cli import main
+from launchsim.constants import G0_MPS2
 
 TINY = Path(__file__).resolve().parent / "data" / "tiny_experiment.yaml"
 TOY_VEHICLE = TINY.parent / "toy_vehicle.yaml"
@@ -285,6 +287,44 @@ def test_unsafe_variant_name_exits_1_and_writes_nothing(
     code = main(["run", str(exp), "--results-root", str(root), "--no-plots"])
     out = capsys.readouterr().out
     assert code == 1 and out.startswith("error:") and "Traceback" not in out, out
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("command", ["run", "sweep"])
+@pytest.mark.parametrize(
+    ("speed_mps", "where", "accel_g", "stroke_m"),
+    [
+        (25.0, "run 'silo'", 1.0, 20.0),  # above the silo's own exit speed
+        (15.0, "sweep 1 point run_0001", 1.0, 10.0),  # the silo reaches it; 1 g0 / 10 m not
+    ],
+)
+def test_preflight_refusal_exits_1_and_writes_nothing(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    speed_mps: float,
+    where: str,
+    accel_g: float,
+    stroke_m: float,
+) -> None:
+    """A ramp start the preflight refuses (sim.check_resolved, SP1 step 3: a speed above
+    the exit speed sqrt(2 a L) of the push) ends both commands with exit code 1 and one
+    ``error:`` line naming the run and that exit speed (closed form here), with no
+    traceback and no results directory. The refusal is found on the variant itself (1
+    g0 over 20 m exits at 19.8 m/s < 25) and on a sweep point alone (the variant
+    reaches 15 m/s; the sweep's 1 g0, 10 m point exits at 14.0 m/s)."""
+    v_exit = math.sqrt(2.0 * accel_g * G0_MPS2 * stroke_m)
+    assert v_exit < speed_mps
+    base = yaml.safe_load(TINY.read_text(encoding="utf-8"))
+    silo = {**base["variants"]["silo"], "ignition": {"stage1": {"at_speed_mps": speed_mps}}}
+    exp = _copy_tiny(tmp_path / "proj", variants={"silo": silo})
+    root = tmp_path / "results"
+    code = main([command, str(exp), "--results-root", str(root), "--no-plots"])
+    out = capsys.readouterr().out
+    assert code == 1 and out.startswith("error:") and "Traceback" not in out, out
+    assert (
+        f"{where}: at_speed_mps {speed_mps:g} m/s exceeds the exit speed {v_exit:.9g} m/s" in out
+    ), out
     assert not root.exists()
 
 

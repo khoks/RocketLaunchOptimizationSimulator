@@ -1,5 +1,6 @@
 """Results I/O: run-directory naming (never overwrite), JSON without NaN, UTF-8 summaries
-on a cp1252 console, and git provenance states."""
+on a cp1252 console, git provenance states, and the preflight of SP1 step 3 (a
+configuration whose ramp start cannot be converted writes nothing)."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import sys
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pandas as pd
@@ -816,3 +818,93 @@ def test_run_experiment_writes_sensitivity_and_the_no_sensitivity_switch(tmp_pat
         er3.variants["silo"], er3.baseline, er3, tmp_path / "single", plots=False
     )
     assert sim.SENSITIVITY_SWEEP_POINT in (sweep / "summary.md").read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------------- preflight (SP1 step 3)
+
+TINY_SILO_EXIT_MPS = math.sqrt(2.0 * G0_MPS2 * 20.0)
+"""Exit speed of the tiny experiment's 1 g0, 20 m silo [m/s] (19.8 m/s)."""
+
+
+def _tiny_dicts() -> tuple[dict, dict]:
+    """tests/data/tiny_experiment.yaml and its toy vehicle as raw dicts."""
+    data = Path(__file__).resolve().parent / "data"
+    exp = yaml.safe_load((data / "tiny_experiment.yaml").read_text(encoding="utf-8"))
+    veh = yaml.safe_load((data / "toy_vehicle.yaml").read_text(encoding="utf-8"))
+    return exp, veh
+
+
+def _no_run(run_config: RunConfig, vehicle: Vehicle) -> sim.Result:
+    raise AssertionError("a run started although the preflight should have refused")
+
+
+def test_preflight_refuses_a_bad_ramp_start_before_any_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configuration that resolves but whose ramp start cannot be converted (a speed
+    above the exit speed sqrt(2 a L) of the 1 g0, 20 m silo, 19.8 m/s; a height at or
+    above the drag-free apex v_exit^2 / (2 g_eff), 20.0 m) is refused by the preflight
+    sim.check_resolved, naming the run and where it comes from (a variant, a sweep
+    point, a sensitivity run whose -10 % acceleration lowers the exit speed below the
+    requested speed), before run_experiment and run_sweep create anything: no results
+    directory, no run started."""
+    monkeypatch.setattr(sim, "run", _no_run)
+    exp, veh = _tiny_dicts()
+    exp["variants"]["fast"] = {
+        **exp["variants"]["silo"],
+        "ignition": {"stage1": {"at_speed_mps": 25.0}},
+    }
+    resolved = resolve_experiment(exp, veh)
+    assert TINY_SILO_EXIT_MPS < 25.0
+    with pytest.raises(ValueError, match=r"run 'fast': at_speed_mps 25 m/s exceeds"):
+        sim.run_experiment(resolved, tmp_path, plots=False, repo_root=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+    exp, veh = _tiny_dicts()
+    exp["sweeps"] = [
+        {
+            "of": "silo",
+            "axes": {
+                "ignition.stage1.at_height_m": [5.0, 25.0],
+                "ignition.stage1.height_method": ["closed_form"],
+            },
+        }
+    ]
+    resolved = resolve_experiment(exp, veh)
+    point = resolved.sweeps[0][1].run
+    assert point.run_dict["ignition"]["stage1"] == {
+        "at_height_m": 25.0,
+        "height_method": "closed_form",
+    }
+    with pytest.raises(
+        ValueError, match=r"sweep 1 point run_0002: at_height_m 25 m is at or above"
+    ):
+        sim.run_sweep(resolved, tmp_path, plots=False, repo_root=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+    exp, veh = _tiny_dicts()
+    exp["variants"]["near"] = {
+        **exp["variants"]["silo"],
+        "ignition": {"stage1": {"at_speed_mps": 19.0}},
+    }
+    exp["sensitivity"] = {"of": ["near"], "params": {"assist.net_accel_g": 0.1}}
+    resolved = resolve_experiment(exp, veh)
+    assert TINY_SILO_EXIT_MPS * math.sqrt(0.9) < 19.0 < TINY_SILO_EXIT_MPS
+    with pytest.raises(ValueError, match=r"sensitivity run 'near__assist\.net_accel_g__-0\.1'"):
+        sim.run_experiment(resolved, tmp_path, plots=False, repo_root=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_preflight_visits_every_resolved_run_and_passes_the_shipped_experiments(
+    repo_root: Path, planar_pins: ModuleType
+) -> None:
+    """sim.every_resolved_run lists the same runs, in the same order, as the planar pin's
+    inventory (baseline and variants, sweep points with their paired baselines,
+    sensitivity runs, bound runs with their paired baselines, calibration cases), and
+    the preflight passes on every shipped experiment."""
+    from launchsim.cli import load_experiment
+
+    for path in sorted((repo_root / "experiments").glob("*.yaml")):
+        resolved = load_experiment(path)
+        listed = [run for _label, run in sim.every_resolved_run(resolved)]
+        pinned = list(planar_pins.resolved_runs(resolved).values())
+        assert [id(r) for r in listed] == [id(r) for r in pinned], path.name
+        sim.check_resolved(resolved)

@@ -239,7 +239,10 @@ def resolve_vehicle_path(experiment_path: Path, vehicle: str) -> Path:
 
 def load_experiment(experiment_path: Path) -> ResolvedExperiment:
     """Read and validate an experiment file and its vehicle; raises CliError on any
-    problem. A calibration case that names its own vehicle file is read through the
+    problem, including a run name unfit for a directory (``sim.check_result_names``)
+    and a run refused by the preflight (``sim.check_resolved``: a ramp start the push
+    cannot reach, for example), so neither is written and either prints one ``error:``
+    line. A calibration case that names its own vehicle file is read through the
     same lookup as the experiment's vehicle (``resolve_vehicle_path``)."""
     exp_dict = load_yaml(experiment_path)
     vehicle = exp_dict.get("vehicle")
@@ -253,7 +256,8 @@ def load_experiment(experiment_path: Path) -> ResolvedExperiment:
     try:
         resolved = resolve_experiment(exp_dict, vehicle_dict, load_vehicle)
         sim.check_result_names(resolved)  # names become directories: reject before writing
-    except ValueError as exc:  # pydantic ValidationError, ConfigPathError, InvalidNameError
+        sim.check_resolved(resolved)  # every run's specs build (the preflight)
+    except ValueError as exc:  # ValidationError, ConfigPathError, InvalidNameError, preflight
         raise CliError(f"invalid configuration in {experiment_path}:\n{exc}") from exc
     return resolved
 

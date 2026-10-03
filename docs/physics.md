@@ -3025,8 +3025,22 @@ of a push stated by its exit speed and are the source of the replay page's drive
 label, "Silo model"); for a failed ignition the highest apex and the
 impact (`summary.PLANAR_FAILED_ROWS`: failed stage, apex altitude and time, impact time
 and |v_rel|);
-how stage 1 starts; the closure items (`closure_metrics`); `trace_status`, `run_checks`
-and `nfev_total`. `PLANAR_REQUIRED_METRICS` (amendment 10: the 1-D REQUIRED_METRICS plus
+how stage 1 starts and its ramp start (SP1 step 3, `metrics_planar.ramp_start_metrics`
+through `sim.planar_ramp_start_items`, every recorded planar run: the achieved
+`ramp_start_t_rel_release_s`, `ramp_start_alt_m` (datum; negative in the shaft),
+`ramp_start_depth_m` (z_mouth - alt, when the stage-1 ignition record is on the track,
+HOLD or ASSIST; else null), `ramp_start_height_m` (alt - z_mouth, when it is after the
+release; else null), `ramp_start_speed_mps` (abs(v_rel): abs(sdot) on the track) and
+`ramp_start_phase`, read from that record; a pad has no mouth, so its depth and height
+are null (its other values are those of the HOLD record at the pad), and a run whose
+stage 1 never lit has every one null; a run that states its ramp start by depth, speed
+or height also carries `ramp_start_trigger`, `ramp_start_requested_t_s` (the converted
+ignition time after release: t_ign_s for `release`, t_ign_s - t_push for `push_start`)
+and the requested `ramp_start_requested_depth_m`, `_speed_mps` or `_height_m`, the other
+two null; none of these is in `PLANAR_REQUIRED_METRICS`, and the numeric achieved ones
+that a variant and its baseline both carry get a `delta_` item like every metric); the
+closure items (`closure_metrics`); `trace_status`, `run_checks` and `nfev_total`.
+`PLANAR_REQUIRED_METRICS` (amendment 10: the 1-D REQUIRED_METRICS plus
 payload_kg, residual_propellant_kg, dv_margin_mps, search_status,
 peak_felt_axial_g_flight, peak_felt_lateral_g, peak_q_alpha, max_q_time_s, max_q_mach)
 are rows of `summary.PLANAR_VARIANT_ROWS` and are all non-null for a searched run; a run
@@ -3085,7 +3099,11 @@ sweep-optimized, or `PLANAR_FIXED_COMPARISON_BASIS` for figure_of_merit none) an
 guidance label (`summary.guidance_label`: `SWEEP_OPTIMIZED_LABEL` when any run
 searched, else `FIXED_GUIDANCE_LABEL`; a fixed-guidance result is never labelled
 sweep-optimized, and its runs carry `FIXED_GUIDANCE_ASSUMPTIONS`, not the search
-lines), the search budget id, the per-variant table (degrees only in its cells), the
+lines), the search budget id, the per-variant table (degrees only in its cells; after
+the stage-1 ignition rows, `summary.RAMP_START_ROWS`, the stated trigger of every run
+and the requested and achieved ramp start, only when some run of the table states its
+ramp start by depth, speed or height in its config, so the summary of an experiment
+whose runs all state a time is unchanged), the
 bounds, the cases, the sensitivity table, the flags, the assumptions and the checks.
 The Checks section lists the per-run checks of every run (cases, sensitivity and bound
 runs included), the screening line of every variant, one line per attributed
@@ -3488,16 +3506,29 @@ offset (the planar one) must refuse None.
 **Clock and ignition times.** t = 0 at push start (silo) or hold-down release (pad); a
 HOLD runs at negative t; t_release is recorded (0 on a pad; the push time on a track)
 and every metric quotes t - t_release. `IgnitionSpec(t_ign_s, reference, startup,
-fails)` is built from `config.IgnitionConfig` at the boundary. First stage:
-t_ign_abs = t_release + t_ign_s for reference `release`, t_ign_abs = t_ign_s for
-`push_start` (t_release = sqrt(2L/a) is closed-form for the constant-acceleration
-drive, so both resolve before anything is integrated). Stage k > 0: t_ign_abs = end of
-its staging coast + t_ign_s, with t_ign_s >= 0 and reference `release` (the staging
-coast is unpowered). `t_ign_rel_release_s_<stage>` is reported for every stage that
-got to ignite; a stage whose ignition fails (`fails: true`) gets none: its scheduled
-t_ign_s is moot because its T_vac is identically zero ("Failed-ignition coast"), and a
-t_ign_s, reference or startup override set away from the defaults on such a stage is
-recorded as an `ignition_failed: ... ignored` run flag.
+fails, trigger_kind, trigger_value)` is built from `config.IgnitionConfig` at the
+boundary by `phases.prelude.resolve_ignition`, the one resolver of both spec build sites
+(`sim.ignition_specs`, used by the 1-D `sim.run` and by `sim.planar_setup`, and
+`search.SearchContext.from_run`, both through `resolve_stage_ignitions`, one call per
+stage). A ramp start the config states by depth, speed or
+closed-form height (SP1 step 3) is converted there to the (t_ign_s, reference) pair
+before anything is integrated ("Silo model", ramp-start conversions); trigger_kind and
+trigger_value only record the request (for the metrics, the flag and the assumption
+line), and their defaults ("time", None) leave every time-stated spec equal to what it
+was. First stage: t_ign_abs = t_release + t_ign_s for reference `release`,
+t_ign_abs = t_ign_s for `push_start` (t_release = sqrt(2L/a) is closed-form for the
+constant-acceleration drive, so both resolve before anything is integrated). Stage
+k > 0: t_ign_abs = end of its staging coast + t_ign_s, with t_ign_s >= 0 and reference
+`release` (the staging coast is unpowered; a later stage is never stated by depth,
+speed or height, which `config.resolve_run` and the spec build,
+`phases.prelude.resolve_stage_ignitions`, refuse). `t_ign_rel_release_s_<stage>` is
+reported for every stage that got to ignite; a stage whose ignition fails
+(`fails: true`) gets none: its scheduled t_ign_s is moot because its T_vac is
+identically zero ("Failed-ignition coast"), and a t_ign_s, reference or startup
+override set away from the defaults on such a stage is recorded as an
+`ignition_failed: ... ignored` run flag (a ramp start stated by depth, speed or height
+is named there by its key and value, `at_depth_m = 50`, not by the time it was
+converted to).
 
 **State machine.** One `solve_ivp` per phase; the phase issued after event E never
 lists E, and that is structural: the event lists are partitioned by sigma (a rising
@@ -3519,7 +3550,7 @@ omega_p from the single `OMEGA_P_PHASE1_RADS` = 0 it quotes in the assumptions.
 | HOLD extension (pad, vehicle at rest on the ground, T(0) < m g_eff) | split at the thrust kinks. Before the ignition kink the sub-phase is *unlit* (`HoldParams.lit = False`: T = 0, nothing changes, sampled directly, no events), and at the start of every lit sub-phase the balance T - m g_eff is re-evaluated with the lit schedule, so a step whose thrust exceeds the weight lifts off exactly at its kink with the mass untouched (no root search across the discontinuity; the integrator's last stage never sees the step's f(0) = 1 from the left, which would bias the mass by 5e-6 kg, above `ATOL_KG`). A lit sub-phase integrates the mass alone (`rhs_hold`), max_step as in a burn. An ignition inside the extension is logged in the HOLD | `liftoff` (T - m g_eff, +1) -> "hold extended to t = X s for liftoff (TWR < 1 at release)" in the assumptions; `propellant` -> ValueError; t_max -> status `no_liftoff` (no exception) | BURN from the liftoff root, sigma = +1 |
 | ASSIST (track) | state [s, sdot, m_v, *extra, E_drive, W_thrust, J_mass] in the track layout (`dynamics.rhs_track`, "Silo model" below); sub-phases split at the thrust kinks inside the push (ignition, ramp end); a sub-phase that ends at the ignition kink is *unlit* (T = 0 whatever the schedule says at its closing boundary, as for the HOLD); max_step = t_push/push_steps, tightened by the ramp or lag cap once lit; the ignition, ramp_end and drive_limit events are logged with the ascent-frame view of the track state (`track_to_vertical`: z = start altitude + z(s), v = sdot sin phi); a ramp that ends at the very instant of release (`silo_hot_ramp_on_track`) logs its ramp_end on the track, right before the release, and the flight's burn skips the finished segment, so the event appears once | `track_end` (s - L, +1) -> RELEASE; `drive_limit` (F_drive, -1; not listed when the model allows a negative drive force) -> status `drive_limit`, the run stops on the track (a push that starts with F_drive already negative ends at t0 by the engine's already-past rule); `propellant` -> ValueError (exhausted on the track) | RELEASE |
 | RELEASE (map) | pad: z = z0, v = v0 of the `AscentStart` (0, 0 for the pad; only a start at rest *on the ground* is held down, one at rest above it falls; a *moving* start lit before release is a test-only emulation of "lit on the carriage" without a track: the HOLD burns mass only and its rows keep v0, which is not a physical state but reproduces the straddle form exactly), m = m(0); track: `map_release` (z = exit altitude, v = sdot, m; a track angle other than pi/2 raises: projecting sdot onto the vertical would silently discard the downrange component, so the 1-D map is exact for a vertical track only and a tilted exit waits for the planar branch); quadratures reset; t_release recorded | | COAST_PRE_IGN or BURN |
-| COAST_PRE_IGN | T = 0, sigma = +1 | t = t_ign_abs; `apex` -> FALL_PRE_IGN (sigma = -1, `impact` listed) | BURN; impact -> status `impact` |
+| COAST_PRE_IGN | T = 0, sigma = +1 | t = t_ign_abs (a ramp start stated by a closed-form height is such a time, converted before the run: the coast ends at the closed-form time, not at an altitude, so the height reached there is the flown coast's; the altitude event of `height_method: event` is SP1 step 4); `apex` -> FALL_PRE_IGN (sigma = -1, `impact` listed) | BURN; impact -> status `impact` |
 | BURN k | ramp sub-phase (ends at t_ign + t_ramp, max_step t_ramp/ramp_steps) then the full burn (open-ended); lag: one burn with max_step tau/lag_steps_per_tau; step: one burn; `propellant` always listed | sigma = +1: `apex` -> same burn with sigma = -1 (`turnaround`, `impact` listed); sigma = -1: `turnaround` -> sigma = +1 (`apex` listed), `impact` -> status `impact`; `propellant` -> burnout | STAGING, or end |
 | STAGING (map) | m -= dry mass of stage k (+ fairing when `fairing_drop: staging` and k = 0): `map_staging`; z, v, quadratures unchanged | | COAST_STAGING |
 | COAST_STAGING / FALL_STAGING | T = 0 for stage k+1's `coast_before_ignition_s` (zero-length pass-through when 0); events by sigma as for COAST_PRE_IGN | t = coast end | COAST_PRE_IGN (t_ign_s > 0) or BURN k+1 |
@@ -3795,11 +3826,16 @@ Modules: `assist/constant_accel.py` (`ConstantAccelAssist`), `assist/base.py`
 to the track exit), `phases/vertical.py` (`VerticalPlanner.run_track`, `map_release`),
 `phases/engine.py` (`ev_track_end`, `ev_drive_limit`), `metrics.py` (`track_metrics`,
 `track_flags`), `config.py` (`ConstantAccelConfig`: the push stated by its acceleration
-or by its exit speed), `metrics_planar.py` (`push_setting_metrics`, planar only).
+or by its exit speed; `IgnitionConfig`: the ramp start stated by time, depth, speed or
+height), `metrics_planar.py` (`push_setting_metrics` and `ramp_start_metrics`, planar
+only), `phases/prelude.py` (`resolve_ignition`, `resolve_stage_ignitions`,
+`ramp_start_assumption`), `sim.py` (`check_resolved`, the preflight, also run by
+`cli.load_experiment`).
 Tests: `tests/test_silo.py`, `tests/test_assist_energy.py`,
 `tests/test_events.py` (release map from a track), `tests/test_loss_identity.py` (a),
 `tests/test_ignition_loss.py` (straddle through the silo), `tests/test_config.py` and
-`tests/test_planar_pipeline.py` (the exit-speed form).
+`tests/test_planar_pipeline.py` (the exit-speed form; the ramp-start forms, with
+`tests/test_release_planar.py`, `tests/test_results_io.py` and `tests/test_cli.py`).
 
 **Model.** The drive prescribes the net acceleration along the track, sddot = a
 exactly, and the drive force is solved from the track equation at every instant:
@@ -3891,6 +3927,89 @@ the dict it was before the option existed. Nothing checks that the derived
 acceleration is one a vehicle would survive: as for `net_accel_g`, the felt g is
 reported, not limited.
 
+**Ramp-start conversions (SP1 step 3, decision D-SP1-06).** `IgnitionConfig` states when
+the first stage's thrust ramp starts in one of four ways (the ignition group of the
+exclusive key families, "Experiment schema (planar)"): by time (`t_ign_s` with
+`reference`, the Phase 1 form, unchanged), by `at_depth_m` d >= 0 below the mouth (the
+track exit), by `at_speed_mps` v >= 0 on the push, or by `at_height_m` h > 0 above the
+mouth with `height_method`. `phases.prelude.resolve_ignition` converts the last three to
+the (t_ign_s, reference) pair before anything is integrated, so the planners, the
+search and every other consumer of the spec see a time, as before. With the stroke L,
+the net acceleration a, the exit speed v_e = sqrt(2 a L), the push time t_push =
+sqrt(2 L / a) and the track's constant g_eff = mu/R_E^2 - omega_p^2 R_E (the value the
+planner hands `fly_track`: mu/R_E^2 on vertical_1d, the site's g_ref on planar_2d):
+
+| Setting | Converts to | Closed form | Refused when |
+|---|---|---|---|
+| `at_depth_m: d` | time from push start (`push_start`) | t = sqrt(2 (L - d) / a) (`ConstantAccelAssist.push_time_s(L - d)`: the push from rest reaches s = L - d) | d > L (`RunConfig` and the resolver) |
+| `at_speed_mps: v` | time from push start | t = v / a (`ConstantAccelAssist.time_to_speed_s`) | t > t_push + ZERO_SPAN_S: v above v_e by more than a ZERO_SPAN_S (3e-11 m/s at 3 g0), which the push never reaches |
+| `at_height_m: h`, `height_method: closed_form` | time after release (`release`) | dt = (v_e - sqrt(v_e^2 - 2 g_eff h)) / g_eff, the smaller root of v_e t - g_eff t^2/2 = h (evaluated as 2 h / (v_e + sqrt(v_e^2 - 2 g_eff h)), the same number without the cancellation at small h) | h >= v_e^2 / (2 g_eff), the drag-free apex; g_eff <= 0 |
+| `at_height_m: h`, `height_method: event` | not converted: an altitude event at mouth + h (SP1 step 4) | none | refused until step 4 (the config's message names it) |
+
+- A result within ZERO_SPAN_S (1e-12 s) of the release snaps to (0, `release`): depth 0,
+  the exit speed itself and a speed above it by rounding. (On a push stated by
+  `exit_speed_mps` the exit speed is sqrt(2 a L) with a = v^2/(2L) formed first, so it
+  can differ from the configured v by an ulp; that v is accepted and starts the ramp at
+  the release.)
+- The conversions are exact for the constant-acceleration drive, whose push is the
+  prescribed s(t) = a t^2/2 whatever the thrust (a hot start changes the forces, never
+  the kinematics). The resolver refuses them (ValueError) for any other assist model
+  and for a run without a track (Phase 3's force-limited drives need the push
+  integrated first); the config refuses them on a pad (`RunConfig._ignition_rules`: no
+  push and no mouth, as for `push_start`) and on any stage after the first
+  (`config.resolve_run`). The spec build of both build sites
+  (`phases.prelude.resolve_stage_ignitions`, called by `sim.ignition_specs` and
+  `SearchContext.from_run`) refuses a later stage's trigger as well, so a `RunConfig`
+  validated without `resolve_run` and handed to `sim.run` cannot convert a stage-2
+  height with stage 1's exit speed into a silent staging-coast delay.
+  `IgnitionSpec.from_config` takes only a time-stated config (ValueError otherwise:
+  read there, a depth, speed or height would light the stage at the release defaults).
+- Depth and speed are exact: the ignition event lies at the requested depth and speed
+  to rounding (1e-9 asserted on both models), and the run equals, bit for bit, the run
+  stated by the converted time; only the assumption line below is added
+  (`test_silo.py::test_one_d_depth_run_is_the_converted_time_run`).
+- The closed-form height is exact only for a drag-free coast at constant g_eff: under an
+  injected `ConstantGravity` equal to g_eff on the 1-D model (no atmosphere) the event
+  lies at h to 1e-9. On the run models it does not, by design: mu/r^2 weakens gravity
+  aloft (higher), the planar drag slows the coast (lower) and the rotation enters
+  through omega_p. Measured on the planar gate fork at its file payload (28.5 deg, 3 g0,
+  100 m; `test_release_planar.py` bounds it): the ignition at the closed-form time lies
+  below h by 2e-6 m at h = 1 m, 6e-5 m at 5 m, 2.4e-4 m at 10 m, 3.8 mm at 40 m, 25 mm at
+  100 m, 0.11 m at 200 m and 0.27 m at 280 m; drag dominates. Requested and achieved
+  heights are both reported (`ramp_start_requested_height_m`, `ramp_start_height_m`) and
+  the assumption line says the flown coast differs. The event form (SP1 step 4) will be
+  exact to the event tolerance.
+- The spec records the request (`IgnitionSpec.trigger_kind`: depth, speed or
+  height_closed_form; `trigger_value`). With `fails: true` the conversion still runs (a
+  request out of range is refused on a failed stage too), and the request is flagged as
+  ignored by its key ("ignored: at_depth_m = 50", `flag_ignored_ignition_settings`).
+- Check values of the handoff table (3 g0, L = 100 m, t_push = 2.6073 s;
+  `test_planar_pipeline.py::test_handoff_table_rows_from_closed_forms`): `t_ign_s: -2.0`
+  from release starts the ramp 0.6073 s after push start at z = -L + a t^2/2 = -94.574 m
+  (depth 94.574 m) and sdot = a t = 17.867 m/s; `at_depth_m: 50` is t = sqrt(2 x 50 / a)
+  = 1.8437 s after push start, -0.7637 s from release, at 54.240 m/s; `at_speed_mps: 30`
+  is 1.0197 s after push start (-1.5876 s from release) at 84.704 m depth;
+  `at_height_m: 40` by the closed form with the planar g_eff = 9.7720917 m/s^2 is
+  0.54004 s after release.
+- Preflight. `sim.check_resolved` builds the assist model, its track and the
+  IgnitionSpecs of every run an experiment resolves (`sim.every_resolved_run`: baseline
+  and variants, sweep points with their paired baselines, sensitivity runs, bound runs
+  with their paired baselines, calibration cases) the way the run will
+  (`sim.run_ignition_specs`; nothing is integrated), and `results_io.run_experiment` and
+  `run_sweep` call it before `make_run_dir`. A request that only the conversion can
+  refuse (a speed above v_e, a height at or above the apex), in any run of the
+  experiment, therefore writes no results directory (`test_results_io.py`). The CLI
+  also runs it in `cli.load_experiment`, beside the run-name check, so the `run` and
+  `sweep` commands report a refusal as one `error:` line (exit code 1, no traceback;
+  `test_cli.py`).
+
+A first stage whose lit ramp start is stated by depth, speed or height adds one
+assumption line on both models (`phases.prelude.ramp_start_assumption`, written by
+`fly_track` into the trace): the request, the converted time and its reference, and the
+closed form; for a height also the g_eff it used and that the flown coast reaches a
+slightly different height, which the ignition event records. A time-stated run, every
+shipped run and the golden 1-D outputs have no such line.
+
 **Reported quantities** (F9, 542,570 kg, a = 3 g0 = 29.41995 m/s^2, L = 100 m,
 m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening_1d.yaml`):
 
@@ -3913,6 +4032,7 @@ m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening
 | energy closure (`assist_energy_residual_rel`) | "Assist energy identity" | 1e-16 |
 | geometry (`track_start_altitude_m`, `carriage_mass_kg`) | exit_altitude - L sin phi; m_c | -100 m; 0 |
 | push settings, planar_2d only (`stroke_m`, `net_accel_mps2`, `net_accel_g`; `metrics_planar.PUSH_SETTING_METRICS`) | L; the prescribed a, whichever way the config states it (a = v^2 / (2 L) for `exit_speed_mps`); a / g0 (g0 as the unit). Settings as flown, not results: no summary row, not in `PLANAR_REQUIRED_METRICS`, no `delta_` item against a pad, and not written by the 1-D `track_metrics` (the golden 1-D outputs are unchanged). Both accelerations are null for a drive that prescribes none (Phase 3) | 100 m; 29.41995 m/s^2; 3 g0 (planar `silo_cold`) |
+| ramp start, planar_2d only (`metrics_planar.RAMP_START_METRICS` and `RAMP_START_REQUEST_METRICS`; "Reporting definitions (planar)") | achieved, from the stage-1 ignition event: time after release, altitude, depth below the mouth on the track or height above it after release, abs(v_rel), phase; requested (a ramp start stated by depth, speed or height only): trigger, converted time after release, requested value. Not required, not written by the 1-D model (its events.csv holds the same record) | `silo_hot_ramp_on_track`: -2.0 s, -94.574 m, depth 94.574 m, 17.867 m/s, ASSIST |
 
 Where a row lists two keys for one number (`drive_energy_J` and `assist_energy_J`,
 `drive_power_peak_W` and `peak_drive_power_W`, `interface_force_peak_N` and
@@ -3996,7 +4116,15 @@ t = 0); with t_ign_abs < 0 the vehicle is clamped on the carriage from ignition 
 push start (the closed-form HOLD of the pad, the clamp carrying m g_eff sin phi, no
 liftoff extension), and the push starts at t = 0 regardless of the thrust. Inside the
 push the thrust kinks split the ASSIST phase; a ramp may straddle the release (its
-second sub-phase then continues as the first BURN sub-phase in flight).
+second sub-phase then continues as the first BURN sub-phase in flight). Since SP1 step
+3 the start of the ramp on the push can also be stated by the depth below the mouth
+(`at_depth_m`) or the speed on the push (`at_speed_mps`), converted to a `push_start`
+time before the run ("Silo model", ramp-start conversions). Both always fall inside the
+push, 0 <= t <= t_push (depth L and speed 0 are the push start itself, depth 0 and the
+exit speed the release), so they never start a HOLD: full thrust exactly at the push
+start, a ramp completed while clamped, still needs `t_ign_s < 0` with `reference:
+push_start` (`silo_hot_full`). A start stated by depth or speed is a hot start like any
+other: the closed forms below hold with its converted time.
 
 Under a prescribed acceleration the thrust buys no exit speed. It trades propellant
 for drive energy and peak power, and it lowers the interface force:
@@ -4520,7 +4648,9 @@ stages (one guidance law each), and no heating-rule refusal (that refusal is
 vertical_1d only, "Atmosphere, drag and back-pressure in flight"). On both models a
 later stage must ignite at `t_ign_s >= 0` after its staging coast (refused at resolve
 time; the 1-D planner also refuses it at run time), so no variant can shorten the
-pre-registered staging coast by a negative stage-2 ignition. Every per-run integrator
+pre-registered staging coast by a negative stage-2 ignition; nor may a later stage
+state its ramp start by depth, speed or height (SP1 step 3; a pad may not either,
+`RunConfig`). Every per-run integrator
 setting, `sample_dt_s` included, is locked on planar_2d ("Integrator").
 `integrator.method` (DOP853 or RK45, default DOP853) is new for both models.
 `integrator.planar_max_step_s` (finite, > 0, default 2 s; build step 26a, user
@@ -4649,9 +4779,28 @@ both scoped by key name within one dict level and both declared once in `config.
   refused there. A sensitivity case on `assist.exit_speed_mps` perturbs the speed and
   is read as m/s (`compare.SI_SUFFIX_CONVERSIONS`).
 
-  For the ignition group the rule still arrives before the fields: `at_depth_m`,
-  `at_speed_mps`, `at_height_m` and `height_method` (SP1 step 3) are added with their
-  validator; until then a run dict carrying one of them is refused as an unknown key.
+  The ignition group's fields exist since SP1 step 3 (both models; "Silo model",
+  ramp-start conversions): an ignition block states its ramp start by `t_ign_s` and
+  `reference` (the defaults, 0 s after release, when no family is given), by
+  `at_depth_m` (>= 0), by `at_speed_mps` (>= 0) or by `at_height_m` (> 0) with
+  `height_method` (`closed_form`; `event` is refused until SP1 step 4, the altitude
+  event, and the message says so). The validator of `IgnitionConfig` allows at most one
+  family, counting a key as given when it is present (a null included), so the
+  defaults of the time keys never count but a time key written beside a depth is
+  refused, a null never unsets a key, and `at_height_m` and `height_method` come
+  together. The run-level rules: a ramp start by depth, speed or height needs an
+  assist model (`RunConfig`, as `push_start` does) and a depth no deeper than
+  `stroke_m`; it is for the first stage only (`resolve_run`); a request the push cannot
+  reach (a speed above the exit speed, a height at or above the drag-free apex) is
+  refused when the specs are built, which the preflight `sim.check_resolved` does for
+  every run before a results directory is made. `model_dump` leaves out the keys of the
+  families not in use (`IgnitionConfig._dump_one_ramp_start`), so a dump states the
+  ramp start by its one family and validates again to an equal model; a time-family
+  dump is the dict it was before. Through `resolve_experiment` a sweep axis
+  `ignition.stage1.at_depth_m` over the shipped `silo_hot_ramp_on_track`
+  (`t_ign_s: -2.0, reference: release`) or `silo_cold` (its own `t_ign_s` and the
+  baseline's `reference`) gives points stated by the depth alone, and a
+  variant `{ignition: {stage1: {at_speed_mps: 30}}}` the speed alone (`test_config.py`).
   No experiment shipped before SP1 names a key of a second family, so every resolved
   dict is unchanged: the 1-D golden compares the 1-D dicts byte for byte, and the
   planar digest pin below does the same for the planar ones.
@@ -4688,7 +4837,15 @@ the path.
   settings `stroke_m`, `net_accel_mps2` and `net_accel_g` to the metrics of the two
   silo runs and of the sensitivity records (nine key paths, additions only); the pad's
   keys, the comparison keys, the files, the CSV columns and the summary digest did not
-  change (`output_summary.md` is byte for byte the step 1 text).
+  change (`output_summary.md` is byte for byte the step 1 text). SP1 step 3 added the
+  six achieved ramp-start metrics (`metrics_planar.RAMP_START_METRICS`) to the metrics
+  of all three runs (pad, silo_cold, silo_failed) and of the sensitivity records, after
+  the startup items, and the `delta_` items of the three numeric ones the pad and
+  silo_cold both carry (`delta_ramp_start_t_rel_release_s`, `_alt_m`, `_speed_mps`) to
+  the comparison of silo_cold and to both comparisons of the sensitivity records: 18 run
+  key paths and 15 others, additions only. No requested key appears (every run of the
+  fast experiment states a time), and the files, the CSV columns and the summary digest
+  did not change (`output_summary.md` is still the step 1 text).
 
 `tests/data/silo_screening_2d_record.json` holds the payload capacities of the shipped
 silo_screening_2d run at full precision (pad 26,054.396243494975 kg, silo_cold
@@ -4799,6 +4956,23 @@ A pad whose hold extended past t = 0 (`VerticalPlanner._liftoff`, in the trace;
 appended after the failed-ignition blocks, before the drive's):
 
 - hold extended to t = <t_liftoff> s for liftoff (TWR < 1 at release).
+
+A track run whose first stage lights with a ramp start stated by depth, speed or
+closed-form height (SP1 step 3; `phases.prelude.ramp_start_assumption`, written into the
+trace by `fly_track`, so on both models and in the same place as the line above; never
+on a time-stated run, a failed stage or a pad), one of:
+
+- ramp start: stage-1 ignition stated by depth <d> m below the track exit, converted
+  before the run to t_ign = <t> s after push start (after release when snapped to it)
+  by t = sqrt(2 (L - d) / a) (exact for the prescribed acceleration).
+- ramp start: stage-1 ignition stated by speed <v> m/s on the push, converted before
+  the run to t_ign = <t> s after push start (after release when snapped to it) by
+  t = v / a (exact for the prescribed acceleration).
+- ramp start: stage-1 ignition stated by height <h> m above the track exit, converted
+  before the run to t_ign = <t> s after release by the closed form of a drag-free coast
+  at the track's constant g_eff = <g> m/s^2, dt = (v_e - sqrt(v_e^2 - 2 g_eff h)) /
+  g_eff; the flown coast (mu/r^2, and on planar_2d drag and rotation) reaches a slightly
+  different height, which the ignition event records.
 
 The `constant_accel` drive (`ConstantAccelAssist.assumptions`; every parameter is an
 assumption in Phase 1, and `NoAssist` emits nothing):
@@ -5040,10 +5214,18 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_config.py::test_constant_accel_exit_speed_derives_the_acceleration` | "Silo model", two ways to state the push: a = v^2 / (2 L) from `exit_speed_mps` (v = 76.71 m/s, L = 200 m: 14.71106025 m/s^2 as a hand number; half the stroke, twice a); `net_accel_g` = v^2 / (2 g0 L) gives the same a; on the `net_accel_g` path a = `net_accel_g` x g0 exactly, as before the option | 1e-15 relative (hand number 1e-9); exact (`==`) on the `net_accel_g` path |
 | `test_config.py::test_constant_accel_needs_exactly_one_push_key`, `::test_constant_accel_push_keys_are_the_assist_family_table`, `::test_constant_accel_dump_states_the_push_by_its_one_key` | "Silo model", rules of the config: exactly one of the two keys, a null counting as given (both, neither, a null of either, both null are refused, alone and through RunConfig); > 0, the exit speed finite, the derived v^2 / (2 L) finite and > 0 (v = 1e200, 1e-200 and an infinite stroke refused); the push keys are the assist group of `ASSIST_KEY_FAMILIES`; `model_dump` (python and json) holds only the key in use and validates again to an equal model, alone and in a RunConfig, and the `net_accel_g` dump has the pre-option key list (written out) | raises / exact |
 | `test_config.py::test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone`, `::test_exit_speed_variant_over_a_silo_baseline_resolves_to_the_exit_speed_alone` | "Experiment schema (planar)", merge rule with the fields in place: a sweep axis `assist.exit_speed_mps` (with `assist.stroke_m`) over the shipped silo_cold of silo_screening_1d and silo_screening_2d, and a variant `{assist: {exit_speed_mps: v}}` (stroke inherited and its own) over a baseline silo stated by `net_accel_g`, resolve to a ConstantAccelConfig with only the exit speed (not in the run dict, not in `model_fields_set`) and a = v^2 / (2 L) computed in the test, the rest of the parent's block inherited; back the other way, a `net_accel_g` axis over an exit-speed parent; a +/-10 % sensitivity case perturbs v (read as m/s), a following as (1 +/- 0.1)^2; a variant restating `net_accel_g` beside the exit speed raises ExclusiveKeysError, a baseline writing both the validator's error | 1e-15 relative; 1e-12 (sensitivity) / raises |
+| `test_config.py::test_ignition_states_its_ramp_start_one_way`, `::test_ignition_ramp_start_refusals`, `::test_ramp_start_refused_on_a_pad_and_on_a_later_stage`, `::test_depth_deeper_than_the_stroke_is_refused` | "Experiment schema (planar)" and "Silo model", ramp-start conversions, rules of the config: each family of the ignition group validates alone and `ramp_start` gives its trigger and value (the time family when none is given, its defaults not counting as given); two families, a null, a height without its method or the reverse, `height_method: event` (naming SP1 step 4), a negative depth or speed, a zero height and a non-finite value are refused, alone and through RunConfig; a depth, speed or height is refused on a pad and on stage2, a depth deeper than `stroke_m` refused (0 and the stroke accepted) | raises / exact |
+| `test_config.py::test_ignition_dump_states_the_ramp_start_by_its_one_family`, `::test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` | "Experiment schema (planar)", the dump and the merge rule with the ignition fields in place: `model_dump` (python and json) holds the keys of the one family in use and validates again to an equal model with the same trigger, alone and in a RunConfig (the time-family key list written out, as before the step); a sweep axis `ignition.stage1.at_depth_m` over the shipped silo_hot_ramp_on_track (t_ign_s -2.0, reference release) and silo_cold (t_ign_s 0.5, the reference inherited from the baseline) of silo_screening_1d and silo_screening_2d gives points stated by the depth alone (run dict and `model_fields_set`), stage2 untouched; a variant `{at_speed_mps: 30}` the speed alone | exact |
 | `test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`, `::test_pinned_digest_is_the_sha256_of_the_json_text` | "Experiment schema (planar)", regression pins: every run and vehicle dict of the four shipped planar experiments has the sha256 of its `json.dumps` text captured before SP1 step 1; the number of pinned dicts equals the count the YAML declares (1 + variants + grid points, twice when paired, + 2 per sensitivity run and parameter + bound re-runs and their baselines + cases: 16, 60, 4, 10); the digest equals hashlib's of the literal JSON text and moves with a value, an added key or the key order | exact (sha256) |
 | `test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`, `::test_summary_matches_the_capture_in_the_capture_environment`, `::test_capture_helpers_see_added_keys_columns_and_files`, `::test_output_capture_records_the_git_state_it_was_taken_in`, `::test_recorded_silo_payloads_carry_their_provenance` | regression pins: the fast experiment writes the captured files, metrics.json key paths, resolved_config.yaml keys and CSV columns (the planar column constants); its provenance-free summary.md has the captured sha256 (capture environment only; skipped elsewhere, failed with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) and the tracked text is the one that digest belongs to; the helpers on hand-written records (key paths in first-seen order, an added key, a removed column, a reordered list, a new file); output_capture.json carries `captured_at` (keys `git`, `dirty`, `launchsim_from_checkout`, the hash not `no-git`) and no `reference_commit`, which only resolved_digests.json holds (c587a08, the helper's `REFERENCE_COMMIT`), and `capture_provenance` returns `no-git`, not dirty, not from the checkout for a directory outside any checkout and the hash and dirty flag of `results_io.git_info` for this one; the recorded silo_screening_2d P* (silo_cold 27,553.227114190096 kg as the phase file quotes it; the pad's equal to the calibration record's amended re-run) round to the cells of the tracked summary.md, within half its last printed decimal (0.05 kg), and equal the untracked metrics.json where it is on disk | exact / 0.05 kg against the printed cells |
 | `test_planar_pipeline.py::test_planar_exit_speed_push_closed_forms_and_push_metrics`, `::test_planar_exit_speed_run_is_the_equivalent_net_accel_run` | "Silo model", the exit-speed form on planar_2d (fixed guidance, cold, v = 76.71 m/s, L = 200 m): abs(v_rel) at release v, push time 2 L / v; felt (v^2 / (2 L) + g_eff)/g0, drive force m0 (v^2 / (2 L) + g_eff) and E_drive = m0 (v^2 / 2 + g_eff L) with the site's g_eff = mu/R_E^2 - omega_p^2 R_E written in the test; the push metrics `stroke_m` = L, `net_accel_mps2` = v^2 / (2 L), `net_accel_g` = v^2 / (2 g0 L) (the configured value for the run stated by `net_accel_g`), absent on the pad, not required, in no summary row; the run stated by `net_accel_g` = v^2 / (2 g0 L) has the same acceleration double and identical time series, events and metrics; the assumptions differ by the one exit-speed line | 1e-9 relative (release items, loads, energy); 1e-15 (push metrics); exact (the equivalent run) |
 | `test_planar_pipeline.py::test_capture_holds_the_push_setting_metrics_of_sp1_step_2` | regression pins, the SP1 step 2 recapture: `PUSH_SETTING_METRICS` (`stroke_m`, `net_accel_mps2`, `net_accel_g`) appear as one block right after `carriage_mass_kg` in the metrics keys of silo_cold and silo_failed and as the three `sensitivity.[].metrics` paths, never on the pad and as no `delta_` key | exact (key lists) |
+| `test_planar_pipeline.py::test_ramp_start_metrics_read_the_ignition_event` | "Reporting definitions (planar)" and "Silo model", ramp-start conversions, on planar_2d (fixed guidance, 3 g0, 100 m; closed forms written in the test): at_depth_m 50 converted to and achieved at sqrt(2 (L - 50) / a) - t_push after release, alt -50 = depth 50 on the push, abs(v_rel) sqrt(2 a (L - 50)); at_speed_mps 30 (on the push alone) at abs(v_rel) 30, alt -L + 30^2 / (2 a), t = 30 / a - t_push; at_height_m 40 (closed form) at dt = (v_e - sqrt(v_e^2 - 2 g h)) / g with the site's g_eff, its height above the mouth within 0.05 m of 40 and not equal to it; the requested keys only on a run with a trigger; the pad's HOLD record (alt 0, speed 0, -2 s, no depth or height); a failed ignition all null; none required | 1e-9 (alt, speed, time); 0.05 m bound, 1e-6 floor (achieved height) |
+| `test_planar_pipeline.py::test_ramp_start_depth_and_height_count_from_a_raised_mouth` | "Reporting definitions (planar)": the depth z_mouth - alt and the height alt - z_mouth with the mouth 30 m above the datum (closed forms written in the test): at_depth_m 50 (on the push alone) at alt 30 - 50, depth 50, abs(v_rel) sqrt(2 a (L - 50)); t_ign_s -2.0 at alt 30 - L + a t^2/2 with the depth 30 minus it; at_height_m 40 (closed form) at the closed-form dt with the height equal to alt - 30 and within 0.05 m of 40 | 1e-9 (alt, depth, height, speed, time); 0.05 m bound, 1e-6 floor (achieved height) |
+| `test_planar_pipeline.py::test_a_later_stage_ramp_start_is_refused_at_both_build_sites` | "Silo model", ramp-start conversions: a planar `RunConfig` validated without `resolve_run` whose stage 2 states a depth, speed or height is refused by `sim.planar_setup` and `SearchContext.from_run` (`resolve_stage_ignitions`), as by `resolve_run` | raises |
+| `test_planar_pipeline.py::test_handoff_table_rows_from_closed_forms` | "Silo model", the handoff table's check values from the push from rest (z = -L + a t^2/2, sdot = a t): t_ign_s -2.0 from release starts the ramp at -94.6 m and 17.9 m/s; at_depth_m 50 at 1.844 s from push start, -0.764 s from release, 54.2 m/s | 1e-9 against the closed forms; the table's digits by rounding |
+| `test_planar_pipeline.py::test_ramp_start_rows_appear_only_when_a_run_states_a_trigger`, `::test_both_spec_build_sites_use_the_resolver` | "Reporting definitions (planar)", summary: `RAMP_START_ROWS` right after the ignition rows only when some run states a depth, speed or height (each run's stated trigger in the first row), none in the fast experiment's summary; "Phases and events", clock and ignition times: `sim.planar_setup`, `SearchContext.from_run` and `sim.run_ignition_specs` give the same IgnitionSpecs, the converted time (closed forms in the test, the site's g_eff for the height) with its reference and the request | exact; 1e-12 relative (converted times) |
+| `test_planar_pipeline.py::test_capture_holds_the_ramp_start_metrics_of_sp1_step_3` | regression pins, the SP1 step 3 recapture: the six `RAMP_START_METRICS` as one block right after `t_startup_s_stage1` in the metrics keys of the pad, silo_cold and silo_failed, no requested key, and outside the runs exactly the three `delta_` items of the time, altitude and speed in the comparison of silo_cold and in both comparisons of the sensitivity records plus the six sensitivity metrics | exact (key lists) |
 | `test_config_planar.py` (model rules) | rotation only on planar_2d; explicit site; guidance, search, checks and target; aero and two stages; `integrator.rtol == search.final_rtol`; insertion and planar ends; `integrator.method` round trip; Phase 3 track message; heating refusal on vertical_1d only; shared blocks refused in baselines, variants, sweeps, sensitivity and bounds; paired sweeps (guidance_study only); cases (calibration only); search skip (amendment 4); sensitivity paths perturb the vehicle numbers (amendment 5, expected values from the vehicle file); the aero bound and its paired baseline (amendment 6); search and checks validators; radian and kg properties; `budget_id`; planar variants, sweeps, sensitivity and bounds may not change the integrator block, `sample_dt_s` included (1-D keeps its freedom); paired sweeps planar_2d only, planar vehicle sweeps paired (1-D unchanged); later-stage `t_ign_s >= 0`; gamma*, fixed gamma*, delta and LTG pitch ranges; `search_atol_scale >= 1`; omega_p against omega_E cos(lat) sin(az) at four sites (465.1 m/s at the equator, negative westward); the section-11 checks fields; raw-form-only experiments; `sim.run` runs the shipped silo_failed in the planar model (the former strict-xfail tripwire of the step-19 gap) | exact / raises / 1e-12 relative |
 | `test_thrust_schedule.py::test_thrust_fraction_shapes`, `::test_zero_duration_is_a_step` | f for step, ramp, lag ("Thrust startup") | 1e-12 relative |
 | `test_thrust_schedule.py::test_propellant_burned_closed_forms`, `::test_lag_forms_are_exact_just_after_ignition` | `propellant_burned_kg`: mdot t_r/2 at t_r; mdot [dt - tau (1 - e^(-dt/tau))]; just after ignition the lag forms follow their series, never a negative mass | 1e-12 relative; series 1e-6 relative |
@@ -5114,6 +5296,11 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_silo.py::test_hot_push_peak_power_from_the_dense_output` | 0.6 g0 hot: vertex value F_drive(0)^2 a/(4 mdot (a + g)) at t* = F_drive(0)/(2 mdot (a + g)) inside the push; braking minimum at release | 1e-9 relative (t* to 1e-6 s abs; the sampled maximum within 1e-3; measured 3e-14) |
 | `test_silo.py::test_exit_speed_push_closed_forms`, `::test_exit_speed_vertical_1d_run_from_the_experiment_file` | "Silo model", the push stated by its exit speed (v = 76.71 m/s, L = 200 m, cold, mu/r^2, through `ConstantAccelConfig` and `build_assist`): integrated exit speed v, push time 2 L / v; at every sample s = v^2 t^2 / (4 L), sdot = v^2 t / (2 L); felt (v^2 / (2 L) + g_eff)/g0; drive and interface force m0 (v^2 / (2 L) + g_eff); E_drive = m0 (v^2 / 2 + g_eff L); P_peak = F_drive v; braking v^2 / (2 a_brake), facility L + that; the 1-D metrics carry no push-setting key; end to end on vertical_1d from silo_screening_1d (a variant restating silo_cold by exit speed, `resolve_experiment`, `sim.run_resolved`): exit speed v, push time 2 L / v, the exit-speed assumption line written out | 1e-10 relative (felt 2.4993 g0 as a hand number to 1e-4) |
 | `test_silo.py::test_exit_speed_run_is_the_equivalent_net_accel_run`, `::test_net_accel_assumptions_keep_their_phase_1_text` | "Silo model", the same push stated two ways, cold and lit 1 s before release on the track: for this (v, L) v^2 / (2 L) and (v^2 / (2 g0 L)) g0 are the same double (asserted), and the time series, events and metrics are identical; the assumptions differ by the one exit-speed line, after the net-acceleration line; the nine Phase 1 lines written out for a model without a configured exit speed, the tenth line written out with one, a non-positive or non-finite one refused | exact (frames and metrics compared bit for bit) / raises |
+| `test_silo.py::test_resolve_depth_is_the_time_from_push_start_to_that_depth`, `::test_resolve_speed_is_the_time_from_push_start_to_that_speed`, `::test_resolve_closed_form_height_is_the_drag_free_coast_time`, `::test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_reach`, `::test_resolve_needs_the_constant_accel_drive_and_leaves_time_specs_alone`, `::test_ignition_spec_trigger_defaults_keep_every_time_spec_as_it_was` | "Silo model", ramp-start conversions (`resolve_ignition` on the 3 g0, 100 m silo): depth d -> (sqrt(2 (L - d) / a), push_start), d = L the push start; speed v -> (v / a, push_start); closed-form height h -> (the smaller root of v_e t - g t^2/2 = h, release) for two g_eff; depth 0, the exit speed and a rounding above it snap to (0, release); v_exit (1 + 1e-9), a depth below the push start, the apex and above, g_eff 0 and an event refused; a pad's NoAssist, no model or no track refused for a trigger, while a time config gives `from_config` unchanged on any model; the new IgnitionSpec fields keep every time spec equal and hashing alike | 1e-15 relative (depth, speed), 1e-12 (height) / exact / raises |
+| `test_silo.py::test_one_d_ignition_event_lies_at_the_requested_depth`, `::test_one_d_ignition_event_lies_at_the_requested_speed`, `::test_one_d_closed_form_height_is_exact_under_constant_gravity` | "Silo model", ramp-start conversions on vertical_1d (F9, mu/r^2 or the injected ConstantGravity): the stage-1 ignition event of a depth d at z = -d, v = sqrt(2 a (L - d)), t = sqrt(2 (L - d) / a); of a speed v at v, z = -L + v^2 / (2 a), t = v / a; of a closed-form height under ConstantGravity = g_eff (no drag) at z = h, v = sqrt(v_e^2 - 2 g h) and t - t_release = the smaller root; no ramp-start metric on the 1-D model | 1e-9 absolute (m, m/s, s) |
+| `test_silo.py::test_one_d_depth_and_height_count_from_a_raised_mouth` | "Silo model", ramp-start conversions on vertical_1d with the mouth 30 m above the datum (track start at 30 - L): the ignition event of depth 50 at z = 30 - 50, v = sqrt(2 a (L - 50)) (mu/r^2); of a closed-form height 40 under ConstantGravity = g_eff at z = 30 + 40, v = sqrt(v_e^2 - 2 g 40), t - t_release the smaller root | 1e-9 absolute (m, m/s, s) |
+| `test_silo.py::test_a_later_stage_ramp_start_is_refused_where_the_specs_are_built` | "Silo model", ramp-start conversions: a stage-2 depth, speed or closed-form height is refused by `resolve_run` and, for a `RunConfig` validated without it, by `sim.run` and `sim.run_ignition_specs` (`resolve_stage_ignitions`) before anything is integrated; `IgnitionSpec.from_config` refuses every non-time config | raises |
+| `test_silo.py::test_one_d_depth_run_is_the_converted_time_run`, `::test_failed_stage_flags_its_ramp_start_as_ignored` | "Silo model" and "Phases and events": the run stated by at_depth_m 50 and the run stated by t_ign_s = sqrt(2 (L - 50) / a) from push_start (the same double, asserted) have identical time series, events and metrics, and their assumptions differ by the one ramp-start line (written out); `fails: true` with a depth flags "ignored: at_depth_m = 50" (written out), lights nothing and adds no ramp-start line | exact |
 | `test_failed_ignition.py::test_silo_failed_under_inverse_square_gravity_via_sim_run` | apex r_a - R_E, t_up in the conditioned Kepler form, t_return = 2 t_up, abs(v_impact) = v_exit, shaft bottom sqrt(v^2 + 2 g_eff L), carriage at d_brake met at the Kepler fall time and energy speed; status, events, T_vac = 0, abs(J_grav) ("Failed-ignition coast") | apex 1e-5 m; 1e-9 relative; abs(J_grav) < 1e-6 m/s (hand numbers 300.270 m, 7.8291 s, 88.56 m/s as a cross-check) |
 | `test_failed_ignition.py::test_silo_failed_under_constant_gravity_via_simulate` | h = 3 L, t_up = v0/g0, t_return = 2 v0/g0, carriage at v0/g0 + sqrt(2 (h - d)/g0) at sqrt(v0^2 - 2 g0 d) | 1e-9 relative |
 | `test_failed_ignition.py::test_mouth_above_the_ground_splits_return_and_impact`, `::test_mouth_below_the_ground_never_returns` | return at the mouth, impact at sqrt(v0^2 + 2 g dz), shaft bottom sqrt(v0^2 + 2 g L) either way; the flag; gravity loss v0 - v_impact < 0 | 1e-8 relative |
@@ -5132,8 +5319,10 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_readme_numbers.py` (18 tests) | README hand numbers through `sim.run` on the shipped experiment, labelled calibration-flavoured: 76.71 m/s, 2.607 s, 3.999 g0, 21.5 MN, 2.2 GJ, 1.65 GW, 1.2 MWh, 60 m, failed apex 300.3 m / 7.83 s, burnout deltas +85/+70/+79/+64 m/s, hot-full 1.28 / 2.10 GJ and 0.97 / 1.60 GW, P_hot at least 35 % below P_cold; exact checks: silo_instant - variant = d J_grav at identical dv_vac with g_eff (t_d + t_r/2) and g_eff (t_d + tau) from constants, identity line, unexplained gain | the plan's tolerances (0.01 m/s, 0.001 s, 0.001 g0, 2-4 % on the hand numbers, +/- 0.8 and +/- 2 m/s); 1e-6 m/s on d J_grav; residual < 0.01 m/s |
 | `test_results_io.py::test_compare_identity_line_closes_on_the_tiny_experiment` | the identity line d(speed) = d(release) + d(dv_vac) - d(gravity, duration) - d(gravity, altitude) - ... ("Figures of merit"); `payload_equiv_kg` both signs against the two-stage rocket equation written in the test | residual < 0.01 m/s; 1e-9 relative |
 | `test_results_io.py::test_sensitivity_rows_compare_against_both_baselines_and_table_shape`, `::test_run_experiment_writes_sensitivity_and_the_no_sensitivity_switch`, `::test_si_value_converts_by_the_yaml_suffix`, `::test_variant_rows_insert_the_ignition_rows_and_the_flight_pair_only_when_it_differs`, `::test_summary_formatting_prints_rounding_noise_as_zero`, `::test_sweep_index_frame_has_the_curated_columns_and_rejects_axis_collisions`, `::test_write_plots_curated_panels_with_safe_names` | sensitivity semantics, SI conversion of the perturbed value, the summary table, display snapping, the sweep index, the plotted panels ("Figures of merit", Files) | structural / 1e-12 relative |
+| `test_results_io.py::test_preflight_refuses_a_bad_ramp_start_before_any_directory`, `::test_preflight_visits_every_resolved_run_and_passes_the_shipped_experiments` | "Silo model", ramp-start conversions, the preflight: on the tiny experiment's 1 g0, 20 m silo (v_exit = sqrt(2 g0 20) = 19.8 m/s, apex 20.0 m) a variant at 25 m/s, a sweep point at 25 m and a sensitivity run whose -10 % acceleration puts 19 m/s above its exit speed (sqrt(0.9) x 19.8 m/s) are refused by `sim.check_resolved`, naming the run, before `run_experiment` or `run_sweep` writes anything (no directory, no run started); `sim.every_resolved_run` lists the runs of the planar pin's inventory in its order, and the preflight passes on every shipped experiment | raises / exact |
 | `test_results_io.py` (every other test) | results directories, metrics.json round trip without NaN, summary encoding in a cp1252 subprocess, `git_info` states, name safety, failure markers | structural |
 | `test_cli.py::test_full_experiment_writes_identity_lines_and_sensitivity`, `::test_full_sweep_writes_every_point_and_index`, `::test_full_experiment_plots_for_one_variant` | the shipped experiment end to end: every identity line closes, the bound lines, the yardstick lines, the 16 sensitivity cases, 12 + 9 + 3 sweep points, the curated plots | residual < 0.01 m/s; structural |
+| `test_cli.py::test_preflight_refusal_exits_1_and_writes_nothing` | "Silo model", ramp-start conversions, the preflight through the CLI: on the tiny experiment a speed above the exit speed sqrt(2 a L) (closed form in the test) of the variant (25 m/s over 1 g0, 20 m) or of a sweep point alone (15 m/s over 1 g0, 10 m) ends `run` and `sweep` with exit code 1 and one `error:` line naming the run and that exit speed, no traceback and no results root | exact (exit code, text) |
 | `test_cli.py` (every other test) | the CLI contract: layout, ASCII stdout, exit codes, path rules, `--help`, `--version` | structural |
 | `test_planar_dynamics.py::test_rocket_equation_2d_along_velocity` | CLAUDE.md's rocket equation in 2-D: mu = 0, omega_p = 0, thrust along v from 30 deg above horizontal, v0 in {1e-3, 100, 3000}: V_f - V_0 = c ln(m0/m_f) = J_vac; J_steer = J_grav = 0; straight-line end point at v0 t_b + c [t_b - (m_f/mdot) ln(m0/m_f)] ("Planar ascent state and equations of motion") | 1e-9 relative (CLAUDE.md 1e-6); exact zeros |
 | `test_planar_dynamics.py::test_rhs_components_match_the_equations_of_motion` | every `rhs_planar` row against the planar EOM and quadrature rates written in the test, 300 seeded states | 1e-12 of the row's largest term |
@@ -5152,6 +5341,8 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_release_planar.py::test_silo_flight_rows_use_the_release_datum` | flight rows after a track start count downrange from the release (t_fs = t_release): the cold silo's ignition row equals the classical Coriolis drift -omega_p (v0 t^2 - g t^3/3) | 1e-3 relative (measured 1.2e-4) |
 | `test_release_planar.py::test_general_release_map`, `::test_vertical_map_is_the_general_map_at_x0`, `::test_map_release_refuses_non_vertical_exits` | the exact general map against a Cartesian projection written in the test (four exits), |v_rel| = sdot, gamma_rel = phi + theta_x; the vertical and rest cases at the datum and at an exit 500 m above it (v_theta = omega_p (R_E + z_e)); the Phase 2 refusals | 1e-12 relative; 1e-13 m/s; raises |
 | `test_release_planar.py::test_radial_rise_earth_fixed_downrange` | amendment 11: the Earth-fixed downrange of a radial rise, R (h0 int dt/r^2 - omega t) in closed form for r = R + a t^2/2 (test gravity h0^2/r^3 + g_c); the leading Coriolis term -omega a t^3/3 (1 - 0.9 h/R) | 1e-7 relative (measured 1.2e-8); altitude 1e-9; (h/R)^2 |
+| `test_release_planar.py::test_planar_ignition_event_lies_at_the_requested_depth`, `::test_planar_ignition_event_lies_at_the_requested_speed` | "Silo model", ramp-start conversions on planar_2d (gate fork, 28.5 deg, 3 g0, 100 m; `resolve_ignition` with the site's g_ref): the ignition event of a depth d on the push at alt -d, abs(v_rel) sqrt(2 a (L - d)), t = sqrt(2 (L - d) / a); of a speed v at abs(v_rel) v, alt -L + v^2 / (2 a), t = v / a | 1e-9 absolute (the altitude passes through r = R_E + z: ulp(R_E) = 9.3e-10 m) |
+| `test_release_planar.py::test_planar_closed_form_height_is_reached_at_the_closed_form_time` | "Silo model", the closed-form height on planar_2d (h = 5, 40, 200 m): stage 1 lights at dt = (v_e - sqrt(v_e^2 - 2 g h)) / g after release with the site's g = mu/R_E^2 - omega_p^2 R_E, above the mouth; the height reached there differs from h (drag, mu/r^2, rotation), reported, not asserted to vanish (measured -6e-5, -3.8e-3 and -0.11 m) | 1e-9 s (time); 1e-6 m < abs(miss) < 0.5 m |
 | `test_planar_events.py::test_liftoff_with_back_pressure_and_rotation` | the liftoff root of T_vac t/t_r - p0 A_e = (m0 - mdot t^2/(2 t_r)) g_ref (quadratic solved in the test), g_ref = mu/R_E^2 - omega_p^2 R_E; the mass there; the Earth-fixed pad state; the rise from the root lists no ground event and raises no flag ("Stage-1 guidance and events (planar)") | 1e-9 s; 1e-12 relative; exact |
 | `test_planar_events.py::test_kick_trigger_and_alignment`, `::test_kick_at_the_first_lit_instant_when_already_past`, `::test_falling_vehicle_never_kicks` | the kick trigger at V = v_k with w > 0; the alignment at gamma_rel = pi/2 - delta and the continuous thrust direction into the turn; the kick at the first lit instant (cold and hot silo starts; no VERTICAL_RISE phase, no run flag); no kick while falling, before the turnaround | 1e-9 m/s; 1e-9 rad; 1e-12 s; exact order |
 | `test_planar_events.py::test_kick_timeout_and_deadline_are_typed`, `::test_kick_deadline_counts_from_ignition`, `::test_a_dive_ends_at_the_ground` | GuidanceFailure kick_timeout and no_kick (deadline, burnout before the trigger); the deadline counts from stage-1 ignition, not from the flight start; a dive ends at the ground event (status impact; GuidanceFailure impact on the search path) | typed; altitude 1e-3 m |

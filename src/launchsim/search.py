@@ -66,7 +66,7 @@ from launchsim.phases.planar import (
     PlanarPlanner,
     Stage2Result,
 )
-from launchsim.phases.prelude import IgnitionSpec
+from launchsim.phases.prelude import IgnitionSpec, resolve_stage_ignitions
 from launchsim.phases.trace import RunTrace
 from launchsim.vehicle import Vehicle, with_payload
 
@@ -537,19 +537,18 @@ class SearchContext:
         """The context of a validated planar_2d RunConfig and its Vehicle: mu/r^2
         gravity (MU_EARTH_M3S2), omega_p from the site, the ICAO atmosphere
         (``ambient_scalar``), the datum R_E, the assist and track built with the track's
-        g_eff = g_ref, the IgnitionSpecs of the run's ignition block, the kick guidance,
-        the target orbit radius, the run's integrator settings and the shared budget
-        (checks: the run's own ``planar.checks`` unless given)."""
+        g_eff = g_ref, the IgnitionSpecs of the run's ignition block (through
+        ``phases.prelude.resolve_stage_ignitions`` with that assist, track and g_ref, as
+        ``sim.ignition_specs`` builds them), the kick guidance, the target orbit radius,
+        the run's integrator settings and the shared budget (checks: the run's own
+        ``planar.checks`` unless given)."""
         if run.planar is None or run.planar.target_orbit is None:
             raise ValueError("a planar search needs a planar_2d run with a target orbit")
         env = PlanarEnvironment(
             InverseSquareGravity(MU_EARTH_M3S2), run.site.omega_p_rads, ambient_scalar
         )
         assist, track = build_assist(run.assist, env.g_ref_mps2)
-        ignition = {
-            s.name: IgnitionSpec.from_config(run.ignition_for(s.name), s.startup)
-            for s in vehicle.stages
-        }
+        ignition = resolve_stage_ignitions(run, vehicle, assist, track, env.g_ref_mps2)
         return cls(
             vehicle=vehicle,
             ignition=ignition,
