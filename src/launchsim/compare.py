@@ -9,7 +9,11 @@ in each key. The planar_2d counterpart is ``compare_planar`` (dP*, the screening
 yardstick, the matched-payload attribution ``matched_attribution`` of rung-2 runs the
 caller executes, and the screening-beat checks M2 to M5 with status ``bug_suspect``,
 M2 only when ``checks.m2_role`` is blocking; docs/physics.md, "Screening-beat rule
-(2-D)"). ``compare`` and its helpers are pure;
+(2-D)"). ``cross_vehicle_decomposition`` splits the ideal delta-v change between two
+runs at one payload on different vehicles (an offloaded run against the full-load pad;
+docs/physics.md, "Cross-vehicle decomposition"), from MatchedRuns that
+``evaluation_matched_run`` and ``offload_matched_run`` build without flying anything.
+``compare`` and its helpers are pure;
 ``run_sensitivity`` runs simulations through ``sim.run_resolved`` (and, for a planar
 energy-only case, ``sim.rerun_resolved``), looked up on the ``sim`` module at call time
 (a test that patches ``sim.run`` changes what it runs). ``sim`` re-exports every name;
@@ -51,12 +55,20 @@ from launchsim.losses import LossBudget, loss_budget, rocket_equation_closure
 from launchsim.metrics import metrics_record
 from launchsim.phases import ASCENT_KINDS, ZERO_SPAN_S, PhaseResult, RunTrace
 from launchsim.units import deg_to_rad, from_g, km_to_m, kn_to_n, kwh_to_j, t_to_kg
-from launchsim.vehicle import Vehicle, ideal_dv_mps, payload_gain_kg, with_payload
+from launchsim.vehicle import (
+    Vehicle,
+    ideal_dv_mps,
+    payload_gain_kg,
+    stage1_propellant_saved_kg,
+    with_payload,
+)
 
 if TYPE_CHECKING:
     from scipy.integrate import OdeSolution
 
     from launchsim.config import ChecksConfig
+    from launchsim.offload import OffloadResult
+    from launchsim.search import ResidualResult
     from launchsim.sim import Result, RunResult
 
 
@@ -607,9 +619,11 @@ class Anchor:
 def attribution_terms(run: MatchedRun) -> dict[str, float]:
     """The per-run terms of the attribution [m/s]: V_0 and V_f (|v_rel| at the flight
     start and at the cutoff), J_grav, J_drag, J_steer, J_bp (the loss budget over the
-    flight phases, ``losses.loss_budget`` with the planar speed), pre and fair and the
-    dv margin (``losses.rocket_equation_closure`` at the run's payload), with the
-    closure and identity residuals."""
+    flight phases, ``losses.loss_budget`` with the planar speed), pre and fair, the dv
+    margin and D_id, the ideal delta-v at the run's payload on the run's own vehicle
+    (``losses.rocket_equation_closure``; read by ``cross_vehicle_decomposition``, never
+    by ``matched_attribution``, whose two runs share it), with the closure and identity
+    residuals."""
     speed = PlanarDynamics2D(run.omega_p_rads, run.r_datum_m).speed
     budget = loss_budget(run.trace.ascent_phases(), PLANAR_LAYOUT, speed)
     closure = rocket_equation_closure(run.trace, run.vehicle)
@@ -623,6 +637,7 @@ def attribution_terms(run: MatchedRun) -> dict[str, float]:
         "pre": closure.pre_mps,
         "fair": closure.fair_mps,
         "dv_margin": closure.dv_margin_mps,
+        "D_id": closure.d_id_mps,
         "closure_residual": closure.residual_mps,
         "identity_residual": budget.residual_mps(),
         "J_grav_meco": _gravity_at_meco(run.trace),
@@ -1268,6 +1283,343 @@ def anchor_from(runs: Mapping[str, Result], baseline: Result, vehicle: Vehicle) 
     if pre_kg is None:
         return None
     return Anchor(d_payload, pre_kg, float(v0))
+
+
+# -------------------------------------------------------- cross-vehicle decomposition
+
+MARGIN_TERM = "margin"
+"""Name of the dv-margin term of the cross-vehicle decomposition, -d dv_margin [m/s]:
+positive when the variant ends with less delta-v margin than the baseline (margin given
+up, which the ideal delta-v change spends)."""
+CROSS_VEHICLE_TERMS: tuple[str, ...] = (*ATTRIBUTION_TERMS, MARGIN_TERM)
+"""The terms of the cross-vehicle decomposition, in the order of
+
+    D_id(baseline) - D_id(variant)
+        = dV_0 - dV_f - dJ_grav - dJ_drag - dJ_steer - dJ_bp - d pre - d fair - d dv_margin
+
+with d = variant - baseline (docs/physics.md, "Cross-vehicle decomposition"): the
+ATTRIBUTION_TERMS contributions of ``_contributions`` plus MARGIN_TERM, each [m/s] and
+positive when it lets the variant fly the payload on less ideal delta-v."""
+DECOMPOSITION_EXPLAINED = "explained"
+"""Status of a cross-vehicle decomposition that closes: its residual and both runs'
+closure residuals below checks.closure_tol_mps, both runs' loss-identity residuals below
+checks.identity_tol_mps (the thresholds of ``_attribution_check``), and both runs' traces
+starting at their own vehicle's liftoff mass (the start-mass error c1 ln(m0/m_start) of
+``_start_mass_error`` below checks.closure_tol_mps; the closure cannot see a wrong
+stage-1 load, because D_id and pre both read c1 ln m0 from the vehicle). One that does
+not close is BUG_SUSPECT. A pass certifies the bookkeeping only: the decomposition is
+algebraically the two runs' own closure and loss identity, so it says how the D_id
+change splits, not that either run's physics is right. For an offload this is the
+screening rule's verdict (CLAUDE.md): a simulated offload larger than the
+ideal-screening one is explained when, and only when, its decomposition closes."""
+START_MASS_UNKNOWN_REASON = (
+    "a trace without a logged event: its start mass, the guard on the stage-1 load the "
+    "closure cannot see, is unknown"
+)
+"""Reason of a failed decomposition check whose run's trace logged no event."""
+CROSS_VEHICLE_KEYS: tuple[str, ...] = (
+    "xv_variant",
+    "xv_baseline",
+    "xv_payload_kg",
+    "xv_gamma_star_rad",
+    "xv_baseline_gamma_star_rad",
+    "xv_ideal_dv_mps",
+    "xv_baseline_ideal_dv_mps",
+    "xv_ideal_dv_reduction_mps",
+    "xv_d_dv_margin_mps",
+    *(f"xv_{t}_mps" for t in CROSS_VEHICLE_TERMS),
+    "xv_residual_mps",
+    "xv_beyond_release_mps",
+    f"xv_{GRAVITY_STEERING}_mps",
+    "xv_gravity_stage1_mps",
+    "xv_offload_kg",
+    "xv_stage1_offload_kg",
+    "xv_stage2_offload_kg",
+    "xv_dry_mass_delta_kg",
+    *(f"xv_{t}_kg" for t in CROSS_VEHICLE_TERMS),
+    f"xv_{GRAVITY_STEERING}_kg",
+    "xv_speed_at_release_mps",
+    "xv_screening_offload_kg",
+    "xv_offload_to_screening_ratio",
+    "xv_beats_screening",
+    "xv_variant_closure_residual_mps",
+    "xv_baseline_closure_residual_mps",
+    "xv_variant_identity_residual_mps",
+    "xv_baseline_identity_residual_mps",
+    "xv_variant_start_mass_error_kg",
+    "xv_baseline_start_mass_error_kg",
+    "xv_check",
+    "xv_status",
+)
+"""The keys of ``cross_vehicle_decomposition``, in order (prefix xv_, cross-vehicle)."""
+
+
+def evaluation_matched_run(
+    name: str,
+    evaluation: ResidualResult,
+    vehicle: Vehicle,
+    omega_p_rads: float,
+    r_datum_m: float,
+) -> MatchedRun | None:
+    """The MatchedRun of one rung-2 evaluation, built without flying anything: the trace
+    of its accepted stage-2 shot (``Stage2Result.prefix``, from the prelude through the
+    energy cutoff), at the evaluation's payload_kg [kg] and gamma_star_rad [rad], on
+    vehicle with that payload (``with_payload``), in the run's frame (omega_p_rads
+    [rad/s], r_datum_m [m]); no neighbours. None when the evaluation has no shot. This is
+    what ``sim.matched_run`` does for a run already evaluated at the matched payload (a
+    baseline at its own P*, ``SearchRecord.final.at_final``). The evaluation's payload_kg
+    must be a true payload: an OffloadResult's ``at_offload`` is (relabelled with P_ref),
+    an evaluation from inside an offload solve is not (its payload slot carries the
+    offload x). Frame: planar ECI."""
+    if evaluation.shot is None:
+        return None
+    payload_kg = evaluation.payload_kg
+    return MatchedRun(
+        name=name,
+        payload_kg=payload_kg,
+        gamma_star_rad=evaluation.gamma_star_rad,
+        trace=evaluation.shot.prefix,
+        vehicle=with_payload(vehicle, payload_kg),
+        omega_p_rads=omega_p_rads,
+        r_datum_m=r_datum_m,
+    )
+
+
+def offload_matched_run(
+    name: str, offload: OffloadResult, omega_p_rads: float, r_datum_m: float
+) -> MatchedRun | None:
+    """The variant side of a solved offload's decomposition: ``evaluation_matched_run``
+    of the solve's final evaluation (``OffloadResult.at_offload``: final mode, flying
+    P_ref [kg] on the vehicle offloaded by x*, the evaluation the recorded run re-flies)
+    on ``OffloadResult.offloaded_vehicle``, with the frame of the solve's problem
+    (omega_p_rads [rad/s], r_datum_m [m]). For status no_offload it is the full-load
+    evaluation at x = 0 (m_res < 0: a negative margin); None for search_failed (no
+    evaluation). Nothing is flown."""
+    if offload.at_offload is None or offload.offloaded_vehicle is None:
+        return None
+    return evaluation_matched_run(
+        name, offload.at_offload, offload.offloaded_vehicle, omega_p_rads, r_datum_m
+    )
+
+
+def _offload_masses(variant: Vehicle, baseline: Vehicle) -> dict[str, float]:
+    """The propellant [kg] the variant's vehicle carries less than the baseline's: per
+    stage (index 0 is ``xv_stage1``, index 1 ``xv_stage2``) and in total (the offload;
+    negative for more), and the total dry-mass change [kg], variant - baseline (an assumed
+    structural penalty). Both vehicles have two stages (the closure needs them)."""
+    per_stage = [
+        b.propellant_mass_kg - v.propellant_mass_kg
+        for v, b in zip(variant.stages, baseline.stages, strict=True)
+    ]
+    dry_v = math.fsum(s.dry_mass_kg for s in variant.stages)
+    dry_b = math.fsum(s.dry_mass_kg for s in baseline.stages)
+    return {
+        "xv_offload_kg": math.fsum(per_stage),
+        "xv_stage1_offload_kg": per_stage[0],
+        "xv_stage2_offload_kg": per_stage[1],
+        "xv_dry_mass_delta_kg": dry_v - dry_b,
+    }
+
+
+def _screening_offload(
+    variant: MatchedRun, baseline: MatchedRun, stage1_offload_kg: float, stage2_offload_kg: float
+) -> dict[str, Any]:
+    """The ideal-screening yardstick of an offload (CLAUDE.md's screening rule):
+    ``xv_speed_at_release_mps``, the variant's |v_rel| [m/s] at its release (the trace's
+    y_release, the state the metric ``speed_at_release_mps`` reads; None without one),
+    the speed ``compare_planar``'s payload yardstick also takes (the variant's own, not a
+    difference: the baseline is a pad); ``xv_screening_offload_kg``,
+    ``vehicle.stage1_propellant_saved_kg`` of that speed on the baseline's vehicle at the
+    matched payload [kg] (None without a release speed or a screening Isp, or when the
+    screening cannot absorb the speed: its ValueError; 0 for a variant released from
+    rest, a pad); ``xv_offload_to_screening_ratio`` = stage1_offload_kg / yardstick and
+    ``xv_beats_screening`` = stage1_offload_kg > yardstick. The yardstick is a stage-1
+    quantity, so the ratio and the beat flag apply only to a stage-1 offload with a head
+    start: both are None (not applicable) unless the yardstick is > 0 (a release speed >
+    0) and stage2_offload_kg [kg] is 0 (a stage-2 kilogram frees about twice the ideal
+    delta-v of a stage-1 one, so a stage2 or both row has no yardstick here). They are a
+    screening-rule verdict for a solved offload (margin about 0); for an imposed x (a
+    fixed offload) the beat flag only compares x with the yardstick, and the margin term
+    of the decomposition carries the rest."""
+    y_rel = variant.trace.y_release
+    speed = PlanarDynamics2D(variant.omega_p_rads, variant.r_datum_m).speed
+    v_rel = None if y_rel is None else float(speed(np.asarray(y_rel, dtype=float)))
+    screening: float | None = None
+    if v_rel is not None and math.isfinite(v_rel) and baseline.vehicle.screening_isp_s:
+        try:
+            screening = stage1_propellant_saved_kg(baseline.vehicle, v_rel)
+        except ValueError:
+            screening = None
+    ratio: float | None = None
+    beats: bool | None = None
+    if screening is not None and screening > 0.0 and stage2_offload_kg == 0.0:
+        ratio = stage1_offload_kg / screening
+        beats = stage1_offload_kg > screening
+    return {
+        "xv_speed_at_release_mps": v_rel,
+        "xv_screening_offload_kg": screening,
+        "xv_offload_to_screening_ratio": ratio,
+        "xv_beats_screening": beats,
+    }
+
+
+def _start_mass_kg(trace: RunTrace) -> float | None:
+    """The mass [kg] at a trace's first logged event (the earliest; a tie goes to the
+    first logged), None for a trace without events. Every planar start logs an event
+    before any propellant burns (stage-1 ignition on the hold-down or the carriage, the
+    pad's release when lit later, the track's push start: ``PlanarPlanner.start_pad``,
+    ``prelude.fly_track``), so on a trace flown by its vehicle it is that vehicle's
+    liftoff mass m0, the stack at stage-1 ignition."""
+    if not trace.events:
+        return None
+    return float(min(trace.events, key=lambda e: e.t_s).m_kg)
+
+
+def _start_mass_error(run: MatchedRun) -> tuple[float | None, float | None]:
+    """(error_kg, error_mps) of a matched run's stage-1 load: error_kg = m0 - m_start
+    [kg], the vehicle's liftoff mass less the trace's start mass (``_start_mass_kg``),
+    and error_mps = c1 ln(m0/m_start) [m/s], the delta-v the closure books wrongly into
+    both D_id = c1 ln(m0/m1) + ... and pre = c1 ln(m0/m_fs) for it (both read m0 from
+    the vehicle, so D_id - pre, and with it the closure residual, does not depend on the
+    stage-1 load: a vehicle labelled with the wrong stage-1 offload moves the same amount
+    into the D_id change and the pre-flight term and still closes). (None, None) without
+    a logged event."""
+    m_start = _start_mass_kg(run.trace)
+    if m_start is None:
+        return None, None
+    m0 = run.vehicle.liftoff_mass_kg()
+    return m0 - m_start, run.vehicle.stages[0].c_mps * math.log(m0 / m_start)
+
+
+def _decomposition_check(
+    out: Mapping[str, Any], start_mass_mps: Sequence[float | None], checks: ChecksConfig
+) -> dict[str, Any]:
+    """The check record of a cross-vehicle decomposition: ``_attribution_check`` on its
+    residual and the two runs' closure and loss-identity residuals (the same thresholds:
+    the residual and both closure residuals below checks.closure_tol_mps, both identity
+    residuals below checks.identity_tol_mps), and the start-mass guard: both runs'
+    start-mass errors start_mass_mps (``_start_mass_error``, m/s) below
+    checks.closure_tol_mps, reported as worst_start_mass_mps. Pass when both hold; fail
+    otherwise, and with START_MASS_UNKNOWN_REASON when a start mass is unknown."""
+    residuals = {
+        "attr_residual_mps": out["xv_residual_mps"],
+        "attr_variant_closure_residual_mps": out["xv_variant_closure_residual_mps"],
+        "attr_baseline_closure_residual_mps": out["xv_baseline_closure_residual_mps"],
+        "attr_variant_identity_residual_mps": out["xv_variant_identity_residual_mps"],
+        "attr_baseline_identity_residual_mps": out["xv_baseline_identity_residual_mps"],
+    }
+    check = _attribution_check(residuals, None, True, checks)
+    values = {k: v for k, v in check.items() if k != "status"}
+    if any(x is None for x in start_mass_mps):
+        return _check_row(
+            CHECK_FAIL, **values, worst_start_mass_mps=None, reason=START_MASS_UNKNOWN_REASON
+        )
+    worst_start = max(abs(float(x)) for x in start_mass_mps if x is not None)
+    ok = check["status"] == CHECK_PASS and worst_start < checks.closure_tol_mps
+    return _check_row(CHECK_PASS if ok else CHECK_FAIL, **values, worst_start_mass_mps=worst_start)
+
+
+def cross_vehicle_decomposition(
+    variant: MatchedRun, baseline: MatchedRun, *, checks: ChecksConfig
+) -> dict[str, Any]:
+    """The cross-vehicle decomposition of a variant against the baseline, two runs at one
+    payload and one orbit, each on its own vehicle (docs/physics.md, "Cross-vehicle
+    decomposition"; pure: the matched runs are built by the caller). Per run the
+    rocket-equation closure and the loss identity give, exactly up to the run's closure
+    and identity residuals,
+
+        dv_margin = D_id + V_0 - V_f - J_grav - J_drag - J_steer - J_bp - pre - fair
+
+    with D_id the ideal delta-v at the payload on the run's own vehicle. With d = variant
+    - baseline:
+
+        D_id(baseline) - D_id(variant)
+            = dV_0 - dV_f - dJ_grav - dJ_drag - dJ_steer - dJ_bp - d pre - d fair - d dv_margin
+
+    (CROSS_VEHICLE_TERMS: ``attribution_terms`` of each run with its own vehicle, the
+    contributions of ``_contributions``, and MARGIN_TERM = -d dv_margin). Read forwards:
+    the ideal delta-v the variant can do without equals its release-speed head start plus
+    the differences in the losses, the pre-flight burn, the fairing term and the margin.
+    ``matched_attribution`` assumes one D_id on both sides, so across two vehicles its
+    residual would be this whole D_id change.
+
+    Output keys (CROSS_VEHICLE_KEYS; m/s unless kg): ``xv_variant`` and ``xv_baseline``
+    (names); ``xv_payload_kg``; ``xv_gamma_star_rad`` and ``xv_baseline_gamma_star_rad``;
+    ``xv_ideal_dv_mps`` and ``xv_baseline_ideal_dv_mps`` (D_id of each run);
+    ``xv_ideal_dv_reduction_mps`` = D_id(baseline) - D_id(variant); ``xv_d_dv_margin_mps``;
+    ``xv_<term>_mps`` for every CROSS_VEHICLE_TERMS term; ``xv_residual_mps`` = the
+    reduction - the sum of the terms, which equals (identity residual - closure residual)
+    of the variant minus that of the baseline; ``xv_beyond_release_mps`` (the sum without
+    the release-speed term); ``xv_gravity_steering_mps`` (the joint term, the only part of
+    the gravity/steering split read as physics, "Screening-beat rule (2-D)");
+    ``xv_gravity_stage1_mps``, -(d J_grav at MECO) (None without both burnouts);
+    ``xv_offload_kg``, ``xv_stage1_offload_kg``, ``xv_stage2_offload_kg`` (propellant,
+    baseline - variant) and ``xv_dry_mass_delta_kg`` (variant - baseline);
+    ``xv_<term>_kg`` = offload x term / sum of the terms, a proportional split that adds
+    up to the offload exactly (None when the offload or the sum is 0), and its joint
+    gravity + steering entry; the screening items of ``_screening_offload`` (the ratio
+    and the beat flag None unless the offload is stage-1 only and the variant has a head
+    start); the four per-run residuals
+    (``xv_{variant,baseline}_{closure,identity}_residual_mps``); the two start-mass
+    errors ``xv_{variant,baseline}_start_mass_error_kg`` (``_start_mass_error``: the
+    vehicle's liftoff mass less the trace's start mass, the guard on the stage-1 load
+    that the closure cannot see; None without a logged event); ``xv_check``
+    (``_decomposition_check``) and ``xv_status``: DECOMPOSITION_EXPLAINED when the check
+    passes, else BUG_SUSPECT. Raises ValueError when the two runs are not
+    at the same payload, and the closure's ValueError for a vehicle without two stages or
+    a run that did not burn stage 2."""
+    if variant.payload_kg != baseline.payload_kg:
+        raise ValueError(
+            f"a cross-vehicle decomposition needs one payload: {variant.name} at "
+            f"{variant.payload_kg} kg, {baseline.name} at {baseline.payload_kg} kg"
+        )
+    tv, tb = attribution_terms(variant), attribution_terms(baseline)
+    contrib = _contributions(tv, tb)
+    contrib[MARGIN_TERM] = -(tv["dv_margin"] - tb["dv_margin"])
+    reduction = tb["D_id"] - tv["D_id"]
+    total = math.fsum(contrib[t] for t in CROSS_VEHICLE_TERMS)
+    out: dict[str, Any] = {
+        "xv_variant": variant.name,
+        "xv_baseline": baseline.name,
+        "xv_payload_kg": variant.payload_kg,
+        "xv_gamma_star_rad": variant.gamma_star_rad,
+        "xv_baseline_gamma_star_rad": baseline.gamma_star_rad,
+        "xv_ideal_dv_mps": tv["D_id"],
+        "xv_baseline_ideal_dv_mps": tb["D_id"],
+        "xv_ideal_dv_reduction_mps": reduction,
+        "xv_d_dv_margin_mps": tv["dv_margin"] - tb["dv_margin"],
+    }
+    for term in CROSS_VEHICLE_TERMS:
+        out[f"xv_{term}_mps"] = contrib[term]
+    out["xv_residual_mps"] = reduction - total
+    out["xv_beyond_release_mps"] = total - contrib["release_speed"]
+    out[f"xv_{GRAVITY_STEERING}_mps"] = contrib["gravity"] + contrib["steering"]
+    g_v, g_b = tv["J_grav_meco"], tb["J_grav_meco"]
+    out["xv_gravity_stage1_mps"] = None if g_v is None or g_b is None else -(g_v - g_b)
+    out.update(_offload_masses(variant.vehicle, baseline.vehicle))
+    offload = out["xv_offload_kg"]
+    split = offload != 0.0 and total != 0.0
+    for term in CROSS_VEHICLE_TERMS:
+        out[f"xv_{term}_kg"] = offload * contrib[term] / total if split else None
+    out[f"xv_{GRAVITY_STEERING}_kg"] = (
+        out["xv_gravity_kg"] + out["xv_steering_kg"] if split else None
+    )
+    out.update(
+        _screening_offload(
+            variant, baseline, out["xv_stage1_offload_kg"], out["xv_stage2_offload_kg"]
+        )
+    )
+    out["xv_variant_closure_residual_mps"] = tv["closure_residual"]
+    out["xv_baseline_closure_residual_mps"] = tb["closure_residual"]
+    out["xv_variant_identity_residual_mps"] = tv["identity_residual"]
+    out["xv_baseline_identity_residual_mps"] = tb["identity_residual"]
+    start_v, start_b = _start_mass_error(variant), _start_mass_error(baseline)
+    out["xv_variant_start_mass_error_kg"] = start_v[0]
+    out["xv_baseline_start_mass_error_kg"] = start_b[0]
+    check = _decomposition_check(out, (start_v[1], start_b[1]), checks)
+    out["xv_check"] = check
+    out["xv_status"] = DECOMPOSITION_EXPLAINED if check["status"] == CHECK_PASS else BUG_SUSPECT
+    return out
 
 
 # ----------------------------------------------------------------- planar sensitivity
