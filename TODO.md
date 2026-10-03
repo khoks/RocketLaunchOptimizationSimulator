@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 6 done at 9ca508b (branch sp1-step5); see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 4 done at 1a0b2af; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
