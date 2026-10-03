@@ -495,8 +495,8 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | T | Tracking system: protocol, program board, phase files SP1 to SP6, TODO.md restructure with IDs, this session's decisions, handoff archived, memory updated | docs/process, docs/phases, TODO.md, CLAUDE.md, memory | none (documents only); fast suite stays green | Compliance review; commit | [x] | 98eb5a6 |
 | 1 | Guard and merge rule: digest pin of the four shipped planar experiments (runs, sweep points, bounds, cases, sensitivity runs); capture of the planar written outputs; the recorded silo_cold P* copied into test data; exclusive key families in `merge_run_dicts` and `_set_path` | src/launchsim/config.py | tests/test_config.py, tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/data/ | Digests and golden unchanged | [x] | e2fb6ab |
 | 2 | Exit-speed option: exactly one of `net_accel_g` / `exit_speed_mps`; planar metrics `net_accel_g`, `net_accel_mps2`, `stroke_m`; replay reads the metric | config.py, assist/constant_accel.py, metrics_planar.py, replay.py | tests/test_config.py, tests/test_silo.py (suggested) | Exit speed and push time against the closed form at 1e-9; trajectory equals the equivalent `net_accel_g` run | [x] | 1fc92d3 |
-| 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [ ] | |
-| 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [ ] | |
+| 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [x] | 83d66dd |
+| 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [~] | |
 | 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [x] | a03e218 (branch sp1-step5) |
 | 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [~] | |
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [ ] | |
@@ -939,6 +939,13 @@ Further points and open questions:
   bound is 1.63 kg (s = 0.0307 kg/kg) and the control ends no_offload by grams (section 12).
   Validation measurement only, not a finding: silo_cold's stage-1 offload solves to
   about 41.26 t at the pad's payload. Step 6 started on the same branch.
+- 2026-10-02: step 3 passed its gate: commit 83d66dd (ramp start by depth, speed and
+  closed-form height; one resolver for both spec build sites; preflight before any results
+  directory; planar ramp-start metrics; full suite 1132 passed; two review rounds, the
+  round-1 major finding (a preflight refusal reached the CLI as a traceback) fixed).
+- 2026-10-02: branch `sp1-step5` (step 5) merged into main: merge commit 04f6542, no
+  conflicts; fast suite 1122 passed and ruff clean on the merged tree. Step 6 continues on
+  the branch. Next on main: step 4 (altitude event).
 
 ## 12. Deviations from the plan
 
@@ -1057,6 +1064,31 @@ Step 5 (2026-10-02, commit a03e218 on branch sp1-step5):
    loaded machine (design estimate about 33 s); the pad control about 30 s. Step 8's
    runtime estimate must use the measured figure.
 7. **The refactor guard is its own slow file**, tests/test_silo_screening_record.py.
+
+Step 3 (2026-10-02, commit 83d66dd):
+
+1. **A speed a rounding above the exit speed snaps to release.** A speed is refused only
+   when v/a lies more than ZERO_SPAN_S after release; inside that window it snaps to
+   release, because with the push stated by `exit_speed_mps` sqrt(2aL) can come out an ulp
+   off the configured speed.
+2. **The closed-form height uses the rationalized form** 2h / (v_e + sqrt(v_e^2 - 2gh)),
+   the same number without cancellation at small h. Measured planar miss of the closed
+   form against the achieved height on the gate fork: -6e-5 m at 5 m, -3.8 mm at 40 m,
+   -25 mm at 100 m, -0.11 m at 200 m, -0.27 m at 280 m.
+3. **1-D runs stated by a trigger get one ramp-start assumption line** (written by
+   `fly_track`, which both models share), the same reading as step 2: existing 1-D runs
+   and the golden outputs are unchanged.
+4. **Achieved ramp-start keys are written on every recorded planar run** (a failed run has
+   all six as None; a pad has depth and height None and the others from its HOLD record);
+   requested keys only when a trigger is set. `compare_planar` therefore also adds three
+   `delta_ramp_start_*` items to comparisons (harmless).
+5. **The preflight also runs in `cli.load_experiment`**, so a refused configuration prints
+   one `error:` line and exits 1 (a round-1 review finding: it was a traceback). It checks
+   every resolved run even for `--variant NAME`, which is stricter than needed.
+6. **`IgnitionSpec.from_config` now refuses non-time configs**; specs with a trigger are
+   built only through the resolver. `sim.ignition_specs` takes (assist, track, g_eff).
+7. **Two comments in existing tests are stale** (KI-023): they were left alone under the
+   rule that existing tests stay unmodified.
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a

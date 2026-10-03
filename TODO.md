@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 5 done at a03e218 (branch sp1-step5); see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 3 done at 83d66dd; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
@@ -239,6 +239,10 @@ Added 2026-10-02 in SP1 step 2:
 Added 2026-10-02 in SP1 step 5:
 
 - **KI-022** [low, open, owner SP1 or later] Test docstrings tests/test_convergence_2d.py:34-38 ("the only planar tests that fly the shipped search rtol of 1e-8"), tests/test_search.py:72-74 and tests/test_payload_search.py:80 ("the convergence tests alone fly the shipped 1e-8") are no longer accurate: tests/test_calibration.py, tests/test_silo_screening_record.py and the convergence test of tests/test_offload.py also fly it, as docs/physics.md "Validation" and "Convergence (planar)" now say. Docstring-only fix.
+
+Added 2026-10-02 in SP1 step 3:
+
+- **KI-023** [low, open, owner SP1 or later] Two comments in existing tests in tests/test_config.py are stale since SP1 step 3: the comment in `test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name` ("the ignition group's other families arrive in step 3") and the end of the docstring of the step-1 sweep-axis test ("the depth arrives in step 3"). The fields exist and `test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` resolves the depth end to end. Comment-only edits, together with KI-021 and KI-022.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 
