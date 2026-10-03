@@ -2932,10 +2932,13 @@ absolute payload.
 Modules: `compare.py` (`compare_planar`, `matched_attribution`, `attribution_terms`,
 `MatchedRun`, `ATTRIBUTION_TERMS`, `ATTRIBUTION_KEYS`, `gamma_sensitivity_step_rad`,
 `Anchor`, `anchor_from`, `reference_payload_kg`, `attributed_comparison`,
-`time_to_speed_s`, `time_shift_estimate_mps`), `sim.py` (`matched_run`, the per-run
-checks of `simulate_planar`), `results_io.py` (`planar_comparisons`, `planar_bounds`).
+`time_to_speed_s`, `time_shift_estimate_mps`; the cross-vehicle decomposition
+`cross_vehicle_decomposition`, `evaluation_matched_run`, `offload_matched_run`, last
+subsection), `sim.py` (`matched_run`, the per-run checks of `simulate_planar`),
+`results_io.py` (`planar_comparisons`, `planar_bounds`).
 Tests: `tests/test_closure.py::test_matched_payload_attribution`,
-`::test_gamma_sensitivity_bookkeeping`, `tests/test_planar_pipeline.py`.
+`::test_gamma_sensitivity_bookkeeping`, the cross-vehicle tests of
+`tests/test_closure.py` (last subsection), `tests/test_planar_pipeline.py`.
 
 CLAUDE.md: an assisted run that beats the README's ideal screening estimate for its
 release speed must be explained by its loss breakdown, else it is treated as a bug. The
@@ -3190,6 +3193,222 @@ closing attribution alone, and its M2 ratio (printed, marked diagnostic) is the 
 mechanism evidence for it. `m2_role: blocking` restores the pre-registered rule
 exactly (a test keeps that path). This is a change of what blocks a finding, not of
 any figure of merit; no parameter was tuned.
+
+### Cross-vehicle decomposition
+
+Module: `compare.py` (`cross_vehicle_decomposition`, `CROSS_VEHICLE_TERMS`,
+`CROSS_VEHICLE_KEYS`, `MARGIN_TERM`, `DECOMPOSITION_EXPLAINED`,
+`START_MASS_UNKNOWN_REASON`, `evaluation_matched_run`, `offload_matched_run`;
+`attribution_terms` also returns D_id, an internal key). Tests:
+`tests/test_closure.py` (the cross-vehicle tests). SP1 step 6 builds it; the `offload:`
+block of SP1 step 7 calls it, so no run, metric or summary row carries it yet.
+
+**Why the matched-payload attribution cannot be used.** `matched_attribution` compares
+two runs on one vehicle: both share D_id(P_ref), which cancels. An offloaded run and the
+full-load pad fly the same payload on different vehicles, whose D_id differ by the whole
+ideal delta-v change (about 230 m/s for silo_cold's 41 t of stage 1, below). Fed such a
+pair, the attribution's residual d dv_margin - (sum of the terms) would be that change,
+its attribution check would fail, and the pair would be a false `bug_suspect` (this is
+also why vehicle keys stay out of variants: SP1 phase file, section 5.1). The
+decomposition keeps D_id per run instead.
+
+**The identity.** Per run, the closure ("Rocket-equation closure (planar)") D_id =
+J_vac + pre + fair + dv_margin + R_c and the loss identity ("2-D loss identity") V_f -
+V_0 = J_vac - J_grav - J_drag - J_steer - J_bp + R_i hold with the same J_vac (R_c and
+R_i the run's closure and identity residuals, `ClosureTerms.residual_mps` and
+`LossBudget.residual_mps`). Eliminating J_vac:
+
+    dv_margin = D_id + V_0 - V_f - J_grav - J_drag - J_steer - J_bp - pre - fair + (R_i - R_c)
+
+For two runs at one payload P_ref and one target orbit, each with the D_id of its own
+vehicle, d = variant - baseline:
+
+    D_id(base) - D_id(var) = dV_0 - dV_f - dJ_grav - dJ_drag - dJ_steer - dJ_bp
+                             - d pre - d fair - d dv_margin + residual
+
+which is the phase file's d(dv_margin) - d(D_id) = dV_0 - dV_f - ... - d fair,
+rearranged: the ideal delta-v the variant can do without equals its head start plus the
+differences in the losses, the pre-flight burn, the fairing term and the margin. The
+terms (`CROSS_VEHICLE_TERMS`, `xv_<term>_mps`, m/s, positive when the term lets the
+variant fly P_ref on less ideal delta-v; the first eight are `_contributions` of
+`attribution_terms`, the same as the attribution's):
+
+| Term | Value | Sign and size |
+|---|---|---|
+| release_speed | V_0(var) - V_0(base), \|v_rel\| at the flight starts | + for a head start; the pad starts from rest (V_0 = 0) |
+| final_speed | -(V_f(var) - V_f(base)) at the cutoffs | about 0: V_f equals the target's V_rel,f only within the LTG acceptance |
+| gravity, drag, steering, back_pressure | -(J(var) - J(base)), each loss integral over the flight phases | + when the variant loses less |
+| preflight | -(pre(var) - pre(base)), pre = c1 ln(m0/m_fs) | + when the baseline burns on the hold-down what the variant does not (a cold start burns nothing before its flight) |
+| fairing | -(fair(var) - fair(base)) | + when the variant carries the fairing into stage 2 for less |
+| margin (`MARGIN_TERM`) | -(dv_margin(var) - dv_margin(base)) | about 0 for two runs at their boundaries (each 0 <= m_res < 0.05 kg) |
+
+With one vehicle on both sides the D_id change is 0 and the identity is the
+attribution's, with the margin term moved to the other side.
+
+**Residual and check.** `xv_residual_mps` = D_id(base) - D_id(var) - (sum of the terms) =
+(R_i - R_c)(var) - (R_i - R_c)(base): the difference of the two runs' own closure and
+identity residuals, exactly. No loss integral, no closure term and nothing of
+`matched_attribution` or `ATTRIBUTION_KEYS` changes; the decomposition reads the same
+per-run `attribution_terms` plus D_id. `xv_check` is `_attribution_check` on the
+decomposition's residual and the two runs' four residuals, so the thresholds and the
+verdict are the attribution check's: pass when the residual and both closure residuals
+are below `checks.closure_tol_mps` and both identity residuals below
+`checks.identity_tol_mps` (1e-5 m/s each as shipped), plus the start-mass guard below.
+`xv_status` is `explained` on a pass, else `bug_suspect`.
+
+*What the closure cannot see: the stage-1 load.* D_id = c1 ln(m0/m1) + c2 ln(m2/m3) and
+pre = c1 ln(m0/m_fs) both take m0 from the vehicle, and a stage-1 offload leaves m1 = m0
+- m_p1 unchanged, so D_id - pre = c1 ln(m_fs/m1) + c2 ln(m2/m3), and with it the closure
+residual R_c, does not depend on the stage-1 load the vehicle carries. A trace paired
+with a vehicle labelled with the wrong stage-1 offload (by e kg) still closes: the
+mislabel moves c1 ln((m0 - x)/(m0 - x - e)) into the D_id change and the same amount
+into the pre-flight term (a negative pre-flight burn on a cold start), and the offload,
+its kg split and the screening ratio are wrong. (A stage-2 or payload mislabel moves m2
+or m3 and the closure catches it.) The guard: every planar start logs an event before
+any propellant burns (stage-1 ignition on the hold-down or the carriage, the pad's
+release when lit later, the track's push start), so the first logged event of a trace
+flown by its vehicle carries that vehicle's liftoff mass m0. `_start_mass_error`
+reports `xv_{variant,baseline}_start_mass_error_kg` = m0 (vehicle) - m_start (the
+trace's first event) and judges c1 ln(m0/m_start), the delta-v the closure would book
+wrongly, against `checks.closure_tol_mps` (`worst_start_mass_mps` in the check record);
+a trace with no logged event has no start mass and fails the check
+(`START_MASS_UNKNOWN_REASON`). A hold-down burn is not a start-mass error: the trace
+still starts at m0, and the burn is the pre-flight term.
+
+*What a pass certifies.* The bookkeeping only. The decomposition is algebraically the
+two runs' own closure and loss identity, so a pass says the masses, the D_id of each
+vehicle and the loss integrals are booked consistently and how the D_id change splits;
+it does not say that either run's physics (its drag model, guidance, staging) is right.
+
+**Offload rows and the screening rule** (CLAUDE.md; SP1 phase file, section 5.8). The
+yardstick `xv_screening_offload_kg` is `vehicle.stage1_propellant_saved_kg` of the
+variant's release speed (`xv_speed_at_release_mps`, \|v_rel\| at release, the speed
+`compare_planar`'s payload yardstick takes) on the baseline's vehicle at P_ref, with
+`xv_offload_to_screening_ratio` = stage-1 offload / yardstick and `xv_beats_screening`
+= stage-1 offload > yardstick. The yardstick is a stage-1 quantity at the release
+speed, so the ratio and the beat flag apply only to a stage-1 offload with a head
+start: both are None (not applicable) when the yardstick is not > 0 (a variant released
+from rest, such as step 7's paired pad against the full-load pad: release speed 0,
+yardstick 0) or when the variant carries less stage-2 propellant
+(`xv_stage2_offload_kg` != 0: a stage-2 kilogram frees about twice the ideal delta-v
+of a stage-1 one, 5 t of stage 2 lowering D_id on the gate vehicle as much as 10.6 t of
+stage 1, so a `stage2` or `both` row has no yardstick here; the yardstick itself is
+still reported). They are a screening-rule verdict for a solved offload (margin about
+0); for an imposed x (step 7's `fixed:` cases) the beat flag only compares x with the
+yardstick, and the margin term carries the rest. A simulated offload larger than the
+yardstick is explained when, and only when, its decomposition closes (the check above,
+start-mass guard included): the part of the D_id change beyond the release speed
+(`xv_beyond_release_mps`) is then carried, term by term, by losses, the pre-flight burn,
+the fairing term and the margin. An offload row whose decomposition does not close is
+`bug_suspect` and blocks the finding. Offload rows never enter the "Unexplained beats"
+list (step 7). The ratio is not D_id change / V_0: the yardstick works with the
+screening's loss-averaged stage-1 Isp (`screening_isp_s`, c1s = g0 Isp_eff), the
+closure with the vacuum Isp. For a stage-1 offload with the fairing counted as dropped
+at staging by the screening (rules staging and heating), both are closed forms on the
+same m0, x = m0 (1 - exp(-dD_id/c1)) and yardstick = m0 (1 - exp(-V_0/c1s)), so
+
+    ratio = (1 - exp(-dD_id/c1)) / (1 - exp(-V_0/c1s)),    about (dD_id/V_0)(c1s/c1) for small offloads
+
+with dD_id = D_id(base) - D_id(var).
+
+**The stage-1 closed form.** For a stage-1 offload x at the same payload, stage 2,
+fairing and dry masses, m0' = m0 - x and m1' = m1, m2' = m2, m3' = m3, so
+
+    D_id(base) - D_id(var) = c1 ln(m0 / (m0 - x))
+
+exactly: the fairing (in m2 = m1 - m_d1 - F) and the stage-2 term cancel. For a stage-2
+offload y it is c1 ln(m0/m1) - c1 ln((m0 - y)/(m1 - y)) + c2 ln(m2/(m2 - y)); for
+`both`, with x1 = x m_p1/(m_p1 + m_p2) from stage 1 and x2 = x - x1, c1 ln(m0/m1) - c1
+ln((m0 - x)/(m1 - x2)) + c2 ln(m2/(m2 - x2)). With an assumed stage-1 dry-mass penalty
+on the variant (step 7's penalty rows) m1' = m1 + dm_d1, and the change is no longer a
+function of x alone.
+
+**Split in kg.** `xv_offload_kg` is the propellant the variant carries less (baseline -
+variant, total; per stage `xv_stage1_offload_kg`, `xv_stage2_offload_kg`; the dry-mass
+change is `xv_dry_mass_delta_kg`). `xv_<term>_kg` = offload x term / (sum of the terms)
+adds up to the offload exactly. It is a proportional allocation, not a marginal one: the
+D_id change is not linear in x (c1 ln(m0/(m0 - x)); at 41 t of 572 t the logarithm is
+about 4 % above x/m0), and under a dry-mass penalty it is not set by x alone. As for
+the attribution, only the joint gravity + steering term (`xv_gravity_steering_mps`,
+`_kg`) is read as physics; `xv_gravity_stage1_mps` is the gravity part to MECO.
+
+**Inputs, built without flying anything** (compare stays pure). Two MatchedRuns at one
+payload (ValueError otherwise), each a final-mode evaluation with virtual propellant to
+the energy cutoff, as every MatchedRun:
+
+- the baseline pad at P_ref, its own P*: its search's final evaluation at P*
+  (`SearchRecord.final.at_final`), which `sim.matched_run` reuses for a baseline;
+  `evaluation_matched_run` builds the same record from an evaluation;
+- a solved offload: `offload_matched_run`, the solve's final evaluation at x*
+  (`OffloadResult.at_offload`: flying P_ref on the vehicle offloaded by x*, the
+  evaluation the recorded run re-flies) on `offloaded_vehicle` at P_ref; for `no_offload`
+  the full-load evaluation at x = 0 (margin < 0); None for `search_failed`;
+- a fixed offload (step 7's `fixed:` cases): `sim.matched_run` of the resolved offloaded
+  run at P_ref.
+
+Whatever builds the pair, the start-mass guard checks that each trace was flown by the
+vehicle it is paired with.
+
+**Validation** (`test_closure.py`), on hand-built planar traces (zero gravity field,
+vacuum, omega_p = 0, everything radial so \|v_rel\| = v_r; each burn leg books J_vac = c
+ln(m_start/m_end) and given loss increments, and v_r follows the loss identity): a
+lossless pair with x = m0 (1 - exp(-V_0/c1)) gives a release-speed term of V_0 exactly,
+every loss term exactly 0, the other terms 0 to rounding, a D_id change c1 ln(m0/(m0 -
+x)) = V_0, the whole kg split on the release speed and the yardstick equal to x (ratio
+1); a pair with given differences in every term (a 2.7 t hold-down burn on the pad,
+losses, fairing drop masses, margins and a 2 mm/s dV_f, x solved in closed form so both
+reach one orbit) gives every term as constructed, summing to c1 ln(m0/(m0 - x)) within
+1e-9 m/s, an offload 2.5 times the yardstick, explained; the D_id change of each mode on
+the gate fork's masses against the closed forms above (1e-8 m/s); two payloads are
+refused, and a variant checked against a payload 100 kg lighter fails its closure (0.8
+m/s; the residual equals the difference of the per-run residuals): `bug_suspect`; a
+variant labelled with 5 t more (or less) stage-1 offload than its trace flew still
+closes (closure residual below 1e-9 m/s, the D_id change and the pre-flight term both
+off by c1 ln((m0 - x)/(m0 - x - e))) but fails the start-mass guard: `bug_suspect`; a
+trace without events fails it too; recorded pad, silo_cold and silo_hot_full traces
+start at m0 (the guard's premise), and silo_cold's on a vehicle labelled 1 kg lighter in
+stage 1 is caught; a pad offloaded by 10 t against the full pad (no
+head start) and a 5 t stage-2 offload give ratio and beat flag None, explained. Slow,
+the gate fork: below.
+
+**Measured** (validation measurement, not a finding; gate fork, test budget: search rtol
+1e-9, final 1e-10 as shipped; the pad at its P* against silo_cold offloaded in stage 1
+at its solved x* at P_ref): P_ref = 26,054.3963 kg, x* = 41,262.908 kg (as "Propellant
+offload at fixed payload" measures), m0 = 572,354.40 kg at P_ref, c1 = 3,049.87 m/s.
+D_id is 9,050.491 m/s on the pad and 8,822.287 m/s on silo_cold's offloaded vehicle, a
+change of 228.2036 m/s, equal to c1 ln(m0/(m0 - x*)) to 1e-9 m/s:
+
+| Term | m/s | kg of the 41,262.9 kg split |
+|---|---|---|
+| release_speed (sqrt(2 a L): 3 g over 100 m) | 76.707 | 13,869.9 |
+| final_speed | +2.7e-5 | +0.005 |
+| gravity (of which to MECO: 125.167) | 124.774 | 22,561.2 |
+| drag | -0.877 | -158.5 |
+| steering | -0.065 | -11.7 |
+| back_pressure | 13.280 | 2,401.2 |
+| preflight (the pad's 2.7 t burned on the hold-down) | 14.408 | 2,605.2 |
+| fairing | -0.024 | -4.4 |
+| margin | +4.5e-5 | +0.008 |
+| sum = D_id change | 228.2036 | 41,262.9 |
+
+The residual is -4.1e-12 m/s; the per-run closure residuals are -9.1e-12 m/s
+(silo_cold) and -1.3e-11 m/s (pad), the identity residuals -3.6e-12 and -2.7e-12 m/s;
+both start-mass errors are 0 kg exactly (the pad's trace starts at its hold-down
+ignition, silo_cold's at its push start, each at its own vehicle's liftoff mass, and
+silo_cold's flight starts at m0 - x*: pre = 0): status explained. The joint gravity + steering term is 124.71 m/s (the two gamma*_ref,
+22.986 and 22.989 deg, nearly coincide). The yardstick is 14,976.6 kg at 76.707 m/s
+(c1s = g0 x 295 s), so the ratio is 2.755: dD_id/V_0 = 2.975, times c1s/c1 = 295/311,
+less the curvature of the two exponentials. Cost: the pad search 40 s, the offload solve
+52 s (42 evaluations, no verification); the decomposition itself only reads two traces.
+
+**Reading the gravity term** (a limit of the method, not a finding). The pair compares
+two vehicles, so its gravity term mixes the head start's effect (the time shift of
+"Time-shift mechanism", net of the cold start's unpowered and ramp seconds in the air)
+with that of a stack 41 t lighter at liftoff, whose higher T/W shortens the time spent
+against gravity. One pair cannot separate them. The pad offloaded by the same
+x (step 7's `paired_pad`) can: silo_cold against it is a same-vehicle pair
+(`matched_attribution`), and it against the full-load pad is a cross-vehicle pair with
+no head start.
 
 ## Reporting definitions (planar)
 
@@ -5737,6 +5956,15 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_loss_identity_2d.py::test_full_ascent_loss_budget_closes`, `::test_clamped_thrust_books_back_pressure` | CLAUDE.md's loss budget over a full planar ascent: V_f - V_0 = dv_vac - gravity - drag - steering - back_pressure for the pad to insertion, silo_cold, silo_hot_full, a 10 s ramp clamped at zero thrust for 0.75 s of flight (J_bp = J_vac there) and silo_failed through apex to impact ("2-D loss identity") | 1e-5 m/s (CLAUDE.md 0.01; measured 5e-9 to 9e-9); 1e-12 relative |
 | `test_closure.py::test_matched_payload_attribution` | pad against silo_cold at one payload and gamma* 20 deg: every attribution term (dV_0, -dV_f, -dJ_grav, -dJ_drag, -dJ_steer, -dJ_bp, -d pre, -d fair) against the traces' |v_rel|, quadratures and masses written in the test; d dv_margin = sum of the terms; dV_f carried (nonzero); the kg split of a dP* adds up to it; the joint gravity + steering term and its kg share; different payloads refused ("Screening-beat rule (2-D)") | terms 1e-9 m/s; identity 1e-5 m/s; split 1e-12 relative |
 | `test_closure.py::test_gamma_sensitivity_bookkeeping` | with the pad's run as the -h neighbour and silo_cold's as the +h one: each d(term)/d(gamma*) equals the silo_cold contribution written in the test over 2 h, the neighbours' contributions are 0 and silo_cold's, beyond_release their sum without the release speed ("Screening-beat rule (2-D)") | 1e-9 relative |
+| `test_closure.py::test_lossless_offload_equals_the_release_speed_term` | hand-built lossless planar traces (zero gravity field, vacuum, omega_p = 0, radial; J_vac = c ln(m_start/m_end) per leg): pad from rest at full load against an 80 m/s head start on the vehicle offloaded in stage 1 by x = m0 (1 - exp(-V0/c1)), both at zero margin: release-speed term V0, every loss term 0, final-speed, pre-flight, fairing and margin terms 0 to rounding, D_id change c1 ln(m0/(m0 - x)) = V0, the kg split all on the release speed, the yardstick (`stage1_propellant_saved_kg`, screening Isp = engine Isp) equal to x, both start-mass errors 0, explained ("Cross-vehicle decomposition") | exact (loss and release terms); 1e-9 m/s; 1e-9 relative; 1e-6 kg |
+| `test_closure.py::test_a_wrong_stage1_load_closes_but_fails_the_start_mass_guard` (e = +5 t, -5 t) | the lossless pair with the variant's vehicle labelled offloaded by x + e while its trace flew x: closure and decomposition residuals below 1e-9 m/s (the closure cannot see the stage-1 load), the D_id change V0 + c1 ln((m0 - x)/(m0 - x - e)) and the pre-flight term c1 ln((m0 - x)/(m0 - x - e)), the offload x + e; start-mass error -e, worst_start_mass_mps = abs(c1 ln((m0 - x)/(m0 - x - e))), above 1e3 closure_tol_mps: check fail, bug_suspect ("Cross-vehicle decomposition", "Residual and check") | 1e-9 m/s; 1e-6 kg |
+| `test_closure.py::test_a_trace_without_events_fails_the_start_mass_guard` | a trace with no logged event: residual below 1e-9 m/s, start-mass error None, check fail with `START_MASS_UNKNOWN_REASON`, bug_suspect ("Cross-vehicle decomposition") | 1e-9 m/s; exact |
+| `test_closure.py::test_recorded_traces_start_at_the_liftoff_mass` | the guard's premise on recorded gate-fork traces at the vehicle's payload (gamma* 20 deg): the pad (lit -2 s, clamped), silo_cold (lit +0.5 s) and silo_hot_full (lit 2 s before the push) log their first event at m0 from the vehicle's numbers, silo_hot_full's the ignition in the HOLD; against the pad (one vehicle, D_id change 0) start-mass errors 0, explained; silo_cold's trace on the vehicle offloaded by 1 kg in stage 1 still closes but has start-mass error -1 kg: bug_suspect ("Cross-vehicle decomposition", "Residual and check") | 1e-6 kg; exact; below closure_tol_mps |
+| `test_closure.py::test_screening_items_need_a_head_start_and_a_stage1_offload` | (a) a pad offloaded by 10 t from rest against the full pad, lossless, margin -c1 ln(m0/(m0 - x)): release speed 0, yardstick 0, the margin term and the D_id change c1 ln(m0/(m0 - x)), ratio and beat flag None, explained; (b) a 5 t stage-2 offload with the 80 m/s head start: yardstick m0 (1 - exp(-V0/c1)) reported, ratio and beat flag None, explained ("Cross-vehicle decomposition", "Offload rows and the screening rule") | 1e-9 m/s; 1e-9 relative; exact |
+| `test_closure.py::test_known_differences_explain_an_offload_beyond_the_screening` | hand-built traces with a 1.5 t fairing carried into stage 2 (heating rule) and given differences in every term (a 2.7 t hold-down burn on the pad, losses, fairing drop masses, margins +4 and +1 mm/s, dV_f = 2 mm/s), x solved here so both reach one orbit: every term equals the constructed difference (pre-flight c1 ln(m0/(m0 - 2,700)), fairing c2 ln[(1 + F/m_f+)/(1 + F/m2)] difference), the terms sum to c1 ln(m0/(m0 - x)), the kg split is x term/sum, the offload 2.5 times the closed-form yardstick m0 (1 - exp(-V0/c1)), the pad's hold-down burn not a start-mass error (both 0), explained ("Cross-vehicle decomposition") | 1e-9 m/s; split to the m/s tolerance in kg; 1e-12 relative (its sum); 1e-9 relative; 1e-6 kg |
+| `test_closure.py::test_ideal_dv_change_of_an_offload_by_mode` (stage1, stage2, both) | the D_id change on the gate fork's masses (heating rule: m2 = m1 - m_d1 - F) with x1 from stage 1 and x2 from stage 2: c1 ln(m0/m1) - c1 ln((m0 - x)/(m1 - x2)) + c2 ln(m2/(m2 - x2)), for stage 1 c1 ln(m0/(m0 - x)); the decomposition closes; the per-stage offloads ("Cross-vehicle decomposition") | 1e-8 m/s; 1e-9 m/s; 1e-9 kg |
+| `test_closure.py::test_decomposition_refuses_two_payloads_and_flags_a_bookkeeping_error`, `::test_matched_runs_from_an_evaluation_and_an_offload_result` | two payloads are refused; a variant checked against a payload 100 kg lighter fails its closure (0.79 m/s), its decomposition residual equals (R_i - R_c)(var) - (R_i - R_c)(base) from the four per-run residuals, its start-mass error is -100 kg: check fail, bug_suspect; `evaluation_matched_run` and `offload_matched_run` take the shot's prefix trace, the evaluation's payload and gamma*, the (offloaded) vehicle at that payload, None without a shot or for search_failed ("Cross-vehicle decomposition") | exact; above 1e3 closure_tol_mps; 1e-9 m/s; 1e-6 kg |
+| `test_closure.py::test_cross_vehicle_decomposition_on_the_gate_fork` (slow) | gate fork at the test budget, the pad at its P* against silo_cold offloaded in stage 1 at its solved x*: residual below checks.closure_tol_mps, explained; the D_id change equals c1 ln(m0/(m0 - x*)) from the vehicle's masses; both start-mass errors below 1e-6 kg (measured 0) and silo_cold's flight start at m0 - x* (pre = 0), the pre-flight term the pad's c1 ln(m0/m_fs) from its trace; the release-speed term and the speed at release equal sqrt(2 a L) (3 g, 100 m); the kg split adds up to x*; the yardstick m0 (1 - exp(-v/c1s)) with the stage-1 screening Isp and the ratio (1 - exp(-dD_id/c1)) / (1 - exp(-v/c1s)) ("Cross-vehicle decomposition") | 1e-5 m/s (measured -4.1e-12); 1e-8 m/s; 1e-6 kg; 1e-9 relative; 1e-12 relative |
 | `test_planar_pipeline.py` (fast: fixed guidance) | pad, silo_cold and silo_failed end to end through `sim.run_experiment`: every PLANAR_REQUIRED_METRICS key non-null but P* (no search); planar statuses and columns; gamma_rel and pitch unwrapped past pi in the fall-back with every step below pi; every PLANAR_VARIANT_ROWS label and required key in the summary, the fixed-guidance basis and label (not the sweep-optimized ones, no search assumption), the gamma* caveat, the screening line of every variant, blocked findings iff bug_suspect; the attribution closes (1e-5 m/s) with the release-speed term equal to the release speed; energy-only and screening sensitivity cases reuse the trajectory, electrical energy E/(1 + f), each attributed against its own vehicle's baseline (a screening case against the unchanged baseline not_checked); every pinned PLANAR_ASSUMPTIONS item (plan section 5, amendment 14), the search-only items in SEARCH_ASSUMPTIONS, FIXED_GUIDANCE_ASSUMPTIONS on the fixed-guidance runs; azimuth 80 deg gives the flag and PLANAR_AZIMUTH_ASSUMPTION; v_k 5000 m/s gives status guidance_failed (kind no_kick) with the summary written; the track's actual g_eff = mu/R_E^2 - omega_p^2 R_E (written here) and Coriolis neglected in the planar silo's assumptions; no planar or atmosphere assumption in a 1-D summary ("Reporting definitions (planar)") | exact; 1e-5 m/s; 1e-12 relative |
 | `test_planar_pipeline.py` (fast: the screening-beat machinery) | on the recorded pad: t_v0 is the first instant hypot(v_r, v_theta - omega_p r) reaches silo_cold's release speed, and the time-shift estimate equals the integral of (mu/r^2 - omega_p^2 r) v_r/abs(v_rel) by scipy quad phase by phase (written in the test); `_ratio_check` passes inside the bounds and fails for the opposite sign, below and above, and for an estimate of 0 with d != 0; M4 at and above its share and n/a below min_term_mps; M5's bound direction, n/a for the anchor runs, other release speeds and no anchor; `anchor_from` wiring; a per-run check failure (tolerances 1e-15) gives status bug_suspect with trace_status inserted, three reasons and three flags; an injected beat without an attribution is bug_suspect when one is required and not_checked when not; a sub-yardstick run without one and a failed ignition are not_checked, the latter with closure n/a; a matched run with a vehicle 100 kg off its trace fails the attribution check; M2's d equals J_grav(silo_cold end) - J_grav(pad end) read off the recorded traces (variant minus baseline) and its ratio d/estimate; the M2 stage-1 diagnostic equals the J_grav difference at the two burnouts; M3 n/a at and applied below its floor; beats_screening uses the smaller of payload_gain_kg at P0 and at P*_base (written in the test) for P*_base above and below P0; neighbours equal to the centre give a robust M2 with a zero rate, the pad as the -h neighbour makes M2's verdict change there (not robust, named in the Checks text) while the verdict at gamma*_ref is unchanged; the trajectory key drops drive_efficiency for constant_accel only; an unconstrained kick labels the dP* an upper bound; `unwrap_rad` takes an exact -pi step, and one within ATOL_RAD of it, as +pi ("Screening-beat rule (2-D)", "Reporting definitions (planar)") | 1e-7 relative (quad); 1e-9 relative (t_v0); exact |
 | `test_planar_pipeline.py::test_m2_diagnostic_fail_is_reported_but_blocks_nothing`, `::test_m2_blocking_fail_is_bug_suspect_as_pre_registered`, `::test_m2_role_leaves_the_other_checks_alone`, `::test_blocking_m2_role_end_to_end`, `::test_summary_rows_label_and_screening_line`, `::test_sweep_check_lines_and_the_blocked_branch`, `::test_sweep_index_text_cells` (fast), `::test_bounds_cases_and_paired_sweeps` (slow) | M2 made the only failing check (ratio bounds moved above the recorded ratio, min_term_mps 1e9 so M3 and M4 are n/a, no anchor so M5 is n/a): with role diagnostic the M2 record equals the blocking one apart from `role`, screening_failed is empty, screening_diagnostic_failed is [m2], status ok, the screening line marks "M2 (diagnostic) fail" and names the diagnostic fail, the blocked-findings line says none is bug_suspect and lists the diagnostic fail apart; with role blocking status bug_suspect, [m2] in screening_failed, findings blocked; under the shipped checks every other record is identical under both roles; end to end with `m2_role: blocking` the fixed-guidance silo_cold (whose M2 fails) is bug_suspect and summary.md says findings are blocked, while the shipped diagnostic run prints M2 marked, is ok, shows "ok (diagnostic fail: M2)" in the table and blocks nothing on it; the sweep Checks line format of a diagnostic and a blocking point, the blocked-findings branch, the "M2 (diagnostic)" gamma*-sensitive tag and `summary.screening_cell` on synthetic comparisons; `results_io.index_text`; in the paired fixed-guidance sweep both cold-start points are ok with `m2` in sweep_index.csv's `screening_diagnostic_failed` and in the sweep Checks lines ("Screening-beat rule (2-D)") | exact |
