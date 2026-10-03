@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 2 done at 1fc92d3; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 5 done at a03e218 (branch sp1-step5); see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
@@ -235,6 +235,10 @@ Added 2026-09-30 in SP1 step T (from the session itself):
 Added 2026-10-02 in SP1 step 2:
 
 - **KI-021** [low, open, owner SP1 or later] tests/test_silo.py states the 3 g0, 100 m felt load as 3.9992 g0 (module docstring, the `test_cold_felt_acceleration_and_interface_force` docstring and its 1e-4 hand-number literal); the value (3 g0 + mu/R_E^2)/g0 = 3.99915 is 3.9991 to four decimals (docs/physics.md corrected in SP1 step 2). Correct all three together when a step may touch that existing test; the check passes with either value.
+
+Added 2026-10-02 in SP1 step 5:
+
+- **KI-022** [low, open, owner SP1 or later] Test docstrings tests/test_convergence_2d.py:34-38 ("the only planar tests that fly the shipped search rtol of 1e-8"), tests/test_search.py:72-74 and tests/test_payload_search.py:80 ("the convergence tests alone fly the shipped 1e-8") are no longer accurate: tests/test_calibration.py, tests/test_silo_screening_record.py and the convergence test of tests/test_offload.py also fly it, as docs/physics.md "Validation" and "Convergence (planar)" now say. Docstring-only fix.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 

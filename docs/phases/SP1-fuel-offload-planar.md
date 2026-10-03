@@ -497,8 +497,8 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 2 | Exit-speed option: exactly one of `net_accel_g` / `exit_speed_mps`; planar metrics `net_accel_g`, `net_accel_mps2`, `stroke_m`; replay reads the metric | config.py, assist/constant_accel.py, metrics_planar.py, replay.py | tests/test_config.py, tests/test_silo.py (suggested) | Exit speed and push time against the closed form at 1e-9; trajectory equals the equivalent `net_accel_g` run | [x] | 1fc92d3 |
 | 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [ ] | |
 | 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [ ] | |
-| 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [~] | |
-| 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [ ] | |
+| 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [x] | a03e218 (branch sp1-step5) |
+| 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [~] | |
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [ ] | |
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [ ] | |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
@@ -932,6 +932,13 @@ Further points and open questions:
   metrics; replay label from the metric; fast suite 1004 passed, slow tier 23 passed; one
   review round, four minor findings). Next: step 3 (ramp start by depth, speed and
   closed-form height).
+- 2026-10-02: step 5 passed its gate on branch `sp1-step5` (worktree): commit a03e218,
+  merged into main after step 3 (offload solver core; 13 fast and 3 slow offload tests;
+  refactor guard reproduces the recorded pad and silo_cold payload capacities bit for bit;
+  full suite 1011 passed; two review rounds, no blocker left). The stage-1 pad control
+  bound is 1.63 kg (s = 0.0307 kg/kg) and the control ends no_offload by grams (section 12).
+  Validation measurement only, not a finding: silo_cold's stage-1 offload solves to
+  about 41.26 t at the pad's payload. Step 6 started on the same branch.
 
 ## 12. Deviations from the plan
 
@@ -1016,6 +1023,40 @@ Step 2 (2026-10-02, commit 1fc92d3):
 6. **docs/physics.md quoted the 3 g0, 100 m felt load as 3.9992 g0**; the value is
    (3 g0 + mu/R_E^2)/g0 = 3.99915, so 3.9991 g0 to four decimals. physics.md is corrected;
    tests/test_silo.py still quotes 3.9992 (KI-021).
+
+Step 5 (2026-10-02, commit a03e218 on branch sp1-step5):
+
+1. **Run in parallel.** Step 5 ran in a git worktree on branch `sp1-step5` while steps 2
+   and 3 ran in the main checkout, because it depends only on step 1 and its files do not
+   overlap theirs. The branch is merged into main after step 3 and the full suite is
+   re-run on the merged tree.
+2. **The stage-1 pad control ends `no_offload`, not `ok`, by grams.** At the shipped and
+   test budgets x_pad = 0 with m_res(0) = -0.0016 kg (-0.0017 kg at the test budget); the
+   cause is warm-start-dependent LTG convergence inside the acceptance box (docs/physics.md
+   "Pad control, and why"). Under the 10x-tightened budget it ends `ok` with x_pad =
+   0.044 kg. It is within the section 5.3 bound (measured s = 0.0307 kg/kg, bound
+   0.05 / s = 1.63 kg against the estimated 1.4 kg); the slow test accepts `no_offload`
+   when -final_payload_xtol_kg < m_res(0) < 0. Step 7 must report such a control as
+   "x_pad = 0, m_res(0) = -0.0016 kg", a resolution effect, not a failure.
+3. **Toy.** tests/test_offload.py has its own `HeadStartToy`, modelled on `SpeedTargetToy`
+   (same masses and physics) plus a quadratic gamma* dependence so the search has an
+   interior optimum; the solver needs a RecordingProblem built from a vehicle. The toy's
+   verification tolerance is `search_final_flag_rel` = 2e-3 (the shipped 1e-4 is 0.006 kg
+   at the toy's 60 kg payload, below the verification's own resolution); the no_offload
+   toy test uses P_ref = closed-form capacity + 1 kg (exactly at capacity the sign is
+   ambiguous; the own-capacity case is a separate test).
+4. **The slow gate tests fly the shipped search budget** (rtol 1e-8; every reported number
+   comes from the final mode at 1e-10), as tests/test_calibration.py does; both budgets
+   give x* within 0.0003 kg.
+5. **The solver does not use the extracted helpers.** `evaluate_planner` and `solve_delta`
+   exist as asked and `joint_root_crosscheck` uses `solve_delta`; the offload solver goes
+   through the factory with one problem and one fresh WarmStore per x (`OffloadWarmStore`),
+   which keeps it generic. The verification runs `search.run_search` on
+   `factory(offloaded vehicle)`, equivalent to `sim.run_resolved` for the planar factory.
+6. **Cost.** A stage-1 solve with its verification took 89 s at the shipped budget on a
+   loaded machine (design estimate about 33 s); the pad control about 30 s. Step 8's
+   runtime estimate must use the measured figure.
+7. **The refactor guard is its own slow file**, tests/test_silo_screening_record.py.
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
