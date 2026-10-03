@@ -1,0 +1,68 @@
+# Build the launch-assist-sim site (site/, assets/brand/, docs/manual/) with site/build.py
+# and deploy it to GitHub Pages: https://khoks.github.io/RocketLaunchOptimizationSimulator/
+#
+# One-time repository setting, needed before the first deploy (until then "Configure GitHub
+# Pages" fails with "Get Pages site failed"): Settings -> Pages -> Build and deployment ->
+# Source: "GitHub Actions", or
+#   gh api -X POST repos/khoks/RocketLaunchOptimizationSimulator/pages -f build_type=workflow
+# then re-run this workflow (Actions -> Pages -> Run workflow). `enablement: true` on
+# configure-pages is no substitute: the default GITHUB_TOKEN cannot create a Pages site.
+#
+# Python-Markdown is installed here only; it is not a dependency of the launchsim package.
+# Keep the pin in step with MARKDOWN_PIN in site/build.py. The build fails, and nothing is
+# deployed, if any internal link on the site is broken.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits rather than cancelling one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository (full history, for the "Last updated" stamp)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Python-Markdown (site build only)
+        run: python -m pip install "markdown==3.11"
+
+      - name: Build the site into _site/ (fails on any broken internal link)
+        run: python site/build.py
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

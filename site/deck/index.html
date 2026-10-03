@@ -1,0 +1,1362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide Deck · launch-assist-sim</title>
+<meta name="description" content="A 17-slide deck on launch-assist-sim: the fuel-replacement question, the concepts, first-order numbers, prior art, the simulator, calibration, the preliminary 2-D results, what goes against the hypothesis, and the roadmap. All rights reserved.">
+<meta name="author" content="Rahul Singh Khokhar">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22 viewBox=%220 0 64 64%22 role=%22img%22 aria-label=%22launch-assist-sim%22%3E%3Ctitle%3Elaunch-assist-sim%3C/title%3E%3CclipPath id=%22fc%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2212%22/%3E%3C/clipPath%3E%3CclipPath id=%22fr%22%3E%3Cpath d=%22M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V47H28Z%22/%3E%3C/clipPath%3E%3Cg clip-path=%22url(%23fc)%22%3E%3Crect width=%2264%22 height=%2241%22 fill=%22%232d5f8f%22/%3E%3Crect y=%2241%22 width=%2264%22 height=%2223%22 fill=%22%231c2226%22/%3E%3Crect x=%2225%22 y=%2241%22 width=%2214%22 height=%2223%22 fill=%22%232b3238%22/%3E%3Cpath d=%22M0 42.25H25M39 42.25H64%22 stroke=%22%23b09a78%22 stroke-width=%222.5%22/%3E%3Cpath d=%22M19.5 48.5h5.5M39 48.5h5.5%22 stroke=%22%23f08a4b%22 stroke-opacity=%221.0%22 stroke-width=%223.6%22/%3E%3Cpath d=%22M19.5 56.5h5.5M39 56.5h5.5%22 stroke=%22%23f08a4b%22 stroke-opacity=%220.5%22 stroke-width=%223.6%22/%3E%3Cpath d=%22M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V47H28Z%22 fill=%22%23fbfbf8%22/%3E%3Crect x=%2233.6%22 y=%224%22 width=%223%22 height=%2244%22 fill=%22%23dfe4e1%22 clip-path=%22url(%23fr)%22/%3E%3Crect x=%2228%22 y=%2227%22 width=%228%22 height=%222.2%22 fill=%22%231c2226%22/%3E%3Cpath d=%22M0 41V52A12 12 0 0 0 12 64H52A12 12 0 0 0 64 52V41%22 fill=%22none%22 stroke=%22%234c565c%22 stroke-width=%225%22/%3E%3C/g%3E%3C/svg%3E" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("las-theme");
+      if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) { /* storage unavailable: follow the system theme */ }
+  })();
+</script>
+<style>
+/* Palette and type: the tokens of src/launchsim/templates/replay.html (the shared design system),
+   with --ink-3 and the light --caution adjusted, and --accent-ink (orange for small text)
+   added, to reach 4.5:1 contrast, as in site/assets/site.css. */
+:root {
+  --bg: #f1f2ee;
+  --panel: #fbfbf8;
+  --ink: #1c2226;
+  --ink-2: #4c565c;
+  --ink-3: #626c71;
+  --rule: #d6d9d1;
+  --grid: #e3e5de;
+  --ground: #8a7a62;
+  --shaft: #d9d2c4;
+  --run-0: #2d5f8f;
+  --run-1: #c2521a;
+  --run-2: #177d6f;
+  --run-3: #7a4c8e;
+  --good: #177d6f;
+  --bad: #b3261e;
+  --caution: #845a00;
+  --caution-bg: #f6ecd2;
+  --focus: #2d5f8f;
+  --link: #2d5f8f;
+  --code-bg: #eceee8;
+  --accent-ink: #a8440f;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+    --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+    --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+    --good: #4cc2ae; --bad: #f2867c;
+    --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+    --accent-ink: #f08a4b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+  --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+  --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+  --good: #4cc2ae; --bad: #f2867c;
+  --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+  --accent-ink: #f08a4b;
+  color-scheme: dark;
+}
+/* The cover and the closing slide always use the dark panel, like the README banner. */
+.slide.dark {
+  --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+  --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+  --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae;
+  --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+  --accent-ink: #f08a4b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+a { color: var(--link); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+code { font-family: var(--font-data); font-size: 0.86em; background: var(--code-bg); padding: 0 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.num, .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 12px; top: 12px; z-index: 10; background: var(--panel); padding: 6px 10px; }
+
+/* ---------- stage: one 1280 x 720 slide, scaled to fit ---------- */
+.deck { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+.stage { position: absolute; left: 50%; top: 50%; width: 1280px; height: 720px; transform: translate(-50%, -50%) scale(var(--s, 1)); transform-origin: 50% 50%; }
+.slide {
+  position: absolute; inset: 0; display: none; flex-direction: column;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 10px;
+  overflow: hidden; padding: 46px 64px 62px; font-size: 20px; line-height: 1.42;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 28px rgb(0 0 0 / 0.06);
+}
+.slide.active { display: flex; animation: fade 0.18s ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .slide.active { animation: none; } }
+.progress { position: absolute; left: 0; top: 0; height: 4px; width: 0; background: var(--run-1); z-index: 2; border-top-left-radius: 10px; transition: width 0.2s; }
+
+/* ---------- slide anatomy ---------- */
+.kicker { font-family: var(--font-display); font-weight: 600; font-size: 17px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 4px; }
+.slide h2 { font-family: var(--font-display); font-weight: 700; font-size: 44px; line-height: 1.04; letter-spacing: 0.005em; margin: 0 0 20px; text-wrap: balance; max-width: 1100px; }
+.slide h3 { font-family: var(--font-display); font-weight: 600; font-size: 19px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 6px; }
+.slide p { margin: 0; }
+.slide ul { margin: 0; padding-left: 1.1em; }
+.slide li + li { margin-top: 6px; }
+.body { flex: 1 1 auto; min-height: 0; display: grid; gap: 28px; align-content: start; }
+.cols-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cols-ab { grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 36px; }
+.stack-v { display: grid; gap: 14px; align-content: start; }
+.foot {
+  position: absolute; left: 64px; right: 64px; bottom: 0; height: 44px;
+  display: flex; align-items: center; gap: 18px; border-top: 1px solid var(--grid);
+  font-family: var(--font-data); font-size: 12.5px; color: var(--ink-3);
+}
+.foot .src { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.foot .rights { white-space: nowrap; }
+.foot .n { white-space: nowrap; color: var(--ink-2); font-weight: 500; }
+.small { font-size: 15px; line-height: 1.45; color: var(--ink-2); }
+.xsmall { font-size: 13.5px; line-height: 1.4; color: var(--ink-3); }
+.strong { color: var(--ink); font-weight: 600; }
+.nb { white-space: nowrap; } /* short hyphenated terms (2-D, stage-1) never break at the hyphen */
+.lead { font-size: 23px; line-height: 1.4; color: var(--ink-2); max-width: 980px; }
+
+/* labels that say what kind of number this is */
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 600; font-size: 14.5px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 10px; border-radius: 3px; border: 1px solid var(--rule); color: var(--ink-2); background: var(--panel); white-space: nowrap; }
+.badge.prelim { color: var(--run-0); border-color: var(--run-0); }
+.badge.probe { color: var(--caution); border-color: var(--caution); background: var(--caution-bg); }
+.badge.hand { color: var(--ink-2); }
+.badge.accent { color: var(--accent-ink); border-color: var(--accent-ink); }
+
+.cav { background: var(--caution-bg); border: 1px solid var(--rule); border-left: 4px solid var(--caution); border-radius: 6px; padding: 9px 14px; font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+.cav b { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--caution); margin-right: 6px; font-size: 15px; }
+.card { border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; background: var(--bg); min-width: 0; }
+.card h3 { margin-bottom: 4px; }
+.card p + p { margin-top: 6px; }
+
+/* tables */
+table.t { width: 100%; border-collapse: collapse; font-size: 16px; line-height: 1.3; }
+table.t th { text-align: left; font-family: var(--font-body); font-weight: 500; font-size: 12.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); padding: 6px 10px; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+table.t td { padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+table.t td.r, table.t th.r { text-align: right; }
+table.t td.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.t tr.hl td { background: color-mix(in srgb, var(--run-1) 13%, transparent); }
+table.t tr.hl td:first-child { box-shadow: inset 3px 0 0 var(--run-1); }
+table.t td.hl { background: color-mix(in srgb, var(--run-1) 16%, transparent); font-weight: 500; color: var(--ink); }
+table.t caption { caption-side: top; text-align: left; font-family: var(--font-display); font-weight: 600; font-size: 19px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding-bottom: 6px; }
+.tablewrap { min-width: 0; }
+
+/* charts (inline SVG) */
+svg.ch { display: block; width: 100%; height: auto; overflow: visible; }
+.ch text { font-family: var(--font-data); font-size: 13px; fill: var(--ink-2); }
+.ch .t-strong { fill: var(--ink); font-weight: 500; }
+.ch .t-mute { fill: var(--ink-3); }
+.ch .grid { stroke: var(--grid); stroke-width: 1; }
+.ch .zero { stroke: var(--ink-3); stroke-width: 1.2; }
+.ch .axis { stroke: var(--ink-3); stroke-width: 1; }
+.ch .band { fill: var(--grid); opacity: 0.9; }
+.ch .shaft { fill: var(--shaft); opacity: 0.7; }
+.ch .ref { stroke: var(--ink-2); stroke-width: 1.5; stroke-dasharray: 6 5; fill: none; }
+.ch .bracket { stroke: var(--ink); stroke-width: 1.3; fill: none; }
+.ch .pad { stroke: var(--run-0); stroke-width: 2.5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.ch .silo { stroke: var(--run-1); stroke-width: 2.5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.ch .dash { stroke-dasharray: 8 5; }
+.ch .dot-line { stroke-width: 1.5; stroke-dasharray: 2 5; }
+.ch .dot-silo { fill: var(--run-1); stroke: var(--panel); stroke-width: 2; }
+.ch .dot-mute { fill: var(--ink-3); stroke: var(--panel); stroke-width: 2; }
+.ch .dot-hollow { fill: var(--panel); stroke: var(--ink); stroke-width: 2; }
+.ch .sq-pad { fill: var(--run-0); stroke: var(--panel); stroke-width: 2; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--ink-2); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { display: inline-block; flex: none; }
+.sw.line { width: 22px; height: 0; border-top: 2.5px solid currentColor; }
+.sw.line.dashed { border-top-style: dashed; }
+.sw.ref { width: 22px; height: 0; border-top: 1.5px dashed var(--ink-2); }
+.sw.dot { width: 11px; height: 11px; border-radius: 50%; background: currentColor; }
+.sw.sq { width: 11px; height: 11px; background: currentColor; }
+.c-pad { color: var(--run-0); }
+.c-silo { color: var(--accent-ink); }
+.c-silo .sw { color: var(--run-1); } /* the swatch matches the chart line; the label text is the darker accent */
+
+/* concept diagrams */
+svg.dg { display: block; width: 100%; height: auto; }
+.dg .earth { fill: var(--shaft); opacity: 0.55; }
+.dg .hole { fill: var(--panel); }
+.dg .groundline { stroke: var(--ground); stroke-width: 3; fill: none; }
+.dg .wall { stroke: var(--ground); stroke-width: 1.5; fill: none; }
+.dg .coil { stroke: var(--run-1); stroke-width: 4; fill: none; }
+.dg .rk { fill: var(--panel); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+.dg .rk-band { fill: var(--ink); }
+.dg .carriage { fill: var(--ink-2); }
+.dg .track { stroke: var(--ink-2); stroke-width: 4; fill: none; stroke-linecap: round; }
+.dg .support { stroke: var(--ink-3); stroke-width: 1.2; fill: none; }
+.dg .cable { stroke: var(--run-1); stroke-width: 1.6; fill: none; stroke-dasharray: 4 3; }
+.dg .pulley { fill: var(--panel); stroke: var(--ink-2); stroke-width: 1.6; }
+.dg .winch { fill: var(--ink-2); }
+.dg .arrow { stroke: var(--run-0); stroke-width: 2.5; fill: none; }
+.dg .arrowhead { fill: var(--run-0); }
+.dg .traj { stroke: var(--run-0); stroke-width: 2.2; fill: none; stroke-dasharray: 6 5; }
+.dg .dim { stroke: var(--ink-3); stroke-width: 1.2; fill: none; }
+.dg .leader { stroke: var(--ink-3); stroke-width: 1; fill: none; }
+.dg .padblock { fill: var(--ink-3); }
+.dg .chev { stroke: var(--ink-3); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.dg text { font-family: var(--font-body); font-size: 13.5px; fill: var(--ink-2); }
+.dg text.m { fill: var(--ink-3); }
+.concept { display: grid; grid-template-rows: auto auto auto 1fr; gap: 8px; min-width: 0; }
+.concept .tag { justify-self: start; }
+.concept h3 { color: var(--ink); font-size: 22px; letter-spacing: 0.04em; margin: 0; }
+.concept .dgbox { border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); padding: 6px; }
+
+/* cover */
+.cover { padding: 58px 64px 62px; }
+.cover .left { position: relative; z-index: 1; width: 700px; display: grid; gap: 18px; align-content: start; }
+.cover .logo { width: 360px; height: auto; display: block; }
+.cover h1 { font-family: var(--font-display); font-weight: 700; font-size: 66px; line-height: 0.98; letter-spacing: 0.005em; margin: 6px 0 0; text-wrap: balance; }
+.cover .sub { font-size: 21px; line-height: 1.45; color: var(--ink-2); max-width: 640px; }
+.cover .author { font-family: var(--font-display); font-weight: 600; font-size: 24px; letter-spacing: 0.04em; color: var(--ink); }
+.cover .author span { color: var(--ink-3); font-weight: 500; }
+.cover .art { position: absolute; right: 24px; top: 0; bottom: 45px; width: 470px; }
+.cover .art svg { width: 100%; height: 100%; display: block; }
+.cover .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* question slide */
+.qbox { border-left: 4px solid var(--run-1); padding: 4px 0 4px 20px; }
+.qbox p { font-family: var(--font-display); font-weight: 600; font-size: 34px; line-height: 1.12; color: var(--ink); max-width: 1000px; }
+.ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.way .big { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.1; margin: 2px 0 6px; }
+.way.now { border-color: var(--run-1); }
+
+/* hypothesis */
+blockquote.hyp { margin: 0; padding: 18px 26px; border-radius: 6px; background: var(--bg); border: 1px solid var(--rule); border-left: 4px solid var(--run-0); }
+blockquote.hyp p { font-family: var(--font-display); font-weight: 600; font-size: 36px; line-height: 1.12; color: var(--ink); }
+blockquote.hyp footer { margin-top: 10px; font-size: 14px; color: var(--ink-3); font-family: var(--font-data); }
+.checklist li { margin-top: 6px; }
+
+/* penalties grid */
+.pgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pgrid .card { padding: 10px 14px; }
+.pgrid h3 { font-size: 17.5px; color: var(--ink); letter-spacing: 0.06em; margin-bottom: 3px; }
+.pgrid p { font-size: 14.5px; line-height: 1.38; color: var(--ink-2); }
+.pgrid p + p { margin-top: 4px; }
+.pgrid .k { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; margin-right: 4px; }
+.pgrid .k.h { color: var(--ink-3); }
+.pgrid .k.s { color: var(--run-0); }
+
+/* prior art */
+table.pa { font-size: 14.5px; line-height: 1.28; }
+table.pa td { padding: 5px 9px; }
+table.pa td:first-child { font-weight: 600; color: var(--ink); width: 23%; }
+table.pa td:nth-child(2) { width: 36%; }
+table.pa td:nth-child(3) { width: 17%; color: var(--ink-2); }
+table.pa td:nth-child(4) { color: var(--ink-2); }
+
+/* simulator flow */
+.flow { display: flex; list-style: none; padding: 0; margin: 0; gap: 4px; }
+.flow li { flex: 1 1 0; margin: 0; padding: 10px 12px 10px 24px; background: var(--grid); font-size: 15px; line-height: 1.25; clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%); min-width: 0; }
+.flow li:first-child { padding-left: 14px; clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%); }
+.flow li b { display: block; font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: 0.04em; color: var(--ink); }
+.flow li span { color: var(--ink-2); font-size: 13.5px; }
+.flow li.hot { background: color-mix(in srgb, var(--run-1) 22%, var(--grid)); }
+.facts { font-size: 15.5px; line-height: 1.4; }
+.facts li + li { margin-top: 5px; }
+.counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.count { border-top: 3px solid var(--run-0); padding-top: 6px; }
+.count .v { font-family: var(--font-display); font-weight: 700; font-size: 34px; line-height: 1; }
+.count .k { font-size: 12.5px; color: var(--ink-3); line-height: 1.3; display: block; margin-top: 3px; }
+
+/* hero numbers and bars */
+.hero { display: grid; gap: 4px; }
+.hero .v { font-family: var(--font-display); font-weight: 700; font-size: 86px; line-height: 0.92; color: var(--ink); letter-spacing: 0.005em; }
+.hero .v small { font-size: 0.42em; font-weight: 600; color: var(--ink-2); letter-spacing: 0.02em; }
+.hero .k { font-size: 17px; color: var(--ink-2); }
+.bars { display: grid; gap: 7px; }
+.bar { display: grid; grid-template-columns: 210px minmax(0, 1fr) 92px; align-items: center; gap: 12px; font-size: 15.5px; }
+.bar .lab { color: var(--ink); line-height: 1.2; }
+.bar .lab small { display: block; color: var(--ink-3); font-size: 12.5px; }
+.bar .trk { height: 18px; position: relative; }
+.bar .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; background: var(--run-0); min-width: 3px; }
+.bar .fill.silo { background: var(--run-1); }
+.bar .fill.mute { background: var(--ink-3); }
+.bar .fill.yard { background: repeating-linear-gradient(-45deg, var(--ink-3) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1.5px var(--ink-3); min-width: 6px; }
+.bar .val { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; text-align: right; color: var(--ink); white-space: nowrap; }
+.tbar { position: relative; height: 14px; min-width: 120px; }
+.tbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink-3); border-radius: 0 3px 3px 0; }
+.tbar i.silo { background: var(--run-1); }
+/* Unphysical yardsticks: a hatched bar with a solid rim and a minimum width, so even the
+   +83.1 kg pad_instant bar reads as a bar (a dashed outline broke up at small widths). */
+.tbar i.yard { background: repeating-linear-gradient(-45deg, var(--ink-3) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1.5px var(--ink-3); min-width: 6px; }
+
+/* items against */
+.against { display: grid; gap: 10px; font-size: 15.5px; line-height: 1.38; color: var(--ink-2); }
+.against li { margin: 0; }
+.against li b { color: var(--ink); }
+.against ol { margin: 0; padding-left: 1.3em; display: grid; gap: 9px; }
+
+/* energy box */
+.energy { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.energy .e { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px; background: var(--bg); }
+.energy .e .v { font-family: var(--font-display); font-weight: 700; font-size: 34px; line-height: 1; }
+.energy .e .k { font-size: 13px; color: var(--ink-2); line-height: 1.3; display: block; margin-top: 4px; }
+.energy .vs { font-family: var(--font-display); font-weight: 600; font-size: 18px; color: var(--ink-3); }
+
+/* roadmap */
+.road { position: relative; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; padding-top: 24px; }
+.road::before { content: ""; position: absolute; left: 6px; right: 6px; top: 31px; height: 3px; background: var(--rule); }
+.road .st { position: relative; display: grid; gap: 4px; align-content: start; font-size: 13.5px; line-height: 1.3; color: var(--ink-2); padding-top: 26px; }
+.road .st::before { content: ""; position: absolute; left: 0; top: 0; width: 17px; height: 17px; border-radius: 50%; background: var(--panel); border: 3px solid var(--ink-3); box-sizing: border-box; }
+.road .st.done::before { background: var(--run-0); border-color: var(--run-0); }
+.road .st.now::before { background: var(--run-1); border-color: var(--run-1); box-shadow: 0 0 0 5px color-mix(in srgb, var(--run-1) 25%, transparent); }
+.road .st b { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--ink); letter-spacing: 0.03em; }
+.road .st .when { font-family: var(--font-display); font-weight: 600; font-size: 12.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.road .st.now .when { color: var(--accent-ink); }
+.road .st.done .when { color: var(--run-0); }
+
+/* links */
+.linkcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.linkcards .card { display: grid; gap: 8px; align-content: start; }
+.linkcards a { font-family: var(--font-data); font-size: 14px; overflow-wrap: anywhere; }
+.linkcards ul { list-style: none; padding: 0; font-size: 15.5px; line-height: 1.4; }
+.linkcards li + li { margin-top: 7px; }
+/* Commands break only at spaces and at the <wbr> after a "/" (each word sits in a .nw span). */
+.cmd { font-family: var(--font-data); font-size: 13.5px; line-height: 1.5; background: var(--code-bg); border-radius: 4px; padding: 8px 10px; overflow-wrap: break-word; overflow-x: auto; color: var(--ink); }
+.cmd + .cmd { margin-top: 6px; }
+
+/* license slide */
+.lic { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 56px; align-items: center; align-content: center; }
+.lic .markbig { width: 240px; height: 240px; }
+.lic .claim { font-family: var(--font-display); font-weight: 700; font-size: 38px; line-height: 1.1; margin-bottom: 16px; }
+.lic ul { font-size: 19px; line-height: 1.45; color: var(--ink-2); }
+.lic li + li { margin-top: 9px; }
+.lic-url { margin-top: 20px !important; font-family: var(--font-data); font-size: 16px; }
+
+/* per-slide sizing on the 1280 x 720 canvas (the phone view resets these below) */
+.s-q .qbox p { font-size: 37px; }
+.s-q .way .big { font-size: 30px; }
+.s-q .small { font-size: 17.5px; line-height: 1.5; }
+.s-q .xsmall { font-size: 15px; }
+.s-q .body { gap: 24px; }
+.s-h blockquote.hyp p { font-size: 38px; }
+.s-h .small { font-size: 19px; line-height: 1.5; }
+.s-h .xsmall { font-size: 15px; }
+.s-h .body { gap: 34px; }
+.s-n table.t { font-size: 18.5px; }
+.s-n table.t td { padding: 9px 10px; }
+.s-n .xsmall { font-size: 15px; }
+.s-sim .facts { font-size: 17px; }
+.s-sim .flow li { padding-top: 12px; padding-bottom: 12px; }
+.s-cal .small { font-size: 17.5px; line-height: 1.5; }
+.s-scr .bar { grid-template-columns: 250px minmax(0, 1fr) 104px; font-size: 17px; }
+.s-scr .bar .trk { height: 24px; }
+.s-scr .bar .val { font-size: 17px; }
+.s-scr .bars { gap: 12px; }
+.s-scr .small { font-size: 17.5px; line-height: 1.5; }
+.s-scr .xsmall { font-size: 14.5px; }
+.s-road .road .st { font-size: 15px; }
+.s-road .card .small { font-size: 17px; line-height: 1.5; }
+.s-fly .small { font-size: 16.5px; }
+.s-more .linkcards ul { font-size: 17px; }
+.s-scr .body { align-content: center; }
+.s-ag .against { font-size: 14.5px; line-height: 1.34; }
+.s-ag .against ol { gap: 6px; }
+.s-q .way-cav { margin-top: 10px; padding: 7px 12px; }
+.chwrap { min-width: 0; }
+.cover .art .lbl { font-size: 14px; }
+.pk { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; margin-right: 4px; }
+.pk.h { color: var(--ink-3); }
+.pk.s { color: var(--run-0); }
+.keylist { list-style: none; padding: 0 !important; display: grid; gap: 6px; }
+.keylist li { margin: 0 !important; display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: baseline; }
+.tagn { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-family: var(--font-data); font-size: 12px; font-weight: 500; color: var(--panel); background: var(--run-1); }
+.tagn.pad { background: var(--run-0); border-radius: 3px; }
+.ch .num-tag { font-size: 14px; }
+.readorder { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; counter-reset: ro; list-style: none; padding: 0 !important; }
+.readorder li { margin: 0 !important; border-top: 3px solid var(--run-0); padding-top: 6px; font-size: 14.5px; line-height: 1.35; color: var(--ink-2); }
+.readorder li b { display: block; font-family: var(--font-data); font-weight: 500; font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
+.nw { white-space: nowrap; }
+.nt { text-transform: none; letter-spacing: 0.02em; }
+
+/* ---------- controls ---------- */
+.controls {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--rule); box-shadow: 0 4px 18px rgb(0 0 0 / 0.14);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.controls.show, .controls:focus-within { opacity: 1; pointer-events: auto; }
+.controls button { font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); background: transparent; border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; min-height: 34px; white-space: nowrap; }
+.controls button:hover { background: var(--grid); }
+.controls #themeBtn { font-family: var(--font-data); font-weight: 400; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--ink-2); }
+.controls .count-now { font-family: var(--font-data); font-size: 13px; color: var(--ink-2); padding: 0 8px; min-width: 64px; text-align: center; white-space: nowrap; }
+.controls .sep { width: 1px; height: 20px; background: var(--rule); margin: 0 2px; }
+@media (prefers-reduced-motion: reduce) { .controls, .progress { transition: none; } }
+
+/* ---------- portrait phone: the slides reflow into one readable column ---------- */
+html.stack .deck { position: static; overflow: visible; }
+html.stack .stage { position: static; width: auto; height: auto; transform: none; padding: 16px 16px 92px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+html.stack .slide > * { min-width: 0; max-width: 100%; }
+html.stack .badge { white-space: normal; font-size: 13px; }
+html.stack .body, html.stack .body.cols-ab { grid-template-columns: minmax(0, 1fr) !important; }
+html.stack .s-n table.t { font-size: 13px; }
+html.stack .controls button { font-size: 14px; padding: 6px 10px; }
+html.stack #fsBtn { display: none; }
+html.stack table.t-res th:nth-child(2), html.stack table.t-res td:nth-child(2),
+html.stack table.t-res th:nth-child(5), html.stack table.t-res td:nth-child(5) { display: none; }
+html.stack table.t-res td .xsmall { display: block; }
+html.stack table.t-res { font-size: 13px; }
+html.stack .barnote { display: none; }
+html.stack table.t-res td:first-child { overflow-wrap: anywhere; }
+html.stack .progress { display: none; }
+html.stack .slide { position: relative; inset: auto; display: flex; padding: 22px 16px 0; font-size: 16px; line-height: 1.5; border-radius: 8px; animation: none; scroll-margin-top: 12px; }
+html.stack .slide h2 { font-size: 29px; margin-bottom: 14px; }
+html.stack .kicker { font-size: 13px; }
+html.stack .slide h3 { font-size: 16px; }
+html.stack .body { gap: 18px; }
+html.stack .cols-2, html.stack .cols-3, html.stack .cols-ab, html.stack .ways, html.stack .pgrid, html.stack .linkcards, html.stack .lic, html.stack .energy { grid-template-columns: minmax(0, 1fr); }
+html.stack .foot { position: static; height: auto; flex-wrap: wrap; gap: 4px 12px; padding: 10px 0 12px; margin-top: 20px; font-size: 11.5px; }
+html.stack .foot .src { white-space: normal; flex-basis: 100%; }
+html.stack .cover { padding: 26px 16px 0; }
+html.stack .cover .left { width: auto; gap: 14px; }
+html.stack .cover .logo { width: 240px; }
+html.stack .cover h1 { font-size: 38px; }
+html.stack .cover .sub { font-size: 16px; }
+html.stack .cover .author { font-size: 19px; }
+html.stack .cover .art { position: relative; right: auto; top: auto; bottom: auto; width: 100%; height: 420px; margin-top: 8px; }
+html.stack .cover .art .lbl { font-size: 18px; }
+html.stack .cover .art .lbl-x { display: none; }
+/* The screening table: one block per assist, each value labelled (it was clipped at 390 px). */
+html.stack table.t-scr thead { display: none; }
+html.stack table.t-scr caption { display: block; }
+html.stack table.t-scr, html.stack table.t-scr tbody { display: block; }
+html.stack table.t-scr tr { display: grid; grid-template-columns: 78px minmax(0, 1fr); column-gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--grid); }
+html.stack table.t-scr td { border: 0; padding: 1px 0 3px; text-align: left; white-space: nowrap; background: none; box-shadow: none; }
+html.stack table.t-scr td:first-child { grid-row: 1 / span 2; }
+html.stack table.t-scr td:not(:first-child) { grid-column: 2; }
+html.stack table.t-scr td.na { display: none; }
+html.stack table.t-scr td[data-label]::before { content: attr(data-label); display: block; font-family: var(--font-body); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+html.stack table.t-scr tr.hl { background: color-mix(in srgb, var(--run-1) 13%, transparent); box-shadow: inset 3px 0 0 var(--run-1); padding-left: 8px; }
+/* Charts keep a readable scale and scroll sideways inside their box, with a cue that stays put. */
+html.stack .chwrap { overflow-x: auto; padding-bottom: 6px; }
+html.stack .chwrap > svg.ch { width: max(100%, 540px); }
+html.stack .chwrap.wide > svg.ch { width: max(100%, 600px); }
+@media (max-width: 666px) {
+  html.stack .chwrap::before { content: "Chart: swipe sideways to see all of it \2192"; display: block; position: sticky; left: 0; margin-bottom: 4px; font-size: 12.5px; color: var(--ink-2); }
+}
+html.stack .qbox p { font-size: 24px; }
+html.stack blockquote.hyp p { font-size: 24px; }
+html.stack blockquote.hyp { padding: 14px 16px; }
+html.stack .lead { font-size: 17px; }
+html.stack table.t { font-size: 13.5px; }
+html.stack table.t th { font-size: 11px; padding: 5px 6px; }
+html.stack table.t td { padding: 6px; }
+html.stack .tablewrap { overflow-x: auto; }
+html.stack table.pa thead { display: none; }
+html.stack table.pa, html.stack table.pa tbody, html.stack table.pa tr, html.stack table.pa td { display: block; width: auto !important; }
+html.stack table.pa tr { border-bottom: 1px solid var(--rule); padding: 8px 0; }
+html.stack table.pa td { border: 0; padding: 1px 0; }
+html.stack .flow { flex-direction: column; }
+html.stack .flow li, html.stack .flow li:first-child { clip-path: none; padding: 8px 12px; border-left: 3px solid var(--ink-3); }
+html.stack .flow li.hot { border-left-color: var(--run-1); }
+html.stack .hero .v { font-size: 56px; }
+html.stack .bar { grid-template-columns: 112px minmax(0, 1fr) 76px; font-size: 13.5px; gap: 8px; }
+html.stack .road { grid-template-columns: minmax(0, 1fr); padding-top: 0; gap: 12px; }
+html.stack .road::before { left: 7px; right: auto; top: 4px; bottom: 4px; width: 3px; height: auto; }
+html.stack .road .st { padding: 0 0 0 30px; }
+html.stack .lic { gap: 16px; }
+html.stack .lic .markbig { width: 96px; height: 96px; }
+html.stack .lic-url { font-size: 13px; }
+html.stack .lic .claim { font-size: 25px; }
+html.stack .lic ul { font-size: 15.5px; }
+html.stack .slide .small { font-size: 15.5px; }
+html.stack .slide .xsmall { font-size: 13.5px; }
+html.stack .s-q .way .big { font-size: 22px; }
+html.stack .s-n table.t { font-size: 14.5px; }
+html.stack .s-n table.t td { padding: 6px; }
+html.stack .s-sim .facts, html.stack .s-more .linkcards ul { font-size: 15.5px; }
+html.stack .s-scr .bar { grid-template-columns: 112px minmax(0, 1fr) 76px; font-size: 13.5px; }
+html.stack .s-scr .bar .val { font-size: 13.5px; }
+html.stack .readorder { grid-template-columns: minmax(0, 1fr); }
+html.stack .s-cal .body, html.stack .s-fly .body { grid-template-columns: minmax(0, 1fr) !important; }
+html.stack .controls { opacity: 1; pointer-events: auto; left: 0; right: 0; bottom: 0; transform: none; border-radius: 0; justify-content: center; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-width: 1px 0 0; }
+
+/* ---------- paged layout: print, and ?print on screen ---------- */
+html.pp .deck { position: static; overflow: visible; }
+html.pp .stage { position: static; transform: none; width: 1280px; height: auto; margin: 0 auto; display: grid; gap: 24px; padding: 24px 0; }
+html.pp .slide { position: relative; inset: auto; display: flex; width: 1280px; height: 720px; animation: none; }
+html.pp .controls, html.pp .progress { display: none; }
+@page { size: 1280px 720px; margin: 0; }
+@media print {
+  :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+    --bg: #f1f2ee; --panel: #fbfbf8; --ink: #1c2226; --ink-2: #4c565c; --ink-3: #626c71;
+    --rule: #d6d9d1; --grid: #e3e5de; --ground: #8a7a62; --shaft: #d9d2c4;
+    --run-0: #2d5f8f; --run-1: #c2521a; --run-2: #177d6f; --run-3: #7a4c8e;
+    --good: #177d6f; --bad: #b3261e; --caution: #845a00; --caution-bg: #f6ecd2;
+    --focus: #2d5f8f; --link: #2d5f8f; --code-bg: #eceee8; --accent-ink: #a8440f; color-scheme: light;
+  }
+  html, body { background: #fbfbf8; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html .deck, html.pp .deck, html.stack .deck { position: static; overflow: visible; background: none; }
+  html .stage, html.pp .stage, html.stack .stage { position: static; transform: none; width: 1280px; height: auto; margin: 0; padding: 0; display: block; gap: 0; }
+  html .slide, html.pp .slide, html.stack .slide { position: relative; inset: auto; display: flex !important; width: 1280px; height: 720px; border: 0; border-radius: 0; box-shadow: none; animation: none; break-after: page; page-break-after: always; break-inside: avoid; }
+  html .slide:last-child { break-after: auto; page-break-after: auto; }
+  .controls, .progress, .skip { display: none !important; }
+  a { text-decoration: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#s1">Skip to the first slide</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <clipPath id="mk-c"><rect width="64" height="64" rx="12"/></clipPath>
+    <clipPath id="mk-r"><path d="M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V46H28Z"/></clipPath>
+    <linearGradient id="mk-t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbf8" stop-opacity=".5"/><stop offset="1" stop-color="#fbfbf8" stop-opacity="0"/></linearGradient>
+    <linearGradient id="cv-trail" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbf8" stop-opacity=".42"/><stop offset="1" stop-color="#fbfbf8" stop-opacity="0"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 64 64">
+      <g clip-path="url(#mk-c)"><rect width="64" height="41" fill="#2d5f8f"/><rect y="41" width="64" height="23" fill="#1c2226"/><rect x="25" y="41" width="14" height="23" fill="#2b3238"/><path d="M0 42.25H25M39 42.25H64" stroke="#b09a78" stroke-width="2.5"/><path d="M25.6 41V64M38.4 41V64" stroke="#b09a78" stroke-opacity=".55" stroke-width="1.2"/><path d="M19.5 47.5h5.5M39 47.5h5.5" stroke="#f08a4b" stroke-width="2.8"/><path d="M19.5 53.5h5.5M39 53.5h5.5" stroke="#f08a4b" stroke-opacity="0.62" stroke-width="2.8"/><path d="M19.5 59.5h5.5M39 59.5h5.5" stroke="#f08a4b" stroke-opacity="0.32" stroke-width="2.8"/><rect x="28" y="46" width="8" height="15" fill="url(#mk-t)"/><path d="M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V46H28Z" fill="#fbfbf8"/><rect x="33.6" y="4" width="3" height="43" fill="#dfe4e1" clip-path="url(#mk-r)"/><rect x="28" y="27" width="8" height="2.2" fill="#1c2226"/><path d="M0 41V52A12 12 0 0 0 12 64H52A12 12 0 0 0 64 52V41" fill="none" stroke="#4c565c" stroke-width="3"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<main class="deck" id="deck" aria-roledescription="slide deck" aria-label="launch-assist-sim slide deck">
+<div class="stage" id="stage">
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<!-- 1 ─ Title -->
+<section class="slide dark cover" id="s1" data-title="Title">
+  <div class="left">
+    <svg class="logo" viewBox="0 0 396.06 64" role="img" aria-label="launch-assist-sim">
+      <use href="#mark" width="64" height="64"/>
+      <g transform="translate(82 47)" fill="none" stroke-width="5.59" stroke-linecap="butt"><path stroke="#e3e7e4" d="M2.79 -37L2.79 0M25.09 -16.8C25.09 -20.77 22.66 -23.2 18.69 -23.2C14.72 -23.2 12.29 -20.77 12.29 -16.8L12.29 -9.2C12.29 -5.23 14.72 -2.790 18.69 -2.79C22.66 -2.79 25.09 -5.23 25.09 -9.2M25.09 -26L25.09 0M48.8 -26L48.8 0M48.8 -9.5C48.8 -5.34 46.25 -2.8 42.09 -2.8C37.93 -2.8 35.39 -5.34 35.39 -9.5L35.39 -26M59.09 0L59.09 -26M59.09 -16.5C59.09 -20.66 61.63 -23.2 65.790 -23.2C69.95 -23.2 72.5 -20.66 72.5 -16.5L72.5 0M93 -17.7C93 -21.11 90.9 -23.2 87.49 -23.2C84.08 -23.2 81.99 -21.11 81.99 -17.7L81.99 -8.3C81.99 -4.89 84.08 -2.79 87.49 -2.79C90.9 -2.79 93 -4.89 93 -8.3M101.99 0L101.99 -37M101.99 -16.5C101.99 -20.66 104.53 -23.2 108.69 -23.2C112.85 -23.2 115.4 -20.66 115.4 -16.5L115.4 0M151.2 -16.8C151.2 -20.77 148.76 -23.2 144.79 -23.2C140.82 -23.2 138.39 -20.77 138.39 -16.8L138.39 -9.2C138.39 -5.23 140.82 -2.79 144.79 -2.79C148.76 -2.79 151.2 -5.23 151.2 -9.2M151.2 -26L151.2 0M170.2 -18.8C170.2 -21.53 168.29 -23.2 165.19 -23.2C162.09 -23.2 160.19 -21.3 160.19 -18.2C160.19 -14.98 170.2 -11.02 170.2 -7.8C170.2 -4.7 168.29 -2.79 165.19 -2.79C162.09 -2.79 160.19 -4.47 160.19 -7.2M189.2 -18.8C189.2 -21.53 187.29 -23.2 184.19 -23.2C181.09 -23.2 179.19 -21.3 179.19 -18.2C179.19 -14.98 189.2 -11.02 189.2 -7.8C189.2 -4.7 187.29 -2.79 184.19 -2.79C181.09 -2.79 179.19 -4.47 179.19 -7.2M198.19 -26L198.19 0M198.19 -35.99L198.19 -30.4M217.19 -18.8C217.19 -21.53 215.28 -23.2 212.18 -23.2C209.08 -23.2 207.18 -21.3 207.18 -18.2C207.18 -14.98 217.19 -11.02 217.19 -7.8C217.19 -4.7 215.28 -2.79 212.18 -2.79C209.08 -2.79 207.18 -4.47 207.18 -7.2M228.58 -32.5L228.58 -6.59C228.58 -4.24 230.02 -2.79 232.38 -2.79L234.78 -2.79M223.38 -23.2L234.97 -23.2M265.18 -18.8C265.18 -21.53 263.27 -23.2 260.17 -23.2C257.07 -23.2 255.17 -21.3 255.17 -18.2C255.17 -14.98 265.18 -11.02 265.18 -7.8C265.18 -4.7 263.27 -2.79 260.17 -2.79C257.07 -2.79 255.17 -4.47 255.17 -7.2M274.17 -26L274.17 0M274.17 -35.99L274.17 -30.4M284.46 0L284.46 -26M284.46 -17C284.46 -20.85 286.81 -23.2 290.66 -23.2C294.5 -23.2 296.86 -20.85 296.86 -17L296.86 0M296.86 -17C296.86 -20.85 299.22 -23.2 303.06 -23.2C306.91 -23.2 309.27 -20.85 309.27 -17L309.27 0"/><path stroke="#f08a4b" d="M121.59 -11.96L132.19 -11.96M238.37 -11.96L248.97 -11.96"/></g>
+    </svg>
+    <p class="kicker">Research simulator · ground-powered launch assist</p>
+    <h1>How much rocket propellant can a ground-powered push replace?</h1>
+    <p class="sub">A vertical maglev silo pushes a Falcon 9-class rocket out of the ground at about 77 m/s, before or while its engines light. The simulator measures what that is worth, always against the same rocket launched from a pad.</p>
+    <div class="chips">
+      <span class="badge accent">Preliminary results</span>
+      <span class="badge">Phases 0–2 done · SP1 in progress</span>
+      <span class="badge">Status as of 2 October 2026</span>
+    </div>
+    <p class="author">Rahul Singh Khokhar <span>· October 2026</span></p>
+  </div>
+  <div class="art" aria-hidden="true">
+    <svg viewBox="0 0 470 675" preserveAspectRatio="xMidYMax slice">
+      <defs>
+        <linearGradient id="cv-fade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".3" stop-color="#fff" stop-opacity="1"/></linearGradient>
+        <mask id="cv-mask"><rect width="470" height="675" fill="url(#cv-fade)"/></mask>
+      </defs>
+      <g mask="url(#cv-mask)">
+        <g stroke="#222a2f" stroke-width="1">
+          <path d="M0 70H470M0 150H470M0 230H470M0 310H470M0 390H470"/>
+          <path d="M35 0V470M115 0V470M195 0V470M275 0V470M355 0V470M435 0V470"/>
+        </g>
+        <rect x="0" y="470" width="470" height="205" fill="#1c2226"/>
+        <path d="M0 471.5H196M274 471.5H470" stroke="#b09a78" stroke-width="3"/>
+      </g>
+      <rect x="196" y="470" width="78" height="205" fill="#2b3238"/>
+      <path d="M197 470V675M273 470V675" stroke="#b09a78" stroke-opacity=".55" stroke-width="1.5"/>
+      <g stroke="#f08a4b" stroke-width="6">
+        <path d="M174 492h20M276 492h20"/>
+        <path d="M174 520h20M276 520h20" stroke-opacity=".8"/>
+        <path d="M174 548h20M276 548h20" stroke-opacity=".6"/>
+        <path d="M174 576h20M276 576h20" stroke-opacity=".44"/>
+        <path d="M174 604h20M276 604h20" stroke-opacity=".3"/>
+        <path d="M174 632h20M276 632h20" stroke-opacity=".18"/>
+        <path d="M174 660h20M276 660h20" stroke-opacity=".1"/>
+      </g>
+      <rect x="221" y="440" width="28" height="120" fill="url(#cv-trail)"/>
+      <path d="M235 112Q238 40 470 22" stroke="#7fb0e0" stroke-width="2.5" stroke-dasharray="7 7" fill="none"/>
+      <path d="M221 198C221 166 229 144 235 134C241 144 249 166 249 198V440H221Z" fill="#fbfbf8"/>
+      <path d="M241 146C245 160 249 176 249 198V440H241Z" fill="#dfe4e1"/>
+      <rect x="221" y="280" width="28" height="6" fill="#1c2226"/>
+      <path d="M221 440h28" stroke="#1c2226" stroke-width="2"/>
+      <g class="lbl" font-family="IBM Plex Mono, Cascadia Mono, Consolas, monospace" fill="#87919a">
+        <text x="300" y="497">maglev rings</text>
+        <text x="300" y="518" class="lbl-x">(a vertical</text>
+        <text x="300" y="537" class="lbl-x">linear motor)</text>
+        <text x="262" y="458">release · 76.7 m/s</text>
+        <text x="300" y="610">100 m stroke</text>
+        <text x="300" y="632">3 g net</text>
+      </g>
+    </svg>
+  </div>
+  <footer class="foot"><span class="src">© 2026 Rahul Singh Khokhar · All rights reserved · public to read, not open source</span><span class="n"></span></footer>
+</section>
+
+<!-- 2 ─ The question -->
+<section class="slide s-q" data-title="The question">
+  <p class="kicker">The question</p>
+  <h2>Keep the payload and the orbit. How much propellant can the ground replace?</h2>
+  <div class="body">
+    <div class="qbox">
+      <p>At a fixed payload and the same 200 km circular orbit, what share of a Falcon 9-class rocket's propellant can an electrically powered silo push replace?</p>
+    </div>
+    <div class="cols-2" style="display:grid;gap:22px">
+      <div>
+      <div class="ways">
+        <div class="card way">
+          <h3>Way 1 · more payload</h3>
+          <p class="big">Same propellant, more payload</p>
+          <p class="small">Measured in Phase 2 on the <span class="nb">2-D</span> model: <span class="strong">+1,498.8 kg</span> for the cold-start silo (preliminary, slide 10).</p>
+        </div>
+        <div class="card way now">
+          <h3 style="color:var(--accent-ink)">Way 2 · less propellant</h3>
+          <p class="big">Same payload, less propellant</p>
+          <p class="small"><span class="strong">The headline question. Not answered yet:</span> it is being computed in phase SP1 (slide 13 shows a first probe).</p>
+        </div>
+      </div>
+      <p class="cav way-cav"><b>Way 1 caveats</b>No structural mass is charged for the 4 g push (about 8.1 t of <span class="nb">stage-1</span> strengthening would cancel the gain); gate vehicle +14.3% high.</p>
+      </div>
+      <div>
+        <h3>Why a launch company might care</h3>
+        <ul class="small" style="line-height:1.5">
+          <li>A payload gain helps only on missions that need more mass to orbit. Propellant replaced at a fixed payload would apply at every launch.</li>
+          <li>The ground energy can come from renewables and be reused every launch (the hypothesis, README).</li>
+          <li>"Energy is cheap; power isn't": the push needs about 1.2 MWh, delivered in 2.6 s at a GW-class peak (README hand calculation).</li>
+        </ul>
+        <p class="xsmall" style="margin-top:10px">This is motivation, not a result. Whether any operator wants the trade has not been asked or tested here.</p>
+      </div>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: the user's question (docs/handoff/archive/2026-09-30-phases-0-2.md, section 1) · README.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 3 ─ The concepts -->
+<section class="slide" data-title="The concepts">
+  <p class="kicker">The concepts</p>
+  <h2>Three ways to start: a silo, a ramp, and the pad baseline</h2>
+  <div class="body cols-3" style="gap:22px">
+    <div class="concept">
+      <span class="badge accent tag">Modelled · concept A only so far</span>
+      <h3>A · Vertical maglev silo</h3>
+      <div class="dgbox">
+        <svg class="dg" viewBox="0 0 340 280" role="img" aria-label="Concept A: a rocket in an underground shaft lined with electromagnetic rings, pushed up on a carriage and released at the silo mouth">
+          <rect class="earth" x="0" y="140" width="340" height="140"/>
+          <rect class="hole" x="136" y="140" width="68" height="140"/>
+          <path class="wall" d="M136 140V280M204 140V280"/>
+          <path class="groundline" d="M0 140H136M204 140H340"/>
+          <g class="coil">
+            <path d="M122 160h14M204 160h14"/>
+            <path d="M122 182h14M204 182h14" opacity=".82"/>
+            <path d="M122 204h14M204 204h14" opacity=".66"/>
+            <path d="M122 226h14M204 226h14" opacity=".5"/>
+            <path d="M122 248h14M204 248h14" opacity=".36"/>
+            <path d="M122 270h14M204 270h14" opacity=".22"/>
+          </g>
+          <path class="rk" d="M160 172C160 160 165 151 170 146C175 151 180 160 180 172V246H160Z"/>
+          <rect class="rk-band" x="160" y="194" width="20" height="3"/>
+          <rect class="carriage" x="142" y="247" width="56" height="7" rx="1"/>
+          <path class="arrow" d="M170 130V44"/><path class="arrowhead" d="M163 54L170 38L177 54Z"/>
+          <text x="182" y="58">release at the mouth,</text>
+          <text x="182" y="76">~50–100 m/s</text>
+          <path class="dim" d="M106 142V250M100 142h12M100 250h12"/>
+          <text x="96" y="192" text-anchor="end">stroke L</text>
+          <text x="96" y="210" text-anchor="end" class="m">+ braking</text>
+          <path class="leader" d="M222 182H238"/>
+          <text x="242" y="178">EM rings line</text>
+          <text x="242" y="195">the shaft</text>
+          <path class="leader" d="M200 251H238"/>
+          <text x="242" y="248">carriage (or</text>
+          <text x="242" y="265">body supports)</text>
+          <text x="8" y="130" class="m">ground</text>
+        </svg>
+      </div>
+      <p class="small">Rings in an underground shaft form a vertical linear motor. Engines light in the shaft (hot) or just after the exit (cold). Modelled as a prescribed-acceleration push.</p>
+    </div>
+    <div class="concept">
+      <span class="badge tag">Planned · README Phase 3</span>
+      <h3>B · Cable-pulled ramp</h3>
+      <div class="dgbox">
+        <svg class="dg" viewBox="0 0 340 280" role="img" aria-label="Concept B: a carriage on a horizontal track pulled by a cable over pulleys into a curve that ends near vertical">
+          <rect class="earth" x="0" y="254" width="340" height="26"/>
+          <path class="groundline" d="M0 254H340"/>
+          <path class="support" d="M200 240V254M220 233V254M240 222V254M260 202V254M280 124V254"/>
+          <path class="support" d="M272 124H288"/>
+          <path class="track" d="M14 244H180A100 100 0 0 0 280 144V124"/>
+          <path class="cable" d="M146 239H180A95 95 0 0 0 275 144V122"/>
+          <circle class="pulley" cx="282" cy="118" r="7"/>
+          <path class="cable" d="M289 118V238"/>
+          <rect class="winch" x="282" y="238" width="30" height="16" rx="2"/>
+          <path class="rk" d="M40 226H128C134 226 140 230 146 233C140 236 134 240 128 240H40Z"/>
+          <rect class="rk-band" x="72" y="226" width="3" height="14"/>
+          <rect class="carriage" x="48" y="240" width="84" height="4"/>
+          <path class="chev" d="M60 214l6 5-6 5M72 214l6 5-6 5M84 214l6 5-6 5"/>
+          <path class="arrow" d="M280 110V42"/><path class="arrowhead" d="M273 52L280 36L287 52Z"/>
+          <text x="270" y="50" text-anchor="end">release, 80–90°</text>
+          <text x="270" y="68" text-anchor="end">above horizontal</text>
+          <text x="196" y="132" text-anchor="end">curve of radius R:</text>
+          <text x="196" y="149" text-anchor="end" class="m">a tower about R tall</text>
+          <text x="196" y="166" text-anchor="end" class="m">if it ends vertical</text>
+          <text x="40" y="206">horizontal run</text>
+          <text x="8" y="273" class="m">cable → pulleys → winch (or flywheel)</text>
+        </svg>
+      </div>
+      <p class="small">A winch pulls a carriage along a track that curves from horizontal toward vertical, and the rocket is released at the top. The original idea used a train to pull the cable.</p>
+    </div>
+    <div class="concept">
+      <span class="badge prelim tag">Baseline · every result is a delta</span>
+      <h3>C · Pad baseline</h3>
+      <div class="dgbox">
+        <svg class="dg" viewBox="0 0 340 280" role="img" aria-label="Concept C: the same rocket on a normal pad with a launch tower, flying its own ascent">
+          <rect class="earth" x="0" y="254" width="340" height="26"/>
+          <path class="groundline" d="M0 254H340"/>
+          <rect class="padblock" x="130" y="246" width="100" height="8"/>
+          <path class="support" d="M206 92V246M220 92V246M206 92L220 118L206 144L220 170L206 196L220 222L206 246M220 92L206 118L220 144L206 170L220 196L206 222L220 246"/>
+          <path class="support" d="M192 130H206"/>
+          <path class="traj" d="M180 66C181 30 222 14 330 10"/>
+          <path class="rk" d="M170 110C170 98 175 89 180 82C185 89 190 98 190 110V244H170Z"/>
+          <rect class="rk-band" x="170" y="160" width="20" height="3"/>
+          <path class="leader" d="M166 236H122"/>
+          <text x="118" y="232" text-anchor="end">lit at −2 s,</text>
+          <text x="118" y="249" text-anchor="end">held down</text>
+          <text x="20" y="100">same rocket,</text>
+          <text x="20" y="117">own ascent</text>
+          <text x="20" y="134" class="m">(sweep-optimized)</text>
+          <text x="236" y="40" class="m">gravity turn</text>
+        </svg>
+      </div>
+      <p class="small">The same rocket from a normal pad, with its own sweep-optimized ascent in the same guidance family. Every result is a difference against C.</p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "The concepts" (diagrams redrawn)</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 4 ─ The hypothesis -->
+<section class="slide s-h" data-title="The hypothesis">
+  <p class="kicker">The hypothesis</p>
+  <h2>Every metre per second from the ground should help</h2>
+  <div class="body">
+    <blockquote class="hyp">
+      <p>Any ground-supplied velocity, however small, cuts the propellant the rocket needs, or raises its payload. The ground energy can come from renewables and be reused every launch.</p>
+      <footer>README.md, "The concepts"</footer>
+    </blockquote>
+    <div class="cols-2" style="display:grid;gap:28px">
+      <div>
+        <h3>How it is tested</h3>
+        <ul class="small checklist">
+          <li>Every run is a difference against the same rocket launched from a pad.</li>
+          <li>Pad and variants share the vehicle, the guidance family, the sweep grid and the search budget.</li>
+          <li>No physics feature is used in an experiment until its analytic test passes.</li>
+          <li>Results that undercut the hypothesis are reported as plainly as the ones that support it.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What could sink it</h3>
+        <ul class="small checklist">
+          <li>Extra structure for a full, fuelled stack pushed at 4 g felt.</li>
+          <li>Speed lost while the engines light after release.</li>
+          <li>Aerodynamic loads from starting fast, low in the atmosphere.</li>
+          <li>Ground power: gigawatt-class peaks for a few seconds.</li>
+        </ul>
+        <p class="xsmall" style="margin-top:8px">"The simulator's real job is to measure these penalties against the ideal numbers" (README).</p>
+      </div>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "The concepts" and "What can eat the gain" · CLAUDE.md, "Experiments and reporting"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 5 ─ First-order numbers -->
+<section class="slide s-n" data-title="First-order numbers">
+  <p class="kicker">First-order numbers</p>
+  <h2>About 9 kg of payload per m/s, in the ideal case</h2>
+  <div class="badges"><span class="badge hand">Hand calculations · made before the simulator was built</span><span class="badge hand">Ideal rocket equation · losses held constant</span></div>
+  <div class="body cols-2" style="gap:40px">
+    <div class="tablewrap">
+      <table class="t">
+        <caption>Exit speed <span class="nt">v = √(2aL)</span></caption>
+        <thead><tr><th>Track length</th><th class="r">1 g</th><th class="r">3 g</th><th class="r">5 g</th></tr></thead>
+        <tbody>
+          <tr><td>10 m</td><td class="num r">14 m/s</td><td class="num r">24 m/s</td><td class="num r">31 m/s</td></tr>
+          <tr><td>50 m</td><td class="num r">31 m/s</td><td class="num r">54 m/s</td><td class="num r">70 m/s</td></tr>
+          <tr><td>100 m</td><td class="num r">44 m/s</td><td class="num r hl">77 m/s</td><td class="num r">99 m/s</td></tr>
+          <tr><td>300 m</td><td class="num r">77 m/s</td><td class="num r">133 m/s</td><td class="num r">172 m/s</td></tr>
+          <tr><td>1,000 m</td><td class="num r">140 m/s</td><td class="num r">243 m/s</td><td class="num r">313 m/s</td></tr>
+        </tbody>
+      </table>
+      <p class="xsmall" style="margin-top:10px">a is the net acceleration along the track; a vertical silo must also supply 1 g to hold the weight. <span class="strong">Simulation update:</span> the silo model reproduces √(2aL) exactly, 76.71 m/s after 2.607 s at 3 g net over 100 m (RQ3-1d).</p>
+    </div>
+    <div class="tablewrap">
+      <table class="t t-scr">
+        <caption>Ideal screening: what an assist is worth</caption>
+        <thead><tr><th>Assist</th><th class="r">Payload gain</th><th class="r">Or <span class="nb">stage-1</span> propellant saved</th></tr></thead>
+        <tbody>
+          <tr><td class="num">25 m/s</td><td class="num r" data-label="Payload gain">+220 kg (+1.0%)</td><td class="num r na">—</td></tr>
+          <tr><td class="num">50 m/s</td><td class="num r" data-label="Payload gain">+440 kg (+1.9%)</td><td class="num r na">—</td></tr>
+          <tr class="hl"><td class="num">77 m/s</td><td class="num r" data-label="Payload gain">+690 kg (+3.0%)</td><td class="num r" data-label="Stage-1 propellant saved">14 t (3.6%)</td></tr>
+          <tr><td class="num">99 m/s</td><td class="num r" data-label="Payload gain">+890 kg (+3.9%)</td><td class="num r" data-label="Stage-1 propellant saved">18 t (4.6%)</td></tr>
+          <tr><td class="num">150 m/s</td><td class="num r" data-label="Payload gain">+1,360 kg (+6.0%)</td><td class="num r na">—</td></tr>
+          <tr><td class="num">300 m/s</td><td class="num r" data-label="Payload gain">+2,790 kg (+12.2%)</td><td class="num r" data-label="Stage-1 propellant saved">53 t (13.5%)</td></tr>
+        </tbody>
+      </table>
+      <p class="xsmall" style="margin-top:10px">Generic Falcon 9-class two-stage vehicle, 542.6 t (published 549 t); <span class="nb">stage-1</span> dry mass 25.6 t and average Isp 295 s assumed; fairing dropped at staging. NASA's "over 20%" fuel-saving claim for ~275 m/s is a benchmark to explain, not a target.</p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "What first-order numbers say" · docs/findings/RQ3-silo-screening-1d.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 6 ─ What can eat the gain -->
+<section class="slide" data-title="What can eat the gain">
+  <p class="kicker">What can eat the gain</p>
+  <h2>Nine penalties the simulator has to measure</h2>
+  <div class="body" style="gap:10px">
+    <p class="xsmall"><span class="pk h">Hand</span>the README's first-order size · <span class="pk s">Sim</span>measured since (preliminary, concept A, sweep-optimized, gate vehicle +14.3% high) · also in the README: train traction, sideways loads</p>
+    <div class="pgrid">
+      <div class="card"><h3>Axial load on a full stack</h3>
+        <p><span class="k h">Hand</span>A 3 g net push means a fuelled stack feels 4 g: 21.5 MN at the interface, 2.8× liftoff thrust.</p>
+        <p><span class="k s">Sim</span>3.996 g and 22.49 MN on the <span class="nb">2-D</span> stack. No structural mass charged.</p></div>
+      <div class="card"><h3>Lighting after release</h3>
+        <p><span class="k h">Hand</span>g × (delay + ramp/2): 5–25 m/s, up to a third of a 77 m/s assist.</p>
+        <p><span class="k s">Sim</span><span class="nb">2-D</span> costs about 2× more: 0.5 s + 2 s ramp loses 32.30 m/s on the README masses.</p></div>
+      <div class="card"><h3>Hardware and strengthening</h3>
+        <p><span class="k h">Hand</span>Break-even at ~5.5 t added to stage 1, ~0.7 t to stage 2.</p>
+        <p><span class="k s">Sim</span>~184 kg of payload per tonne of <span class="nb">stage-1</span> mass, so break-even ~8.1 t.</p></div>
+      <div class="card"><h3>Peak power</h3>
+        <p><span class="k h">Hand</span>≈2.2 GJ in 2.6 s, ~1.65 GW peak; ~1.2 MWh of electricity at 50%.</p>
+        <p><span class="k s">Sim</span>2.249 GJ with a 1.725 GW peak on the heavier <span class="nb">2-D</span> stack.</p></div>
+      <div class="card"><h3>Aerodynamics</h3>
+        <p><span class="k h">Hand</span>Extra speed low in dense air raises drag and possibly <span class="nb">max-Q</span>.</p>
+        <p><span class="k s">Sim</span>Unthrottled <span class="nb">max-Q</span> −16.0%; drag loss −3.5 m/s; <span class="nb">q-alpha</span> at the kick 1.7–3.4× the pad's.</p></div>
+      <div class="card"><h3>Failed ignition (A)</h3>
+        <p><span class="k h">Hand</span>An unlit rocket coasts ~300 m up, then falls back into the silo.</p>
+        <p><span class="k s">Sim</span>Back at the mouth at 76.60 m/s after 15.689 s. No abort modelled.</p></div>
+      <div class="card"><h3>Silo air (A)</h3>
+        <p><span class="k h">Hand</span>A snug shaft is a piston: up to 1.1 MN for a 3.7 m bore, ~5% of the drive.</p>
+        <p><span class="k s">Sim</span>Every run vents the shaft, with no shaft drag (biases power ~0.08% low).</p></div>
+      <div class="card"><h3>Carriage braking</h3>
+        <p><span class="k h">Hand</span>At 77 m/s, braking at 5 g needs ~60 m.</p>
+        <p><span class="k s">Sim</span>60.0 m added: the 100 m stroke needs a 160 m facility.</p></div>
+      <div class="card"><h3>Curves and shallow release (B)</h3>
+        <p><span class="k h">Hand</span>R = v²/aₙ: 600 m for 1 g at 77 m/s; an unwinged release droops 5.2°/s at 45°.</p>
+        <p><span class="k s">Sim</span>Not modelled yet: concept B waits for README Phase 3.</p></div>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "What can eat the gain" and its simulation updates · docs/findings (RQ2, RQ3, RQ6)</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 7 ─ Prior art -->
+<section class="slide" data-title="Prior art">
+  <p class="kicker">Prior art</p>
+  <h2>Launch assist is not a new idea</h2>
+  <div class="body" style="gap:12px">
+    <div class="tablewrap">
+      <table class="t pa">
+        <thead><tr><th>Project</th><th>What it did</th><th>Status</th><th>Lesson</th></tr></thead>
+        <tbody>
+          <tr><td>NASA Magnetic Launch Assist / MagLifter (1990s–2000s)</td><td>Horizontal maglev track about 1.5 miles long, 600 mph in 9.5 s</td><td>Technology demos only</td><td>The closest precedent; its claims are a benchmark to explain</td></tr>
+          <tr><td>EMALS, U.S. Navy</td><td>91 m linear motor launches a 45 t aircraft to 240 km/h; four 121 MJ flywheels</td><td>Operational</td><td>Proves ~100 m, ~2.5 g, ~70 m/s at 45 t</td></tr>
+          <tr><td>Holloman maglev sled, USAF (2016)</td><td>Rocket-propelled superconducting sled, 633 mph on 2,100 ft</td><td>Test facility</td><td>Maglev works for sleds near Mach 1</td></tr>
+          <tr><td>DARPA/NASA Horizontal Launch Study (2011)</td><td>Reviewed 130+ horizontal-launch studies spanning 60 years</td><td>Only Pegasus became operational</td><td>Many concepts close on paper; cost decides</td></tr>
+          <tr><td>NASA KSC railgun launch assist (2011)</td><td>Argued for 2–3 g for several seconds, beyond Mach 1</td><td>Analysis, lab tests</td><td>Another drive option</td></tr>
+          <tr><td>Radian Aerospace</td><td>~2-mile rocket sled releases a winged spaceplane at Mach 0.7, engines lit</td><td>In development; subscale tests 2024</td><td>Wings make a shallow release workable</td></tr>
+          <tr><td>SpinLaunch</td><td>33 m vacuum centrifuge, ~10,000 g, 10 test flights (2021–22)</td><td>No orbital system built (2025 reports)</td><td>Kinetic launch suits only g-hardened payloads</td></tr>
+          <tr><td>Long March 11, China</td><td>58 t solid launcher cold-launched from a tube, igniting after ejection</td><td>Operational</td><td>"Eject, then ignite" works at 58 t with solids</td></tr>
+          <tr><td>Intamin Accelerator Coasters (Kingda Ka)</td><td>Hydraulic winch and cable: 0–206 km/h in 3.5 s, then a 139 m vertical tower</td><td>Kingda Ka demolished 2025</td><td>Concept B at park scale, rollbacks included</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">This project's angle is narrow: measure, on one simulator, what a push is worth to an unchanged two-stage rocket, always against the same rocket from a pad. Pad-start tools (Kerbal Space Program, OpenRocket, RocketPy) cannot ask that question.</p>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "Prior art" and "Why this exists" (references listed there)</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 8 ─ The simulator -->
+<section class="slide s-sim" data-title="The simulator">
+  <p class="kicker">The simulator</p>
+  <h2>Phases joined by events, and every piece tested first</h2>
+  <div class="body" style="gap:22px">
+    <ol class="flow" aria-label="Phases of a run">
+      <li><b>Hold</b><span>restrained; engines may start</span></li>
+      <li class="hot"><b>Assist</b><span><span class="nb">1-DOF</span> along the track</span></li>
+      <li><b>Release</b><span>mapped into the ascent frame</span></li>
+      <li><b>Ignition</b><span>step, ramp or lag</span></li>
+      <li><b>Ascent</b><span><span class="nb">1-D</span> vertical or <span class="nb">2-D</span> planar</span></li>
+      <li><b>Staging</b><span>dry mass, fairing</span></li>
+      <li><b>Insertion</b><span>200 km circular</span></li>
+    </ol>
+    <div class="cols-3" style="display:grid;gap:26px">
+      <div>
+        <h3>Built in Phases 0–2</h3>
+        <ul class="facts">
+          <li><span class="nb">2-D</span> planar ascent over a spherical rotating Earth; a <span class="nb">1-D</span> vertical model.</li>
+          <li>ICAO standard atmosphere, drag varying with Mach, back-pressure.</li>
+          <li>Vertical rise, kick, gravity turn; linear-tangent steering on stage 2.</li>
+          <li>Payload capacity found by bisection; guidance sweep-optimized.</li>
+          <li>Constant-acceleration silo push, with no force or power limit.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Validation first</h3>
+        <ul class="facts">
+          <li>Rocket equation in vacuum: relative error &lt; 1e-6.</li>
+          <li>Elliptical orbit (e ≈ 0.3), 10 revolutions: energy and momentum drift &lt; 1e-8.</li>
+          <li>Equatorial east pad starts at 465.1 m/s inertial.</li>
+          <li>Loss budget closes to &lt; 0.01 m/s over a full ascent.</li>
+          <li>Assist energy identity &lt; 1e-6; 10× tighter tolerances move payload &lt; 0.1%.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Tests and outputs</h3>
+        <div class="counts">
+          <div class="count"><span class="v">200</span><span class="k">tests at the Phase 0 gate</span></div>
+          <div class="count"><span class="v">269</span><span class="k">at the Phase 1 gate</span></div>
+          <div class="count"><span class="v">951</span><span class="k">928 fast + 23 slow at the Phase 2 handoff</span></div>
+        </div>
+        <p class="facts" style="margin-top:12px">Every run writes <code>summary.md</code>, <code>metrics.json</code>, CSV time series and plots. <code>animate</code> makes an MP4 or GIF; <code>replay</code> an interactive HTML page.</p>
+      </div>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md · CLAUDE.md, "Validation first" · TODO.md (M1, M2) · docs/handoff/archive, section 7</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 9 ─ Calibration -->
+<section class="slide s-cal" data-title="Calibration">
+  <p class="kicker">Calibration</p>
+  <h2>The gate vehicle lands +14.3% high: a documented miss</h2>
+  <div class="badges"><span class="badge hand">Labelled calibration, not validation</span><span class="badge">200 km circular · 28.5° · due east · expendable</span></div>
+  <div class="body cols-ab" style="grid-template-columns:minmax(0,640px) minmax(0,1fr)">
+    <div>
+      <div class="chwrap wide"><svg class="ch" viewBox="0 0 640 300" role="img" aria-label="Calibration: published 22,800 kg with a plus or minus 10 percent band; set A 24,700 kg inside, set B 25,416 kg and the gate vehicle C 26,054 kg outside" xmlns="http://www.w3.org/2000/svg"><rect class="band" x="54.2" y="62" width="264.5" height="188"/><text class="t-mute" x="60.2" y="78">−10%</text><text class="t-mute" x="312.6" y="78" text-anchor="end">+10% · 25,080</text><line class="ref" x1="186.4" y1="40" x2="186.4" y2="250"/><text class="t-strong" x="186.4" y="32" text-anchor="middle">published 22,800 kg</text><text class="t-mute" x="452" y="78">P* to the orbit</text><line class="axis" x1="24" y1="250" x2="430" y2="250"/><line class="axis" x1="24" y1="250" x2="24" y2="255"/><text class="t-mute" x="24" y="271" text-anchor="middle">20,000</text><line class="axis" x1="82" y1="250" x2="82" y2="255"/><line class="axis" x1="140" y1="250" x2="140" y2="255"/><text class="t-mute" x="140" y="271" text-anchor="middle">22,000</text><line class="axis" x1="198" y1="250" x2="198" y2="255"/><line class="axis" x1="256" y1="250" x2="256" y2="255"/><text class="t-mute" x="256" y="271" text-anchor="middle">24,000</text><line class="axis" x1="314" y1="250" x2="314" y2="255"/><line class="axis" x1="372" y1="250" x2="372" y2="255"/><text class="t-mute" x="372" y="271" text-anchor="middle">26,000</text><line class="axis" x1="430" y1="250" x2="430" y2="255"/><text x="24" y="296">payload to 200 km circular, 28.5°, expendable (kg)</text><line class="grid" x1="304.6" y1="110" x2="444" y2="110"/><text class="" x="30" y="115">A · README masses</text><circle class="dot-mute" cx="296.6" cy="110" r="5.5"><title>A · README masses: 24,700.0 kg, +8.33% · inside</title></circle><text class="" x="452" y="109">24,700.0 kg</text><text class="t-mute" x="452" y="125">+8.33% · inside</text><line class="grid" x1="346.1" y1="158" x2="444" y2="158"/><text class="" x="30" y="163">B · recorded scope</text><circle class="dot-mute" cx="338.1" cy="158" r="5.5"><title>B · recorded scope: 25,416.3 kg, +11.48% · outside</title></circle><text class="" x="452" y="157">25,416.3 kg</text><text class="t-mute" x="452" y="173">+11.48% · outside</text><line class="grid" x1="383.2" y1="206" x2="444" y2="206"/><text class="t-strong" x="30" y="211">C · gate vehicle</text><circle class="dot-silo" cx="375.2" cy="206" r="7"><title>C · gate vehicle: 26,054.4 kg, +14.3% · outside</title></circle><text class="t-strong" x="452" y="205">26,054.4 kg</text><text class="t-mute" x="452" y="221">+14.3% · outside</text><path class="bracket" d="M318.6 220V224H375.2V220"/><text class="t-strong" x="375.2" y="240" text-anchor="end">974.4 kg above the band</text></svg></div>
+      <p class="cav" style="margin-top:16px"><b>What it means</b>The miss carries into every <span class="nb">2-D</span> gain. On a vehicle calibrated to 22.8 t, the cold-start silo's gain would be expected near 1.3 t instead of 1.5 t (derived by proportion, not run).</p>
+    </div>
+    <div class="stack-v small">
+      <p>The reference orbit was fixed before the run and never moved. Nothing was tuned toward the published 22,800 kg.</p>
+      <p>The pre-registered gate vehicle (mass set C) reaches <span class="strong">26,054.4 kg</span>, 974.4 kg above the ±10% band's upper edge of 25,080 kg.</p>
+      <p>Every numerical check passes. The cause is not established, because the omissions point both ways: throttling, reserves and residuals would lower the payload; better guidance could raise it.</p>
+      <p>The user accepted the miss as documented on 2026-09-30. <span class="strong">Every <span class="nb">2-D</span> number on the next slides is on the gate vehicle and inherits it.</span></p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: docs/findings/CAL-f9-leo-2d.md · README.md, "Calibration"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 10 ─ 2-D results -->
+<section class="slide" data-title="2-D results">
+  <p class="kicker"><span class="nb">2-D</span> results · Phase 2</p>
+  <h2>To orbit, the cold-start silo gains +1,498.8 kg (+5.75%)</h2>
+  <div class="badges"><span class="badge prelim">Preliminary finding · RQ3-2d, RQ2-2d</span><span class="badge">Concept A · 3 g net over 100 m · released at 76.7 m/s</span></div>
+  <div class="body" style="grid-template-columns:minmax(0,1fr) 300px;gap:32px">
+    <div class="tablewrap">
+      <table class="t t-res">
+        <thead><tr><th>Run</th><th><span class="nb">Stage-1</span> start</th><th class="r">Payload P*</th><th class="r">Gain over pad</th><th style="width:150px"></th></tr></thead>
+        <tbody>
+          <tr><td>pad <span class="xsmall">(baseline)</span></td><td class="small">lit at −2 s, 2 s ramp, held down</td><td class="num r">26,054.4 kg</td><td class="num r">—</td><td></td></tr>
+          <tr><td>pad_instant <span class="xsmall">(unphysical yardstick)</span></td><td class="small">full thrust at release</td><td class="num r">26,137.5 kg</td><td class="num r">+83.1 kg</td><td><div class="tbar"><i class="yard" style="width:4.55%"></i></div></td></tr>
+          <tr><td>silo_instant <span class="xsmall">(unphysical yardstick)</span></td><td class="small">full thrust at release</td><td class="num r">27,880.4 kg</td><td class="num r">+1,826.0 kg</td><td><div class="tbar"><i class="yard" style="width:100%"></i></div></td></tr>
+          <tr class="hl"><td><b>silo_cold</b> <span class="xsmall">(reference)</span></td><td class="small">lit 0.5 s after release, 2 s ramp</td><td class="num r">27,553.2 kg</td><td class="num r"><b>+1,498.8 kg</b></td><td><div class="tbar"><i class="silo" style="width:82.08%"></i></div></td></tr>
+          <tr><td>silo_hot_<wbr>ramp_<wbr>on_<wbr>track</td><td class="small">lit on the carriage, full thrust at release</td><td class="num r">27,788.2 kg</td><td class="num r">+1,733.8 kg</td><td><div class="tbar"><i style="width:94.95%"></i></div></td></tr>
+          <tr><td>silo_hot_full</td><td class="small">full thrust for the whole push</td><td class="num r">27,543.0 kg</td><td class="num r">+1,488.6 kg</td><td><div class="tbar"><i style="width:81.52%"></i></div></td></tr>
+        </tbody>
+      </table>
+      <p class="xsmall barnote" style="margin-top:8px">Hatched bars: unphysical yardsticks (a step to full thrust). Bars scale to the largest gain, 1,826.0 kg.</p>
+    </div>
+    <div class="stack-v">
+      <div class="hero"><span class="v">+1,498.8<small> kg</small></span><span class="k">+5.75% over the pad's 26,054.4 kg</span></div>
+      <p class="small">Under every ±10% sensitivity case the gain stays between <span class="strong">+1,345</span> and <span class="strong">+1,667 kg</span>.</p>
+      <p class="small">Best physical variant: lit on the carriage, ramp ending at release, <span class="strong">+235.0 kg</span> over the cold start, paid for with 2.7 t burned on the track (no sensitivity run).</p>
+    </div>
+  </div>
+  <p class="cav"><b>Caveats</b>Sweep-optimized guidance, not optimal control · unthrottled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds · free kick (no angle-of-attack aerodynamics) · gate vehicle +14.3% high · no structural mass for the 4 g push · prescribed-acceleration drive, massless carriage, no shaft drag · planar point mass, generic C<sub>D</sub>(Mach).</p>
+  <footer class="foot"><span class="src">Source: README.md, "<span class="nb">2-D</span> to orbit" · docs/findings/RQ3-silo-screening-2d.md · RQ2-ignition-timing-2d.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 11 ─ Why twice the screening -->
+<section class="slide s-scr" data-title="Why twice the screening estimate">
+  <p class="kicker"><span class="nb">2-D</span> results · the screening check</p>
+  <h2>Twice the ideal estimate, and the loss breakdown says why</h2>
+  <div class="body cols-2" style="gap:44px">
+    <div class="stack-v" style="gap:18px">
+      <div>
+        <h3>Gain against the ideal screening</h3>
+        <div class="bars">
+          <div class="bar"><span class="lab">Ideal screening<small>README method, at the pad's payload</small></span><span class="trk"><span class="fill mute" style="width:51.07%"></span></span><span class="val">765.4 kg</span></div>
+          <div class="bar"><span class="lab">silo_cold, <span class="nb">2-D</span><small>sweep-optimized, to orbit</small></span><span class="trk"><span class="fill silo" style="width:100%"></span></span><span class="val">1,498.8 kg</span></div>
+        </div>
+        <p class="small" style="margin-top:10px">1.96×, about 2.0×. The project's rule: an assist that beats the screening must be explained by the loss breakdown, or it is treated as a bug.</p>
+      </div>
+      <p class="small">A vertical release is not constant-loss. In silo_cold the gravity, steering, back-pressure, drag and fairing terms together fall by <span class="strong">74.1 m/s</span>, and the pad pays <span class="strong">14.4 m/s</span> for burning 2.7 t while clamped. An early vertical m/s is worth about 22.7 kg of payload on this vehicle (release anchor), 2.3× the screening's 10 kg.</p>
+      <p class="cav"><b>But small pushes</b>gain little from the push itself. At the slow corner of the sweep (0.5 g, 50 m, 22 m/s) the trajectory term is negative (−11.1 m/s), and about 127 kg gross (about 83 kg net, 35%) of that point's +240 kg is the pad's hold-down burn, not the push.</p>
+    </div>
+    <div class="stack-v" style="gap:14px">
+      <div>
+        <h3>Where the gain comes from (matched basis)</h3>
+        <div class="bars">
+          <div class="bar"><span class="lab">Release speed at face value</span><span class="trk"><span class="fill" style="width:100%"></span></span><span class="val">46%</span></div>
+          <div class="bar"><span class="lab">Lower gravity and steering loss</span><span class="trk"><span class="fill" style="width:73.9%"></span></span><span class="val">34%</span></div>
+          <div class="bar"><span class="lab">The pad's hold-down burn</span><span class="trk"><span class="fill" style="width:19.6%"></span></span><span class="val">9%</span></div>
+          <div class="bar"><span class="lab">Back-pressure</span><span class="trk"><span class="fill" style="width:17.4%"></span></span><span class="val">8%</span></div>
+          <div class="bar"><span class="lab">Drag</span><span class="trk"><span class="fill" style="width:4.35%"></span></span><span class="val">2%</span></div>
+        </div>
+        <p class="xsmall" style="margin-top:8px">Capacity basis: 51 / 27 / 10 / 9 / 2%. Nothing is left unexplained beyond search noise.</p>
+      </div>
+      <p class="cav"><b>Read with</b>The 34% trajectory term appears only after MECO. It is the part a better (Phase 5) pad ascent could change, and optimal control could move it in either direction. The 9% is a baseline convention, not the push.</p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: docs/findings/RQ3-silo-screening-2d.md · README.md, "Why small assists matter" and "<span class="nb">2-D</span> to orbit"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 12 ─ Against the hypothesis -->
+<section class="slide s-ag" data-title="What goes against the hypothesis">
+  <p class="kicker">Against the hypothesis</p>
+  <h2>What goes against it, stated as plainly</h2>
+  <div class="body cols-ab" style="gap:34px">
+    <div>
+      <h3>Structural mass could cancel the whole gain</h3>
+      <div class="chwrap"><svg class="ch" viewBox="0 0 560 320" role="img" aria-label="Net payload gain falls about 184 kg per tonne of stage-1 strengthening, from +1,498.8 kg to zero at about 8.1 tonnes" xmlns="http://www.w3.org/2000/svg"><rect class="band" x="66" y="30" width="104.3" height="232"/><text class="t-mute" x="72" y="242.9">tested</text><text class="t-mute" x="72" y="258.9">±2.22 t</text><line class="grid" x1="66" y1="262" x2="536" y2="262"/><text class="t-mute" x="58" y="266" text-anchor="end">−800</text><line class="grid" x1="66" y1="228.9" x2="536" y2="228.9"/><text class="t-mute" x="58" y="232.9" text-anchor="end">−400</text><line class="zero" x1="66" y1="195.7" x2="536" y2="195.7"/><text class="t-mute" x="58" y="199.7" text-anchor="end">0</text><line class="grid" x1="66" y1="162.6" x2="536" y2="162.6"/><text class="t-mute" x="58" y="166.6" text-anchor="end">+400</text><line class="grid" x1="66" y1="129.4" x2="536" y2="129.4"/><text class="t-mute" x="58" y="133.4" text-anchor="end">+800</text><line class="grid" x1="66" y1="96.3" x2="536" y2="96.3"/><text class="t-mute" x="58" y="100.3" text-anchor="end">+1,200</text><line class="grid" x1="66" y1="63.1" x2="536" y2="63.1"/><text class="t-mute" x="58" y="67.1" text-anchor="end">+1,600</text><line class="grid" x1="66" y1="30" x2="536" y2="30"/><text class="t-mute" x="58" y="34" text-anchor="end">+2,000</text><text class="t-mute" x="66" y="280" text-anchor="middle">0</text><text class="t-mute" x="160" y="280" text-anchor="middle">2</text><text class="t-mute" x="254" y="280" text-anchor="middle">4</text><text class="t-mute" x="348" y="280" text-anchor="middle">6</text><text class="t-mute" x="442" y="280" text-anchor="middle">8</text><text class="t-mute" x="536" y="280" text-anchor="middle">10</text><text x="301" y="312" text-anchor="middle">extra stage-1 dry mass for strengthening (t)</text><text x="58" y="16" text-anchor="end" class="t-mute">kg</text><line class="silo" x1="66" y1="71.5" x2="170.3" y2="105.4"/><line class="silo dash" x1="170.3" y1="105.4" x2="536" y2="224.2"/><circle class="dot-silo" cx="66" cy="71.5" r="6"><title>+1,498.8 kg with no strengthening</title></circle><text class="t-strong" x="78" y="53.5">+1,498.8 kg with nothing charged (today)</text><text x="239.9" y="116">≈ −184 kg of payload per tonne</text><text class="t-mute" x="536" y="83.7" text-anchor="end">dashed: linear extrapolation</text><circle class="dot-hollow" cx="448.2" cy="195.7" r="6"><title>break-even about 8.1 t</title></circle><text class="t-strong" x="436.2" y="215.7" text-anchor="end">break-even ≈ 8.1 t</text><text class="t-mute" x="436.2" y="231.7" text-anchor="end">37% of the 22.2 t stage-1 dry mass</text></svg></div>
+      <p class="xsmall" style="margin-top:4px">Derived from the ±10% <span class="nb">stage-1</span> dry-mass cases of silo_cold; a linear extrapolation beyond them, not a sized structure. No mass is charged today for the 4.0 g full-stack load (22.5 MN at the interface).</p>
+    </div>
+    <div class="against">
+      <ol>
+        <li><b>The startup after release is expensive.</b> The cold start gives back 327.1 kg (34.74 m/s) against an instant start, 2.37× the <span class="nb">1-D</span> formula. A 3 s lag after the same 0.5 s delay gives back 781 kg.</li>
+        <li><b>A full hot start does not pay.</b> silo_hot_full ends 10.2 kg behind the cold start, and −18.5 to +0.1 kg under the ±10% cases: a tie, not a gain.</li>
+        <li><b>Part of the headline is the baseline.</b> The pad's 2.7 t clamped ramp accounts for 130.7 kg gross (83.1 kg net). Against a pad lit at release the gain is +1,415.8 kg.</li>
+        <li><b>The calibration miss inflates it.</b> On a vehicle calibrated to 22.8 t the gain would be near 1.3 t (derived by proportion, not run).</li>
+        <li><b>One aerodynamic load gets worse.</b> <span class="nb">q-alpha</span> at the kick is 1.7–3.4× the pad's (130–251 Pa rad at 77 m/s), with no penalty charged.</li>
+        <li><b>There is no abort.</b> After a failed ignition the full stack falls back to the shaft mouth at 76.6 m/s after 15.7 s.</li>
+        <li><b>Small pushes gain little from the push itself.</b> At 0.5 g over 50 m (22 m/s) the trajectory term is negative (−11.1 m/s), and about 83 kg net (35%) of the +240 kg is the pad's hold-down burn.</li>
+        <li><b>The trajectory gain is unverified</b> beyond the gravity-turn family: it appears only after MECO, and optimal control could move it either way (slide 11).</li>
+        <li><b>The facility is sized by power.</b> A 1.725 GW peak at release after a 2.6 s push, 2.249 GJ per launch, and 160 m of facility with the braking.</li>
+      </ol>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "Against the hypothesis" · docs/findings: RQ3-2d, RQ2-2d, RQ6</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 13 ─ Fuel replacement now -->
+<section class="slide" data-title="The fuel-replacement question now">
+  <p class="kicker">The headline question now</p>
+  <h2>Fuel replaced at fixed payload: a first probe, not a finding</h2>
+  <div class="badges"><span class="badge probe">Probe · not a finding</span><span class="badge accent">The answer is being computed in phase SP1</span></div>
+  <div class="body cols-ab" style="gap:34px">
+    <div>
+      <div class="chwrap"><svg class="ch" viewBox="0 0 560 320" role="img" aria-label="Probe: the silo-launched rocket's payload capacity falls from 27,553 kg to 26,061 kg as 10 percent of stage-1 propellant is removed, matching the full-load pad's 26,054 kg" xmlns="http://www.w3.org/2000/svg"><line class="grid" x1="70" y1="262" x2="520" y2="262"/><text class="t-mute" x="62" y="266" text-anchor="end">24,000</text><line class="grid" x1="70" y1="230.9" x2="520" y2="230.9"/><line class="grid" x1="70" y1="199.9" x2="520" y2="199.9"/><text class="t-mute" x="62" y="203.9" text-anchor="end">25,000</text><line class="grid" x1="70" y1="168.8" x2="520" y2="168.8"/><line class="grid" x1="70" y1="137.8" x2="520" y2="137.8"/><text class="t-mute" x="62" y="141.8" text-anchor="end">26,000</text><line class="grid" x1="70" y1="106.7" x2="520" y2="106.7"/><line class="grid" x1="70" y1="75.7" x2="520" y2="75.7"/><text class="t-mute" x="62" y="79.7" text-anchor="end">27,000</text><line class="grid" x1="70" y1="44.6" x2="520" y2="44.6"/><text class="t-mute" x="62" y="48.6" text-anchor="end">27,500</text><line class="axis" x1="70" y1="262" x2="520" y2="262"/><line class="axis" x1="70" y1="262" x2="70" y2="267"/><text class="t-mute" x="70" y="282" text-anchor="middle">0%</text><line class="axis" x1="160" y1="262" x2="160" y2="267"/><text class="t-mute" x="160" y="282" text-anchor="middle">2%</text><line class="axis" x1="295" y1="262" x2="295" y2="267"/><text class="t-mute" x="295" y="282" text-anchor="middle">5%</text><line class="axis" x1="520" y1="262" x2="520" y2="267"/><text class="t-mute" x="520" y="282" text-anchor="middle">10%</text><text class="t-strong" x="520" y="298" text-anchor="middle">41.1 t</text><text x="70" y="314">stage-1 propellant removed (of 410.9 t)</text><text class="t-mute" x="62" y="14" text-anchor="end">P* kg</text><line class="ref" x1="70" y1="134.4" x2="520" y2="134.4"/><text x="80" y="125.4">pad, full load: 26,054.4 kg</text><line class="pad dot-line" x1="70" y1="134.4" x2="520" y2="221.1"/><rect class="sq-pad" x="64.5" y="128.9" width="11" height="11"><title>pad, 0% less: 26,054.4 kg</title></rect><rect class="sq-pad" x="514.5" y="215.6" width="11" height="11"><title>pad, 10% less: 24,658.8 kg</title></rect><text x="516" y="245.1" text-anchor="end">pad, 10% less: 24,658.8 kg</text><polyline class="silo" points="70,41.3 160,58.7 295,85.8 520,134"/><circle class="dot-silo" cx="70" cy="41.3" r="5.5"><title>silo cold start, 0% less: 27,553.2 kg</title></circle><circle class="dot-silo" cx="160" cy="58.7" r="5.5"><title>silo cold start, 2% less: 27,274.2 kg</title></circle><circle class="dot-silo" cx="295" cy="85.8" r="5.5"><title>silo cold start, 5% less: 26,837.6 kg</title></circle><circle class="dot-silo" cx="520" cy="134" r="5.5"><title>silo cold start, 10% less: 26,061.2 kg</title></circle><text class="t-strong" x="78" y="31.3">27,553.2</text><text class="t-strong" x="168" y="48.7">27,274.2</text><text class="t-strong" x="303" y="75.8">26,837.6</text><text class="t-strong" x="514" y="156" text-anchor="end">silo, 10% less: 26,061.2 kg</text></svg></div>
+      <div class="legend"><span class="c-silo"><i class="sw line"></i><i class="sw dot"></i>silo cold start</span><span class="c-pad"><i class="sw sq"></i>pad (two points)</span><span><i class="sw ref"></i>full-load pad's payload</span></div>
+    </div>
+    <div class="stack-v" style="gap:12px">
+      <p class="small" style="font-size:16.5px">With <span class="strong">10% less <span class="nb">stage-1</span> propellant (41.1 t)</span>, the silo-launched rocket still carries the full pad's payload to the same 200 km orbit (26,061 vs 26,054 kg). That is <span class="strong">about 10% of <span class="nb">stage-1</span> propellant, 7.9% of the total</span> (410.9 + 107.5 t), before any structural mass is charged; the exact break-even is slightly above 10%.</p>
+      <div class="energy">
+        <div class="e"><span class="v">≈530 GJ</span><span class="k">combustion heat of the ~12.4 t of RP-1 removed</span></div>
+        <span class="vs">vs</span>
+        <div class="e"><span class="v">≈1.2 MWh</span><span class="k">electricity for the push: ~2.1 GJ of work, ~4.2 GJ at an assumed 50%</span></div>
+      </div>
+      <p class="small">Roughly 100:1, and <span class="strong">not an efficiency claim</span>: the saving comes from skipping the slowest, most gravity-costly part of the ascent, not from the push's energy.</p>
+    </div>
+  </div>
+  <p class="cav"><b>Caveats</b>Gate vehicle +14.3% high · sweep-optimized, unthrottled · no structural mass for the 4 g push (~8.1 t would cancel the payload gain and cut the offload too) · tanks partly filled, dry mass held fixed (no tank resizing) · <span class="nb">max-Q</span> of the offloaded silo run, 38.4 kPa, exceeds the full pad's 37.2 kPa · prescribed 3 g push, massless carriage, no shaft drag.</p>
+  <footer class="foot"><span class="src">Source: docs/handoff/archive/2026-09-30-phases-0-2.md, section 3 (probe_offload.py)</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 14 ─ Roadmap -->
+<section class="slide s-road" data-title="Roadmap">
+  <p class="kicker">Roadmap</p>
+  <h2>One phase per session, each ending in something you can run</h2>
+  <div class="body" style="gap:22px">
+    <div class="road">
+      <div class="st done"><span class="when">Done</span><b>Phase 0</b>Scaffold, atmosphere, configs, CLI</div>
+      <div class="st done"><span class="when">Done</span><b>Phase 1</b>Vertical <span class="nb">1-D</span> model and the silo push</div>
+      <div class="st done"><span class="when">Done</span><b>Phase 2</b><span class="nb">2-D</span> ascent to orbit; calibration miss accepted</div>
+      <div class="st now"><span class="when">In progress</span><b>SP1</b>Launch settings and fuel offload at fixed payload (planar)</div>
+      <div class="st"><span class="when">Next</span><b>SP2</b>Local app with a <span class="nb">2-D</span> launch scene</div>
+      <div class="st"><span class="when">Planned</span><b>SP3</b><span class="nb">3-D</span> dynamics: point mass over a rotating sphere</div>
+      <div class="st"><span class="when">Planned</span><b>SP4</b><span class="nb">3-D</span> scene; headline re-checked in <span class="nb">3-D</span></div>
+      <div class="st"><span class="when">Planned</span><b>SP5</b>Oblate Earth: J2 and the ellipsoid</div>
+      <div class="st"><span class="when">Planned</span><b>SP6</b><span class="nb">6-DOF</span> verification fly-out</div>
+    </div>
+    <div class="cols-3" style="display:grid;gap:16px">
+      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small">Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g push. <span class="strong">This decides whether the headline survives.</span> Not scheduled; can be moved up at any session boundary.</p></div>
+      <div class="card"><h3>README Phase 5 · fair comparison</h3><p class="small">Optimal-control ascent for every configuration; the headline results re-run with optimized guidance instead of sweep-optimized.</p></div>
+      <div class="card"><h3>README Phase 6 · hobby scale</h3><p class="small">A RocketPy <span class="nb">6-DOF</span> model of a real rocket with an assist before the rail; baseline apogee within ±5% of RocketPy.</p></div>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: docs/phases/README.md (program board) · README.md, "Roadmap" · TODO.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 15 ─ See it fly -->
+<section class="slide s-fly" data-title="See it fly">
+  <p class="kicker">See it fly</p>
+  <h2>The head start, in the first 8 seconds of the recorded run</h2>
+  <div class="body cols-ab" style="gap:34px">
+    <div>
+      <div class="chwrap"><svg class="ch" viewBox="0 0 560 360" role="img" aria-label="Altitude against time after release for the pad and the cold-start silo, first 8 seconds, from the recorded run" xmlns="http://www.w3.org/2000/svg"><rect class="shaft" x="64" y="260.3" width="464" height="47.7"/><text class="t-mute" x="522" y="288.2" text-anchor="end">below ground: the 100 m shaft</text><line class="zero" x1="64" y1="260.3" x2="528" y2="260.3"/><text class="t-mute" x="56" y="264.3" text-anchor="end">0</text><line class="grid" x1="64" y1="180.9" x2="528" y2="180.9"/><text class="t-mute" x="56" y="184.9" text-anchor="end">200</text><line class="grid" x1="64" y1="101.4" x2="528" y2="101.4"/><text class="t-mute" x="56" y="105.4" text-anchor="end">400</text><line class="grid" x1="64" y1="22" x2="528" y2="22"/><text class="t-mute" x="56" y="26" text-anchor="end">600</text><line class="grid" x1="64" y1="300.1" x2="528" y2="300.1"/><text class="t-mute" x="56" y="304.1" text-anchor="end">−100</text><line class="axis" x1="64" y1="308" x2="528" y2="308"/><text class="t-mute" x="106.2" y="326" text-anchor="middle">−2</text><text class="t-mute" x="190.5" y="326" text-anchor="middle">0</text><text class="t-mute" x="274.9" y="326" text-anchor="middle">+2</text><text class="t-mute" x="359.3" y="326" text-anchor="middle">+4</text><text class="t-mute" x="443.6" y="326" text-anchor="middle">+6</text><text class="t-mute" x="528" y="326" text-anchor="middle">+8</text><text x="296" y="352" text-anchor="middle">time after release (s)</text><text class="t-mute" x="56" y="12" text-anchor="end">alt m</text><polyline class="pad" points="106.2,260.3 110.4,260.3 114.6,260.3 118.8,260.3 123.1,260.3 127.3,260.3 131.5,260.3 135.7,260.3 139.9,260.3 144.1,260.3 148.4,260.3 152.6,260.3 156.8,260.3 161,260.3 165.2,260.3 169.5,260.3 173.7,260.3 177.9,260.3 182.1,260.3 186.3,260.3 190.5,260.3 192.7,260.3 196.9,260.3 201.1,260.3 205.3,260.2 209.5,260.2 213.7,260.1 218,260 222.2,259.9 226.4,259.8 230.6,259.7 234.8,259.5 239.1,259.4 243.3,259.2 247.5,259 251.7,258.8 255.9,258.6 260.1,258.4 264.4,258.1 268.6,257.9 272.8,257.6 277,257.3 281.2,257 285.5,256.7 289.7,256.4 293.9,256 298.1,255.6 302.3,255.3 306.5,254.9 310.8,254.5 315,254 319.2,253.6 323.4,253.1 327.6,252.7 331.9,252.2 336.1,251.7 340.3,251.2 344.5,250.7 348.7,250.1 352.9,249.5 357.2,249 361.4,248.4 365.6,247.8 369.8,247.2 374,246.5 378.3,245.9 382.5,245.2 386.7,244.5 390.9,243.8 395.1,243.1 399.3,242.4 403.6,241.6 407.8,240.9 412,240.1 416.2,239.3 420.4,238.5 424.7,237.7 428.9,236.9 433.1,236 437.3,235.1 441.5,234.3 445.7,233.4 450,232.4 454.2,231.5 458.4,230.6 462.6,229.6 466.8,228.6 471.1,227.6 475.3,226.6 479.5,225.6 483.7,224.5 487.9,223.5 492.1,222.4 496.4,221.3 500.6,220.2 504.8,219.1 509,217.9 513.2,216.8 517.5,215.6 521.7,214.4 525.9,213.2 528,212.6"/><polyline class="silo dash" points="80.6,300.1 84.8,300 89,299.8 93.2,299.5 97.4,299.1 101.7,298.6 105.9,298 110.1,297.2 114.3,296.3 118.5,295.3 122.7,294.2 127,293 131.2,291.6 135.4,290.2 139.6,288.6 143.8,286.9 148.1,285.1 152.3,283.2 156.5,281.1 160.7,279 164.9,276.7 169.1,274.3 173.4,271.8 177.6,269.1 181.8,266.4 186,263.5 190.2,260.6 190.5,260.3 194.5,257.5 198.7,254.5 202.9,251.6 207.1,248.7 211.3,245.8 211.6,245.6 215.5,243 219.8,240.2 224,237.4 228.2,234.7 232.4,232 236.6,229.3 240.9,226.7 245.1,224.1 249.3,221.5 253.5,218.9 257.7,216.3 261.9,213.8 266.2,211.3 270.4,208.7 274.6,206.2 278.8,203.7 283,201.1 287.3,198.6 291.5,196 295.7,193.5 296,193.3 299.9,190.9 304.1,188.3 308.3,185.7 312.6,183.1 316.8,180.5 321,177.9 325.2,175.2 329.4,172.5 333.7,169.9 337.9,167.2 342.1,164.5 346.3,161.7 350.5,159 354.7,156.2 359,153.5 363.2,150.7 367.4,147.9 371.6,145.1 375.8,142.2 380.1,139.4 384.3,136.5 388.5,133.7 392.7,130.8 396.9,127.9 401.1,125 405.4,122 409.6,119.1 413.8,116.1 418,113.2 422.2,110.2 426.5,107.2 430.7,104.2 434.9,101.1 439.1,98.1 443.3,95 447.5,91.9 451.8,88.8 456,85.7 460.2,82.6 464.4,79.5 468.6,76.3 472.9,73.1 477.1,70 481.3,66.8 485.5,63.5 489.7,60.3 493.9,57.1 498.2,53.8 502.4,50.5 506.6,47.2 510.8,43.9 515,40.6 519.3,37.3 523.5,33.9 527.7,30.5"/><circle class="dot-silo" cx="80.6" cy="300.1" r="5"/><text class="t-strong num-tag" x="66.6" y="305.1">1</text><circle class="dot-silo" cx="190.5" cy="260.3" r="5"/><text class="t-strong num-tag" x="176.5" y="252.3">2</text><circle class="dot-silo" cx="211.6" cy="245.6" r="5"/><text class="t-strong num-tag" x="220.6" y="239.6">3</text><rect class="sq-pad" x="101.2" y="255.3" width="10" height="10"/><text class="t-strong num-tag" x="102.2" y="248.3">P</text><text class="t-strong" x="521.7" y="34.5" text-anchor="end">silo_cold · 578 m</text><text class="t-strong" x="526" y="200.6" text-anchor="end">pad · 120 m</text></svg></div>
+      <div class="legend"><span class="c-pad"><i class="sw line"></i>pad</span><span class="c-silo"><i class="sw line dashed"></i>silo_cold</span></div>
+    </div>
+    <div class="stack-v" style="gap:12px">
+      <ul class="keylist small">
+        <li><span class="tagn">1</span><span>The push starts 100 m down: 3 g net, 4.0 g felt.</span></li>
+        <li><span class="tagn">2</span><span>Release at the silo mouth at 76.7 m/s.</span></li>
+        <li><span class="tagn">3</span><span>Lit 0.5 s later, 37 m up, with a 2 s ramp.</span></li>
+        <li><span class="tagn pad">P</span><span>The pad: lit at −2 s and held down until release.</span></li>
+      </ul>
+      <p class="small">At 8 s after release the silo stack is at 578 m and 85 m/s; the pad at 120 m and 31 m/s.</p>
+      <h3 style="margin-top:6px">Animation examples</h3>
+      <ul class="small" style="line-height:1.45">
+        <li><span class="strong">Pad against cold-start silo</span>: both flown to a 200 km orbit.</li>
+        <li><span class="strong">Ignition timing</span>: four ways to light stage 1.</li>
+        <li><span class="strong">Failed ignition</span>: the push with no engines, back at the mouth at 15.7 s.</li>
+      </ul>
+      <p class="small">Videos, GIFs and interactive replays: <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/">khoks.github.io/…/examples/</a></p>
+      <p class="xsmall">Point-mass planar model, sweep-optimized and unthrottled, gate vehicle +14.3% high, no structural mass for the 4 g push. A model replay, not a design result.</p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: results/silo_screening_2d/20260930T175743Z, pad and silo_cold timeseries.csv and events.csv · site/examples/</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 16 ─ Read more -->
+<section class="slide s-more" data-title="Read more">
+  <p class="kicker">Read more</p>
+  <h2>Where the full numbers and their caveats live</h2>
+  <div class="body" style="gap:22px">
+  <div class="linkcards">
+    <div class="card">
+      <h3>On GitHub</h3>
+      <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">github.com/khoks/<wbr>RocketLaunchOptimizationSimulator</a>
+      <ul>
+        <li><span class="strong">README.md</span>: the research brief, prior art, hand numbers and results so far.</li>
+        <li><span class="strong">docs/findings/</span>: one note per research question, caveats first.</li>
+        <li><span class="strong">docs/phases/</span>: the program board, SP1 to SP6.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>On the site</h3>
+      <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/">khoks.github.io/<wbr>RocketLaunchOptimizationSimulator</a>
+      <ul>
+        <li><span class="strong">User manual</span>: install, run, experiment and vehicle files, outputs.</li>
+        <li><span class="strong">Animation examples</span>: replays of the recorded <span class="nb">2-D</span> runs.</li>
+        <li><span class="strong">This deck</span>, also as a <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/deck/launch-assist-sim-deck.pdf" style="font-family:inherit;font-size:inherit">PDF</a>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>How it is run</h3>
+      <p class="small">From the user manual (Python 3.12 and uv):</p>
+      <div class="cmd">uv sync</div>
+      <div class="cmd"><span class="nw">uv</span> <span class="nw">run</span> <span class="nw">python</span> <span class="nw">-m</span> <span class="nw">launchsim</span> <span class="nw">run</span> <span class="nw">experiments/</span><wbr><span class="nw">silo_screening_2d.yaml</span></div>
+      <div class="cmd"><span class="nw">uv</span> <span class="nw">run</span> <span class="nw">python</span> <span class="nw">-m</span> <span class="nw">launchsim</span> <span class="nw">replay</span> <span class="nw">results/</span><wbr><span class="nw">silo_screening_2d/</span><wbr><span class="nw">&lt;timestamp&gt;</span> <span class="nw">--runs</span> <span class="nw">pad</span> <span class="nw">silo_cold</span></div>
+      <p class="xsmall">Reading is free. Any other use needs written permission (next slide).</p>
+    </div>
+  </div>
+  <div>
+    <h3>Findings: the suggested reading order</h3>
+    <ol class="readorder">
+      <li><b>CAL-f9-leo-2d</b>The vehicle every <span class="nb">2-D</span> number rests on, and its +14.3% miss.</li>
+      <li><b>RQ3-silo-screening-2d</b>The headline, the screening check and the full caveat list.</li>
+      <li><b>RQ2-ignition-timing-2d</b>Hot or cold start; what delay, ramp and lag cost.</li>
+      <li><b>RQ6-aero-2d-preliminary</b>Max-Q, <span class="nb">q-alpha</span> and drag, unthrottled.</li>
+      <li><b>RQ3-1d, RQ2-1d</b>The <span class="nb">1-D</span> record: closed forms, loads, energy, failed ignition.</li>
+    </ol>
+  </div>
+  </div>
+  <footer class="foot"><span class="src">Source: README.md, "Quick start" · docs/manual/ · docs/findings/README.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 17 ─ License -->
+<section class="slide dark" data-title="License">
+  <p class="kicker">License</p>
+  <h2>All rights reserved</h2>
+  <div class="body lic">
+    <svg class="markbig" viewBox="0 0 64 64" role="img" aria-label="launch-assist-sim mark"><use href="#mark"/></svg>
+    <div>
+      <p class="claim">Public to read. Not open source. No license is granted.</p>
+      <ul>
+        <li>You may view the code, documentation, findings, images, animations and slides on GitHub.</li>
+        <li>You may not copy, modify, merge, publish, distribute, sublicense, sell or otherwise use any part of it, commercially or not, without prior written permission.</li>
+        <li>The research ideas, including the vertical maglev silo push and the fixed-payload propellant-replacement analysis, are disclosed for reading and discussion. Publication grants no right to implement or commercialise them. Earlier launch-assist work (NASA MagLifter, EMALS, <span class="nb">Long March 11</span> and others) is credited on the Prior art slide (7).</li>
+        <li>Results are preliminary and are not engineering advice. Permission requests: through GitHub, <span class="mono">@khoks</span>.</li>
+      </ul>
+      <p class="lic-url"><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">github.com/khoks/<wbr>RocketLaunchOptimizationSimulator</a></p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">© 2026 Rahul Singh Khokhar · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a></span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+</div>
+</main>
+
+<nav class="controls" id="controls" aria-label="Slide controls">
+  <button type="button" id="prev" aria-label="Previous slide">‹ Prev</button>
+  <span class="count-now" id="countNow" aria-live="polite">1 / 17</span>
+  <button type="button" id="next" aria-label="Next slide">Next ›</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button type="button" id="themeBtn" aria-label="Switch colour theme">auto</button>
+  <button type="button" id="fsBtn" aria-label="Toggle full screen">Full</button>
+</nav>
+
+<script>
+(function () {
+  "use strict";
+  var html = document.documentElement;
+  var stage = document.getElementById("stage");
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var N = slides.length;
+  var cur = 0;
+  var controls = document.getElementById("controls");
+  var countNow = document.getElementById("countNow");
+  var progress = document.getElementById("progress");
+  var params = new URLSearchParams(location.search);
+  var paged = params.has("print");
+  var stackMQ = window.matchMedia("(max-width: 719px) and (orientation: portrait)");
+  if (document.fonts && document.fonts.load) {
+    ["400 16px 'IBM Plex Sans'", "500 16px 'IBM Plex Sans'", "600 16px 'IBM Plex Sans'", "italic 400 16px 'IBM Plex Sans'",
+     "400 16px 'IBM Plex Mono'", "500 16px 'IBM Plex Mono'",
+     "500 16px 'Barlow Condensed'", "600 16px 'Barlow Condensed'", "700 16px 'Barlow Condensed'"].forEach(function (f) {
+      try { document.fonts.load(f); } catch (e) { /* fallback fonts are fine */ }
+    });
+  }
+
+  function two(n) { return (n < 10 ? "0" : "") + n; }
+  slides.forEach(function (s, i) {
+    s.id = "s" + (i + 1);
+    s.setAttribute("aria-roledescription", "slide");
+    s.setAttribute("aria-label", (i + 1) + " of " + N + ": " + (s.getAttribute("data-title") || ""));
+    var n = s.querySelector(".foot .n");
+    if (n) n.textContent = two(i + 1) + " / " + two(N);
+  });
+
+  function isStack() { return !paged && stackMQ.matches; }
+
+  function fit() {
+    if (paged || isStack()) { stage.style.removeProperty("--s"); return; }
+    var g = 16;
+    var s = Math.min((window.innerWidth - 2 * g) / 1280, (window.innerHeight - 2 * g) / 720);
+    stage.style.setProperty("--s", Math.max(s, 0.1).toFixed(4));
+  }
+
+  function setMode() {
+    html.classList.toggle("pp", paged);
+    html.classList.toggle("stack", isStack());
+    fit();
+  }
+
+  function render(scroll) {
+    slides.forEach(function (s, i) {
+      var on = i === cur;
+      s.classList.toggle("active", on);
+      if (!paged && !isStack()) s.setAttribute("aria-hidden", on ? "false" : "true");
+      else s.removeAttribute("aria-hidden");
+    });
+    countNow.textContent = (cur + 1) + " / " + N;
+    progress.style.width = ((cur + 1) / N * 100).toFixed(2) + "%";
+    try { history.replaceState(null, "", "#" + (cur + 1)); } catch (e) { /* file:// or sandbox */ }
+    if (scroll && isStack()) slides[cur].scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  function go(i, scroll) {
+    var n = Math.max(0, Math.min(N - 1, i));
+    if (n === cur && !scroll) return;
+    cur = n;
+    render(scroll !== false);
+  }
+  function next() { go(cur + 1, true); }
+  function prev() { go(cur - 1, true); }
+
+  // where to start: #n in the URL
+  var h = parseInt((location.hash || "").replace(/[^0-9]/g, ""), 10);
+  if (h >= 1 && h <= N) cur = h - 1;
+  setMode();
+  render(false);
+  if (isStack() && cur > 0) slides[cur].scrollIntoView({ block: "start" });
+
+  window.addEventListener("resize", function () { var was = html.classList.contains("stack"); setMode(); if (was !== isStack()) render(true); });
+  if (stackMQ.addEventListener) stackMQ.addEventListener("change", function () { setMode(); render(true); });
+  window.addEventListener("hashchange", function () {
+    var k = parseInt((location.hash || "").replace(/[^0-9]/g, ""), 10);
+    if (k >= 1 && k <= N && k - 1 !== cur) go(k - 1, true);
+  });
+
+  // keyboard
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    var k = e.key;
+    var stack = isStack();
+    if (k === "ArrowRight" || k === "PageDown" || (k === " " && !e.shiftKey) || (!stack && k === "ArrowDown")) { e.preventDefault(); next(); }
+    else if (k === "ArrowLeft" || k === "PageUp" || (k === " " && e.shiftKey) || (!stack && k === "ArrowUp")) { e.preventDefault(); prev(); }
+    else if (k === "Home") { e.preventDefault(); go(0, true); }
+    else if (k === "End") { e.preventDefault(); go(N - 1, true); }
+    else if (k === "f" || k === "F") { toggleFs(); }
+    else return;
+    showControls();
+  });
+
+  // click (or tap) on a slide moves forward; links, buttons and selected text are left alone
+  stage.addEventListener("click", function (e) {
+    if (paged || isStack()) return;
+    if (e.target.closest("a, button, summary, input, select, textarea, label")) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).length > 0) return;
+    if (e.shiftKey) prev(); else next();
+  });
+
+  // swipe in the scaled view
+  var tx = null, ty = null;
+  stage.addEventListener("touchstart", function (e) { if (e.touches.length === 1) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; } }, { passive: true });
+  stage.addEventListener("touchend", function (e) {
+    if (tx === null || paged || isStack()) { tx = null; return; }
+    var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+    tx = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) { e.preventDefault(); if (dx < 0) next(); else prev(); }
+  });
+
+  // in the reflowed phone view, the counter follows the slide in view
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      if (!isStack()) return;
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          var i = slides.indexOf(en.target);
+          if (i >= 0 && i !== cur) { cur = i; countNow.textContent = (cur + 1) + " / " + N; try { history.replaceState(null, "", "#" + (cur + 1)); } catch (err) { /* ignore */ } }
+        }
+      });
+    }, { rootMargin: "-40% 0px -55% 0px" });
+    slides.forEach(function (s) { io.observe(s); });
+  }
+
+  // controls: shown on mouse movement, hidden after a pause
+  var hideT = null;
+  function showControls() {
+    controls.classList.add("show");
+    clearTimeout(hideT);
+    hideT = setTimeout(function () { if (!controls.matches(":hover")) controls.classList.remove("show"); }, 2600);
+  }
+  document.addEventListener("mousemove", showControls);
+  document.addEventListener("touchstart", showControls, { passive: true });
+  document.getElementById("prev").addEventListener("click", prev);
+  document.getElementById("next").addEventListener("click", next);
+
+  // full screen
+  var fsBtn = document.getElementById("fsBtn");
+  function toggleFs() {
+    try {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    } catch (e) { /* not available */ }
+  }
+  if (!document.documentElement.requestFullscreen) fsBtn.hidden = true;
+  fsBtn.addEventListener("click", toggleFs);
+
+  // theme: auto, light, dark (the same switch and storage key as the rest of the site)
+  var themeBtn = document.getElementById("themeBtn");
+  var order = ["auto", "light", "dark"];
+  function curTheme() { var t = html.getAttribute("data-theme"); return t === "light" || t === "dark" ? t : "auto"; }
+  function showTheme() { themeBtn.textContent = "theme: " + curTheme(); }
+  themeBtn.addEventListener("click", function () {
+    var nx = order[(order.indexOf(curTheme()) + 1) % order.length];
+    if (nx === "auto") html.removeAttribute("data-theme"); else html.setAttribute("data-theme", nx);
+    try { if (nx === "auto") localStorage.removeItem("las-theme"); else localStorage.setItem("las-theme", nx); } catch (e) { /* storage unavailable */ }
+    showTheme();
+  });
+  showTheme();
+
+  // printing from the browser: lay every slide out as a page
+  window.addEventListener("beforeprint", function () { html.classList.add("pp"); });
+  window.addEventListener("afterprint", function () { if (!paged) { html.classList.remove("pp"); setMode(); } });
+})();
+</script>
+</body>
+</html>

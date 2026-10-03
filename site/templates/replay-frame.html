@@ -1,0 +1,50 @@
+<!--
+  The site's frame for the replay pages in site/examples/ (written by `launchsim replay`).
+  site/build.py inserts each part into every replay page it copies: "head" before </head>,
+  "top" after <body>, "bottom" before </body>. {{root}} is the relative path to the site root.
+  The styles use the replay page's own tokens (it has the site's palette) and an las- prefix.
+  The one thing the frame changes in the replay page is two tokens, to the site's
+  contrast-checked values (site/assets/site.css): --ink-3 (small grey text, below 4.5:1 in
+  both themes with the replay template's #7b858a / #78828a) and the light --caution (caveat
+  headings on the caution panel, 4.02:1 with #9a6a00). The rules repeat the replay page's own
+  selectors and come after its stylesheet, so they win. Remove them once
+  src/launchsim/templates/replay.html has these values.
+  Copyright (c) 2026 Rahul Singh Khokhar. All rights reserved (see LICENSE).
+-->
+<!-- head -->
+<link rel="icon" href="{{root}}assets/brand/favicon.svg" type="image/svg+xml">
+<style>
+:root { --ink-3: #626c71; --caution: #845a00; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ink-3: #87919a; --caution: #e0b653; }
+}
+:root[data-theme="dark"] { --ink-3: #87919a; --caution: #e0b653; }
+.las-head { background: var(--panel); border-bottom: 1px solid var(--rule); }
+.las-bar { max-width: 1280px; margin: 0 auto; padding: 9px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; font-family: var(--font-display); font-weight: 600; font-size: 0.98rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.las-bar a { color: var(--ink-2); text-decoration: none; padding: 2px 0; border-bottom: 2px solid transparent; }
+.las-bar a:hover { color: var(--ink); }
+.las-bar a:focus-visible, .las-foot a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.las-bar .las-brand { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; color: var(--ink); font-weight: 700; font-size: 1.22rem; letter-spacing: 0.02em; text-transform: none; }
+.las-brand img { width: 24px; height: 24px; display: block; }
+.las-brand .las-hy { color: var(--run-1); }
+.las-foot { border-top: 1px solid var(--rule); background: var(--panel); }
+.las-foot p { max-width: 1280px; margin: 0 auto; padding: 16px 20px 26px; font-size: 0.82rem; line-height: 1.5; color: var(--ink-2); }
+.las-foot a { color: var(--run-0); }
+@media (max-width: 520px) { .las-bar, .las-foot p { padding-inline: 16px; } }
+</style>
+<!-- /head -->
+<!-- top -->
+<div class="las-head">
+  <nav class="las-bar" aria-label="Site">
+    <a class="las-brand" href="{{root}}index.html"><img src="{{root}}assets/brand/logo-mark.svg" alt="" width="24" height="24"><span>launch<span class="las-hy">-</span>assist<span class="las-hy">-</span>sim</span></a>
+    <a href="index.html">&larr; Animation examples</a>
+    <a href="{{root}}index.html">Home</a>
+    <a href="{{root}}manual/index.html">Manual</a>
+  </nav>
+</div>
+<!-- /top -->
+<!-- bottom -->
+<div class="las-foot">
+  <p>© 2026 Rahul Singh Khokhar. All rights reserved. This work is public to read, but no license is granted: you may not copy, modify, share or use any part of it, commercially or otherwise, without written permission. It is not open source. See <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a>.</p>
+</div>
+<!-- /bottom -->
