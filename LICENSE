@@ -1,0 +1,24 @@
+Copyright (c) 2026 Rahul Singh Khokhar. All rights reserved.
+
+This repository (RocketLaunchOptimizationSimulator, the launch-assist-sim research
+simulator) is published so that it can be read. No license is granted.
+
+You may view the source code, documentation, findings, images, animations and slides in
+this repository on GitHub. You may not copy, modify, merge, publish, distribute,
+sublicense, sell, or otherwise use any part of it, in whole or in part, for any purpose,
+commercial or non-commercial, without prior written permission from the copyright
+holder. GitHub's Terms of Service allow other GitHub users to view and fork this
+repository on GitHub; that is the only use permitted, and a fork carries no further
+rights.
+
+The research ideas described here (including ground-powered launch assist by a vertical
+maglev silo and the fixed-payload propellant-replacement analysis) are disclosed for
+reading and discussion. Publication does not grant any right to implement or
+commercialise them.
+
+THE CONTENTS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO
+EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY
+ARISING FROM THE CONTENTS OR THEIR USE. The simulator is a research tool; its results are
+preliminary and are not engineering advice.
+
+For permission requests, contact the copyright holder through GitHub (@khoks).
