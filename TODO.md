@@ -184,6 +184,9 @@ SP1 planning (2026-09-30; taken in Plan mode with the user, plan approved the sa
 - **D-SP1-11** Under J2 (S2) the default target is an osculating circular orbit at geocentric R_E + 200 km at cutoff; revisit in SP5 (design, approved with the plan).
 - **D-SP1-12** The 6-DOF model (S3) is a verification fly-out of the 3-DOF-optimised payload and guidance, not a new search (design, approved with the plan).
 - **D-SP1-13** A one-case bridge of the offload on the README-loads vehicle (inside the calibration band) is part of SP1 step 8 (approved with the plan).
+- **D-SP1-14** 2026-10-02: publish the repository publicly on GitHub now as khoks/RocketLaunchOptimizationSimulator, all rights reserved (public to read; no permission to copy, modify, share or use commercially; LICENSE). The user was told that publication makes the idea public prior art (relevant to any patent filing) and chose to publish. Existing commits keep the author email; commits from now on use the GitHub noreply address (user).
+- **D-SP1-15** 2026-10-02: push main to the public repository after every step's tracker commit and at every phase close (docs/process/SESSION_PROTOCOL.md section 4, item 7) (user).
+- **D-SP1-16** 2026-10-02: the repository carries a logo, banner, slide deck, animation examples, a user manual (docs/manual/) and a GitHub Pages site, kept current at every phase close (protocol section 7, item 6). Added to SP1 as step P (user).
 
 Notes on the SP1 planning group:
 

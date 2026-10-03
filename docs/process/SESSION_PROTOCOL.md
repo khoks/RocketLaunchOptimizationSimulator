@@ -125,6 +125,13 @@ Each row of the phase file's step table goes through the same loop.
    these edits are their own small commit, made immediately, subject
    `SP<n> step <k>: trackers (<hash>)`. The tree is then clean between steps and before
    any pre-registered run.
+7. **Push, at once.** `git push origin main` after the tracker commit, so the public
+   repository (https://github.com/khoks/RocketLaunchOptimizationSimulator, decision
+   D-SP1-15) is never more than one step behind. Work on a side branch (a worktree step)
+   is pushed when it is merged into main. Never force-push main. The push also redeploys
+   the GitHub Pages site (`.github/workflows/pages.yml`); check that the deployment
+   succeeded (`gh run list --workflow pages.yml --limit 1`) and fix a failed build before
+   the next step.
 
 Standing gates on every code step:
 
@@ -194,7 +201,13 @@ idea that the assist helps is done when that result is measured, explained and w
 5. Update the program board (`docs/phases/README.md`: status, session date, closing
    commit) and `TODO.md` (milestones, decisions, known issues, backlog, findings index).
 6. Update the `CLAUDE.md` status line, commands and layout (if modules, commands or
-   directories changed) and the `README.md` status and results.
+   directories changed) and the `README.md` status and results. Refresh the public face
+   (decision D-SP1-16): the GitHub Pages landing page (`site/index.html`: status, results
+   with their caveats), the slide deck (`site/deck/`, and its PDF export), the animation
+   gallery (`site/examples/`: add the phase's demo runs), and the user manual
+   (`docs/manual/`: every new command, setting and output). Build the site locally
+   (`uvx --with markdown python site/build.py`; see `site/build.py` for the pinned
+   version) before the final commit.
 7. Close-out decisions: put to the user the items of the phase file's section 10 marked
    "at close-out", and confirm which phase runs next, with the recommendation first (the
    board says the order can change at any session boundary). Log the answers as decisions
@@ -228,6 +241,8 @@ idea that the assist helps is done when that result is measured, explained and w
     by this subject, because a file cannot contain the hash of the commit it is in.
 13. Print the prompt for the next session to the user (the same text as in the handoff
     and in the next phase file's section 13).
+14. Push (`git push origin main`) and confirm the Pages deployment succeeded; the public
+    repository and site must show the closed phase before the session ends.
 
 ## 8. What a handoff file must contain
 

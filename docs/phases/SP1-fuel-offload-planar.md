@@ -503,6 +503,7 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [ ] | |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
 | 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [ ] | |
+| P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [~] | |
 
 ### Step T. Tracking system
 
@@ -832,6 +833,9 @@ The order is the end checklist of SESSION_PROTOCOL.md, section 7.
    rows and the sensitivity.
 6. Full suite green; golden 1-D and planar digests unchanged; ruff clean.
 7. Demo recorded under docs/demos/SP1/.
+8. The public repository is current (main pushed after the closing commit) and the GitHub Pages
+   site is live with the landing page, the user manual, the slide deck and the animation
+   gallery, all updated with SP1's finding (step P, D-SP1-14 to D-SP1-16).
 
 Each criterion is checked by an independent gate at step 10. The phase closes with an open
 criterion only if the user accepts the miss, and the acceptance is logged in TODO.md.
@@ -946,6 +950,13 @@ Further points and open questions:
 - 2026-10-02: branch `sp1-step5` (step 5) merged into main: merge commit 04f6542, no
   conflicts; fast suite 1122 passed and ruff clean on the merged tree. Step 6 continues on
   the branch. Next on main: step 4 (altitude event).
+- 2026-10-02: the user asked to publish the repository publicly on GitHub, push after every
+  step, and add a logo, banner, slide deck, animation examples, user manual and Pages site
+  (D-SP1-14 to D-SP1-16; license all rights reserved; repo khoks/RocketLaunchOptimizationSimulator;
+  noreply email for new commits). LICENSE committed (e4f36ee), repository created and main
+  pushed. Step P started on branch `public-site` (worktree); the protocol gained the push
+  rule (section 4, item 7) and the public-face refresh at phase close (section 7, items 6
+  and 14).
 
 ## 12. Deviations from the plan
 
@@ -1089,6 +1100,16 @@ Step 3 (2026-10-02, commit 83d66dd):
    built only through the resolver. `sim.ignition_specs` takes (assist, track, g_eff).
 7. **Two comments in existing tests are stale** (KI-023): they were left alone under the
    rule that existing tests stay unmodified.
+
+Step P (2026-10-02, added by the user):
+
+1. **A step added to SP1.** The user asked mid-phase to publish the repository on GitHub in a
+   new public repository, to push after every step, and to give it a logo, banner, slide deck,
+   animation examples, a user manual and a GitHub Pages site kept current (D-SP1-14 to
+   D-SP1-16). Step P builds these on branch `public-site` in a worktree, in parallel with the
+   physics steps; exit criterion 8 is added; step 10 refreshes the site, deck, gallery and
+   manual with the finding. The repository was created and main pushed on 2026-10-02 at
+   e4f36ee (the LICENSE commit).
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
