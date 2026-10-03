@@ -189,9 +189,10 @@ reading of it, and the bound in kg is written into the step 5 row before the gat
 judged. For `stage2` and `both` the pad
 control is reported and the silo's number is quoted net of it, labelled as a property of
 the vehicle model. Stage 1 is the only headline. "Both" is the equal-fraction solve plus
-one frontier point (the largest stage-1 offload at a fixed stage-2 offload). The note must
-say plainly that total tonnes are maximised by a stage-1-only offload, so "both" cannot
-beat the headline.
+one frontier point (the largest stage-1 offload at a fixed stage-2 offload). Whether
+"both" can remove more total tonnes than the stage-1 headline is tested, not assumed
+(corrected in step 8: stage-2 propellant is worth about nothing at the margin on this
+vehicle, section 12, step 8 item 7); stage 1 stays the only headline.
 
 ### 5.4 Solver formulation and the problem factory
 
@@ -500,7 +501,7 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [x] | a03e218 (branch sp1-step5) |
 | 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [x] | 9ca508b (branch sp1-step5) |
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [x] | 6719f92 |
-| 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [~] | |
+| 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [x] | c2a4cf0 |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
 | 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [ ] | |
 | P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [x] | 9024d40 (merged e0b9fd8) |
@@ -991,6 +992,14 @@ Further points and open questions:
   the control missed by 0.128 kg (refine capped at 3 iterations), while step 5 measured
   0.0016 kg at the shipped budget, so the shipped run must confirm it passes. Next: step 8
   (experiment files, pre-registered).
+- 2026-10-03: step 8 passed its gate: commit c2a4cf0 is the pre-registration commit
+  (experiments/silo_offload_2d.yaml, experiments/silo_offload_2d_readme.yaml, the
+  pre-registration note; nothing run; two review rounds, no blocker). Runtime decision
+  D-SP1-17: the full design is kept (run about 30-50 min, sweep 39-64 min). Before the
+  run, step 8a fixes three reporting gaps the step found (an empty payload-sensitivity
+  `of` reported as "no sensitivity block", no calibration record for the README-loads
+  fork in the bridge caveat, and sweep-point offload solves that record no gamma*_ref or
+  flags, KI-028) and amends the pre-registration note; the experiment files do not change.
 
 ## 12. Deviations from the plan
 

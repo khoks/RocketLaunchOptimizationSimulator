@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 7 done at 6719f92; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 8 done at c2a4cf0; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
@@ -187,6 +187,7 @@ SP1 planning (2026-09-30; taken in Plan mode with the user, plan approved the sa
 - **D-SP1-14** 2026-10-02: publish the repository publicly on GitHub now as khoks/RocketLaunchOptimizationSimulator, all rights reserved (public to read; no permission to copy, modify, share or use commercially; LICENSE). The user was told that publication makes the idea public prior art (relevant to any patent filing) and chose to publish. Existing commits keep the author email; commits from now on use the GitHub noreply address (user).
 - **D-SP1-15** 2026-10-02: push main to the public repository after every step's tracker commit and at every phase close (docs/process/SESSION_PROTOCOL.md section 4, item 7) (user).
 - **D-SP1-16** 2026-10-02: the repository carries a logo, banner, slide deck, animation examples, a user manual (docs/manual/) and a GitHub Pages site, kept current at every phase close (protocol section 7, item 6). Added to SP1 as step P (user).
+- **D-SP1-17** 2026-10-03: the pre-registered SP1 experiment keeps its full design although both commands are estimated above the earlier 30-minute guide (run about 30-50 min, sweep 39-64 min); a trim is considered only above about 90 min. The 30-minute figure was a planning convenience; the fixed-exit-speed sweep is the test of whether only exit speed matters. Session lead's call, recorded for the user to overrule (they asked for the most complete answer).
 
 Notes on the SP1 planning group:
 
@@ -259,6 +260,10 @@ Added 2026-10-03 in SP1 step P:
 Added 2026-10-03 in SP1 step 7:
 
 - **KI-027** [low, open, owner later] plots.py's calibration footnote multiplies by 100 itself instead of calling `units.to_percent` (output identical; the units.py docstring says so). Switch it when plots.py is next touched.
+
+Added 2026-10-03 in SP1 step 8:
+
+- **KI-028** [low, open, owner SP1 step 8a] A sweep point's offload solve writes none of its own record to disk (gamma*_ref, flags); sweep_index.csv carries only OFFLOAD_SWEEP_COLUMNS and its gamma_star_rad column is the point's payload search, not the solve at x*. Differences between sweep points are then read with the gamma* allowance at its cap rather than from recorded values. Fix before the SP1 run (step 8a), as a pre-registration-note amendment.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 
