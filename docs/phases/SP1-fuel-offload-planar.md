@@ -502,8 +502,8 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [x] | 9ca508b (branch sp1-step5) |
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [x] | 6719f92 |
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [x] | c2a4cf0 |
-| 8a | Reporting fixes before the run (found in step 8): payload-sensitivity note for an empty `of`; calibration record for the README-loads fork; sweep-point offload solves record gamma*_ref and flags (KI-028); pre-registration note amended | src/launchsim/summary.py, results_io.py, plots.py, docs/phases/inputs/2026-10-03-sp1-preregistration.md | fast suite; affected tests | Pins unchanged; experiment files unchanged | [~] | |
-| 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
+| 8a | Reporting fixes before the run (found in step 8): payload-sensitivity note for an empty `of`; calibration record for the README-loads fork; sweep-point offload solves record gamma*_ref and flags (KI-028); pre-registration note amended | src/launchsim/summary.py, results_io.py, plots.py, docs/phases/inputs/2026-10-03-sp1-preregistration.md | fast suite; affected tests | Pins unchanged; experiment files unchanged | [x] | d336933 |
+| 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [~] | |
 | 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [ ] | |
 | P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [x] | 9024d40 (merged e0b9fd8) |
 
@@ -1001,6 +1001,12 @@ Further points and open questions:
   `of` reported as "no sensitivity block", no calibration record for the README-loads
   fork in the bridge caveat, and sweep-point offload solves that record no gamma*_ref or
   flags, KI-028) and amends the pre-registration note; the experiment files do not change.
+- 2026-10-03: step 8a passed its gate: commit d336933 (reporting fixes before the run:
+  empty-`of` sensitivity note, README-loads calibration record, sweep-point gamma*_ref and
+  flag columns, the stage-2 caveat wording; pre-registration note Amendment 1, no
+  criterion changed; KI-027 and KI-028 closed; fast suite 1260 passed; two review rounds).
+  Sweep 2 keeps its pre-registered verdict at the gamma* cap; the recorded-gamma* reading
+  is reported beside it, not adopted. Next: step 9, the runs from this clean commit.
 
 ## 12. Deviations from the plan
 

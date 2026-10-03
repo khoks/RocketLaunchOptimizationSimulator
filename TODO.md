@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 8 done at c2a4cf0; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 8a done at d336933; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
@@ -259,11 +259,11 @@ Added 2026-10-03 in SP1 step P:
 
 Added 2026-10-03 in SP1 step 7:
 
-- **KI-027** [low, open, owner later] plots.py's calibration footnote multiplies by 100 itself instead of calling `units.to_percent` (output identical; the units.py docstring says so). Switch it when plots.py is next touched.
+- **KI-027** [low, closed 2026-10-03 in SP1 step 8a (d336933)] plots.py's calibration footnote multiplies by 100 itself instead of calling `units.to_percent` (output identical; the units.py docstring says so). Switch it when plots.py is next touched.
 
 Added 2026-10-03 in SP1 step 8:
 
-- **KI-028** [low, open, owner SP1 step 8a] A sweep point's offload solve writes none of its own record to disk (gamma*_ref, flags); sweep_index.csv carries only OFFLOAD_SWEEP_COLUMNS and its gamma_star_rad column is the point's payload search, not the solve at x*. Differences between sweep points are then read with the gamma* allowance at its cap rather than from recorded values. Fix before the SP1 run (step 8a), as a pre-registration-note amendment.
+- **KI-028** [low, closed 2026-10-03 in SP1 step 8a (d336933): solve_gamma_star_rad and n_flags columns, flag lines in the sweep Checks] A sweep point's offload solve writes none of its own record to disk (gamma*_ref, flags); sweep_index.csv carries only OFFLOAD_SWEEP_COLUMNS and its gamma_star_rad column is the point's payload search, not the solve at x*. Differences between sweep points are then read with the gamma* allowance at its cap rather than from recorded values. Fix before the SP1 run (step 8a), as a pre-registration-note amendment.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 
