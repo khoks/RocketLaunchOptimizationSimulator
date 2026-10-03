@@ -498,7 +498,7 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 3 | Ramp start by depth, speed and closed-form height: one resolver used by both spec build sites; refusals; preflight before a results directory is made; requested and achieved ramp-start metrics | config.py, phases/prelude.py, assist/constant_accel.py, sim.py, search.py, metrics_planar.py, summary.py, results_io.py (the preflight call; cli.py too if the call sits there) | tests/test_config.py, tests/test_silo.py, tests/test_release_planar.py (suggested) | Ignition-event depth and speed against closed forms (1-D and planar); handoff table rows reproduced | [x] | 83d66dd |
 | 4 | Altitude event for `height_method: event`: `ev_altitude_up`; `_coast` takes extra events (planar and 1-D); `FlightStart` separates "lights at a height" from "fails"; `no_ignition`; physics.md in the same change | phases/engine.py, planar.py, vertical.py, prelude.py, guidance.py, docs/physics.md | tests/test_events.py, tests/test_planar_events.py (suggested) | Event altitude = mouth + h (with drag and rotation); event time = closed form in constant-g vacuum; default runs have identical event tuples; full suite | [~] | |
 | 5 | Offload solver core: `vehicle.with_offload`; new `offload.py` with `OffloadProblem` (from a problem factory) and `solve_offload`; independent payload search at the solved load | offload.py (new), vehicle.py, search.py | tests/test_offload.py (new) | Toy closed forms; stage-1 pad control within the bound of section 5.3 (0 <= x_pad <= `final_payload_xtol_kg` / s; the bound in kg is written here before the gate is judged); pad and silo_cold reproduce their recorded P* within 0.002 kg (26,054.3962 and 27,553.2271 kg; section 5.12); 10x tighter budget moves the offload < 0.1%; full suite | [x] | a03e218 (branch sp1-step5) |
-| 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [~] | |
+| 6 | Cross-vehicle decomposition from the existing loss budget and closure | compare.py | tests/test_closure.py | Residual below `closure_tol_mps` on the gate vehicle; toy with zero losses; full suite | [x] | 9ca508b (branch sp1-step5) |
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [ ] | |
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [ ] | |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
@@ -957,6 +957,14 @@ Further points and open questions:
   pushed. Step P started on branch `public-site` (worktree); the protocol gained the push
   rule (section 4, item 7) and the public-face refresh at phase close (section 7, items 6
   and 14).
+- 2026-10-02: step 6 passed its gate on branch `sp1-step5`: commit 9ca508b (cross-vehicle
+  decomposition; lossless and known-difference toys; slow gate-fork test closes to
+  -4.1e-12 m/s; full suite 1019 passed; two review rounds, the round-1 major finding fixed).
+  Validation measurement only, not a finding: on the gate fork the 228.2 m/s ideal
+  delta-v change of silo_cold's stage-1 offload splits into release speed 76.7, gravity
+  124.8, back-pressure 13.3 and the pad's hold-down burn 14.4 m/s (drag, steering and
+  fairing small); the offload is 2.755 times the ideal-screening estimate and the row is
+  explained. The branch merges into main after step 4.
 
 ## 12. Deviations from the plan
 
@@ -1110,6 +1118,60 @@ Step P (2026-10-02, added by the user):
    physics steps; exit criterion 8 is added; step 10 refreshes the site, deck, gallery and
    manual with the finding. The repository was created and main pushed on 2026-10-02 at
    e4f36ee (the LICENSE commit).
+
+Step 4 (2026-10-02):
+
+1. **Two existing test files changed, both forced by retiring the step-3 refusal** (step 3:
+   "until step 4 it is refused"). tests/test_config.py:
+   `test_ignition_states_its_ramp_start_one_way` (RAMP_STARTS gains a height_event entry
+   and the RAMP_START_TRIGGERS assertion gains "height_event") and
+   `test_ignition_ramp_start_refusals` (the case `{at_height_m: 40, height_method:
+   event}` -> "arrives in SP1 step 4" is replaced by `{height_method: event}` without a
+   height -> "at_height_m and height_method come together").
+   tests/test_silo.py::`test_resolve_snaps_a_start_at_the_release_and_refuses_what_the_push_cannot_reach`
+   (the "arrives in SP1 step 4" refusal is replaced by the event method's refusal at the
+   drag-free apex and at 1.01 of it, plus a resolve below it). Each old assertion pinned
+   step-3 behaviour that step 4 retires, and each replacement is an equal or stronger
+   check. Section 5.12's "the only edit to an existing test" is read with this exception.
+2. **1-D runs stated by `height_method: event` carry one ramp-start assumption line**
+   (written by `fly_track`, which both models share), the same reading as step 2
+   deviation 4 and step 3 deviation 3: existing 1-D runs and the golden outputs are
+   unchanged, and no 1-D metric or summary row is added.
+3. **The preflight bound is conservative for the event method** (review round 1). It
+   refuses h >= v_e^2 / (2 g_eff), the apex of a drag-free coast at constant g_eff, for
+   both methods, as the brief requires. Under mu/r^2 a coast without drag peaks about
+   1.4 cm higher (1-D: 300.270 m against 300.256 m), so heights in that band are
+   refused although a drag-free coast would reach them. Documented in docs/physics.md
+   ("Silo model") and tested (`test_one_d_flown_apex_lies_above_the_preflight_bound`).
+4. **For step 8:** the flown apex, and so the `no_ignition` band, moves with payload and
+   C_D (gate fork: 300.629 m at P = 0 to 300.653 m at 30 t; 300.605 to 300.690 m for
+   C_D +/-10%). A height-event variant within a few centimetres of the apex can fail in
+   a sensitivity arm or at a lighter payload (reported as `search_failed` or
+   `guidance_failed`). Heights chosen well below the apex avoid it.
+
+Step 6 (2026-10-02, commit 9ca508b on branch sp1-step5):
+
+1. **The margin is a ninth term.** The two runs' dv margins are not assumed zero, so
+   -d(dv_margin) is carried explicitly; the kg split divides by the sum of the nine terms
+   and adds up to the offload exactly, the convention of `matched_attribution`.
+2. **A start-mass guard, stricter than the plan.** Besides the residual, each trace's first
+   logged event mass must equal its vehicle's liftoff mass within c1 ln(m0/m_start) <
+   closure_tol_mps, because the closure cannot see a mislabelled stage-1 load. Documented
+   in docs/physics.md and tested.
+3. **Keys start with `xv_`**; the yardstick uses the variant's own release speed (from the
+   trace's release state) on the baseline vehicle at P_ref, the convention of
+   `compare_planar`; the ratio and the beat flag apply only to stage-1 offloads with a
+   head start.
+4. **No sim.py helper.** Two pure adapters in compare.py (`evaluation_matched_run`,
+   `offload_matched_run`) turn a final evaluation or an `OffloadResult` into a
+   `MatchedRun`; fixed cases use `sim.matched_run`.
+5. **For step 9:** the gravity term of a single pair mixes the head start's effect with
+   that of a stack 41 t lighter at liftoff (higher thrust-to-weight). Only the
+   `paired_pad` case of step 7 (the pad with the same offload) separates them; physics.md
+   says so.
+6. **Noted, not changed:** `_attribution_check`, which the decomposition reuses, takes
+   max(abs(...)) over a tuple, so a NaN residual that is not first could be skipped. This
+   predates SP1 (KI-024).
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a
