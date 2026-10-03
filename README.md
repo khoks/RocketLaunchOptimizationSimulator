@@ -1,4 +1,18 @@
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="assets/brand/banner-light.svg">
+  <img alt="launch-assist-sim: how much rocket propellant can a ground-powered push replace?" src="assets/brand/banner.svg" width="100%">
+</picture>
+
 # launch-assist-sim
+
+[![Site: GitHub Pages](https://img.shields.io/badge/site-GitHub%20Pages-2d5f8f)](https://khoks.github.io/RocketLaunchOptimizationSimulator/)
+[![User manual](https://img.shields.io/badge/user%20manual-docs%2Fmanual-2d5f8f)](docs/manual/README.md)
+[![Slide deck](https://img.shields.io/badge/slide%20deck-view-2d5f8f)](https://khoks.github.io/RocketLaunchOptimizationSimulator/deck/)
+[![Animation examples](https://img.shields.io/badge/animation%20examples-view-2d5f8f)](https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/)
+[![License: all rights reserved](https://img.shields.io/badge/license-all%20rights%20reserved-c2521a)](LICENSE)
+[![Pages build](https://github.com/khoks/RocketLaunchOptimizationSimulator/actions/workflows/pages.yml/badge.svg)](https://github.com/khoks/RocketLaunchOptimizationSimulator/actions/workflows/pages.yml)
+
+**Links:** [project site](https://khoks.github.io/RocketLaunchOptimizationSimulator/) · [user manual](docs/manual/README.md) ([on the site](https://khoks.github.io/RocketLaunchOptimizationSimulator/manual/)) · [slide deck](https://khoks.github.io/RocketLaunchOptimizationSimulator/deck/) · [animation examples](https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/) · [findings](docs/findings/README.md) · [program board](docs/phases/README.md) · license: all rights reserved, public to read ([LICENSE](LICENSE); not open source)
 
 A research simulator for giving rockets a ground-powered head start, and for finding out what that head start is really worth.
 
@@ -15,6 +29,10 @@ Kerbal Space Program, OpenRocket and RocketPy all assume a rocket starts from a 
 This project builds a simulator in which the launch-assist phase is a swappable model, and every result is compared against the same rocket launched normally.
 
 ## Quick start
+
+> **Permission first.** The repository is public to read, but no license is granted ([LICENSE](LICENSE)). Cloning it and running the simulator on your own machine is a use the license does not cover, so ask the copyright holder for written permission first (through GitHub, `@khoks`). The steps below are for the author and for anyone who has that permission.
+
+The full user manual is in [`docs/manual/`](docs/manual/README.md), and it is also on the [project site](https://khoks.github.io/RocketLaunchOptimizationSimulator/manual/): installing, running the shipped experiments, every experiment and vehicle key, every command and flag, the outputs and how to read them. This section is the short version.
 
 There is no graphical interface. `launchsim` is a command-line program: every output is a file (Markdown, JSON, CSV and PNG), the `animate` command turns a finished 2-D run into a video you can watch, and the `replay` command turns it into an interactive page you open in a browser.
 
@@ -356,7 +374,7 @@ Preliminary notes exist for questions 2, 3 and 6 (concept A only); [`docs/findin
 
 ### Software
 
-Python 3.12 managed with uv; numpy, scipy, pandas and matplotlib; PyYAML and pydantic for configs; pytest and ruff; `ambiance` for the ICAO standard atmosphere (valid to about 81 km); RocketPy for 6-DOF hobby-scale comparisons; later, Dymos/OpenMDAO or CasADi for trajectory optimization; JupyterLab for exploration. Git, plus a private GitHub repo.
+Python 3.12 managed with uv; numpy, scipy, pandas and matplotlib; PyYAML and pydantic for configs; pytest and ruff; `ambiance` for the ICAO standard atmosphere (valid to about 81 km); RocketPy for 6-DOF hobby-scale comparisons; later, Dymos/OpenMDAO or CasADi for trajectory optimization; JupyterLab for exploration. Git, with the repository public on GitHub at [khoks/RocketLaunchOptimizationSimulator](https://github.com/khoks/RocketLaunchOptimizationSimulator) (public to read, all rights reserved; see [License](#license)). Its [GitHub Pages site](https://khoks.github.io/RocketLaunchOptimizationSimulator/) is built from `site/`, `assets/brand/` and `docs/manual/` by `site/build.py`, which `.github/workflows/pages.yml` runs and deploys on every push to `main`. The build uses Python-Markdown, installed only in CI and for local previews (`uvx --with markdown==3.11 python site/build.py`); it is not a project dependency.
 
 ### Data
 
@@ -393,6 +411,7 @@ This is a simulation project. Before building any physical assist device at hobb
 launch-assist-sim/
 ├── README.md
 ├── CLAUDE.md
+├── LICENSE                   all rights reserved: public to read, no license granted
 ├── TODO.md                   program-level tracker: milestones, priorities, backlog, decisions
 │                             log, known issues
 ├── pyproject.toml
@@ -402,6 +421,8 @@ launch-assist-sim/
 ├── results/                  generated output, never hand-edited; only each run's
 │                             top-level summary.md is tracked in git
 ├── docs/physics.md           equations and assumptions
+├── docs/manual/              user manual: README.md (contents) and chapters 01-12; the source
+│                             of the manual pages on the project site
 ├── docs/findings/            one write-up per research question, plus the calibration record;
 │   │                         README.md indexes them
 │   └── probes/               labelled probes cited by the notes (not shipped runs)
@@ -412,6 +433,14 @@ launch-assist-sim/
 ├── docs/handoff/             NEXT_SESSION.md (read first by a new session), archive/
 ├── docs/demos/               recorded demo of each finished phase (created when the first
 │                             phase closes; none yet)
+├── assets/brand/             logo, mark, favicon, banner and social preview (SVG and PNG);
+│                             build_brand.py and render_png.py regenerate them
+├── site/                     GitHub Pages source: landing page, slide deck (deck/), animation
+│                             gallery (examples/), shared CSS and JS, the page templates
+│                             (manual, replay frame), and build.py, which builds everything
+│                             into _site/ (gitignored)
+├── .github/workflows/        pages.yml: builds the site and deploys it to GitHub Pages on
+│                             every push to main
 ├── notebooks/                exploration only
 └── tests/
 ```
@@ -445,3 +474,7 @@ launch-assist-sim/
 - RocketPy: https://github.com/RocketPy-Team/RocketPy and https://docs.rocketpy.org/
 - ambiance (ICAO standard atmosphere): https://github.com/airinnova/ambiance
 - Dymos: https://openmdao.github.io/dymos/
+
+## License
+
+Copyright (c) 2026 Rahul Singh Khokhar. **All rights reserved.** The repository is public so that it can be read; no license is granted, and it is not open source. You may not copy, modify, merge, publish, distribute, sell or otherwise use any part of it (code, documentation, findings, images, animations or slides), commercially or otherwise, without written permission. GitHub's terms let other users view and fork it on GitHub; that is the only use permitted. The research ideas are disclosed for reading and discussion, and publishing them grants no right to implement or commercialise them; earlier launch-assist work is credited under [Prior art](#prior-art). See [LICENSE](LICENSE) for the full text.

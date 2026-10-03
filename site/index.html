@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>launch-assist-sim</title>
+<meta name="description" content="A research simulator for ground-powered rocket launch assist: a vertical maglev silo pushes a Falcon 9-class rocket out at about 77 m/s, and every result is a difference against the same rocket launched from a pad. Preliminary results, with their caveats.">
+<meta property="og:title" content="launch-assist-sim">
+<meta property="og:description" content="How much rocket propellant can a ground-powered push replace? A research simulator; preliminary results with their caveats.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://khoks.github.io/RocketLaunchOptimizationSimulator/">
+<meta property="og:image" content="https://khoks.github.io/RocketLaunchOptimizationSimulator/assets/brand/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/brand/logo-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("las-theme");
+      if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) { /* storage unavailable: follow the system theme */ }
+  })();
+</script>
+</head>
+<body class="home">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/brand/logo-mark.svg" alt="" width="28" height="28"><span class="wm">launch<span class="hy">-</span>assist<span class="hy">-</span>sim</span></a>
+    <nav aria-label="Site">
+      <ul class="site-nav">
+        <li><a href="index.html" aria-current="page">Home</a></li>
+        <li><a href="manual/index.html">Manual</a></li>
+        <li><a href="deck/index.html">Deck</a></li>
+        <li><a href="examples/index.html">Examples</a></li>
+        <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">GitHub</a></li>
+      </ul>
+    </nav>
+    <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch colour theme">theme: auto</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero" aria-labelledby="page-title">
+    <picture>
+      <source media="(max-width: 600px)" srcset="assets/brand/banner-compact.svg" width="640" height="380">
+      <img class="banner" src="assets/brand/banner.svg" width="1280" height="320" alt="launch-assist-sim: how much rocket propellant can a ground-powered push replace?">
+    </picture>
+    <div class="hero-text">
+      <h1 id="page-title">A ground-powered head start for rockets, and what it is really worth</h1>
+      <p class="lede">launch-assist-sim is a research simulator for ground-powered launch assist. A rocket gets its first tens of metres per second from electrically powered ground hardware: so far, a vertical maglev silo that pushes a Falcon 9-class rocket out at about 77 m/s before or while its engines light. The simulator then flies the same rocket to orbit and measures what the push is worth in payload, propellant, losses, loads, energy and peak power. Every result is a difference against the same rocket launched from a pad, and the results that undercut the idea are reported as plainly as the ones that support it.</p>
+      <ul class="tags" aria-label="Scope">
+        <li>concept A: vertical maglev silo</li>
+        <li>planar <span class="nb">2-D</span>, rotating Earth</li>
+        <li>Falcon 9-class gate vehicle</li>
+        <li>200 km circular, 28.5°</li>
+        <li>all results preliminary</li>
+        <li>all rights reserved</li>
+      </ul>
+      <div class="actions">
+        <a class="btn" href="manual/index.html">User manual</a>
+        <a class="btn ghost" href="examples/index.html">Animation examples</a>
+        <a class="btn ghost" href="deck/index.html">Slide deck</a>
+        <a class="btn ghost" href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md">Findings</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<main class="wrap" id="main">
+
+  <section class="block" id="question" aria-labelledby="question-h">
+    <h2 id="question-h" class="visually-hidden">The question</h2>
+    <div class="question">
+      <div class="box status">
+        <h3>The question</h3>
+        <p class="ask">With the payload and the orbit held fixed, how much of a rocket's propellant can a ground-powered push replace?</p>
+        <p>Kerbal Space Program, OpenRocket and RocketPy all start a rocket from a pad or a short launch rail, so none of them can answer it. Here the launch-assist phase is a swappable model, and the rocket after release is the same rocket, flying its own sweep-optimized ascent.</p>
+        <p><strong>The hypothesis under test:</strong> any ground-supplied velocity, however small, cuts the propellant the rocket needs, or raises its payload. The simulator's real job is to measure the penalties that can eat that gain.</p>
+      </div>
+      <div class="box caveats" id="status-now">
+        <div class="status-head">
+          <h3>Status: not answered yet</h3>
+          <span class="label wip">In progress · phase SP1</span>
+        </div>
+        <p>This is the headline question of the current phase, SP1, on the planar model. The answer is being computed there: tonnes, % of <span class="nb">stage-1</span> propellant and % of total propellant, with the energy comparison and the structural-mass caveat beside the number. SP1 replaces the probe below with a solved, verified and caveated number, whatever that number turns out to be.</p>
+        <p><span class="label probe">Probe, not a finding</span> A hand-read handoff probe found that the 3 g / 100 m cold-start silo carried the pad's payload with about <span class="num">10%</span> less <span class="nb">stage-1</span> propellant (<span class="num">41.1 t</span>, <span class="num">7.9%</span> of total propellant), before any structural mass is charged. Its caveats travel with it:</p>
+        <ul class="probe-caveats">
+          <li>The structural mass for the 4 g full-stack push may decide it: about <span class="num">8.1 t</span> of <span class="nb">stage-1</span> strengthening would cancel the <span class="nb">2-D</span> payload gain, and added dry mass cuts the offload as well.</li>
+          <li>The offloaded silo run's <span class="nb">max-Q</span> (<span class="num">38.4 kPa</span>) is above the full pad's (<span class="num">37.2 kPa</span>), so the <span class="nb">max-Q</span> relief in the results below does not hold at that offload.</li>
+          <li>The gate vehicle calibrates <span class="num">+14.3%</span> high, and guidance is sweep-optimized and unthrottled.</li>
+          <li>The push is a prescribed 3 g with a massless carriage and no shaft drag, and the tanks are partly filled with their dry mass unchanged.</li>
+        </ul>
+        <p class="src">Sources: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding">handoff, section 3</a> (the probe), the <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/SP1-fuel-offload-planar.md">SP1 phase file</a> and the <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/README.md">program board</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="how" aria-labelledby="how-h">
+    <div class="block-head">
+      <h2 id="how-h">How it works</h2>
+      <p>One run is a sequence of phases joined by events: an optional hold, the push along the track, release, ignition, the ascent, staging and orbit insertion. Every silo run is flown again as a pad launch of the same rocket.</p>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <svg class="ill" viewBox="0 0 300 170" role="img" aria-labelledby="ill1-t">
+          <title id="ill1-t">A rocket leaving an underground shaft lined with motor rings, released upward at 76.7 m/s</title>
+          <rect class="earth" x="0" y="96" width="300" height="74"/>
+          <rect class="shaft" x="128" y="96" width="44" height="80"/>
+          <path class="ground-line" d="M0 96H128M172 96H300"/>
+          <g class="coil">
+            <path d="M114 108h12M174 108h12"/>
+            <path d="M114 122h12M174 122h12" opacity=".72"/>
+            <path d="M114 136h12M174 136h12" opacity=".48"/>
+            <path d="M114 150h12M174 150h12" opacity=".3"/>
+            <path d="M114 164h12M174 164h12" opacity=".16"/>
+          </g>
+          <rect x="133" y="104" width="34" height="5" rx="1" class="band" opacity=".55"/>
+          <path class="rocket" d="M141 103V44C141 33 146 26 150 19C154 26 159 33 159 44V103Z"/>
+          <rect class="band" x="141" y="58" width="18" height="3"/>
+          <path class="arrow" d="M206 88V30"/>
+          <path class="arrowhead" d="M206 20l-6 12h12z"/>
+          <text x="216" y="40">release</text>
+          <text x="216" y="55" class="t-strong">76.7 m/s</text>
+          <text x="10" y="120">stroke 100 m</text>
+          <text x="10" y="136">3 g net, 2.6 s</text>
+          <text x="10" y="152">motor rings</text>
+          <text x="10" y="30">carriage stays</text>
+          <text x="10" y="45">in the shaft</text>
+        </svg>
+        <span class="n">Step 1</span>
+        <h3>The push</h3>
+        <p>The rocket stands in an underground shaft lined with electromagnetic rings that act as a vertical linear motor. In the reference case the drive pushes the full stack 100 m at 3 g net and releases it at 76.7 m/s after 2.6 s. Engines light in the shaft (a hot start) or just after release (a cold start).</p>
+        <p class="src">Today the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; force- and power-limited drives are planned (README Phase 3).</p>
+      </li>
+      <li class="step">
+        <svg class="ill" viewBox="0 0 300 170" role="img" aria-labelledby="ill2-t">
+          <title id="ill2-t">After release the rocket rises vertically, kicks over into a gravity turn, stages, and steers into a 200 km circular orbit</title>
+          <path class="earth" d="M0 150Q150 128 300 150V170H0Z"/>
+          <path class="ground-line" d="M0 150Q150 128 300 150"/>
+          <path class="orbit" d="M0 54Q150 24 300 54"/>
+          <path class="path-silo" d="M40 145V120C40 70 150 38 260 47"/>
+          <circle class="dot-silo" cx="40" cy="145" r="4"/>
+          <circle class="dot-silo" cx="86" cy="70" r="3.5"/>
+          <text x="150" y="20" text-anchor="middle">200 km circular orbit</text>
+          <text x="94" y="88">staging</text>
+          <text x="50" y="118">gravity turn</text>
+          <text x="168" y="66">linear-tangent</text>
+        </svg>
+        <span class="n">Step 2</span>
+        <h3>The same rocket's ascent</h3>
+        <p>At release the state is mapped into a planar ascent over a rotating, spherical Earth with the standard atmosphere, drag that varies with Mach and nozzle back-pressure: a vertical rise and kick, a gravity turn on stage 1, staging, then linear-tangent steering on stage 2 to a 200 km circular orbit at 28.5°. A bisection finds the payload capacity, the payload that leaves zero propellant at insertion.</p>
+      </li>
+      <li class="step">
+        <svg class="ill" viewBox="0 0 300 170" role="img" aria-labelledby="ill3-t">
+          <title id="ill3-t">The pad launch and the silo launch of the same rocket fly to the same orbit; the result is the difference in payload or propellant</title>
+          <path class="earth" d="M0 150Q150 128 300 150V170H0Z"/>
+          <rect class="shaft" x="50" y="143" width="9" height="30"/>
+          <path class="ground-line" d="M0 150Q150 128 300 150"/>
+          <path class="orbit" d="M0 54Q150 24 300 54"/>
+          <path class="path-pad" d="M38 145V124C38 78 140 46 250 47" stroke-dasharray="6 4"/>
+          <path class="path-silo" d="M54 143V112C54 66 150 40 250 47"/>
+          <circle class="dot-pad" cx="38" cy="145" r="4"/>
+          <circle class="dot-silo" cx="54" cy="143" r="4"/>
+          <text x="150" y="20" text-anchor="middle">same 200 km orbit</text>
+          <text x="8" y="132" class="t-pad">pad</text>
+          <text x="62" y="132" class="t-silo">silo</text>
+          <text x="160" y="96" class="t-strong">Δ payload</text>
+          <text x="160" y="112">or Δ propellant</text>
+        </svg>
+        <span class="n">Step 3</span>
+        <h3>Compared with a pad launch</h3>
+        <p>The baseline is the same vehicle launched from a pad, with the same guidance law, sweep grid and search budget. Every number is a difference against it. The losses are booked so that speed gained equals vacuum Δv minus gravity, drag, steering and back-pressure losses; a validation test requires that budget to close within 0.01 m/s over a full ascent, and it passes.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="block" id="results" aria-labelledby="results-h">
+    <div class="block-head">
+      <h2 id="results-h">Results so far</h2>
+      <p>Everything here is <strong>preliminary</strong>. It covers concept A only (the vertical silo, with a drive that imposes a prescribed acceleration) on the planar <span class="nb">2-D</span> model, with guidance that is sweep-optimized, not optimal-control. Each number is copied from a findings note, and its main caveat sits beside it. The full set is in the README's <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/README.md#results-so-far">Results so far</a>.</p>
+    </div>
+    <div class="results">
+      <article class="result pending">
+        <h3>Propellant replaced at fixed payload</h3>
+        <p class="big">In progress</p>
+        <p class="sub">The headline question is being computed in phase SP1. There is no finding yet.</p>
+        <p class="caveat"><strong>Probe, not a finding:</strong> about 10% of <span class="nb">stage-1</span> propellant (41.1 t, 7.9% of total propellant) on the 3 g / 100 m cold-start silo, read off by hand, before any structural mass is charged. Its caveats (the uncharged structural mass, a <span class="nb">max-Q</span> above the full pad's at that offload, the +14.3% calibration, sweep-optimized and unthrottled guidance, the idealised push and the partly filled tanks) are listed under <a href="#status-now">Status: not answered yet</a> above.</p>
+      </article>
+
+      <article class="result">
+        <h3>Payload gain, cold-start silo</h3>
+        <p class="big">+1,498.8 kg</p>
+        <p class="sub"><span class="num">+5.75%</span> over the pad's <span class="num">26,054.4 kg</span> to a 200 km circular orbit: 3 g net over 100 m, released at 76.7 m/s, engines lit 0.5 s later with a 2 s ramp. Under every ±10% sensitivity case the gain stays between <span class="num">+1,345</span> and <span class="num">+1,667 kg</span>.</p>
+        <p class="caveat"><strong>Caveat:</strong> no structural mass is charged for the 4.0 g full-stack push, and about 8.1 t of <span class="nb">stage-1</span> strengthening would cancel the whole gain. The gate vehicle calibrates +14.3% high; on a vehicle calibrated to 22.8 t the gain would be expected near 1.3 t (derived by proportion, not run).</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a></p>
+      </article>
+
+      <article class="result">
+        <h3>Against the hand estimate</h3>
+        <p class="big">About 2.0×</p>
+        <p class="sub">the ideal rocket-equation estimate (<span class="num">765.4 kg</span> at the pad's payload). A vertical release is not constant-loss: in the matched basis the gain splits into 46% release speed at face value, 34% lower gravity and steering loss, 9% the pad's hold-down burn, 8% back-pressure and 2% drag. The breakdown explains the beat, so it is not treated as a bug.</p>
+        <p class="caveat"><strong>Caveat:</strong> the trajectory share is unverified beyond the gravity-turn family; optimal control could move it in either direction. The pad's 2.7 t clamped ramp is a baseline convention: against a pad lit at release the gain is +1,415.8 kg.</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a></p>
+      </article>
+
+      <article class="result against">
+        <h3>Lighting the engines after release</h3>
+        <p class="big">−327.1 kg</p>
+        <p class="sub">(<span class="num">34.74 m/s</span>) given back by the cold start against an instant start: 18% of the instant start's gain and 2.37× the <span class="nb">1-D</span> formula. A 3 s lag after the same 0.5 s delay gives back 781 kg. Lighting on the carriage, with the ramp ending at release, is the best physical variant: +235.0 kg over the cold start, paid for with 2.7 t burned on the track.</p>
+        <p class="caveat"><strong>Caveat:</strong> under a prescribed acceleration a hot start cannot add exit speed, so the hot-start question waits for a force-limited drive. The hot ramp has no sensitivity run.</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ2-ignition-timing-2d.md">RQ2-ignition-timing-2d</a></p>
+      </article>
+
+      <article class="result">
+        <h3>Aerodynamic loads</h3>
+        <p class="big">−16.0% <span class="nb">max-Q</span></p>
+        <p class="sub">Unthrottled <span class="nb">max-Q</span> falls from <span class="num">37.19</span> to <span class="num">31.24 kPa</span>, and the drag loss falls 3.5 m/s. But <span class="nb">q-alpha</span> at the kick rises to 1.7–3.4× the pad's (130–251 Pa rad at 77 m/s), and the model charges no penalty for it.</p>
+        <p class="caveat"><strong>Caveat:</strong> nothing is throttled and there is no angle-of-attack aerodynamics, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds; <span class="nb">max-Q</span> sits at the standard atmosphere's tropopause kink (11.02 km). The −16.0% is at full load: in the fuel-offload probe, the silo run with 10% less <span class="nb">stage-1</span> propellant reaches 38.4 kPa, above the full pad's 37.2 kPa (probe, not a finding).</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ6-aero-2d-preliminary.md">RQ6-aero-2d-preliminary</a>; the probe: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding">handoff, section 3</a></p>
+      </article>
+
+      <article class="result against">
+        <h3>Ground power</h3>
+        <p class="big">1.725 GW peak</p>
+        <p class="sub">drive power at release, after a 2.6 s push. Each launch takes <span class="num">2.249 GJ</span> (<span class="num">1,249.5 kWh</span> of electricity at an assumed 50%), and the facility is 160 m long: a 100 m stroke plus 60 m of braking at 5 g. The facility is sized by power, not energy.</p>
+        <p class="caveat"><strong>Caveat:</strong> the drive force is unbounded, the carriage is massless and the vented shaft has no air drag (which biases energy, peak power and interface force low by about 0.04%, 0.08% and 0.08%).</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a></p>
+      </article>
+
+      <article class="result against">
+        <h3>Loads on the full stack</h3>
+        <p class="big">4.0 g felt</p>
+        <p class="sub">by the fully fuelled stack during the push: 3.996 g and 22.49 MN at the interface on the 573.9 t <span class="nb">2-D</span> stack. Rockets normally see such g only near burnout, with nearly empty tanks (the <span class="nb">1-D</span> stage 1 feels 5.71 g at burnout, at 146.87 t).</p>
+        <p class="caveat"><strong>Caveat:</strong> there is no structural model yet. The strengthening this load needs is the open item that decides whether the gain survives (README Phase 3).</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-1d.md">RQ3-silo-screening-1d</a></p>
+      </article>
+
+      <article class="result calib">
+        <h3>Calibration (labelled calibration, not validation)</h3>
+        <p class="big">+14.3% high</p>
+        <p class="sub">The gate vehicle reaches <span class="num">26,054.4 kg</span> to 200 km circular at 28.5° against the published <span class="num">22,800 kg</span>: 974.4 kg above the ±10% band, a miss. Nothing was tuned toward the published number. The user accepted the miss as documented on 2026-09-30.</p>
+        <p class="caveat"><strong>Caveat:</strong> the cause is not established, since the omissions point both ways (throttling, reserves and residuals would lower the payload; better guidance could raise it). Every <span class="nb">2-D</span> number inherits the miss, so read results as differences between runs.</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/CAL-f9-leo-2d.md">CAL-f9-leo-2d</a></p>
+      </article>
+    </div>
+
+    <p class="table-note">Payload capacity P* to the reference orbit on the gate vehicle, all at 3 g net over 100 m (76.7 m/s release). From RQ3-silo-screening-2d and RQ2-ignition-timing-2d.</p>
+    <div class="tablewrap">
+      <table class="data stack">
+        <thead>
+          <tr><th scope="col">Run</th><th scope="col"><span class="nb">Stage-1</span> start</th><th scope="col" class="n">P*</th><th scope="col" class="n">Gain over pad</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>pad</code> (baseline)</td><td data-label="Stage-1 start">lit at −2 s, 2 s ramp, held down</td><td data-label="P*" class="n">26,054.4 kg</td><td data-label="Gain over pad" class="n">—</td></tr>
+          <tr><td><code>pad_instant</code> (unphysical yardstick)</td><td data-label="Stage-1 start">step to full thrust at release</td><td data-label="P*" class="n">26,137.5 kg</td><td data-label="Gain over pad" class="n">+83.1 kg</td></tr>
+          <tr><td><code>silo_instant</code> (unphysical yardstick)</td><td data-label="Stage-1 start">step to full thrust at release</td><td data-label="P*" class="n">27,880.4 kg</td><td data-label="Gain over pad" class="n">+1,826.0 kg</td></tr>
+          <tr class="ref"><td><code>silo_cold</code> (reference)</td><td data-label="Stage-1 start">0.5 s after release, 2 s ramp</td><td data-label="P*" class="n">27,553.2 kg</td><td data-label="Gain over pad" class="n pos">+1,498.8 kg (+5.75%)</td></tr>
+          <tr><td><code>silo_hot_ramp_on_track</code></td><td data-label="Stage-1 start">lit on the carriage, full thrust at release</td><td data-label="P*" class="n">27,788.2 kg</td><td data-label="Gain over pad" class="n">+1,733.8 kg</td></tr>
+          <tr><td><code>silo_hot_full</code></td><td data-label="Stage-1 start">full thrust for the whole push</td><td data-label="P*" class="n">27,543.0 kg</td><td data-label="Gain over pad" class="n">+1,488.6 kg</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box caveats">
+      <h3>Caveats that apply to every <span class="nb">2-D</span> number</h3>
+      <ul>
+        <li>Guidance is sweep-optimized, not optimal-control.</li>
+        <li>Nothing is throttled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds.</li>
+        <li>The kick is free: there is no angle-of-attack aerodynamics.</li>
+        <li>The gate vehicle's +14.3% calibration miss carries into every number.</li>
+        <li>No structural mass is charged for the 4 g full-stack load.</li>
+        <li>The drive is prescribed-acceleration (<code>constant_accel</code>), with an unbounded drive force. A hot start therefore cannot add exit speed, and carriage mass and drive efficiency move only energy and power.</li>
+        <li>The carriage has zero mass except in the 22 t sled variant.</li>
+        <li>There is no air drag in the vented shaft.</li>
+        <li>The model is a planar point mass with a generic C<sub>D</sub>(Mach) table.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block" id="against" aria-labelledby="against-h">
+    <div class="block-head">
+      <h2 id="against-h">What goes against the hypothesis</h2>
+      <p>Stated as plainly as the results that support it. Every item is from the README's Results so far and the findings notes it cites.</p>
+    </div>
+    <ul class="against-list">
+      <li><strong>Structural mass could cancel the gain.</strong> No structural mass is charged for the 4.0 g full-stack load (22.5 MN at the interface). At about 184 kg of payload per tonne of <span class="nb">stage-1</span> dry mass, about 8.1 t of silo-only strengthening would cancel the whole gain (a linear extrapolation, not a sized structure).</li>
+      <li><strong>Part of the headline is not the push.</strong> The pad's 2.7 t clamped ramp is a baseline convention, and it accounts for 130.7 kg gross (83.1 kg net). Against a pad lit at release, the gain is +1,415.8 kg.</li>
+      <li><strong>The calibration miss inflates it.</strong> On a vehicle calibrated to 22.8 t the gain would be expected near 1.3 t. That is derived by proportion, not run.</li>
+      <li><strong>The startup after release is expensive.</strong> The cold start gives back 327.1 kg (34.74 m/s) against an instant start, 2.37× the <span class="nb">1-D</span> formula. A 3 s lag after the same 0.5 s delay gives back 781 kg, 43% of the instant start's gain.</li>
+      <li><strong>A full hot start does not pay.</strong> <code>silo_hot_full</code> is 10.2 kg behind the cold start, and −18.5 to +0.1 kg under the ±10% cases: a tie, not a gain.</li>
+      <li><strong>The trajectory gain is unverified beyond the gravity-turn family.</strong> It appears only after main-engine cutoff, and it is the part a better pad ascent (optimal control, README Phase 5) could change, in either direction.</li>
+      <li><strong>Small pushes gain little from the push itself.</strong> At the slow corner of the sweep (0.5 g, 50 m, 22 m/s) the trajectory term is negative (−11.1 m/s), and about 127 kg gross (about 83 kg net, 35%) of that point's +240 kg is the pad's hold-down burn, not the push.</li>
+      <li><strong>One aerodynamic load gets worse.</strong> <span class="nb">q-alpha</span> at the kick is above the pad's in every silo variant: 130–251 Pa rad at 77 m/s, up to 3,409 Pa rad at 172 m/s. The model charges no penalty for it.</li>
+      <li><strong>A failed ignition has no abort.</strong> The full stack returns to the shaft mouth at 76.6 m/s after 15.7 s, 0.4 m from the axis.</li>
+      <li><strong>The facility is sized by power.</strong> A 1.725 GW peak at release after a 2.6 s push, 2.249 GJ per launch, and a 160 m facility (100 m stroke and 60 m of braking at 5 g).</li>
+    </ul>
+  </section>
+
+  <section class="block" id="prior-art" aria-labelledby="prior-h">
+    <div class="block-head">
+      <h2 id="prior-h">Not a new idea, and not the first to try</h2>
+      <p>Ground-assisted launch has a long history, and the closest precedents shape this work. What this project adds is a measurement tool: a simulator in which the assist is a swappable model and every result is a difference against the same rocket launched from a pad. The full table is the README's <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/README.md#prior-art">Prior art</a>.</p>
+    </div>
+    <ul class="prior">
+      <li><b>NASA Magnetic Launch Assist / MagLifter</b><span>1990s–2000s. A horizontal maglev track about 1.5 miles long, 600 mph in 9.5 s; technology demos only. Its "over 20%" fuel-saving figure is treated as a claim to explain, never a number to tune toward.</span></li>
+      <li><b>EMALS, U.S. Navy</b><span>A 91 m linear motor launches a 45 t aircraft to 240 km/h from four 121 MJ flywheel alternators. Operational: it proves the ~100 m, ~70 m/s regime at 45 t.</span></li>
+      <li><b>Long March 11, China</b><span>A 58 t solid-fuel launcher cold-launched from a tube, igniting after ejection. Operational: "eject, then ignite" works at 58 t with solid motors.</span></li>
+      <li><b>Radian Aerospace</b><span>A rocket-powered rail sled releases a winged spaceplane at Mach 0.7 with its engines already lit. In development; wings make a shallow release workable.</span></li>
+      <li><b>Holloman maglev sled, U.S. Air Force</b><span>A rocket-propelled superconducting maglev sled reached 633 mph on a 2,100 ft track (2016).</span></li>
+      <li><b>DARPA/NASA Horizontal Launch Study</b><span>Reviewed 130+ horizontal-launch studies spanning 60 years (2011). Only Pegasus became operational: many concepts close on paper, and cost decides.</span></li>
+    </ul>
+  </section>
+
+  <section class="block" id="status" aria-labelledby="status-h">
+    <div class="block-head">
+      <h2 id="status-h">Program status</h2>
+      <p>The work after Phases 0–2 runs as one phase per session, each ending with something that can be run or looked at. The board is <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/README.md">docs/phases/README.md</a>.</p>
+    </div>
+    <div class="tablewrap">
+      <table class="data stack status-table">
+        <thead>
+          <tr><th scope="col">Phase</th><th scope="col">What it delivers</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="phase">Phases 0–2</td><td>Scaffold; the <span class="nb">1-D</span> vertical model with staging and the silo push; the <span class="nb">2-D</span> rotating-Earth ascent to orbit with drag, guidance and payload search. The calibration missed high (+14.3%), accepted and documented.</td><td><span class="label done">Done</span></td></tr>
+          <tr><td class="phase">SP1</td><td>Launch settings (silo depth with exit speed, where the thrust ramp starts) and the fuel offload at fixed payload on the planar model: a findings note with the % of propellant replaced, and a replay of the full pad against the offloaded silo.</td><td><span class="label wip">In progress</span></td></tr>
+          <tr><td class="phase">SP2</td><td>A local app with an animated <span class="nb">2-D</span> launch scene: set depth, ramp start and offload, press Launch, watch pad and silo side by side.</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">SP3</td><td><span class="nb">3-D</span> dynamics, stage 1: a <span class="nb">3-DOF</span> point mass over a rotating sphere, validated against the planar model.</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">SP4</td><td>The launch shown on a globe in the app, and the offload question re-checked on the <span class="nb">3-D</span> model.</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">SP5</td><td><span class="nb">3-D</span> dynamics, stage 2: an oblate Earth (ellipsoid and J2).</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">SP6</td><td><span class="nb">3-D</span> dynamics, stage 3: a <span class="nb">6-DOF</span> verification fly-out (attitude, gimbal, cold-start controllability).</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">Later</td><td>README Phase 3 (force- and power-limited drives, curved ramp, cable winch, and the structural mass for the 4 g push, which decides whether the headline survives); Phase 5 (optimal-control ascent for every configuration); Phase 6 (hobby scale with RocketPy).</td><td><span class="label planned">Not scheduled</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="block" id="explore" aria-labelledby="explore-h">
+    <div class="block-head">
+      <h2 id="explore-h">Explore</h2>
+    </div>
+    <ul class="links">
+      <li><a href="manual/index.html"><b>User manual</b><span>Install, run the shipped experiments, write your own experiment and vehicle files, and read what comes out.</span></a></li>
+      <li><a href="deck/index.html"><b>Slide deck</b><span>The idea, the model and the results so far, with their caveats, in slides.</span></a></li>
+      <li><a href="examples/index.html"><b>Animation examples</b><span>Replays, videos and GIFs of recorded runs, each with the command that made it.</span></a></li>
+      <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md"><b>Findings</b><span>One note per research question, each with a "Caveats (read first)" section, on GitHub.</span></a></li>
+      <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator"><b>Repository</b><span>khoks/RocketLaunchOptimizationSimulator: the source, the research brief and the trackers.</span></a></li>
+      <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE"><b>License: all rights reserved</b><span>Public to read. No permission to copy, modify, share or use, commercially or otherwise. Not open source.</span></a></li>
+    </ul>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p><a href="index.html">Home</a> · <a href="manual/index.html">User manual</a> · <a href="deck/index.html">Slide deck</a> · <a href="examples/index.html">Examples</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">Source on GitHub</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md">Findings index</a></p>
+    <p class="license">© 2026 Rahul Singh Khokhar. All rights reserved. This work is public to read, but no license is granted: you may not copy, modify, share or use any part of it, commercially or otherwise, without written permission. It is not open source. See <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a>.</p>
+    <p>Results are preliminary research output, not engineering advice.</p>
+    <p class="stamp"><!-- stamp -->Last updated: set by site/build.py<!-- /stamp --></p>
+  </div>
+</footer>
+<script src="assets/site.js"></script>
+</body>
+</html>

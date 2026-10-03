@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animation Examples · launch-assist-sim</title>
+<meta name="description" content="Replays, videos and GIFs of the Phase 2 silo_screening_2d run of launch-assist-sim, each with the command that made it and the caveats it must be read with.">
+<link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Palette and type: the tokens of src/launchsim/templates/replay.html (the shared design system),
+   with --ink-3 and the light --caution adjusted, and --accent-ink (orange for small text)
+   added, to reach 4.5:1 contrast, as in site/assets/site.css. */
+:root {
+  --bg: #f1f2ee;
+  --panel: #fbfbf8;
+  --ink: #1c2226;
+  --ink-2: #4c565c;
+  --ink-3: #626c71;
+  --rule: #d6d9d1;
+  --grid: #e3e5de;
+  --ground: #8a7a62;
+  --shaft: #d9d2c4;
+  --run-0: #2d5f8f;
+  --run-1: #c2521a;
+  --run-2: #177d6f;
+  --run-3: #7a4c8e;
+  --good: #177d6f;
+  --bad: #b3261e;
+  --caution: #845a00;
+  --caution-bg: #f6ecd2;
+  --focus: #2d5f8f;
+  --link: #2d5f8f;
+  --code-bg: #eceee8;
+  --accent-ink: #a8440f;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+    --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+    --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+    --good: #4cc2ae; --bad: #f2867c;
+    --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+    --accent-ink: #f08a4b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+  --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+  --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+  --good: #4cc2ae; --bad: #f2867c;
+  --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+  --accent-ink: #f08a4b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.55; }
+a { color: var(--link); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+code, kbd { font-family: var(--font-data); font-size: 0.86em; overflow-wrap: anywhere; }
+p code, li code, td code { background: var(--code-bg); padding: 0 4px; border-radius: 3px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; }
+.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 500; }
+.nb { white-space: nowrap; } /* short hyphenated terms (2-D, stage-1) never break at the hyphen */
+
+/* header */
+.site-head { border-bottom: 1px solid var(--rule); background: var(--panel); }
+.site-head .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding-block: 10px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; letter-spacing: 0.02em; }
+.brand img { width: 28px; height: 28px; display: block; }
+.brand .hy { color: var(--run-1); }
+.site-head nav { flex: 1 1 auto; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none; flex: 1 1 auto; }
+.site-nav a { font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); text-decoration: none; padding: 2px 0; border-bottom: 2px solid transparent; }
+.site-nav a:hover { color: var(--ink); }
+.site-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--run-1); }
+.theme-btn { font-family: var(--font-data); font-size: 0.78rem; background: transparent; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+
+/* hero */
+.hero { padding-block: 36px 8px; display: grid; gap: 10px; }
+.kicker { font-family: var(--font-display); font-weight: 600; font-size: 0.95rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); margin: 0; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 2.8rem; letter-spacing: 0.01em; line-height: 1.02; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.9rem; line-height: 1.08; margin: 0; letter-spacing: 0.01em; text-wrap: balance; }
+h3 { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin: 0; }
+.lede { font-size: 1.1rem; color: var(--ink-2); max-width: 70ch; margin: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; padding: 0; list-style: none; }
+.tags li { font-family: var(--font-data); font-size: 0.74rem; color: var(--ink-2); border: 1px solid var(--rule); padding: 1px 8px; border-radius: 3px; background: var(--panel); }
+
+/* boxes */
+main { display: grid; gap: 22px; padding-block: 18px 48px; }
+.box { border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; display: grid; gap: 8px; background: var(--panel); min-width: 0; }
+.box p { margin: 0; max-width: 85ch; }
+.box ul { margin: 0; padding-left: 1.15rem; display: grid; gap: 5px; max-width: 95ch; }
+.caveats { background: var(--caution-bg); border-left: 4px solid var(--caution); }
+.caveats h3 { color: var(--caution); }
+.status { border-left: 4px solid var(--run-0); }
+.status h3 { color: var(--run-0); }
+.toc { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; padding: 0; list-style: none; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; letter-spacing: 0.04em; }
+
+/* example cards */
+.example { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 22px; display: grid; gap: 16px; min-width: 0; scroll-margin-top: 12px; }
+.example header { display: grid; gap: 6px; }
+.example .summary { margin: 0; color: var(--ink-2); max-width: 75ch; font-size: 1.04rem; }
+figure { margin: 0; display: grid; gap: 6px; min-width: 0; container-type: inline-size; }
+.media { width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; border: 1px solid var(--rule); border-radius: 6px; background: #ffffff; }
+/* The player's own controls sit on the bottom of the picture, where every frame prints its caveat
+   lines. A band below the 16:9 picture gives the controls their own room. */
+@supports (height: 1cqw) {
+  video.media { aspect-ratio: auto; height: calc(56.25cqw + 72px); object-fit: contain; object-position: 50% 0; background: var(--panel); }
+}
+figcaption { font-size: 0.84rem; color: var(--ink-3); max-width: 95ch; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; text-decoration: none;
+  background: var(--ink); color: var(--panel); border: 1px solid var(--ink); border-radius: 4px; padding: 6px 14px; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn .size { font-family: var(--font-data); font-size: 0.72rem; letter-spacing: 0; text-transform: none; opacity: 0.8; }
+.cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px 26px; }
+.col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.col p { margin: 0; }
+.col ul { margin: 0; padding-left: 1.15rem; display: grid; gap: 6px; }
+.for li::marker { color: var(--good); }
+.against li::marker { color: var(--bad); }
+.src { font-size: 0.84rem; color: var(--ink-3); }
+
+/* numbers table */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; }
+table.nums { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.nums th { text-align: right; font-weight: 500; color: var(--ink-3); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.nums td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--grid); font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: top; }
+.nums tr:last-child td { border-bottom: 0; }
+.nums th:first-child, .nums td:first-child { text-align: left; }
+.nums td:first-child { font-family: var(--font-body); white-space: normal; min-width: 15ch; }
+.nums td:first-child code { background: none; padding: 0; font-weight: 500; }
+.nums td .detail { display: block; font-family: var(--font-body); font-size: 0.76rem; color: var(--ink-3); max-width: 36ch; white-space: normal; }
+.sw { display: inline-block; width: 16px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.pos { color: var(--good); }
+.neg { color: var(--bad); }
+
+/* commands */
+details.cmd { border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); min-width: 0; }
+details.cmd > summary { cursor: pointer; padding: 9px 14px; font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+details.cmd[open] > summary { border-bottom: 1px solid var(--rule); }
+.cmd-body { padding: 12px 14px 14px; display: grid; gap: 10px; min-width: 0; }
+.cmd-body p { margin: 0; font-size: 0.9rem; color: var(--ink-2); max-width: 95ch; }
+.codeblock { display: grid; gap: 4px; min-width: 0; }
+/* Commands wrap instead of scrolling sideways; the copy button copies the unwrapped text. The
+   script below wraps each word of a command in a .nw span with <wbr> after "/", ";" and ":", so
+   a line breaks only at a space or after those characters, never inside a flag like --runs. */
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 5px; padding: 10px 12px; font-family: var(--font-data); font-size: 0.8rem; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: break-word; overflow-x: auto; }
+pre code { font-size: inherit; overflow-wrap: break-word; }
+code .nw { white-space: nowrap; }
+.copy { justify-self: end; font-family: var(--font-data); font-size: 0.7rem; background: var(--panel); color: var(--ink-2); border: 1px solid var(--rule); border-radius: 3px; padding: 1px 8px; cursor: pointer; }
+
+footer { border-top: 1px solid var(--rule); background: var(--panel); }
+footer .wrap { padding-block: 22px 32px; display: grid; gap: 8px; font-size: 0.86rem; color: var(--ink-2); }
+footer p { margin: 0; max-width: 100ch; }
+.license { font-weight: 500; color: var(--ink); }
+
+@media (max-width: 900px) {
+  .cols { grid-template-columns: minmax(0, 1fr); }
+}
+/* Phones: each table row becomes a block, every value labelled, so no number is cut off. */
+@media (max-width: 600px) {
+  .nums thead { display: none; }
+  .nums, .nums tbody, .nums tr, .nums td { display: block; width: 100%; }
+  .nums tr { padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  .nums tr:last-child { border-bottom: 0; }
+  .nums td, .nums td:first-child { border: 0; padding: 1px 0; text-align: left; white-space: normal; min-width: 0; }
+  .nums td:first-child { padding-bottom: 3px; }
+  .nums td[data-label]::before { content: attr(data-label) ": "; font-family: var(--font-body); font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+  .nums td .detail { max-width: none; }
+}
+@media (max-width: 560px) {
+  .brand { flex: 1 1 auto; }
+  .theme-btn { order: 2; }
+  .site-head nav { order: 3; flex-basis: 100%; }
+}
+@media (max-width: 520px) {
+  .wrap { padding-inline: 16px; }
+  h1 { font-size: 2.2rem; }
+  h2 { font-size: 1.6rem; }
+  .example { padding: 16px 14px; }
+  .box { padding: 14px; }
+  .lede { font-size: 1.02rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("las-theme");
+      if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) { /* storage unavailable: follow the system theme */ }
+  })();
+</script>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="../index.html"><img src="../assets/brand/logo-mark.svg" alt="" width="28" height="28" onerror="this.remove()"><span class="wm">launch<span class="hy">-</span>assist<span class="hy">-</span>sim</span></a>
+    <nav aria-label="Site">
+      <ul class="site-nav">
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="../manual/index.html">Manual</a></li>
+        <li><a href="../deck/index.html">Deck</a></li>
+        <li><a href="index.html" aria-current="page">Examples</a></li>
+        <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">GitHub</a></li>
+      </ul>
+    </nav>
+    <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch colour theme">theme: auto</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero" aria-labelledby="page-title">
+    <p class="kicker">Examples</p>
+    <h1 id="page-title">Animation examples</h1>
+    <p class="lede">Three replays of one recorded run, each with the command that made it and the caveats it has to be read with. Every frame is drawn from the run's recorded time series; nothing is re-simulated in the browser or in the videos.</p>
+    <ul class="tags" aria-label="Run provenance">
+      <li>Phase 2 experiment silo_screening_2d</li>
+      <li>run 20260930T175743Z</li>
+      <li>git 7ad381f227a9, clean</li>
+      <li>planar <span class="nb">2-D</span>, rotating Earth</li>
+      <li>sweep-optimized, unthrottled</li>
+      <li>200 km circular, 28.5°, due east</li>
+    </ul>
+  </section>
+</div>
+
+<main class="wrap">
+  <section class="box status" aria-labelledby="status-h">
+    <h3 id="status-h">What these runs are, and what they are not</h3>
+    <p>All three examples come from the shipped run <code>results/silo_screening_2d/20260930T175743Z</code> of the Phase 2 experiment <code>silo_screening_2d</code>, made at git <code>7ad381f227a9</code> (clean, per its <code>metrics.json</code>). They cover concept A only: a vertical silo whose drive imposes a prescribed acceleration. Every finding they illustrate is preliminary and lives in <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/tree/main/docs/findings">docs/findings/</a>.</p>
+    <p>The current phase, SP1, asks how much rocket propellant the silo push replaces at a fixed payload. That question is not answered yet. SP1's fuel-offload runs will be added to this gallery when that phase finishes.</p>
+  </section>
+
+  <section class="box caveats" aria-labelledby="caveats-h">
+    <h3 id="caveats-h">Read before quoting any number on this page</h3>
+    <ul>
+      <li>Planar point-mass model over a rotating spherical Earth, with a generic C<sub>D</sub>(Mach) table. Guidance is sweep-optimized, not optimal control. Nothing is throttled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds, and the pitch kick has no angle-of-attack aerodynamics.</li>
+      <li>The gate vehicle calibrates <span class="num">+14.3%</span> high: <span class="num">26,054.4 kg</span> to a 200 km orbit against the published <span class="num">22,800 kg</span>, outside the ±10% band. It is a documented miss, accepted on 2026-09-30 (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/CAL-f9-leo-2d.md">CAL-f9-leo-2d</a>). Read the numbers as differences between runs.</li>
+      <li>No structural mass is charged for the push: the fully fuelled stack feels <span class="num">4.0 g</span>. About <span class="num">8.1 t</span> of extra <span class="nb">stage-1</span> structure would cancel silo_cold's whole payload gain (a linear extrapolation, not a sized structure).</li>
+      <li>The drive is a prescribed 3 g acceleration with no force or power limit, a massless carriage and no air drag in a vented shaft. Under this drive the release speed and the payload do not depend on carriage mass, drive efficiency or shaft drag: they move only drive energy and power. The massless carriage and the missing shaft drag bias those low (the shaft drag by about <span class="num">0.04%</span> in drive energy and <span class="num">0.08%</span> in peak power and interface force). Under it a hot start cannot add exit speed.</li>
+    </ul>
+  </section>
+
+  <nav aria-label="Examples on this page">
+    <ul class="toc">
+      <li><a href="#pad-vs-silo-cold">1 · Pad against cold-start silo</a></li>
+      <li><a href="#ignition-timing">2 · Ignition timing</a></li>
+      <li><a href="#failed-ignition">3 · Failed ignition</a></li>
+      <li><a href="#reproduce">Reproduce</a></li>
+    </ul>
+  </nav>
+
+  <!-- Example 1 -->
+  <article class="example" id="pad-vs-silo-cold" aria-labelledby="ex1-h">
+    <header>
+      <p class="kicker">Example 1 · the headline comparison</p>
+      <h2 id="ex1-h">Pad against cold-start silo</h2>
+      <p class="summary">The same rocket flown to a 200 km circular orbit twice: from the pad, and pushed out of a 100 m silo at 3 g net before its engines light.</p>
+    </header>
+    <figure>
+      <video class="media" controls preload="none" playsinline poster="media/ascent_pad_vs_silo_cold_2d_poster.jpg" width="1280" height="720">
+        <source src="media/ascent_pad_vs_silo_cold_2d.mp4" type="video/mp4">
+        Your browser cannot play this MP4. <a href="media/ascent_pad_vs_silo_cold_2d.gif">Open the GIF instead.</a>
+      </video>
+      <figcaption>The video shows the first 30 s of flight slowly, so the push and liftoff are visible, then the rest of the ascent much faster; the playback speed is printed in the corner. The poster frame is the last frame, at orbit insertion.</figcaption>
+    </figure>
+    <div class="actions">
+      <a class="btn" href="pad-vs-silo-cold.html">Open the interactive replay</a>
+      <a class="btn ghost" href="media/ascent_pad_vs_silo_cold_2d.mp4">MP4 <span class="size">786 KiB</span></a>
+      <a class="btn ghost" href="media/ascent_pad_vs_silo_cold_2d.gif">GIF <span class="size">2.5 MiB</span></a>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h3>What it shows</h3>
+        <p><code>pad</code> lights stage 1 two seconds before release with a 2 s thrust ramp while held down, then lets go. <code>silo_cold</code> is pushed 100 m up the shaft at 3 g net (2.6 s) and leaves the mouth at <span class="num">76.7 m/s</span>; stage 1 lights 0.5 s later with the same 2 s ramp. Both fly the same guidance family, each with its own sweep-optimized settings, and each carries its own payload capacity P*.</p>
+        <div class="tablewrap">
+          <table class="nums">
+            <thead><tr><th scope="col">Run</th><th scope="col">P* (sweep-optimized)</th><th scope="col">vs pad</th></tr></thead>
+            <tbody>
+              <tr><td><span class="sw" style="background: var(--run-0)"></span><code>pad</code> (baseline)<span class="detail">lit at −2 s, 2 s ramp, held down</span></td><td data-label="P*">26,054.4 kg</td><td data-label="vs pad">—</td></tr>
+              <tr><td><span class="sw" style="background: var(--run-1)"></span><code>silo_cold</code><span class="detail">3 g net over 100 m, release at 76.7 m/s, lit 0.5 s after release, 2 s ramp</span></td><td data-label="P*">27,553.2 kg</td><td data-label="vs pad" class="pos">+1,498.8 kg (+5.75%)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src">Numbers: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ6-aero-2d-preliminary.md">RQ6-aero-2d-preliminary</a> and the README's Results so far.</p>
+      </div>
+      <div class="col">
+        <h3>For the hypothesis</h3>
+        <ul class="for">
+          <li>The gain is about 2.0× the ideal rocket-equation screening estimate (<span class="num">765.4 kg</span>). The loss breakdown explains the difference: a vertical release cuts gravity, steering, back-pressure and drag losses, and the pad burns <span class="num">2.7 t</span> while clamped. So it is not treated as a bug.</li>
+          <li>Under every ±10% sensitivity case the gain stays between <span class="num">+1,345</span> and <span class="num">+1,667 kg</span>.</li>
+          <li>Unthrottled <span class="nb">max-Q</span> falls 16.0% (<span class="num">31.24</span> against <span class="num">37.19 kPa</span>).</li>
+        </ul>
+        <h3>Against it, stated as plainly</h3>
+        <ul class="against">
+          <li>No structural mass is charged for the 4.0 g full-stack push (<span class="num">22.5 MN</span> at the interface). About <span class="num">8.1 t</span> of <span class="nb">stage-1</span> strengthening would cancel the whole gain.</li>
+          <li>Part of the headline is the baseline convention: the pad's clamped 2 s ramp accounts for <span class="num">83.1 kg</span> net. Against a pad lit at release the gain is <span class="num">+1,415.8 kg</span>.</li>
+          <li>The calibration miss inflates it. On a vehicle calibrated to <span class="num">22.8 t</span> the gain would be expected near <span class="num">1.3 t</span> (derived by proportion, not run).</li>
+          <li>The trajectory part of the gain (34%) appears only after MECO and is unverified beyond the gravity-turn family. It is the part a better pad ascent (optimal control, roadmap Phase 5) could change, in either direction.</li>
+          <li><span class="nb">q-alpha</span> at the kick is above the pad's (<span class="num">129.9</span> against <span class="num">74.7 Pa rad</span>), and the model charges nothing for it.</li>
+          <li>The facility is sized by power: a <span class="num">1.725 GW</span> peak at release, <span class="num">2.249 GJ</span> per launch (<span class="num">1,249.5 kWh</span> of electricity at an assumed 50%), and <span class="num">160 m</span> long including <span class="num">60 m</span> of braking.</li>
+        </ul>
+      </div>
+    </div>
+    <details class="cmd">
+      <summary>Commands that made it</summary>
+      <div class="cmd-body">
+        <p>From the repository root, against the run directory (git <code>7ad381f227a9</code>). The MP4 and GIF are the README's existing captures from <code>docs/media/</code>, copied here unchanged.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs pad silo_cold --out site/examples/pad-vs-silo-cold.html</code></pre></div>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs pad silo_cold --out docs/media/ascent_pad_vs_silo_cold_2d.mp4</code></pre></div>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs pad silo_cold --out docs/media/ascent_pad_vs_silo_cold_2d.gif --fps 12 --width 640</code></pre></div>
+      </div>
+    </details>
+  </article>
+
+  <!-- Example 2 -->
+  <article class="example" id="ignition-timing" aria-labelledby="ex2-h">
+    <header>
+      <p class="kicker">Example 2 · RQ2, hot or cold start</p>
+      <h2 id="ex2-h">Ignition timing: four ways to light stage 1</h2>
+      <p class="summary">The same 3 g, 100 m push with four different <span class="nb">stage-1</span> startups, to see what lighting the engines late costs.</p>
+    </header>
+    <figure>
+      <video class="media" controls preload="none" playsinline poster="media/ignition_timing_2d_poster.jpg" width="1280" height="720">
+        <source src="media/ignition_timing_2d.mp4" type="video/mp4">
+        Your browser cannot play this MP4. <a href="media/ignition_timing_2d.gif">Open the GIF instead.</a>
+      </video>
+      <figcaption>The four trajectories nearly overlap at orbit scale. Watch the launch close-up and the run table's phase column in the first seconds: at T+0.4 s the two cold starts are still coasting unlit while the other two are already pitching over. The run table cuts names to 9 characters and ends a cut name in ~ (<code>silo_ins~</code> is silo_instant, <code>silo_hot~</code> silo_hot_ramp_on_track, <code>silo_col~</code> silo_cold_lag); the markers tell the runs apart: ● silo_instant, ■ silo_cold, ▲ silo_hot_ramp_on_track, ◆ silo_cold_lag.</figcaption>
+    </figure>
+    <div class="actions">
+      <a class="btn" href="ignition-timing.html">Open the interactive replay</a>
+      <a class="btn ghost" href="media/ignition_timing_2d.mp4">MP4 <span class="size">1.1 MiB</span></a>
+      <a class="btn ghost" href="media/ignition_timing_2d.gif">GIF <span class="size">1.1 MiB</span></a>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h3>What it shows</h3>
+        <p>All four leave the silo at <span class="num">76.7 m/s</span> after <span class="num">2.6 s</span>; they differ only in when and how stage 1 reaches full thrust. <code>silo_instant</code> (dashed in the replay) steps to full thrust at release. No engine can do that, so it is a yardstick, not a design.</p>
+        <div class="tablewrap">
+          <table class="nums">
+            <thead><tr><th scope="col">Run</th><th scope="col">P*</th><th scope="col">vs pad</th><th scope="col">vs silo_cold</th></tr></thead>
+            <tbody>
+              <tr><td><span class="sw" style="background: var(--run-0)"></span><code>silo_instant</code><span class="detail">step to full thrust at release (unphysical yardstick)</span></td><td data-label="P*">27,880.4 kg</td><td data-label="vs pad" class="pos">+1,826.0 kg</td><td data-label="vs silo_cold">+327.1 kg</td></tr>
+              <tr><td><span class="sw" style="background: var(--run-1)"></span><code>silo_cold</code><span class="detail">lit 0.5 s after release, 2 s ramp</span></td><td data-label="P*">27,553.2 kg</td><td data-label="vs pad" class="pos">+1,498.8 kg</td><td data-label="vs silo_cold">—</td></tr>
+              <tr><td><span class="sw" style="background: var(--run-2)"></span><code>silo_hot_ramp_on_track</code><span class="detail">lit on the carriage at −2 s, ramp ends at release; 2,697.5 kg burned on the track</span></td><td data-label="P*">27,788.2 kg</td><td data-label="vs pad" class="pos">+1,733.8 kg</td><td data-label="vs silo_cold">+235.0 kg</td></tr>
+              <tr><td><span class="sw" style="background: var(--run-3)"></span><code>silo_cold_lag</code><span class="detail">lit 0.5 s after release, first-order lag, τ = 1 s</span></td><td data-label="P*">27,553.2 kg</td><td data-label="vs pad" class="pos">+1,498.8 kg</td><td data-label="vs silo_cold">−0.04 kg</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src">Numbers: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ2-ignition-timing-2d.md">RQ2-ignition-timing-2d</a>. The pad baseline (26,054.4 kg) is not drawn in this replay.</p>
+      </div>
+      <div class="col">
+        <h3>What it says</h3>
+        <ul>
+          <li>Lighting after release is expensive in <span class="nb">2-D</span>. silo_cold gives back <span class="num">327.1 kg</span> (<span class="num">34.74 m/s</span>) of the instant start's <span class="num">+1,826.0 kg</span>: 18% of it, and 2.37× what the <span class="nb">1-D</span> formula g (t<sub>d</sub> + t<sub>r</sub>/2) predicts.</li>
+          <li>A first-order lag of τ costs as much as a ramp of 2τ. silo_cold_lag and silo_cold tie (<span class="num">34.747</span> against <span class="num">34.742 m/s</span>).</li>
+          <li>Lighting on the carriage, with the ramp ending at release, is the best physical variant in this set: <span class="num">+235.0 kg</span> over the cold start, paid for with <span class="num">2.7 t</span> of propellant burned on the track.</li>
+          <li>Lighting for the whole push (silo_hot_full, not drawn here) does not pay: <span class="num">10.2 kg</span> behind the cold start, and <span class="num">−18.5</span> to <span class="num">+0.1 kg</span> under the ±10% cases. That is a tie, not a gain.</li>
+        </ul>
+        <h3>Read it with</h3>
+        <ul class="against">
+          <li>Under the prescribed-acceleration drive a hot start cannot add exit speed. It buys drive energy and peak power instead, and only if the exhaust does not push on the carriage (the impingement fraction is unknown). The hot-start question waits for the force- and power-limited <code>linear_motor</code> of roadmap Phase 3.</li>
+          <li>silo_instant and silo_hot_ramp_on_track have no ±10% run, so the 327 kg loss and the +235 kg advantage carry no sensitivity.</li>
+          <li>The lag's startup shape differs from the pad's 2 s ramp, so its gain over the pad is not like for like; its loss against silo_instant is.</li>
+          <li>Structure is not charged in any of them. For silo_cold, about <span class="num">8.1 t</span> of <span class="nb">stage-1</span> strengthening would cancel the gain (184 kg of payload per tonne of <span class="nb">stage-1</span> dry mass, a linear extrapolation of silo_cold's ±10% dry-mass cases). That slope was measured only on silo_cold.</li>
+        </ul>
+      </div>
+    </div>
+    <details class="cmd">
+      <summary>Commands that made it</summary>
+      <div class="cmd-body">
+        <p>From the repository root, against the run directory (git <code>7ad381f227a9</code>); rendered on 2026-10-02 with launch-assist-sim 0.1.0 at commit <code>e4f36ee</code>. The MP4 took about 4.5 minutes and the GIF about 2 minutes on a laptop.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs silo_instant silo_cold silo_hot_ramp_on_track silo_cold_lag --out site/examples/ignition-timing.html</code></pre></div>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs silo_instant silo_cold silo_hot_ramp_on_track silo_cold_lag --out site/examples/media/ignition_timing_2d.mp4</code></pre></div>
+        <p>The GIF came out of <code>animate</code> at 6.1 MB, so it was re-quantised to a 128-colour palette with ffmpeg, which re-encodes only the changed rectangle of each frame. The frames and their timing are unchanged; the file is 1.1 MiB.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs silo_instant silo_cold silo_hot_ramp_on_track silo_cold_lag --out ignition_timing_2d_raw.gif --fps 12 --width 640</code></pre></div>
+        <div class="codeblock"><pre><code>ffmpeg -i ignition_timing_2d_raw.gif -vf "split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" site/examples/media/ignition_timing_2d.gif</code></pre></div>
+      </div>
+    </details>
+  </article>
+
+  <!-- Example 3 -->
+  <article class="example" id="failed-ignition" aria-labelledby="ex3-h">
+    <header>
+      <p class="kicker">Example 3 · RQ3, the abort case</p>
+      <h2 id="ex3-h">Failed ignition: the push with no engines</h2>
+      <p class="summary">What happens to a fully fuelled stack pushed out of the silo at 76.7 m/s when stage 1 never lights.</p>
+    </header>
+    <figure>
+      <video class="media" controls preload="none" playsinline poster="media/failed_ignition_2d_poster.jpg" width="1280" height="720">
+        <source src="media/failed_ignition_2d.mp4" type="video/mp4">
+        Your browser cannot play this MP4. <a href="media/failed_ignition_2d.gif">Open the GIF instead.</a>
+      </video>
+      <figcaption>The launch close-up shows silo_failed rising to its apex and falling back to the shaft mouth while silo_cold climbs away; the run table marks it "ended, impact" at T+15.7 s.</figcaption>
+    </figure>
+    <div class="actions">
+      <a class="btn" href="failed-ignition.html">Open the interactive replay</a>
+      <a class="btn ghost" href="media/failed_ignition_2d.mp4">MP4 <span class="size">631 KiB</span></a>
+      <a class="btn ghost" href="media/failed_ignition_2d.gif">GIF <span class="size">662 KiB</span></a>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h3>What it shows</h3>
+        <p><code>silo_failed</code> gets the same 3 g, 100 m push as <code>silo_cold</code> and is never lit. The replay accepts a run that ended in impact: it draws the coast up and back into the shaft mouth beside silo_cold's ascent and reports no payload for it.</p>
+        <div class="tablewrap">
+          <table class="nums">
+            <thead><tr><th scope="col">silo_failed, <span class="nb">2-D</span></th><th scope="col">time after release</th><th scope="col">value</th></tr></thead>
+            <tbody>
+              <tr><td>Release at the shaft mouth</td><td data-label="Time after release">0 s</td><td data-label="Value">76.7 m/s up</td></tr>
+              <tr><td>Apex</td><td data-label="Time after release">7.843 s</td><td data-label="Value">300.65 m</td></tr>
+              <tr><td>Back at the shaft mouth<span class="detail">drifted west of the axis by Earth's rotation</span></td><td data-label="Time after release">15.689 s</td><td data-label="Value">76.60 m/s down, 0.40 m west</td></tr>
+              <tr><td>Payload capacity</td><td data-label="Time after release">—</td><td data-label="Value">none (status impact)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src">Numbers: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-1d.md">RQ3-silo-screening-1d</a> and the README's failed-ignition row.</p>
+      </div>
+      <div class="col">
+        <h3>Read it with</h3>
+        <ul class="against">
+          <li>No abort is modelled. The full stack comes back to the shaft mouth at <span class="num">76.6 m/s</span>, <span class="num">0.4 m</span> from the axis.</li>
+          <li>In <span class="nb">1-D</span>, unless the carriage is withdrawn within about <span class="num">14.8 s</span>, the stack first hits its own carriage, parked at its braking distance <span class="num">60 m</span> above the mouth, at <span class="num">14.83 s</span> and <span class="num">68.6 m/s</span>. That was not re-computed in <span class="nb">2-D</span>.</li>
+          <li>A tilted exit as an abort mode is a planned Phase 3 item; nothing here tests it.</li>
+          <li>silo_failed did not reach orbit, so it has no payload capacity, no payload change and no screening check (status <code>not_checked</code>; the summary still lists the screening estimate at its release speed). Its loss budget covers only the unpowered coast (drag loss <span class="num">0.146 m/s</span>).</li>
+        </ul>
+      </div>
+    </div>
+    <details class="cmd">
+      <summary>Commands that made it</summary>
+      <div class="cmd-body">
+        <p>From the repository root, against the run directory (git <code>7ad381f227a9</code>); rendered on 2026-10-02 with launch-assist-sim 0.1.0 at commit <code>e4f36ee</code>. The GIF was re-quantised with ffmpeg as in example 2 (2.7 MB down to 662 KiB; frames and timing unchanged).</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs silo_cold silo_failed --out site/examples/failed-ignition.html</code></pre></div>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs silo_cold silo_failed --out site/examples/media/failed_ignition_2d.mp4</code></pre></div>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs silo_cold silo_failed --out failed_ignition_2d_raw.gif --fps 12 --width 640</code></pre></div>
+        <div class="codeblock"><pre><code>ffmpeg -i failed_ignition_2d_raw.gif -vf "split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" site/examples/media/failed_ignition_2d.gif</code></pre></div>
+      </div>
+    </details>
+  </article>
+
+  <section class="box" id="reproduce" aria-labelledby="repro-h">
+    <h3 id="repro-h">Reproduce</h3>
+    <p><strong>Permission first.</strong> The repository is public to read, but no license is granted. Cloning it and running the simulator is a use the <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">license</a> does not cover, so ask the copyright holder for written permission first (through GitHub, <code>@khoks</code>). The steps below are for the author and for anyone who has that permission.</p>
+    <p>Only each run's <code>summary.md</code> is tracked in git (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/results/silo_screening_2d/20260930T175743Z/summary.md">this run's summary</a>); the time series the replays need stay local. On a fresh clone, run the experiment first, then point <code>replay</code> or <code>animate</code> at the new timestamped directory it prints. A run made today is a new run at a newer commit, not the <code>7ad381f</code> run shown here, so compare its <code>summary.md</code> before reusing these numbers. The <a href="../manual/index.html">user manual</a> covers both commands in full.</p>
+    <div class="codeblock"><pre><code>uv sync</code></pre></div>
+    <div class="codeblock"><pre><code>uv run python -m launchsim run experiments/silo_screening_2d.yaml --no-sensitivity</code></pre></div>
+    <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_screening_2d/&lt;new timestamp&gt; --runs pad silo_cold --out pad-vs-silo-cold.html</code></pre></div>
+    <p>A searched <span class="nb">2-D</span> run takes about 7–10 s for the pad and 25–28 s for the lag variants, so the whole experiment takes a few minutes. <code>--variant silo_cold</code> is enough for example 1. Output names ending in <code>_replay.html</code>, <code>_animation.mp4</code> or <code>_animation.gif</code> are ignored by git.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="../index.html">Home</a> · <a href="../manual/index.html">User manual</a> · <a href="../deck/index.html">Slide deck</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">Source on GitHub</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md">Findings index</a></p>
+    <p>Data: <code>results/silo_screening_2d/20260930T175743Z</code> (git 7ad381f227a9, clean). Replay pages and the ignition-timing and failed-ignition animations rendered on 2026-10-02 with launch-assist-sim 0.1.0 at commit e4f36ee; the pad against silo_cold animation is the README capture.</p>
+    <p class="license">© 2026 Rahul Singh Khokhar. All rights reserved. This work is public to read, but no license is granted: you may not copy, modify, share or use any part of it, commercially or otherwise, without written permission. It is not open source. See <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a>.</p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById("theme-btn");
+    var order = ["auto", "light", "dark"];
+    function current() {
+      var t = document.documentElement.getAttribute("data-theme");
+      return t === "light" || t === "dark" ? t : "auto";
+    }
+    function show() { btn.textContent = "theme: " + current(); }
+    btn.addEventListener("click", function () {
+      var next = order[(order.indexOf(current()) + 1) % order.length];
+      if (next === "auto") document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", next);
+      try {
+        if (next === "auto") localStorage.removeItem("las-theme");
+        else localStorage.setItem("las-theme", next);
+      } catch (e) { /* storage unavailable: the choice lasts for this page view */ }
+      show();
+    });
+    show();
+
+    // Line breaks in code only at spaces and after "/", ";" or ":" (and, in a still-long piece,
+    // after "_", "." or "="): each piece goes in a no-wrap span, joined by <wbr>. The text
+    // itself is unchanged, so copying gives the same command.
+    function pieces(word) {
+      var out = [], cur = "";
+      for (var i = 0; i < word.length; i++) {
+        cur += word[i];
+        if ("/;:".indexOf(word[i]) >= 0) { out.push(cur); cur = ""; }
+      }
+      if (cur) out.push(cur);
+      var fine = [];
+      out.forEach(function (p) {
+        if (p.length <= 28) { fine.push(p); return; }
+        var c = "";
+        for (var j = 0; j < p.length; j++) {
+          c += p[j];
+          if ("_.=".indexOf(p[j]) >= 0 && c.length >= 6) { fine.push(c); c = ""; }
+        }
+        if (c) fine.push(c);
+      });
+      return fine;
+    }
+    function breakable(code) {
+      if (code.children.length) return;
+      var text = code.textContent;
+      if (!/\S{13,}|\s/.test(text)) return;
+      var frag = document.createDocumentFragment();
+      text.split(/(\s+)/).forEach(function (word) {
+        if (!word) return;
+        if (/^\s+$/.test(word)) { frag.appendChild(document.createTextNode(word)); return; }
+        pieces(word).forEach(function (p, k) {
+          if (k) frag.appendChild(document.createElement("wbr"));
+          var span = document.createElement("span");
+          span.className = "nw";
+          span.textContent = p;
+          frag.appendChild(span);
+        });
+      });
+      code.textContent = "";
+      code.appendChild(frag);
+    }
+    document.querySelectorAll("pre code").forEach(breakable);
+    document.querySelectorAll("code").forEach(function (code) {
+      if (!code.closest("pre") && code.textContent.length > 12) breakable(code);
+    });
+
+    // A copy button on every command block.
+    document.querySelectorAll(".codeblock").forEach(function (block) {
+      var code = block.querySelector("code");
+      if (!code || !navigator.clipboard) return;
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "copy";
+      b.textContent = "copy";
+      b.addEventListener("click", function () {
+        navigator.clipboard.writeText(code.textContent).then(function () {
+          b.textContent = "copied";
+          setTimeout(function () { b.textContent = "copy"; }, 1500);
+        }, function () { b.textContent = "select and copy"; });
+      });
+      block.insertBefore(b, block.firstChild);
+    });
+  })();
+</script>
+</body>
+</html>

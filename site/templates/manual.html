@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}} · User manual · launch-assist-sim</title>
+<meta name="description" content="{{description}}">
+<link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/brand/logo-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("las-theme");
+      if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) { /* storage unavailable: follow the system theme */ }
+  })();
+</script>
+</head>
+<body class="manual-page">
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="../index.html"><img src="../assets/brand/logo-mark.svg" alt="" width="28" height="28"><span class="wm">launch<span class="hy">-</span>assist<span class="hy">-</span>sim</span></a>
+    <nav aria-label="Site">
+      <ul class="site-nav">
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="index.html" aria-current="page">Manual</a></li>
+        <li><a href="../deck/index.html">Deck</a></li>
+        <li><a href="../examples/index.html">Examples</a></li>
+        <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">GitHub</a></li>
+      </ul>
+    </nav>
+    <button class="theme-btn" type="button" id="theme-btn" aria-label="Switch colour theme">theme: auto</button>
+  </div>
+</header>
+
+<div class="wrap manual">
+  <details class="manual-nav" open>
+    <summary>User manual · chapters</summary>
+    <nav aria-label="Manual chapters">
+{{nav}}
+    </nav>
+  </details>
+  <main id="content">
+    <article class="prose">
+{{content}}
+    </article>
+    <nav class="pager" aria-label="Previous and next chapter">
+{{pager}}
+    </nav>
+    <p class="page-meta">This page is generated from <a href="{{source_url}}">{{source_path}}</a>, the source of truth, which also renders on GitHub.</p>
+  </main>
+</div>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p><a href="../index.html">Home</a> · <a href="index.html">User manual</a> · <a href="../deck/index.html">Slide deck</a> · <a href="../examples/index.html">Examples</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">Source on GitHub</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md">Findings index</a></p>
+    <p class="license">© 2026 Rahul Singh Khokhar. All rights reserved. This work is public to read, but no license is granted: you may not copy, modify, share or use any part of it, commercially or otherwise, without written permission. It is not open source. See <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a>.</p>
+    <p class="stamp">{{stamp}}</p>
+  </div>
+</footer>
+<script src="../assets/site.js"></script>
+</body>
+</html>

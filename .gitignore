@@ -17,3 +17,6 @@ results/**
 *_animation.mp4
 *_animation.gif
 *_replay.html
+
+# the GitHub Pages site, built by site/build.py (deployed by .github/workflows/pages.yml)
+_site/
