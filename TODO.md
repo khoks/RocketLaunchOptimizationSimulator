@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 4 done at 1a0b2af; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-03 (Phases 0-2 done; SP1 in progress: step P done at 9024d40 (merged e0b9fd8); see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
@@ -250,6 +250,11 @@ Added 2026-10-02 in SP1 step 3:
 Added 2026-10-02 in SP1 step 6:
 
 - **KI-024** [low, open, owner SP1 step 7 or later] `compare._attribution_check` (reused by the cross-vehicle decomposition) takes max(abs(...)) over a tuple of residuals, so a NaN residual that is not first in the tuple can be skipped silently. Add a math.isfinite guard (a NaN residual should fail the check) in a step that may touch it, with a test.
+
+Added 2026-10-03 in SP1 step P:
+
+- **KI-025** [low, open, owner SP1 step 10] Deck slide 13 (site/deck/index.html) has unevenly spaced y-axis labels (24,000 / 25,000 / 26,000 / 27,000 / 27,500 kg). Cosmetic; fix when the deck is refreshed with SP1's finding.
+- **KI-026** [low, open, owner the user] The repository's social preview image (assets/brand/social-preview.png, 1280 x 640) must be uploaded by hand under GitHub Settings, General, Social preview; GitHub has no API for it.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 

@@ -503,7 +503,7 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [ ] | |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [ ] | |
 | 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [ ] | |
-| P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [~] | |
+| P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [x] | 9024d40 (merged e0b9fd8) |
 
 ### Step T. Tracking system
 
@@ -974,6 +974,16 @@ Further points and open questions:
 - 2026-10-02: branch `sp1-step5` (step 6) merged into main (merge commit c8e0020),
   no conflicts; full suite on the merged tree 1205 passed (exact golden tier). Next: step 7 (offload block,
   pipeline and reporting).
+- 2026-10-03: step P passed its gate on branch `public-site`: commit 9024d40, merged into
+  main as e0b9fd8 and pushed (brand assets, 12-chapter user manual, 17-slide deck with PDF,
+  animation gallery with three interactive replays and three MP4/GIF animations, Pages
+  site built by site/build.py with Python-Markdown 3.11 in CI only, README banner and
+  License section; visual, accuracy and compliance reviews, two fix rounds). GitHub Pages
+  enabled with GitHub Actions as the source; the first deployment succeeded and the site
+  is live at https://khoks.github.io/RocketLaunchOptimizationSimulator/ (landing, deck,
+  examples and manual checked in the browser). The fuel-offload question is shown there
+  as not answered yet; step 10 refreshes the site, deck, gallery and manual with SP1's
+  finding.
 
 ## 12. Deviations from the plan
 
