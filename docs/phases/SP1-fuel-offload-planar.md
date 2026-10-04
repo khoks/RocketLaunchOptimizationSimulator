@@ -1,6 +1,6 @@
 # SP1: Launch settings and fuel offload at fixed payload (planar model)
 
-Status: in progress (session 2026-09-30)
+Status: done (2026-10-04, commit `5007515`)
 
 This is the starting document and the live record of phase SP1. The program board is
 docs/phases/README.md, the way every session runs is docs/process/SESSION_PROTOCOL.md, and
@@ -504,7 +504,8 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [x] | c2a4cf0 |
 | 8a | Reporting fixes before the run (found in step 8): payload-sensitivity note for an empty `of`; calibration record for the README-loads fork; sweep-point offload solves record gamma*_ref and flags (KI-028); pre-registration note amended | src/launchsim/summary.py, results_io.py, plots.py, docs/phases/inputs/2026-10-03-sp1-preregistration.md | fast suite; affected tests | Pins unchanged; experiment files unchanged | [x] | d336933 |
 | 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [x] | fd664a5 |
-| 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [~] | |
+| 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [x] | the bookkeeping commit (`Close SP1: trackers, handoff, next phase file`) |
+| 10a | Added at the close (2026-10-04): `animate` fixed for offload runs (a run of the offload block, metrics.json `offload.runs`, is read and labelled from that record as an offload case, a paired pad or a pad control; a pad control that misses P_ref by a resolution effect reads as a pad control, not a failure; the legend title says what P_ref is; `plots.offload_role` is shared with `replay.offload_note`); the SP1 animation added to the gallery (site/examples/media/fuel_offload_pad_vs_silo_2d.mp4, .gif and poster) | src/launchsim/plots.py, src/launchsim/replay.py, tests/test_animate.py, site/examples/ | tests/test_animate.py (four new tests) | Standing gate of a code step (above); independent gate | [x] | `5007515` (the closing commit) |
 | P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [x] | 9024d40 (merged e0b9fd8) |
 
 ### Step T. Tracking system
@@ -842,6 +843,72 @@ The order is the end checklist of SESSION_PROTOCOL.md, section 7.
 Each criterion is checked by an independent gate at step 10. The phase closes with an open
 criterion only if the user accepts the miss, and the acceptance is logged in TODO.md.
 
+**Exit criteria results (2026-10-04).** Written by the session at close-out, with the
+evidence known when it was written. The independent exit-criteria gate re-checks every
+criterion and records its own verdict here; three of them pass only once the last
+close-out actions are done.
+
+1. Tracking system and the SP2 handoff: **pass once the handoff is written.** The protocol,
+   the program board, phase files SP1 to SP6 and TODO.md with IDs exist since step T
+   (98eb5a6). The SP2 phase file was fact-checked and its prompt finalised (ac66fd0). The
+   next phase is SP2, as planned (D-SP1-18); docs/handoff/NEXT_SESSION.md for SP2 is
+   written at close-out.
+2. The exit-speed option and the four ramp-start settings: **pass** (steps 2-4). Exit
+   speed and push time against the closed form at 1e-9 (1fc92d3); depth, speed and
+   closed-form height against the closed forms, 1-D and planar (83d66dd); the height by
+   event at mouth + h, with its time equal to the closed form in constant-g vacuum
+   (1a0b2af).
+3. The offload solver: **pass** (steps 5 and 9). Toy closed forms and the 10x-tightened
+   budget in tests/test_offload.py (a03e218). The stage-1 pad control is inside the
+   1.62 kg bound of the shipped run (1.6178 kg from its own logs; step 5 estimated 1.63 kg): x_pad = 0 with m_res(0) = -0.0016 kg, a resolution
+   effect, and the summary reports "consistency test pass" (the bridge: x_pad = 0,
+   m_res(0) = -0.0016 kg). The independent payload search reproduces P_ref within
+   `checks.search_final_flag_rel` x P_ref (2.61 kg) at every solved case of
+   results/silo_offload_2d/20261003T112934Z except one, at all 20 sweep points (largest
+   0.72 kg) and in the bridge (0.004 kg against 2.47 kg). The exception is the stage-2
+   case silo_cold_s2: its search returned P* 15.36 kg above P_ref, it failed its
+   verification, it carries 4 flags, and the findings note reports its figure as a
+   flagged lower bound. The criterion allows this ("or the case is flagged").
+4. Runs and sweeps from a clean committed tree with no `bug_suspect`: **pass.** All three
+   results directories (results/silo_offload_2d/20261003T112934Z, 20261003T112949Z and
+   results/silo_offload_2d_readme/20261003T112956Z) record "Git: b3150c1754ee", the clean
+   commit they ran from, and each summary.md says "No run and no comparison is
+   bug_suspect."
+5. The findings note passes the honesty review: **pass** (the step 9 gate, fd664a5).
+   docs/findings/RQ1-fuel-offload-2d.md states the headline with the penalty rows (+2, +4
+   and +8.1 t leave 32.29, 22.88 and 1.98 t) and the sensitivity (38.67-44.46 t) beside
+   it.
+6. Full suite, golden 1-D and planar digests, ruff: **pass on the tree after fd664a5;
+   the closing tree is checked by the gate.** Full suite 1295 passed (14 min, exact golden
+   tier) on the tree after fd664a5; `ruff check .` and `ruff format --check .` clean on
+   2026-10-04. Step 10a changes code under src/ and adds four tests (1299 collected,
+   1264 fast and 35 slow, on 2026-10-04), so the run that counts
+   is the one on the closing tree: 1299 passed (1264 fast, 35 slow) in 13 min 8 s with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 at the closing commit 5007515 (2026-10-04); ruff check: all checks passed; ruff format --check: 91 files already formatted.
+7. Demo recorded under docs/demos/SP1/: **pass once docs/demos/SP1 is committed.** The
+   files are on disk (README, the console output of run, sweep and bridge, the offload
+   block, the replay page and its screenshot) and none is ignored by .gitignore.
+8. Public repository current and Pages live with the finding: **pass once pushed and
+   deployed.** The landing page, user manual, slide deck and gallery were refreshed with
+   SP1's finding in the close-out; the criterion is met when main is pushed after the
+   closing commit and the Pages deployment succeeds.
+
+**Independent exit-criteria gate (step 10; protocol section 7, item 1).**
+2026-10-04, by an independent gate agent (workflow wf_edfdd334-963) that did not build or
+review SP1: **pass** on criteria 1-7, criterion 8 **pending** the push. 1: the protocol,
+board, phase files SP1-SP7 and the SP2 handoff exist; the handoff's prompt is identical to
+section 13 of the SP2 phase file (107 lines, diffed). 2: the closed-form test files pass
+(320 passed). 3: tests/test_offload.py fast tests pass (13); the stage-1 pad control
+passes its consistency test (x_pad 0, m_res -0.0016 kg, bound 1.6178 kg); every solved
+case verifies within 2.6 kg except silo_cold_s2 (+15.36 kg), which is flagged
+(offload_verify_mismatch). 4: all three results directories record b3150c1754ee, not
+dirty, with no bug_suspect; the experiment files are unchanged from c2a4cf0. 5: the step 9
+gate and the note's headline, penalty rows, sensitivity and literal paired-pad verdict.
+6: fast suite 1264 passed, golden and pins 221 passed, ruff clean, no src/tests change
+after 5007515; the recorded closing run 1299 passed. 7: docs/demos/SP1 committed in
+d3dc509. 8: pending until main is pushed and the Pages deployment succeeds; the gate
+also found the landing page and deck roadmaps stale on D-SP1-18 (SP7), fixed before the
+close commit. Criterion 8 is confirmed after the push (session log).
+
 ## 9. Demo script
 
 Run from a clean commit, in the repository root:
@@ -1020,6 +1087,67 @@ Further points and open questions:
   the findings index, where only the delta-v reading chosen after the run had been
   carried. Headline: 41.26 t of stage-1 propellant, 10.04% of stage 1, 7.96% of the total.
   Next: step 10 (close SP1).
+
+**2026-10-04 (close-out, step 10).**
+
+- Step 9's findings (fd664a5, trackers cfd9059) are what SP1 closes on. The headline,
+  41.26 t of stage-1 propellant (10.04% of stage 1, 7.96% of the total) at the pad's
+  payload and orbit, travels with its caveats: the gate vehicle's +14.3% calibration miss
+  (the README-loads bridge gives 36.01 t, 9.10%); no structural mass for the push (an
+  assumed +8.1 t of stage-1 dry mass leaves 1.98 t, and about 8.5 t, extrapolated, cancels
+  it); read as pre-registered, most of the offload is the lighter stack's thrust-to-weight,
+  while a delta-v reading chosen after the run gives the lighter stack 28-29%; the
+  offloaded run's max-Q is 3.4% above the pad's; the stage-2 case failed its verification;
+  the energy ratio of about 128x is not an efficiency claim.
+- The SP2 phase file was fact-checked against the code at b3150c1, with its section 13
+  prompt finalised, and committed as ac66fd0 (protocol section 7, item 8).
+- Public face refreshed with SP1's finding (protocol section 7, item 6): the landing page,
+  the slide deck and its PDF, the animation gallery (two offload replay pages) and the
+  user manual (a new offload chapter, docs/manual/05b-offload.md).
+- Demo recorded under docs/demos/SP1/ (section 9): the console output of the run, the
+  sweep and the bridge; the offload block of the run's summary.md; the replay page of pad
+  and silo_cold_s1, saved as pad_vs_offloaded_silo.html so the `*_replay.html` ignore
+  pattern does not catch it; and a screenshot of it.
+- Step 10a, added in this session: the `animate` command fixed for offload runs and the
+  SP1 animation added to site/examples/ (step table row 10a; deviations, section 12). It
+  ran in parallel with these tracker edits. Its code commit or commits, with site/build.py
+  of the public-face refresh, end with the closing commit `5007515`,
+  so the closing commit is the last commit that changed code (protocol section 7,
+  item 12).
+- Close-out decision (protocol section 7, item 7; section 10, item 8), put to the user
+  with the recommendation first: SP2 runs next as planned; then a new phase, SP7, the
+  structural mass of the push load and a force-limited drive, before the 3-D phases
+  SP3-SP6 (D-SP1-18, the recommended option). The SP2 phase file now names SP7, not SP3,
+  as the phase after it.
+- Full suite: 1295 passed (14 min, exact golden tier) on the tree after fd664a5. Step 10a
+  adds four tests, so that run is not the closing tree's. Full suite on the closing tree
+  (protocol section 7, item 2): 1299 passed (1264 fast, 35 slow) in 13 min 8 s with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 at the closing commit 5007515 (2026-10-04); ruff check: all checks passed; ruff format --check: 91 files already formatted.
+- Independent exit-criteria gate (protocol section 7, item 1): 2026-10-04, pass on criteria 1-7 and
+  criterion 8 pending the push (verdict per criterion in section 8). Exit criteria results as known at close-out,
+  before the gate, are in section 8 too.
+- Cold-read check (protocol section 7, item 11), 2026-10-04, by an agent that did not
+  write the documents: 12 findings on the handoff, the trackers and the phase files. Fixed
+  in the documents: the missing step-table row 10a and row 10's status; SP7's phase file
+  stated as unwritten in TODO.md and the handoff although it exists (a draft); the files
+  the SP2 header diff will list, replay.py among them (the finding's claim that A1's
+  reference page hash would change was wrong: regenerated from the working tree with
+  step 10a's edits, the page is unchanged, 247,949 bytes, sha256 3ca23dc5...); KI-029 in
+  the SP2 prompt; KI-025 closed; the CLAUDE.md layout line for docs/demos/; the evidence
+  for exit criterion 8; deviations for steps 9, 10 and 10a; site/build.py committed with
+  step 10a's code, so the closing commit is the last that changed code; a slot in
+  section 8 for the gate's verdict. Left for the lead, because
+  they wait on step 10a's commit: the closing commit hash, the full-suite counts on the
+  closing tree and the independent gate's verdict, each marked by a TO-FILL placeholder in
+  angle brackets (`grep -rn '<TO[-]FILL' docs TODO.md CLAUDE.md README.md` lists every
+  place; it must list nothing before the bookkeeping commit).
+- 2026-10-04: the lead filled the placeholders (closing commit 5007515; full suite on the
+  closing tree 1299 passed, 1264 fast and 35 slow, 13 min 8 s, exact golden tier; ruff
+  clean) and ran the independent exit-criteria gate: pass on criteria 1-7, criterion 8
+  pending the push (section 8). The gate's other findings were handled before the close
+  commit: the landing page and deck roadmaps gained SP7 (D-SP1-18) and the deck PDF was
+  regenerated; the findings note's headline caveats and 'What goes against the
+  hypothesis' gained the literal pre-registered paired-pad verdict; the pad-control bound
+  in section 8 is the run's 1.6178 kg; KI-021 to KI-023 moved to 'later'.
 
 ## 12. Deviations from the plan
 
@@ -1411,6 +1539,63 @@ Step 8a (2026-10-03):
    record exactly at +10% (25,080 kg, whose P*/22,800 - 1 rounds to just above 0.1)
    reads inside like one at -10% (review round 1). Neither shipped record is near an
    edge, so no output changes.
+
+Step 9 (2026-10-04, commit fd664a5):
+
+1. **The three commands ran at the same time.** The pre-registration lists the run, the
+   sweep and the bridge one after the other; they were started within 22 s of each other
+   from b3150c1 and ran concurrently (14.1, 20.9 and 2.1 min). No number depends on the
+   order: each command re-solves its own pad, and the sweep's P_ref equals the run's to
+   every printed digit (findings note, "Reproduction").
+2. **The paired-pad criterion is read two ways.** Read as written, its small-margin
+   branch fires (the paired pad falls 1,402.0 kg short, 3.4% of the offload in kg): most
+   of the offload is the lighter stack's thrust-to-weight. Because that branch compares
+   payload kg with propellant kg, the note adds a reading in ideal delta-v that the
+   pre-registration does not spell out (the lighter stack 28-29%), and reports both
+   (findings note, "How each pre-registered reading came out"). The session lead added the
+   literal verdict to README.md and the findings index before the commit (session log,
+   2026-10-04).
+3. **The four derived figures** were drawn by a throwaway script that is not kept in the
+   repository; every plotted value is in the note's tables (findings note,
+   "Reproduction").
+
+Step 10 (2026-10-04, the bookkeeping commit):
+
+1. **The SP2 fact-check came before step 9.** Protocol section 7, item 8 places it at the
+   close; it was done against b3150c1 on 2026-10-03 (ac66fd0), before the runs, and
+   amended at the close for D-SP1-18. The code changed after b3150c1 (step 10a and
+   site/build.py) is caught by the diff in the SP2 header, which lists those files (SP2
+   entry criterion 8; handoff section 5).
+2. **The demo reuses step 9's runs.** Section 9 says to run the three commands from a
+   clean commit. The demo's console files are the logs of the step-9 runs from b3150c1
+   (paths made repository-relative, line endings LF), not a re-run; the replay page was
+   written at cfd9059 (docs/demos/SP1/README.md, "Commits").
+3. **A phase added at the close.** The close-out decision D-SP1-18 created SP7. Its phase
+   file, docs/phases/SP7-structural-mass-push-load.md, was written at the close by the
+   board's "How to add a phase", as a draft (exit criteria and prompt marked draft); SP2's
+   close fact-checks it and finalises its prompt. The SP2 phase file was amended to name
+   SP7 as the phase after it.
+4. **Step 10a was added** (next entry).
+
+Step 10a (2026-10-04, added at the close; the closing commit):
+
+1. **Why it was added.** It came with the SP1 animation for the gallery (public face,
+   protocol section 7, item 6). `animate` looked a run up only in metrics.json's `runs`,
+   so a run of the offload block, recorded under `offload.runs`, got no payload and no
+   status: its legend read "P* n/a" and its end "ended, None". It now reads such a run
+   from its offload record and labels it as an offload case, a paired pad or a pad
+   control (step table row 10a); a pad control that misses P_ref by grams, a resolution
+   effect, no longer reads as a failure.
+2. **What else it touched.** `replay.offload_note` takes the run's role from the shared
+   `plots.offload_role`; four tests were added to tests/test_animate.py. No physics,
+   search, guidance or offload code changed, and no results directory was written. The
+   replay page of SP2's reference directory, regenerated from the working tree with these
+   edits on 2026-10-04, is byte-identical to the one b3150c1 writes (247,949 bytes, sha256
+   3ca23dc5...; that directory has no offload runs).
+3. **Commit arrangement.** site/build.py's text fixes for the two offload replay pages of
+   the gallery come from the public-face refresh, not from step 10a; they are committed
+   with step 10a's code so that the closing commit is the last commit that changed code
+   (protocol section 7, item 12).
 
 The program board carries a one-line summary of each phase's entry and exit criteria, as
 the plan's tracking table asks; the full criteria are in the phase files. That is not a

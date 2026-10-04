@@ -6,7 +6,7 @@
   docs/process/SESSION_PROTOCOL.md sections 7 and 8.
 - Phase just closed: **SP1**, launch settings and fuel offload at fixed payload (planar
   model), docs/phases/SP1-fuel-offload-planar.md.
-- Closing commit (the last commit that changed code or results): `<closing-commit>`.
+- Closing commit (the last commit that changed code or results): `5007515`.
 - This file is part of the bookkeeping commit that follows it, subject
   `Close SP1: trackers, handoff, next phase file` (protocol section 7, item 12). A file
   cannot hold the hash of its own commit, so HEAD is identified by that subject. main was
@@ -73,7 +73,7 @@ recorded as decisions in TODO.md.
 | 8a | Reporting fixes before the run (pre-registration Amendment 1) | d336933 |
 | 9 | Runs from the clean commit b3150c1; findings note RQ1-fuel-offload-2d | fd664a5 |
 | P | Public repository and its face, on branch public-site | 9024d40 (merged e0b9fd8) |
-| 10a | Added at the close: `animate` fixed for offload runs; the SP1 animation in the gallery | see the step table |
+| 10a | Added at the close: `animate` fixed for offload runs; the SP1 animation in the gallery | `5007515` (the closing commit) |
 | 10 | Close SP1: exit criteria gate, demo, close-out decisions, SP2 fact-check, this handoff | the bookkeeping commit |
 
 **Exit criteria** (SP1 phase file, section 8). The independent gate of step 10 records the
@@ -86,9 +86,9 @@ verdict of each criterion in that section; this table gives the evidence.
 | 3 | Toy closed forms; stage-1 pad control within its bound; P_ref reproduced at each solved case, or the case flagged | Step 5 gate (bound 1.63 kg); shipped run: x_pad = 0 with m_res(0) = -0.0016 kg (a resolution effect); headline verification +0.0085 kg against 2.6 kg; the stage-2 case failed its verification and carries its flags |
 | 4 | Run and sweeps from a clean committed tree, no `bug_suspect` | All three directories record git b3150c1754ee, not dirty; "No run and no comparison is bug_suspect" in all three summaries |
 | 5 | Findings note passes the honesty review, headline with penalty rows and sensitivity | Step 9 gate (fd664a5) |
-| 6 | Full suite green; golden 1-D and planar digests unchanged; ruff clean | 1295 passed at fd664a5, 14 min, exact golden tier (section 7) |
+| 6 | Full suite green; golden 1-D and planar digests unchanged; ruff clean | On the closing tree: 1299 passed (1264 fast, 35 slow) in 13 min 8 s with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 at the closing commit 5007515 (2026-10-04); ruff check: all checks passed; ruff format --check: 91 files already formatted (section 7; SP1 session log). Before step 10a: 1295 passed at fd664a5, 14 min, exact golden tier |
 | 7 | Demo recorded under docs/demos/SP1/ | docs/demos/SP1/README.md |
-| 8 | Public repository current; Pages site live with the landing page, manual, deck and gallery updated with SP1's finding | Refreshed at the close; main pushed and the deployment checked (SP1 session log) |
+| 8 | Public repository current; Pages site live with the landing page, manual, deck and gallery updated with SP1's finding | Refreshed and built locally at the close; main is pushed after the bookkeeping commit and the Pages deployment is checked then (protocol section 7, item 14), so no file of that commit can record it. The gate's verdict is in SP1 section 8 |
 
 The Phase 2 calibration miss (+14.3%, accepted 2026-09-30, D-P2-08) is not an SP1
 criterion; it travels with every number below.
@@ -217,29 +217,40 @@ file and line of each):
 **Inventory.** SP2 section 6 was fact-checked at b3150c1 on 2026-10-03 (commit ac66fd0).
 fd664a5 and cfd9059 changed none of the paths it inventories (checked:
 `git diff --stat b3150c1 cfd9059 -- src tests configs experiments pyproject.toml .gitignore
-site/build.py` is empty). The close did change some: the public-face refresh edited
-site/build.py, and step 10a changed the `animate` code and its tests. So the re-check
-command of the SP2 header, `git diff --stat b3150c1 HEAD -- src tests configs experiments
-pyproject.toml .gitignore site/build.py`, will list files at SP2's start. Re-check those
-files against section 6 before planning from it (SP2 header, entry criterion 8, risk R1),
-and generate A1's reference replay page at the SP2 start commit as section 7 says (if
-replay.py changed, the new hash is the reference).
+site/build.py` is empty). The close changed four of them, in the code commits that end with
+the closing commit:
+
+- site/build.py: the public-face refresh (text fixes for the gallery's two offload replay
+  pages);
+- src/launchsim/plots.py: step 10a (`animate` reads and labels the runs of the offload
+  block; `plots.offload_role`, `offload_tag`, `animation_record`, `legend_title`);
+- src/launchsim/replay.py: step 10a (`offload_note` now takes the run's role from
+  `plots.offload_role`);
+- tests/test_animate.py: step 10a (four new tests).
+
+So the re-check command of the SP2 header, `git diff --stat b3150c1 HEAD -- src tests
+configs experiments pyproject.toml .gitignore site/build.py`, lists these four files at
+SP2's start. Re-check them against section 6 (their line numbers have moved) before
+planning from it (SP2 header, entry criterion 8, risk R1). Generate A1's reference replay
+page at the SP2 start commit as section 7 says; that value is the reference. For
+information: regenerated on 2026-10-04 from the working tree with step 10a's edits, before
+its commit, the page was unchanged from b3150c1 (247,949 bytes, sha256 3ca23dc5...; the
+reference directory has no offload runs).
 
 **Open items owned by SP2** (TODO.md): KI-002 (private plots helpers and duplicate
 readers), KI-016 (fairing event mass convention), KI-017 (output-path rule mismatch),
 KI-018 (Pillow not declared), KI-019 (Google Fonts in the replay page), and KI-029 (the
 replay page's drive caveat ends "Each of these favours the assisted runs.", which is
-misleading; site/build.py rewrites it in the gallery). KI-029 is the item the SP2 phase
-file calls "the replay drive-caveat wording of section 5.8 item 5 once it has a number".
+misleading; site/build.py rewrites it in the gallery). KI-029 is SP2 section 5.8 item 5.
 
 **Order after SP2.** SP7 (structural mass of the push load and a force-limited drive),
 then SP3, SP4, SP5, SP6 (D-SP1-18; the program board's dependency order). The SP2 phase
 file names SP7 as the phase after it (section 3, step A8, exit criterion 13 and its
 prompt). At SP2's close, SP7 is the "next phase" of protocol section 7, items 7 to 9,
 unless the user reorders again: the SP2 session fact-checks SP7's phase file against the
-code and finalises its prompt. When this handoff was written SP7 had no phase file yet
-(TODO.md, program table); if it still has none at SP2's close, the SP2 session writes it
-by "How to add a phase" on the board.
+code and finalises its section 13 prompt. That file,
+docs/phases/SP7-structural-mass-push-load.md, was written at SP1's close-out as a draft
+(its exit criteria and its section 13 prompt are marked draft).
 
 ## 6. Decisions to put to the user first
 
@@ -265,8 +276,8 @@ results needs the user's OK).
 list):
 
 - the bookkeeping commit `Close SP1: trackers, handoff, next phase file` (holds this file);
-- the step 10a commit or commits, the last of them the closing commit `<closing-commit>`
-  (SP1 step table, row 10a);
+- the code commits of the close (step 10a, with site/build.py of the public-face refresh),
+  the last of them the closing commit `5007515` (SP1 step table, row 10a);
 - cfd9059 step 9 trackers; fd664a5 step 9 findings; ac66fd0 SP2 phase file fact-checked
   at b3150c1;
 - b3150c1 step 8a trackers (the commit the pre-registered runs were made from); d336933
@@ -280,11 +291,13 @@ list):
   step 5 trackers; a03e218 step 5; 534557d step 2 trackers; 1fc92d3 step 2;
 - 1575b79 step 1 trackers; e2fb6ab step 1; c587a08 step T trackers; 98eb5a6 step T.
 
-**Tests and lint.** Full suite: 1295 passed at fd664a5, 14 min, exact golden tier. That
-is 1260 fast plus 35 slow (the fast count at b3150c1: 1260 passed, 35 deselected; no file
-under src/ or tests/ changed between b3150c1 and fd664a5). ruff check and format were clean
-at b3150c1, and no Python file changed up to cfd9059. Step 10a adds tests after that run;
-the SP1 session log records the run that closes the phase.
+**Tests and lint.** Full suite on the closing tree (the closing commit):
+1299 passed (1264 fast, 35 slow) in 13 min 8 s with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 at the closing commit 5007515 (2026-10-04); ruff check: all checks passed; ruff format --check: 91 files already formatted; also in the SP1 session log and SP1 exit criterion 6. Step 10a adds
+four tests to tests/test_animate.py: on 2026-10-04, with its edits in the working tree,
+1299 tests were collected, 1264 fast and 35 slow. The run before step 10a: 1295 passed at
+fd664a5, 14 min, exact golden tier, that is 1260 fast plus 35 slow (the fast count at
+b3150c1: 1260 passed, 35 deselected; no file under src/ or tests/ changed between b3150c1
+and fd664a5).
 
 **Results directories** on disk. Only each directory's top-level summary.md is tracked; a
 fresh clone has no CSVs and must re-run an experiment before `animate`, `replay` or the
@@ -427,9 +440,9 @@ file's version is the one to use.
 > `git diff --stat b3150c1 HEAD -- src tests configs experiments pyproject.toml .gitignore
 > site/build.py`: an empty diff is the re-check of section 6 (record it in the session
 > log), and if it lists files, re-check those files against section 6 before planning from
-> it; list the open known issues and backlog items whose owner is SP2 in TODO.md (at the
-> fact-check: KI-002, KI-016, KI-017, KI-018, KI-019, and the replay drive-caveat wording
-> of section 5.8 item 5 once it has a number). If the session starts in
+> it; list the open known issues and backlog items whose owner is SP2 in TODO.md (at SP1's
+> close: KI-002, KI-016, KI-017, KI-018, KI-019 and KI-029, the replay drive-caveat wording
+> of section 5.8 item 5). If the session starts in
 > Plan mode, do the read-only checks first and run the suite right after approval, as the
 > protocol's section 3 says.
 >

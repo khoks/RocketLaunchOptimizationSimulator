@@ -8,12 +8,15 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 9 done at fd664a5; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-04 (Phases 0-2 and SP1 done; SP1 closed in step 10; next: SP2, then SP7, then SP3-SP6, D-SP1-18).
 
 ## Program
 
-Current phase: **SP1, in progress (session 2026-09-30)**. The step in hand is in the step
-table of docs/phases/SP1-fuel-offload-planar.md (section 7).
+Current phase: **SP2, not started (next session)**. SP1 closed on 2026-10-04 (step 10 of
+docs/phases/SP1-fuel-offload-planar.md; its closing commit is on the program board). The
+next session starts from docs/handoff/NEXT_SESSION.md and opens
+docs/phases/SP2-launch-app-2d-scene.md. Order after SP2 (D-SP1-18): SP7 (structural mass
+of the push load and a force-limited drive), then SP3, SP4, SP5, SP6.
 
 - How a session runs (start checklist, step loop, end checklist, ID conventions):
   [docs/process/SESSION_PROTOCOL.md](docs/process/SESSION_PROTOCOL.md).
@@ -27,17 +30,21 @@ table of docs/phases/SP1-fuel-offload-planar.md (section 7).
 
 | Phase | One line | Status | Phase file |
 |---|---|---|---|
-| SP1 | Tracking system; launch settings (silo depth with exit speed, ramp start); fuel-offload solver; the headline finding on the planar model | in progress (session 2026-09-30) | [SP1-fuel-offload-planar.md](docs/phases/SP1-fuel-offload-planar.md) |
-| SP2 | Local app (`launchsim app`) with the 2-D launch scene | not started | [SP2-launch-app-2d-scene.md](docs/phases/SP2-launch-app-2d-scene.md) |
+| SP1 | Tracking system; launch settings (silo depth with exit speed, ramp start); fuel-offload solver; the headline finding on the planar model | done (2026-10-04, commit `5007515`) | [SP1-fuel-offload-planar.md](docs/phases/SP1-fuel-offload-planar.md) |
+| SP2 | Local app (`launchsim app`) with the 2-D launch scene | not started (next session) | [SP2-launch-app-2d-scene.md](docs/phases/SP2-launch-app-2d-scene.md) |
+| SP7 | Structural mass of the push load and a force-limited drive (taken from README Phase 3, B-004 and B-005); runs after SP2 and before SP3 (D-SP1-18) | not started | [SP7-structural-mass-push-load.md](docs/phases/SP7-structural-mass-push-load.md) (written 2026-10-04 at SP1's close-out; its exit criteria and prompt are drafts: SP2's close finalises the prompt, SP7's Plan mode the criteria) |
 | SP3 | 3-D dynamics S1: 3-DOF point mass on a rotating sphere | not started | [SP3-3d-dynamics-s1-sphere.md](docs/phases/SP3-3d-dynamics-s1-sphere.md) |
 | SP4 | 3-D scene in the app; headline re-checked on S1 | not started | [SP4-3d-scene-and-recheck.md](docs/phases/SP4-3d-scene-and-recheck.md) |
 | SP5 | 3-D dynamics S2: oblate Earth (J2, ellipsoid) | not started | [SP5-3d-dynamics-s2-oblate.md](docs/phases/SP5-3d-dynamics-s2-oblate.md) |
 | SP6 | 3-D dynamics S3: 6-DOF rigid-body fly-out | not started | [SP6-3d-dynamics-s3-6dof.md](docs/phases/SP6-3d-dynamics-s3-6dof.md) |
-| later | README Phase 3 (force-limited motor, ramp, cable, structural mass for the 4 g push), Phase 5 (optimal control), Phase 6 (hobby scale) | not scheduled | none yet |
+| later | README Phase 3 (the rest: curved ramp, cable winch, air column, braking, tilted exit, and any part of the linear motor that SP7 does not build), Phase 5 (optimal control), Phase 6 (hobby scale) | not scheduled | none yet |
 
-The structural-mass model (README Phase 3) decides whether the headline survives. It sits
-after the 3-D work only because of the order chosen (D-SP1-07); it can be moved up at any
-session boundary (a user decision).
+Phase numbers are identifiers, not positions: SP7 runs after SP2 and before SP3 (D-SP1-18;
+docs/phases/README.md, "How to add a phase"). The structural-mass model decides whether the
+headline survives. Until 2026-10-04 it sat after the 3-D work because of the order chosen
+(D-SP1-07); at SP1's close-out the user moved it ahead of the 3-D dynamics as SP7, because
+the structural cost decides whether SP1's 10% survives while the 3-D models are expected to
+move it by kilograms (D-SP1-18).
 
 ## Milestones
 
@@ -52,30 +59,32 @@ session boundary (a user decision).
 - [x] M8 2-D concept-A results: silo_screening_2d (with ignition sweeps), bridge and trigger studies; RQ2-2d, RQ3-2d, RQ6 preliminary (2026-09-30)
 - [x] M9 Phase 2 closed: physics.md, CLAUDE.md layout and status, README status, TODO (2026-09-30)
 - [x] M10 Phase V plan (Plan mode): the five decisions in the first handoff (now docs/handoff/archive/2026-09-30-phases-0-2.md, section 5). Done 2026-09-30: the plan was approved in Plan mode; decisions D-SP1-01 to D-SP1-13; the plan is docs/phases/inputs/2026-09-30-SP1-approved-plan.md
-- [ ] M11 Fuel replacement at fixed payload: a `propellant_offload` figure of merit and experiment on the Falcon 9 gate vehicle; % of stage-1 and total propellant replaced, energy ratio, with and without a structural penalty (headline question, user 2026-09-30). **Phase: SP1** (steps 5-9). Built as an `offload:` experiment block and a post-pass, not a figure-of-merit value (D-SP1-09); the structural penalty is parametric rows (D-SP1-04)
-- [ ] M12 Launch configuration knobs: silo depth with exit speed; thrust-ramp start by depth/speed. **Phase: SP1** (steps 1-4). The ramp start is also set by height, by event and by closed form (D-SP1-06)
+- [x] M11 Fuel replacement at fixed payload: a `propellant_offload` figure of merit and experiment on the Falcon 9 gate vehicle; % of stage-1 and total propellant replaced, energy ratio, with and without a structural penalty (headline question, user 2026-09-30). **Phase: SP1** (steps 5-9). Built as an `offload:` experiment block and a post-pass, not a figure-of-merit value (D-SP1-09); the structural penalty is parametric rows (D-SP1-04). Done 2026-10-04: docs/findings/RQ1-fuel-offload-2d.md (fd664a5), preliminary, with its caveats (see "Findings so far")
+- [x] M12 Launch configuration knobs: silo depth with exit speed; thrust-ramp start by depth/speed. **Phase: SP1** (steps 1-4). The ramp start is also set by height, by event and by closed form (D-SP1-06). Done 2026-10-04 (SP1 close): steps 1-4 (e2fb6ab, 1fc92d3, 83d66dd, 1a0b2af)
 - [ ] M13 Animated 2-D launch scene (`launchsim scene`): rocket, silo, plume, staging, camera. **Phase: SP2**, inside the local app (`launchsim app`, D-SP1-02); a separate `launchsim scene` command is no longer the plan
 - [ ] M14 3-D view of the planar runs on a globe. Changed by D-SP1-01: 3-D now means true 3-D dynamics in three stages, **SP3 (S1), SP5 (S2), SP6 (S3)**, with the 3-D scene in **SP4**. Done when M16-M19 are done
-- [ ] M15 Phase 3 assist models (linear_motor, curved track, cable winch, air column, braking, tilted exit) and the structural mass for the 4 g push. **Phase: later** (README Phase 3; no SP number yet)
+- [ ] M15 Phase 3 assist models (linear_motor, curved track, cable winch, air column, braking, tilted exit) and the structural mass for the 4 g push. **Phase: later** (README Phase 3; no SP number yet). Changed by D-SP1-18 (2026-10-04): the structural mass for the push and a force-limited drive move to **SP7** (M20); the rest stays later
 - [ ] M16 SP3 gate: 3-D dynamics S1 (3-DOF point mass on a rotating sphere); tests green, model-to-model record against the planar gate, a 3-D run from the CLI
 - [ ] M17 SP4 gate: 3-D scene in the app (the launch on a globe); the offload % reported on the planar and the S1 model
 - [ ] M18 SP5 gate: 3-D dynamics S2 (oblate Earth: J2, ellipsoid); offload % on the oblate model, the effects of flattening and J2 separated
 - [ ] M19 SP6 gate: 3-D dynamics S3 (6-DOF fly-out); attitude, gimbal and cold-start controllability results; attitude shown in the 3-D scene
+- [ ] M20 SP7 gate: the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its exit criteria are drafted in its phase file (docs/phases/SP7-structural-mass-push-load.md, section 8, written at SP1's close-out); SP2's close fact-checks the file against the code and finalises its prompt, and SP7's Plan mode fixes the tolerances marked "proposed"
 
 ## Priorities
 
-1. P0 SP1 headline: the user's question, % of rocket propellant the silo push replaces at fixed payload on the Falcon 9 model, with caveats (stage 1 is the only headline; penalty rows and sensitivity beside it).
+1. P0 SP2 (next session): the local app with the 2-D launch scene.
 2. P0 (standing) Physics correctness and honest tests (validation first; closed forms computed in the tests).
-3. P1 SP2: the local app with the 2-D launch scene.
-4. P1 SP3: 3-D dynamics S1, pinned against the planar gate.
+3. P1 SP7, after SP2: the structural mass of the push load and a force-limited drive (B-004, B-005; D-SP1-18). It decides whether SP1's 10% of stage 1 survives.
+4. P1 SP3, after SP7: 3-D dynamics S1, pinned against the planar gate.
 5. P2 SP4, SP5, SP6: the 3-D scene and the re-check on S1; the oblate Earth; the 6-DOF fly-out.
-6. P2 later: README Phase 3 (the structural-mass model first, B-004), Phase 5, Phase 6. Can be moved up at a session boundary.
+6. P2 later: the rest of README Phase 3 (B-006 to B-009), Phase 5, Phase 6. Can be moved up at a session boundary.
 7. P3 (standing) Polish: plots, docs completeness, slow-test hygiene.
 
 Met earlier (kept as history):
 
 - P1 Phase 0 and Phase 1 gates with the CLAUDE.md commands working on Windows (M1, M2).
 - P2 Concept-A numbers and the two preliminary findings notes (M4, M5).
+- P0 SP1 headline: the user's question, % of rocket propellant the silo push replaces at fixed payload on the Falcon 9 model, with caveats (stage 1 is the only headline; penalty rows and sensitivity beside it). Met 2026-10-04 (M11; docs/findings/RQ1-fuel-offload-2d.md).
 
 ## Backlog
 
@@ -87,8 +96,8 @@ items" below, where the original wording is kept.
 | B-001 | P3 | any session boundary (needs the user) | [!] | Results retention: three run+sweep pairs from 2026-09-29 have tracked summaries (cited pair 103623Z/103634Z, reviewer pair 104503Z/104510Z, gate pair 105657Z/105707Z); decide whether to keep only cited pairs (deleting results needs your OK per CLAUDE.md) |
 | B-002 | P3 | none | [x] closed 2026-09-30 | Phase 2 prep: re-source the F9 propellant loads and stage-2 dry mass in the calibration fork. Met by the Phase 2 mass sets B and C (D-P2-01, steps 18 and 26): configs/vehicles/generic_f9_class_2d.yaml carries the FT-table values (stage 1 410.9 t, stage 2 4.0 t dry and 107.5 t) with sources. The box was not ticked at the Phase 2 close; checked against the file on 2026-09-30 |
 | B-003 | P2 | later (README Phase 5, with the optimized ascent) | [ ] | Throttling (max-Q is reported unthrottled; deferred by D-P2-05). The offloaded silo run's max-Q can exceed the pad's and is reported, not constrained |
-| B-004 | P1 | later (README Phase 3; can be moved up at a session boundary) | [ ] | Structural mass for the 4 g full-stack push and the interface-hardware mass penalty. Decides whether the headline survives; SP1 shows it only as parametric rows (D-SP1-04) |
-| B-005 | P1 | later (README Phase 3) | [ ] | `linear_motor`: force- and power-limited drive with efficiency. Needed before the hot-start question can be answered |
+| B-004 | P1 | SP7 (D-SP1-18, 2026-10-04; was: later, README Phase 3) | [ ] | Structural mass for the 4 g full-stack push and the interface-hardware mass penalty. Decides whether the headline survives; SP1 shows it only as parametric rows (D-SP1-04) |
+| B-005 | P1 | SP7 for the force-limited drive (D-SP1-18, 2026-10-04); any remainder later (README Phase 3) | [ ] | `linear_motor`: force- and power-limited drive with efficiency. Needed before the hot-start question can be answered |
 | B-006 | P2 | later (README Phase 3) | [ ] | Curved TrackGeometry and the frictionless-arc test; `cable_winch` (and the cable frequency test) |
 | B-007 | P2 | later (README Phase 3) | [ ] | Air-column piston, friction, modelled carriage braking, release at a target speed |
 | B-008 | P2 | later (README Phase 3) | [ ] | Tilted-exit abort with Coriolis |
@@ -98,7 +107,7 @@ items" below, where the original wording is kept.
 | B-012 | P3 | later | [ ] | Notebooks |
 | B-013 | P2 | later (README Phase 5) | [ ] | optimize.py: optimal-control ascent; headline results re-run with optimized guidance |
 | B-014 | P3 | later (README Phase 6) | [ ] | RocketPy comparison at hobby scale |
-| B-015 | P1 | SP1 for RQ1 (planar); SP4 and SP5 for the 3-D re-checks; later for RQ4, RQ5, RQ7, RQ8 | [ ] | Findings for RQ1-RQ8. Preliminary notes exist for RQ2, RQ3 and RQ6 (concept A); RQ1 is SP1 step 9 (docs/findings/RQ1-fuel-offload-2d.md) |
+| B-015 | P1 | SP1 for RQ1 (planar); SP4 and SP5 for the 3-D re-checks; later for RQ4, RQ5, RQ7, RQ8 | [ ] | Findings for RQ1-RQ8. Preliminary notes exist for RQ2, RQ3 and RQ6 (concept A); RQ1 is SP1 step 9 (docs/findings/RQ1-fuel-offload-2d.md; written 2026-10-04, fd664a5, preliminary, the fuel-replacement form on the planar model) |
 
 ## Todo (near term)
 
@@ -188,6 +197,7 @@ SP1 planning (2026-09-30; taken in Plan mode with the user, plan approved the sa
 - **D-SP1-15** 2026-10-02: push main to the public repository after every step's tracker commit and at every phase close (docs/process/SESSION_PROTOCOL.md section 4, item 7) (user).
 - **D-SP1-16** 2026-10-02: the repository carries a logo, banner, slide deck, animation examples, a user manual (docs/manual/) and a GitHub Pages site, kept current at every phase close (protocol section 7, item 6). Added to SP1 as step P (user).
 - **D-SP1-17** 2026-10-03: the pre-registered SP1 experiment keeps its full design although both commands are estimated above the earlier 30-minute guide (run about 30-50 min, sweep 39-64 min); a trim is considered only above about 90 min. The 30-minute figure was a planning convenience; the fixed-exit-speed sweep is the test of whether only exit speed matters. Session lead's call, recorded for the user to overrule (they asked for the most complete answer).
+- **D-SP1-18** 2026-10-04 (SP1 close-out): SP2 (local app with the 2-D launch scene) runs next as planned. Then a new phase, SP7: the structural mass of the push load and a force-limited drive (taken from README Phase 3; B-004, B-005), inserted before the 3-D dynamics phases SP3-SP6, because the structural cost decides whether SP1's 10% of stage 1 survives, while the 3-D models are expected to move it by kilograms. Phase numbers are identifiers and are never renumbered: SP7 is ordered after SP2 and before SP3 (docs/phases/README.md, "How to add a phase"). Answers the close-out question of SP1 section 10, item 8 (the B-004 order) and amends the order of D-SP1-07 (user, the recommended option).
 
 Notes on the SP1 planning group:
 
@@ -238,15 +248,15 @@ Added 2026-09-30 in SP1 step T (from the session itself):
 
 Added 2026-10-02 in SP1 step 2:
 
-- **KI-021** [low, open, owner SP1 or later] tests/test_silo.py states the 3 g0, 100 m felt load as 3.9992 g0 (module docstring, the `test_cold_felt_acceleration_and_interface_force` docstring and its 1e-4 hand-number literal); the value (3 g0 + mu/R_E^2)/g0 = 3.99915 is 3.9991 to four decimals (docs/physics.md corrected in SP1 step 2). Correct all three together when a step may touch that existing test; the check passes with either value.
+- **KI-021** [low, open, owner later: the next phase that may touch those tests (SP1 closed without touching them)] tests/test_silo.py states the 3 g0, 100 m felt load as 3.9992 g0 (module docstring, the `test_cold_felt_acceleration_and_interface_force` docstring and its 1e-4 hand-number literal); the value (3 g0 + mu/R_E^2)/g0 = 3.99915 is 3.9991 to four decimals (docs/physics.md corrected in SP1 step 2). Correct all three together when a step may touch that existing test; the check passes with either value.
 
 Added 2026-10-02 in SP1 step 5:
 
-- **KI-022** [low, open, owner SP1 or later] Test docstrings tests/test_convergence_2d.py:34-38 ("the only planar tests that fly the shipped search rtol of 1e-8"), tests/test_search.py:72-74 and tests/test_payload_search.py:80 ("the convergence tests alone fly the shipped 1e-8") are no longer accurate: tests/test_calibration.py, tests/test_silo_screening_record.py and the convergence test of tests/test_offload.py also fly it, as docs/physics.md "Validation" and "Convergence (planar)" now say. Docstring-only fix.
+- **KI-022** [low, open, owner later: the next phase that may touch those tests (SP1 closed without touching them)] Test docstrings tests/test_convergence_2d.py:34-38 ("the only planar tests that fly the shipped search rtol of 1e-8"), tests/test_search.py:72-74 and tests/test_payload_search.py:80 ("the convergence tests alone fly the shipped 1e-8") are no longer accurate: tests/test_calibration.py, tests/test_silo_screening_record.py and the convergence test of tests/test_offload.py also fly it, as docs/physics.md "Validation" and "Convergence (planar)" now say. Docstring-only fix.
 
 Added 2026-10-02 in SP1 step 3:
 
-- **KI-023** [low, open, owner SP1 or later] Two comments in existing tests in tests/test_config.py are stale since SP1 step 3: the comment in `test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name` ("the ignition group's other families arrive in step 3") and the end of the docstring of the step-1 sweep-axis test ("the depth arrives in step 3"). The fields exist and `test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` resolves the depth end to end. Comment-only edits, together with KI-021 and KI-022.
+- **KI-023** [low, open, owner later: the next phase that may touch those tests (SP1 closed without touching them)] Two comments in existing tests in tests/test_config.py are stale since SP1 step 3: the comment in `test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name` ("the ignition group's other families arrive in step 3") and the end of the docstring of the step-1 sweep-axis test ("the depth arrives in step 3"). The fields exist and `test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` resolves the depth end to end. Comment-only edits, together with KI-021 and KI-022.
 
 Added 2026-10-02 in SP1 step 6:
 
@@ -254,7 +264,7 @@ Added 2026-10-02 in SP1 step 6:
 
 Added 2026-10-03 in SP1 step P:
 
-- **KI-025** [low, open, owner SP1 step 10] Deck slide 13 (site/deck/index.html) has unevenly spaced y-axis labels (24,000 / 25,000 / 26,000 / 27,000 / 27,500 kg). Cosmetic; fix when the deck is refreshed with SP1's finding.
+- **KI-025** [low, closed 2026-10-04 at SP1's close-out (step 10): the refreshed deck draws slide 13's y axis with ticks every 500 kg from 24,500 to 27,500 kg, checked in site/deck/index.html; committed in the bookkeeping commit `Close SP1: trackers, handoff, next phase file`, whose hash a file in it cannot carry] Deck slide 13 (site/deck/index.html) has unevenly spaced y-axis labels (24,000 / 25,000 / 26,000 / 27,000 / 27,500 kg). Cosmetic; fix when the deck is refreshed with SP1's finding. (Note 2026-10-04: the step-10 deck refresh, uncommitted when this note was written, redraws the slide with ticks every 500 kg from 24,500 to 27,500 kg; close this entry with that commit's hash.)
 - **KI-026** [low, open, owner the user] The repository's social preview image (assets/brand/social-preview.png, 1280 x 640) must be uploaded by hand under GitHub Settings, General, Social preview; GitHub has no API for it.
 
 Added 2026-10-03 in SP1 step 7:
@@ -294,12 +304,14 @@ Added 2026-10-03 at the SP2 fact-check:
 ## Open questions for you
 
 - None open. The Phase 2 questions were answered 2026-09-30 (D-P2-08 to D-P2-11); the SP1
-  planning questions were answered 2026-09-30 (D-SP1-01 to D-SP1-08).
+  planning questions were answered 2026-09-30 (D-SP1-01 to D-SP1-08); the SP1 close-out
+  question (which phase runs next, and the B-004 order) was answered 2026-10-04 (D-SP1-18).
 - Deferred to later phases' Plan mode; each phase file lists them in its section 10 (Risks
   and open questions), marked where they need you. Known today from the approved plan: the
   detailed design of the app and the 2-D scene (SP2's Plan mode); the target-orbit
   definition under J2 (D-SP1-11, revisit in SP5); whether to move the structural-mass
-  model (B-004) ahead of the 3-D work (any session boundary).
+  model (B-004) ahead of the 3-D work (any session boundary; answered 2026-10-04 at SP1's
+  close-out: yes, as SP7 after SP2, D-SP1-18).
 - Waiting on you, not urgent: B-001 (results retention; deleting results needs your OK).
 
 ## History: step tables of Phases 0-2 and Phase V

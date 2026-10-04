@@ -8,20 +8,26 @@ link to the phase file that holds the brief, the step table, the full criteria a
 session record. How a session runs is in
 [docs/process/SESSION_PROTOCOL.md](../process/SESSION_PROTOCOL.md). The program-level
 tracker (milestones, decisions, known issues, backlog) is [TODO.md](../../TODO.md). The
-split, order and designs come from the plan the user approved on 2026-09-30
-([inputs/2026-09-30-SP1-approved-plan.md](inputs/2026-09-30-SP1-approved-plan.md)).
+split, order and designs of SP1-SP6 come from the plan the user approved on 2026-09-30
+([inputs/2026-09-30-SP1-approved-plan.md](inputs/2026-09-30-SP1-approved-plan.md)). SP7
+(the structural mass of the push load and a force-limited drive) was added at SP1's
+close-out on 2026-10-04 and ordered after SP2 and before SP3 (decision D-SP1-18).
 
-Last updated: 2026-09-30 (SP1 in progress; HEAD at session start 2eebcae).
+Last updated: 2026-10-04 (SP1 closed; SP7 added by D-SP1-18; next: SP2).
 
 ## Phases
 
 Status is one of: not started, in progress (session <date>), done (<date>, commit <hash>).
 The closing commit is filled in when the phase's exit criteria pass.
 
+Rows are in the planned run order (D-SP1-07, amended by D-SP1-18): SP1, SP2, SP7, SP3,
+SP4, SP5, SP6. Phase numbers are identifiers, not positions, and are never renumbered.
+
 | Phase | Title | Goal | What you can see at the end | Status | Session date | Closing commit | Phase file |
 |---|---|---|---|---|---|---|---|
-| SP1 | Launch settings and fuel offload at fixed payload (planar model) | Tracking system; launch settings (silo depth with exit speed, ramp start); fuel-offload solver; the headline finding on the planar model | A findings note with the % of propellant replaced; `launchsim run experiments/silo_offload_2d.yaml` reproducing it; a replay page of the full pad against the offloaded silo | in progress (session 2026-09-30) | 2026-09-30 | | [SP1-fuel-offload-planar.md](SP1-fuel-offload-planar.md) |
+| SP1 | Launch settings and fuel offload at fixed payload (planar model) | Tracking system; launch settings (silo depth with exit speed, ramp start); fuel-offload solver; the headline finding on the planar model | A findings note with the % of propellant replaced; `launchsim run experiments/silo_offload_2d.yaml` reproducing it; a replay page of the full pad against the offloaded silo | done (2026-10-04, commit `5007515`) | 2026-09-30 to 2026-10-04 | `5007515` | [SP1-fuel-offload-planar.md](SP1-fuel-offload-planar.md) |
 | SP2 | Local app and 2-D launch scene | A local app: form, Launch button, the 2-D scene inside it | `launchsim app`: set depth, ramp start and offload, press Launch, watch pad and silo side by side | not started | | | [SP2-launch-app-2d-scene.md](SP2-launch-app-2d-scene.md) |
+| SP7 | Structural mass of the push load, and a force-limited drive (planar model) | Charge the structural mass the 4 g full-stack push needs with a first-order sizing model, so the offload and payload findings carry a modelled structural cost instead of only the assumed penalty rows; the drive realism that interacts with it (force- and power-limited linear motor, carriage mass, modelled braking, the silo air column) | SP1's headline offload re-solved with a modelled structural mass and its uncertainty band, beside the penalty rows; the stroke at a fixed exit speed with the structure charged; a linear-motor silo run; the findings note updated | not started | | | [SP7-structural-mass-push-load.md](SP7-structural-mass-push-load.md) |
 | SP3 | 3-D dynamics S1, a 3-DOF point mass over a rotating sphere | The first stage of true 3-D dynamics, validated against the planar model | Tests green; a model-to-model record against the planar gate; a 3-D run from the CLI | not started | | | [SP3-3d-dynamics-s1-sphere.md](SP3-3d-dynamics-s1-sphere.md) |
 | SP4 | 3-D scene in the app, and the headline re-checked on S1 | The launch shown on a globe from the 3-D time series; the offload experiment re-run on S1 | The launch on a globe; offload % on the planar and the 3-D model | not started | | | [SP4-3d-scene-and-recheck.md](SP4-3d-scene-and-recheck.md) |
 | SP5 | 3-D dynamics S2, oblate Earth (J2, ellipsoid) | The Earth model extended to an ellipsoid with J2 | Offload % on the oblate model; the effects of flattening and J2 separated | not started | | | [SP5-3d-dynamics-s2-oblate.md](SP5-3d-dynamics-s2-oblate.md) |
@@ -35,8 +41,9 @@ phase file wins and this table gets fixed.
 
 | Phase | Entry criteria (phase file, section 4) | Exit criteria (phase file, section 8) |
 |---|---|---|
-| SP1 | Phases 0-2 closed; clean tree at 2eebcae; fast suite green and ruff clean; the plan approved; the inputs present; the shipped planar experiments and the gate vehicle file unedited; the previous handoff archived | 7 criteria: tracking system and the SP2 handoff; the exit-speed option and the four ramp-start settings pass their closed-form tests; the offload solver passes its toy closed forms, the stage-1 pad control and the P_ref reproduction; run and sweeps from a clean commit with no `bug_suspect`; the findings note passes the honesty review; full suite green with the 1-D golden tier and the planar digests unchanged; demo recorded |
+| SP1 | Phases 0-2 closed; clean tree at 2eebcae; fast suite green and ruff clean; the plan approved; the inputs present; the shipped planar experiments and the gate vehicle file unedited; the previous handoff archived | 8 criteria: tracking system and the SP2 handoff; the exit-speed option and the four ramp-start settings pass their closed-form tests; the offload solver passes its toy closed forms, the stage-1 pad control and the P_ref reproduction; run and sweeps from a clean commit with no `bug_suspect`; the findings note passes the honesty review; full suite green with the 1-D golden tier and the planar digests unchanged; demo recorded; the public repository current and the Pages site live with SP1's finding |
 | SP2 | SP1 closed; the settings, the `offload:` block, the in-memory entry point and replay of offload runs exist with tests; run data on disk; clean tree and green suite with the pins; section 6 re-checked and the prompt finalised | 14 criteria: the app starts on 127.0.0.1 only; a launch works for every setting; same numbers as the CLI; refusals write nothing; the scene matches the run data; the offload is visible and right; honest labels; browse and replay; the pad baseline is cached; one loader and the fixes; tests and guards; no unjustified dependency; documents; demo recorded |
+| SP7 | SP2 done (SP1 done is enough if the user moves SP7 earlier, logged as a decision); clean tree and green suite with the pins and the two recorded payload capacities; SP1's offload solver, penalty field and decomposition, with the slow test that re-solves the headline; SP1's run data on disk; section 6 re-checked; `gh` and Pages green | 10 criteria (draft): validation tests before use; coefficients sourced or assumed, vehicle and experiment files unchanged; nothing validated moved (pins, P*, SP1's headline with the model off); the headline offload re-solved with a modelled structural mass and its uncertainty band, verified, no `bug_suspect`; the stroke series and linear-motor cases reported; the findings note updated after the honesty review; physics.md; full suite; demo; close-out (public face, the next phase's file, handoff, memory) |
 | SP3 | SP1 done (SP2 too in the planned order, but nothing from it is used); clean tree and green suite with the pins and the two recorded payload capacities; SP1's offload solver built from a problem factory; section 6 re-checked | 12 criteria: the planar pin committed before any edit under src/; frames, dynamics, guidance, planner and search tests; loss identity, closure and convergence; a spatial run from the CLI; the model-to-model record against its pre-registered expectation; run times recorded; full suite; demo and the SP4 handoff |
 | SP4 | SP2 and SP3 done; clean tree and green suite with the pins; the model-to-model record with no open `bug_suspect`; a spatial results directory on disk; SP1's solver takes a problem factory; the app starts; sections 5 and 6 rewritten against the code | 9 criteria: a spatial run shown on a globe with three cameras; visual QA against the run data; payload tests; the three.js decision logged; the spatial offload file and expectation committed before the run; the S1 offload solved with its checks; the findings note with planar and S1 side by side; full suite and pins; demo and the SP5 handoff |
 | SP5 | SP3 done; SP4 done for the offload re-check (step R), otherwise step R is deferred; clean tree and green suite with the pins; the S1 tests and the model-to-model record; section 6 re-checked | 11 criteria: an S1 pin committed before any spatial module is edited; geodesy; J2 gravity and orbit rates; surface gravity; the zero-J2, zero-flattening limit equals S1; loss identity and convergence; the target definition stated; the S2 expectation committed before S2 is runnable, and the decomposition record; the offload on `wgs84_j2`; full suite; demo and the SP6 handoff |
@@ -49,57 +56,68 @@ scheduled.
 
 | Roadmap item | Content | Status |
 |---|---|---|
-| README Phase 3: assist models | Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g full-stack push | not scheduled |
+| README Phase 3: the remainder | Curved ramp with the frictionless circular-arc test, cable winch with the cable frequency test, friction (zero normal load on a vertical straight track, so it belongs with the curved and inclined tracks), tilted-exit abort with Coriolis, engine shutdown transients (TODO.md B-006, B-008, B-009, and friction from B-007). The structural mass for the 4 g push and the linear motor moved to SP7 (D-SP1-18); SP7 also proposes to take the air column, modelled braking and release at a target speed, which its Plan mode confirms | not scheduled |
 | README Phase 5: fair comparison | Optimal-control ascent for each configuration; headline results re-run with optimized guidance | not scheduled |
 | README Phase 6: hobby scale | RocketPy model of a real rocket with an assist before the rail; apogee within ±5% | not scheduled |
 
-**The structural-mass model (README Phase 3) decides whether the headline survives.** No
-structural mass is charged today for the 4 g full-stack push. The 2-D findings derive that
-about 8.1 t of silo-only stage-1 strengthening would cancel the payload gain of the
-3 g / 100 m cold-start silo, and added dry mass cuts the offload as well. SP1 shows this
-only as parametric rows (assumed +2, +4, +8.1 t; D-SP1-04), not as a model. The item sits
-after the 3-D work only because of the order chosen (D-SP1-07). It can be moved earlier at
-any session boundary; that is a user decision, logged in TODO.md.
+**The structural-mass model decides whether the headline survives, and it is now SP7.**
+No structural mass is charged today for the 4 g full-stack push. SP1's finding
+(docs/findings/RQ1-fuel-offload-2d.md) is 41.26 t of stage-1 propellant, 10.04% of
+stage 1, before any structural mass; its assumed penalty rows (+2, +4, +8.1 t of stage-1
+dry mass; D-SP1-04) leave 32.29, 22.88 and 1.98 t, and about 8.5 t (extrapolated) leaves
+nothing. In payload terms the 2-D findings put the break-even at about 8.1 t
+(docs/findings/RQ3-silo-screening-2d.md). Until 2026-10-04 the item sat after the 3-D work
+because of the order chosen (D-SP1-07). At SP1's close-out the user moved it ahead of the
+3-D dynamics as SP7, after SP2, because the structural cost decides whether the 10%
+survives while the 3-D models are expected to move it by kilograms (D-SP1-18).
 
 README Phase 4 (experiments and findings for research questions 1-8) is not a separate
-row: findings are produced inside the phases (SP1 writes RQ1 on the planar model; SP4 and
-SP5 re-check it on the 3-D models).
+row: findings are produced inside the phases (SP1 writes RQ1 on the planar model; SP7
+re-judges it against a modelled structure; SP4 and SP5 re-check it on the 3-D models).
 
 ## Dependency order
 
-The planned order is SP1, SP2, SP3, SP4, SP5, SP6 (D-SP1-07). What each phase needs:
+The planned order is SP1, SP2, SP7, SP3, SP4, SP5, SP6 (D-SP1-07; SP7 inserted after SP2
+and before SP3 by D-SP1-18 on 2026-10-04). What each phase needs:
 
 | Phase | Needs | Why |
 |---|---|---|
 | SP1 | Phases 0-2 (done) | Builds on the planar model, the payload search and the constant-acceleration silo push |
 | SP2 | SP1 | The app's form drives SP1's settings (depth, exit speed, ramp start) and calls SP1's offload entry point with an in-memory experiment |
-| SP3 | SP1 closed; nothing from SP2 | New dynamics written beside the planar code as SP1 leaves it, and pinned against the planar gate; no app or scene code is used |
-| SP4 | SP2 and SP3 (and SP1's offload solver) | The globe scene lives in the SP2 app and draws SP3's spatial time series; the offload re-check runs SP1's solver on SP3's model (SP1 builds the solver from a problem factory so the 3-D models can reuse it) |
+| SP7 | SP1; SP2 only by the order chosen (D-SP1-18) | Charges a modelled structural mass on SP1's offload solve (through SP1's problem factory or the vehicle at each offload) and on the payload search, beside SP1's penalty rows; the linear motor plugs into the assist registry and replaces the `linear_motor` placeholder SP1 left. Nothing from SP2's app is used. If SP7 runs before SP2, SP2's inventory moves (config.py, the assist package, the offload reporting) and SP2's re-check catches it |
+| SP3 | SP1 closed; nothing from SP2 or SP7 | New dynamics written beside the planar code as the earlier phases leave it, and pinned against the planar gate; no app or scene code is used. In the planned order it starts after SP7, so its copy of the planar code and its inventory include SP7's edits (config.py, the assist package, the offload reporting); the session before SP3 re-checks them |
+| SP4 | SP2 and SP3 (and SP1's offload solver) | The globe scene lives in the SP2 app and draws SP3's spatial time series; the offload re-check runs SP1's solver on SP3's model (SP1 builds the solver from a problem factory so the 3-D models can reuse it). If SP7 has run, whether the S1 re-check also carries SP7's modelled structure is settled when SP4's file is fact-checked |
 | SP5 | SP3; SP4 for the offload re-check (step R) | The oblate Earth model extends S1; the zero-J2, zero-flattening limit must equal S1. Step R copies SP4's spatial offload experiment file and extends SP4's 3-D findings note; if SP5 runs before SP4, step R moves to SP4 (SP5 entry criteria 1 and 5) |
 | SP6 | SP5; SP4 for step V and for the offloaded fly-out case | The 6-DOF fly-out flies the payload and guidance optimised on the 3-DOF models and must reproduce S1/S2 in prescribed-attitude mode. The attitude display (step V) lives in SP4's scene, and the offloaded silo run's 3-DOF result on a spatial model comes from SP4 or from SP5 step R (SP6 entry criteria 1 and 4) |
 
 ```text
 SP1 --> SP2 ------> SP4 . . . . . . . . . .
-  \                 ^      :              :
-   `--> SP3 --------'      : step R only  : step V and the
-         \                 v              v offloaded fly-out
-          `-------------> SP5 ---------> SP6
+ |\                 ^      :              :
+ | `--> SP3 --------'      : step R only  : step V and the
+ |       \                 v              v offloaded fly-out
+ |        `-------------> SP5 ---------> SP6
+ |
+ `----> SP7
 ```
 
-Solid arrows are needed by the whole phase; dotted ones only by the steps named.
+Solid arrows are needed by the whole phase; dotted ones only by the steps named. The
+diagram shows needs, not the run order: SP7 needs only SP1 and runs after SP2 and before
+SP3 by decision (D-SP1-18).
 
-Since SP3 needs nothing from SP2, the two can swap at a session boundary if the user
-prefers the 3-D dynamics before the app. SP4 then waits for both. SP5's dynamics and its
-decomposition runs need only SP3; its offload re-check (step R) needs SP4. SP6's dynamics,
-the pad fly-out and the full-load silo fly-outs need only SP5; its attitude display (step
-V) and the offloaded silo fly-out need SP4.
+SP3 needs nothing from SP2 or SP7, and SP7 needs nothing from SP2, so the order of SP2,
+SP7 and SP3 can change at a session boundary; that is a user decision, logged in TODO.md.
+SP4 waits for SP2 and SP3. SP5's dynamics and its decomposition runs need only SP3; its
+offload re-check (step R) needs SP4. SP6's dynamics, the pad fly-out and the full-load
+silo fly-outs need only SP5; its attitude display (step V) and the offloaded silo fly-out
+need SP4.
 
 ## Inputs (docs/phases/inputs/)
 
-Dated source material the phase files were written from. All were produced in the SP1
-planning session on 2026-09-30; line numbers in them are for commit 2eebcae and drift as
-the code changes. They are a record and are not edited; corrections go into the phase
-files.
+Dated source material the phase files were written from. The 2026-09-30 files were
+produced in the SP1 planning session, and line numbers in them are for commit 2eebcae;
+the later ones were written during SP1's steps. Line numbers drift as the code changes.
+The files are a record and are not edited; corrections go into the phase files. SP7 has
+no input yet: its design is made in its own Plan mode and saved here then.
 
 | File | What it is | Feeds |
 |---|---|---|
@@ -109,6 +127,8 @@ files.
 | [2026-09-30-survey-config-search-compare.md](inputs/2026-09-30-survey-config-search-compare.md) | Code survey of config, search, the run pipeline, comparison, summary and vehicle, with the tests that must stay green and the constraints that make changes awkward | SP1 |
 | [2026-09-30-survey-ignition-assist-physics.md](inputs/2026-09-30-survey-ignition-assist-physics.md) | Code survey of ignition timing, the silo assist, the phase engine, release mapping and events, with the closed forms for the ramp-start conversions | SP1 (steps 2-4) |
 | [2026-09-30-survey-animate-replay-visuals.md](inputs/2026-09-30-survey-animate-replay-visuals.md) | Code survey of animate, replay, the run data on disk and what a launch scene needs (loaders, missing geometry, objects after separation), with a recommendation for organising the scene code | SP2 (re-checked at SP1's close, because SP1 touches replay and the pipeline) |
+| [2026-10-02-source-rp1-heating-value.md](inputs/2026-10-02-source-rp1-heating-value.md) | Source note: the RP-1 net heat of combustion used by the offload energy comparison | SP1 (step 8) |
+| [2026-10-03-sp1-preregistration.md](inputs/2026-10-03-sp1-preregistration.md) | SP1's pre-registration of the offload experiments (with Amendment 1): what is registered, the expected readings, the blocking checks | SP1 (steps 8 and 9); the model for SP7's pre-registration (SP7 step S6) |
 
 ## How to add a phase
 

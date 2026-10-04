@@ -132,7 +132,11 @@ Caveats that sit beside this number:
   of ideal delta-v the offload removes is the lighter stack's own thrust-to-weight gain,
   which the push makes usable but does not produce; the release speed and the head
   start's trajectory effects carry 64 to 66%. The range is bracketed by the two orders
-  of the two-step split ("Head start or lighter stack? The paired pad").
+  of the two-step split ("Head start or lighter stack? The paired pad"). Read as the
+  pre-registration worded it, the paired pad's 1,402.0 kg shortfall is small against the
+  41.26 t offload (3.4%, derived), so the pre-registered reading says most of the offload
+  is the lighter stack's thrust-to-weight; the delta-v split is a reading chosen after
+  the run.
 - **Part of it is a baseline convention.** 14.4 m/s of the 228.2 m/s the offloaded
   vehicle does without (6.3% of the decomposition; 15.6 m/s, 6.8%, on the paired-pad
   order of the split) is the pad's 2.7 t burned on the hold-down, which a silo lit after
@@ -651,7 +655,11 @@ These results limit or undercut it, stated as plainly as the headline:
   baseline convention. By a difference between runs, another 63 to 67 m/s (28 to 29%;
   the two orders of the split, with the hold-down at 14.4 and 15.6 m/s) is the lighter
   stack's own thrust-to-weight gain, which the push makes usable but does not produce.
-  Of the 124.7 m/s gravity + steering term, 68 to 72 m/s is the lighter stack.
+  Of the 124.7 m/s gravity + steering term, 68 to 72 m/s is the lighter stack. Read as
+  the pre-registration worded it, the paired pad's 1,402.0 kg shortfall is small against
+  the 41.26 t offload (3.4%, derived), so the pre-registered reading says most of the
+  offload is the lighter stack's thrust-to-weight; the delta-v split is a reading chosen
+  after the run.
 - **The max-Q benefit disappears.** The full-load silo's 16% lower max-Q becomes a max-Q
   3.35% above the pad's once the push is cashed in as propellant, and up to 12.5% above
   at a 300 m stroke; q-alpha at the kick is 3.0 times the pad's at the headline and 5.3

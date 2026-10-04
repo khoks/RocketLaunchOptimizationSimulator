@@ -10,7 +10,13 @@ Fact-checked by the SP1 session on 2026-10-03 (SESSION_PROTOCOL.md section 7, it
 against the code at commit b3150c1 (SP1 step 8a's tracker commit, the commit SP1's
 pre-registered runs were made from). Section 6 is re-checked line by line, sections 1-5,
 7-10 are corrected for what SP1 actually built, and the prompt in section 13 is final.
-SP1 steps 9 and 10 were planned to change only documents and results summaries.
+SP1 steps 9 and 10 were planned to change only documents and results summaries. They did
+not quite: step 10a, added at SP1's close, changed src/launchsim/plots.py,
+src/launchsim/replay.py and tests/test_animate.py (`animate` for offload runs), and the
+public-face refresh changed site/build.py. The diff below lists those four files.
+Amended 2026-10-04 at SP1's close-out for decision D-SP1-18: the phase after SP2 is SP7
+(the structural mass of the push load and a force-limited drive), not SP3, in sections 2,
+3, 7, 8, 10 and 13.
 
 The re-check of section 6 at SP2's start. Protocol section 3, item 5 re-checks the
 inventory whenever its stated commit is not HEAD. At SP2's start HEAD is SP1's bookkeeping
@@ -108,9 +114,9 @@ step 9).
    chooses it).
 8. Closing the phase per the session protocol: the public face refreshed (landing page,
    deck and its PDF, gallery, manual; the site built with no broken link), main pushed and
-   the Pages deployment checked, the next phase's file fact-checked (SP3 in the planned
-   order, or the phase the user chooses at close-out; protocol section 7, item 7), the
-   handoff and prompt for that phase, memory.
+   the Pages deployment checked, the next phase's file fact-checked (SP7 in the planned
+   order, D-SP1-18, or the phase the user chooses at close-out; protocol section 7,
+   item 7), the handoff and prompt for that phase, memory.
 
 **Out of scope**
 
@@ -139,7 +145,8 @@ Decision ids are defined in TODO.md's decisions log; the text there is authorita
 |---|---|
 | D-SP1-02 | The visual tool is a local app first: form, Launch button, scenes inside it |
 | D-SP1-07 | Order: SP2 comes after the settings, the offload solver and the planar headline (SP1), and before any 3-D work |
-| D-SP1-08 | One fresh session for SP2; it is tested, refined and completed before SP3; it prepares SP3's documents, memory and prompt |
+| D-SP1-08 | One fresh session for SP2; it is tested, refined and completed before SP7, the phase after it by D-SP1-18; it prepares SP7's documents, memory and prompt |
+| D-SP1-18 | Order after SP2: SP7 (the structural mass of the push load and a force-limited drive), then the 3-D phases SP3-SP6. SP2's close-out fact-checks SP7's phase file and writes its prompt |
 | D-SP1-05 | Form: `stroke_m` with exactly one of `net_accel_g` or `exit_speed_mps` |
 | D-SP1-06 | Form: the ramp start by time; by depth or speed on the push; by height above the mouth by event; by height by closed form |
 | D-SP1-03 | Form: offload of stage 1, stage 2, or both; tanks partly filled, dry mass unchanged; fixed payload = the full-load pad's payload capacity on the same vehicle and 200 km orbit |
@@ -250,8 +257,12 @@ start and records the check in section 11. The state given for each is the fact-
    their findings, results summaries and documents.)
 8. Section 6 of this file has been re-checked against the code and the prompt in section 13
    finalised by the SP1 session: done at b3150c1 on 2026-10-03 (header); the SP2 session
-   confirms with the diff of the header (`src tests configs experiments pyproject.toml
-   .gitignore site/build.py`) that none of the inventoried files changed since.
+   runs the diff of the header (`src tests configs experiments pyproject.toml .gitignore
+   site/build.py`). At SP1's close it lists site/build.py, src/launchsim/plots.py,
+   src/launchsim/replay.py and tests/test_animate.py (SP1 step 10a and the public-face
+   refresh; handoff section 5). Those files, and any other the diff lists, are re-checked
+   against section 6 before planning from it, and the re-check is recorded in the session
+   log.
 9. The public repository is current: main pushed after SP1's closing commit and the last
    Pages deployment green (`gh run list --workflow pages.yml --limit 1`); `gh` is
    authenticated, because SP2 pushes after every step (protocol section 4, item 7).
@@ -715,8 +726,8 @@ Decided route (section 3), with the proposed details:
      is already installed is not a new dependency in the sense of exit criterion 12, but it
      is logged the same way.
    - KI-019: the replay page's Google Fonts links; decided with question Q2.
-5. **The replay drive caveat's last sentence (not in TODO.md at the fact-check; SP1's
-   close-out or SP2's A0 logs it as a known issue and cites its number).**
+5. **The replay drive caveat's last sentence (KI-029, owner SP2; not in TODO.md at the
+   fact-check, logged at SP1 step 9's tracker commit cfd9059).**
    `replay.drive_caveat` (736) ends "Each of these favours the assisted runs." Under the
    prescribed-acceleration drive the massless carriage and the missing shaft drag do not
    raise the payload; they bias the drive energy, peak power and interface force low, while
@@ -1010,7 +1021,7 @@ decision.
 | A5 | Form and launch flow: fields as built in SP1 (section 5.7), presets, refusal messages, progress, results panel with caveats, run browser, the scene inside the page | `templates/app.html` (new), `app.py` | form-to-experiment mapping, one test per field and per refusal; template checks | Each preset launched from the browser through 127.0.0.1: a results directory appears, its resolved config equals the form's values, its scene plays | [ ] | |
 | A6 | Side by side and camera polish: two panels on one clock and one zoom, scale bars, the not-to-scale icon label, zoom out to Earth's curvature, event ticker, reduced motion, dark mode, the brand tokens | `templates/scene.html`, `templates/app.html` | template checks; camera transform checks through the page-state hook | Visual QA round 2 | [ ] | |
 | A7 | Visual QA, full: the checklist of sampled times and runs against the CSV; screenshots in both themes; audit of display-only labels, the exploratory label and the caveats | `docs/demos/SP2/` | the QA table itself | Independent visual-QA reviewer and honesty auditor; every row of the table passes or is logged as a deviation | [ ] | |
-| A8 | Close SP2: exit-criteria gate; full suite; demo recorded; CLAUDE.md (commands, layout, I/O modules, status), README quick start and status, the user manual, TODO.md, the program board; public face (landing page, deck and PDF, gallery, manual) refreshed and the site built with no broken link; the next phase's file fact-checked (SP3 in the planned order, or the phase the user chooses at close-out); handoff and prompt for that phase; memory; cold-read check; push and Pages deployment | docs, site, TODO.md, CLAUDE.md, README.md, memory | full suite; site build | Independent gate; final commit; deployment green | [ ] | |
+| A8 | Close SP2: exit-criteria gate; full suite; demo recorded; CLAUDE.md (commands, layout, I/O modules, status), README quick start and status, the user manual, TODO.md, the program board; public face (landing page, deck and PDF, gallery, manual) refreshed and the site built with no broken link; the next phase's file fact-checked (SP7 in the planned order, D-SP1-18, or the phase the user chooses at close-out); handoff and prompt for that phase; memory; cold-read check; push and Pages deployment | docs, site, TODO.md, CLAUDE.md, README.md, memory | full suite; site build | Independent gate; final commit; deployment green | [ ] | |
 
 The reference page of A1 and of exit criterion 10. "The reference directory" is
 `results/silo_screening_2d/20260930T175743Z` with the runs `pad`, `silo_cold`,
@@ -1104,8 +1115,8 @@ if the user accepts the miss, and the miss is logged.
     outputs), the display-only section, TODO.md and the program board are current; the
     landing page, the deck and its PDF and the gallery are refreshed, the site builds with
     no broken link, main is pushed and the Pages deployment is green; the next phase's file
-    (SP3 in the planned order, or the phase the user chooses at close-out) has been
-    fact-checked against the code; the handoff and the prompt for that phase are written;
+    (SP7 in the planned order, D-SP1-18, or the phase the user chooses at close-out) has
+    been fact-checked against the code; the handoff and the prompt for that phase are written;
     memory is updated.
 14. **Demo recorded** under `docs/demos/SP2/`.
 
@@ -1211,7 +1222,7 @@ the user has often chosen the more ambitious option, so give it fairly with its 
 | R1 | SP1's last steps (9 and 10) change code this file relies on | The diff of the header at the start (`git diff --stat b3150c1 HEAD -- src tests configs experiments pyproject.toml .gitignore site/build.py`); re-check the files it lists |
 | R2 | An app number is taken for a finding | The exploratory label in the directory, `metrics.json`, `summary.md`, the results panel and the scene; findings only from committed files run from a clean tree; the dirty flag is recorded as usual, with the git state at server start beside it (section 5.6) |
 | R3 | The scene looks more certain than the model is: shapes, the spent stage, the carriage and the body axis are not simulated | Every display-only item labelled on the page (exit criterion 7); the display block never read by the run path; a schematic style |
-| R4 | The headline shown in the app may not survive the structural-mass model (README Phase 3, which comes after the 3-D phases by the chosen order) | The structural caveat and the penalty field sit beside every offload number; the max-Q of the offloaded run is shown against the pad's (SP1's run has it above the pad's; see docs/findings/RQ1-fuel-offload-2d.md) |
+| R4 | The headline shown in the app may not survive the structural-mass model (phase SP7, the phase after SP2 by D-SP1-18) | The structural caveat and the penalty field sit beside every offload number; the max-Q of the offloaded run is shown against the pad's (SP1's run has it above the pad's; see docs/findings/RQ1-fuel-offload-2d.md) |
 | R5 | At orbital scale a 3.66 m wide rocket is smaller than a pixel | The enlarged icon with a "not to scale" note, and a scale bar in every panel |
 | R6 | The side-by-side clock misleads: the pad's hold and the silo's push have different lengths before release | One stated clock (time after release) in the HUD; A0 may add a second alignment |
 | R7 | A CPU-bound solve in a worker thread makes the page sluggish for minutes | Poll for status; measure in A4 with a real stage-1 solve; fall back to a child process |
@@ -1272,9 +1283,10 @@ at the top of section 6.
 > comes from it.
 >
 > Decisions already taken (TODO.md decisions log; phase file section 3): D-SP1-02 (a local
-> app first: form, Launch button, scenes inside it); D-SP1-07 and D-SP1-08 (SP2 now, in one
-> fresh session that also prepares SP3); D-SP1-05 and D-SP1-06 (the depth and ramp-start
-> settings); D-SP1-03, D-SP1-04, D-SP1-09 and D-SP1-10 (offload semantics, the penalty rows,
+> app first: form, Launch button, scenes inside it); D-SP1-07, D-SP1-08 and D-SP1-18 (SP2
+> now, in one fresh session that also prepares SP7, the structural mass of the push load
+> and a force-limited drive, which runs after SP2 and before SP3); D-SP1-05 and D-SP1-06
+> (the depth and ramp-start settings); D-SP1-03, D-SP1-04, D-SP1-09 and D-SP1-10 (offload semantics, the penalty rows,
 > the offload block, the pad control: stage 1 is the only headline, and stage-2 and
 > both-stage numbers are shown net of the pad control as a property of the vehicle model);
 > D-SP1-01 (later 3-D models add their series without a rewrite); D-SP1-14 to D-SP1-16
@@ -1292,9 +1304,9 @@ at the top of section 6.
 > `git diff --stat b3150c1 HEAD -- src tests configs experiments pyproject.toml .gitignore
 > site/build.py`: an empty diff is the re-check of section 6 (record it in the session
 > log), and if it lists files, re-check those files against section 6 before planning from
-> it; list the open known issues and backlog items whose owner is SP2 in TODO.md (at the
-> fact-check: KI-002, KI-016, KI-017, KI-018, KI-019, and the replay drive-caveat wording
-> of section 5.8 item 5 once it has a number). If the session starts in
+> it; list the open known issues and backlog items whose owner is SP2 in TODO.md (at SP1's
+> close: KI-002, KI-016, KI-017, KI-018, KI-019 and KI-029, the replay drive-caveat wording
+> of section 5.8 item 5). If the session starts in
 > Plan mode, do the read-only checks first and run the suite right after approval, as the
 > protocol's section 3 says.
 >
@@ -1338,9 +1350,9 @@ at the top of section 6.
 > manual, TODO.md and the program board, and the public face: the landing page, the deck and
 > its PDF, the gallery (with an exported scene if Q1 chose the export) and the manual, with
 > the site built locally and no broken link. Then put the close-out questions to me, with
-> the recommendation first (which phase runs next, SP3 in the planned order; whether the
-> structural-mass model, B-004, moves up), fact-check the next phase's file (SP3 in the
-> planned order, or the phase I choose) against the code, archive the handoff and write the
+> the recommendation first (which phase runs next, SP7 in the planned order, D-SP1-18),
+> fact-check the next phase's file (SP7 in the planned order, or the phase I choose)
+> against the code, archive the handoff and write the
 > new one with the prompt for that phase, update the memory,
 > have the cold-read check done, make the closing commit, push, and confirm the Pages
 > deployment. Report anything that undercuts the hypothesis, and anything the scene would

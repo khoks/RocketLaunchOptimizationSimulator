@@ -119,7 +119,7 @@
                 <tr class="extra"><td>about 8.5 t</td><td class="n">0</td><td class="n" colspan="2">extrapolated</td></tr>
               </tbody>
             </table>
-            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure: no structural model exists yet (README Phase 3).</p>
+            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure: no structural model exists yet (phase SP7, after SP2).</p>
           </section>
           <section class="fcard" aria-labelledby="fc-pair">
             <h4 id="fc-pair">Head start or lighter stack?</h4>
@@ -179,7 +179,7 @@
         <span class="n">Step 1</span>
         <h3>The push</h3>
         <p>The rocket stands in an underground shaft lined with electromagnetic rings that act as a vertical linear motor. In the reference case the drive pushes the full stack 100 m at 3 g net and releases it at 76.7 m/s after 2.6 s. Engines light in the shaft (a hot start) or just after release (a cold start).</p>
-        <p class="src">Today the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; force- and power-limited drives are planned (README Phase 3).</p>
+        <p class="src">Today the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; a force- and power-limited linear motor is planned for phase SP7, after SP2.</p>
       </li>
       <li class="step">
         <svg class="ill" viewBox="0 0 300 170" role="img" aria-labelledby="ill2-t">
@@ -281,7 +281,7 @@
         <h3>Loads on the full stack</h3>
         <p class="big">4.0 g felt</p>
         <p class="sub">by the fully fuelled stack during the push: 3.996 g and 22.49 MN at the interface on the 573.9 t <span class="nb">2-D</span> stack. Rockets normally see such g only near burnout, with nearly empty tanks (the <span class="nb">1-D</span> stage 1 feels 5.71 g at burnout, at 146.87 t).</p>
-        <p class="caveat"><strong>Caveat:</strong> there is no structural model yet. The strengthening this load needs is the open item that decides whether the gain survives (README Phase 3).</p>
+        <p class="caveat"><strong>Caveat:</strong> there is no structural model yet. The strengthening this load needs is the open item that decides whether the gain survives (phase SP7, after SP2).</p>
         <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-1d.md">RQ3-silo-screening-1d</a></p>
       </article>
 
@@ -386,11 +386,12 @@
           <tr><td class="phase">Phases 0–2</td><td>Scaffold; the <span class="nb">1-D</span> vertical model with staging and the silo push; the <span class="nb">2-D</span> rotating-Earth ascent to orbit with drag, guidance and payload search. The calibration missed high (+14.3%), accepted and documented.</td><td><span class="label done">Done</span></td></tr>
           <tr><td class="phase">SP1</td><td>Launch settings (silo depth with exit speed, where the thrust ramp starts) and the fuel offload at fixed payload on the planar model: the findings note <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a> (41.26 t, 10.04% of <span class="nb">stage-1</span> propellant, preliminary and before structural mass), the pre-registered run that reproduces it, and a replay of the full pad against the offloaded silo.</td><td><span class="label done">Done 2026-10-04</span></td></tr>
           <tr><td class="phase">SP2</td><td>A local app with an animated <span class="nb">2-D</span> launch scene: set depth, ramp start and offload, press Launch, watch pad and silo side by side.</td><td><span class="label wip">Next</span></td></tr>
+          <tr><td class="phase">SP7</td><td>Structural mass for the 4 g full-stack push, charged with a first-order sizing model, and the drive realism that bears on it (a force- and power-limited linear motor and carriage mass; modelled braking and the silo air column are proposed, to be confirmed in its Plan mode), on the planar model. It decides whether the 10% survives. Runs after SP2 and before the <span class="nb">3-D</span> work.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP3</td><td><span class="nb">3-D</span> dynamics, stage 1: a <span class="nb">3-DOF</span> point mass over a rotating sphere, validated against the planar model.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP4</td><td>The launch shown on a globe in the app, and the offload question re-checked on the <span class="nb">3-D</span> model.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP5</td><td><span class="nb">3-D</span> dynamics, stage 2: an oblate Earth (ellipsoid and J2).</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP6</td><td><span class="nb">3-D</span> dynamics, stage 3: a <span class="nb">6-DOF</span> verification fly-out (attitude, gimbal, cold-start controllability).</td><td><span class="label planned">Planned</span></td></tr>
-          <tr><td class="phase">Later</td><td>README Phase 3 (force- and power-limited drives, curved ramp, cable winch, and the structural mass for the 4 g push, which decides whether the headline survives); Phase 5 (optimal-control ascent for every configuration); Phase 6 (hobby scale with RocketPy).</td><td><span class="label planned">Not scheduled</span></td></tr>
+          <tr><td class="phase">Later</td><td>What remains of README Phase 3 (curved ramp, cable winch, friction on curved and inclined tracks, tilted-exit abort with Coriolis, engine shutdown transients); Phase 5 (optimal-control ascent for every configuration); Phase 6 (hobby scale with RocketPy).</td><td><span class="label planned">Not scheduled</span></td></tr>
         </tbody>
       </table>
     </div>

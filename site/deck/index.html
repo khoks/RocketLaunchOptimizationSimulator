@@ -310,7 +310,7 @@ table.pa td:nth-child(4) { color: var(--ink-2); }
 .energy .vs { font-family: var(--font-display); font-weight: 600; font-size: 18px; color: var(--ink-3); }
 
 /* roadmap */
-.road { position: relative; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; padding-top: 24px; }
+.road { position: relative; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; padding-top: 24px; }
 .road::before { content: ""; position: absolute; left: 6px; right: 6px; top: 31px; height: 3px; background: var(--rule); }
 .road .st { position: relative; display: grid; gap: 4px; align-content: start; font-size: 13.5px; line-height: 1.3; color: var(--ink-2); padding-top: 26px; }
 .road .st::before { content: ""; position: absolute; left: 0; top: 0; width: 17px; height: 17px; border-radius: 50%; background: var(--panel); border: 3px solid var(--ink-3); box-sizing: border-box; }
@@ -1173,7 +1173,7 @@ html.pp .controls, html.pp .progress { display: none; }
       </ul>
     </div>
   </div>
-  <p class="cav"><b>Assumptions</b>The rows add an assumed dry mass to the silo run only; they are not a sized structure. No structural model exists yet: README Phase 3 decides whether the headline survives.</p>
+  <p class="cav"><b>Assumptions</b>The rows add an assumed dry mass to the silo run only; they are not a sized structure. No structural model exists yet: phase SP7, after SP2, decides whether the headline survives.</p>
   <footer class="foot"><span class="src">Source: docs/findings/RQ1-fuel-offload-2d.md, "Structural penalty rows and break-even", "Energy" and "Max-Q and loads"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
@@ -1188,13 +1188,14 @@ html.pp .controls, html.pp .progress { display: none; }
       <div class="st done"><span class="when">Done</span><b>Phase 2</b><span><span class="nb">2-D</span> ascent to orbit; calibration miss accepted</span></div>
       <div class="st done"><span class="when">Done · 4 Oct</span><b>SP1</b><span>Launch settings and fuel offload at fixed payload (planar)</span></div>
       <div class="st now"><span class="when">Next</span><b>SP2</b><span>Local app with a <span class="nb">2-D</span> launch scene</span></div>
+      <div class="st"><span class="when">Planned</span><b>SP7</b><span>Structural mass for the 4 g push; force-limited drive</span></div>
       <div class="st"><span class="when">Planned</span><b>SP3</b><span><span class="nb">3-D</span> dynamics: point mass over a rotating sphere</span></div>
       <div class="st"><span class="when">Planned</span><b>SP4</b><span><span class="nb">3-D</span> scene; headline re-checked in <span class="nb">3-D</span></span></div>
       <div class="st"><span class="when">Planned</span><b>SP5</b><span>Oblate Earth: J2 and the ellipsoid</span></div>
       <div class="st"><span class="when">Planned</span><b>SP6</b><span><span class="nb">6-DOF</span> verification fly-out</span></div>
     </div>
     <div class="cols-3" style="display:grid;gap:16px">
-      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small">Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g push. <span class="strong">This decides whether the headline survives:</span> about 8.5 t of assumed <span class="nb">stage-1</span> dry mass cancels SP1's 41.26 t (extrapolated). Not scheduled; can be moved up at any session boundary.</p></div>
+      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small">Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g push. <span class="strong">This decides whether the headline survives:</span> about 8.5 t of assumed <span class="nb">stage-1</span> dry mass cancels SP1's 41.26 t (extrapolated). The structural mass and the linear motor are now SP7, after SP2; the rest is not scheduled.</p></div>
       <div class="card"><h3>README Phase 5 · fair comparison</h3><p class="small">Optimal-control ascent for every configuration; the headline results re-run with optimized guidance instead of sweep-optimized.</p></div>
       <div class="card"><h3>README Phase 6 · hobby scale</h3><p class="small">A RocketPy <span class="nb">6-DOF</span> model of a real rocket with an assist before the rail; baseline apogee within ±5% of RocketPy.</p></div>
     </div>
