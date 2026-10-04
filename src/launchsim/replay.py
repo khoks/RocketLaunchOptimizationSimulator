@@ -323,45 +323,43 @@ def offload_note(offload: Mapping[str, Any], name: str, baseline: str) -> str:
     """What an offload run is, from metrics.json's ``offload`` record: an offload case's
     recorded run (how much propellant it carries less, in tonnes and as a share of the
     stage-1 and total loads, and the payload it flies against the reference payload), a
-    paired pad (the pad with a case's propellant change) or a pad control."""
+    paired pad (the pad with a case's propellant change) or a pad control. Which one is
+    plots.offload_role, shared with the animation's labels."""
     p_ref = _finite(offload.get("reference_payload_kg"), 1)
     ref = f"{p_ref:,.1f} kg" if p_ref is not None else "the reference payload"
-    for case in offload.get("cases") or []:
-        case = _mapping(case)
-        if case.get("run") == name:
-            removed = _finite(case.get("total_offload_kg"))
-            s1 = _finite(case.get("stage1_fraction"))
-            tot = _finite(case.get("total_fraction"))
-            how = "solved" if case.get("kind") == "solve" else "imposed"
-            amount = (
-                "an unknown amount of propellant"
-                if removed is None
-                else f"{float(kg_to_t(removed)):.1f} t less propellant ({how}"
-                + (
-                    ""
-                    if s1 is None or tot is None
-                    else f"; {float(to_percent(s1)):.1f}% of the stage-1 load, "
-                    f"{float(to_percent(tot)):.1f}% of all"
-                )
-                + ")"
-            )
-            payload = _finite(case.get("payload_kg"), 1)
-            flies = "" if payload is None else f", flying {payload:,.1f} kg"
-            return (
-                f"offload case {name} of {case.get('of')}: {amount}{flies} against "
-                f"{baseline}'s full load at P_ref = {ref}, the same orbit"
-            )
-        paired = _mapping(case.get("paired_pad"))
-        if paired.get("run") == name:
-            return (
-                f"paired pad of offload case {case.get('name')}: {baseline} with the same "
-                "propellant change and no assist"
-            )
-    for control in offload.get("pad_controls") or []:
-        control = _mapping(control)
-        if control.get("run") == name:
-            return f"pad control ({control.get('mode')}): {baseline}'s own offload at P_ref = {ref}"
-    return "a run of the offload block"
+    role = plots.offload_role(offload, name)
+    if role is None:
+        return "a run of the offload block"
+    kind, record = role
+    if kind == plots.OFFLOAD_PAIRED_PAD:
+        return (
+            f"paired pad of offload case {record.get('name')}: {baseline} with the same "
+            "propellant change and no assist"
+        )
+    if kind == plots.OFFLOAD_PAD_CONTROL:
+        return f"pad control ({record.get('mode')}): {baseline}'s own offload at P_ref = {ref}"
+    removed = _finite(record.get("total_offload_kg"))
+    s1 = _finite(record.get("stage1_fraction"))
+    tot = _finite(record.get("total_fraction"))
+    how = "solved" if record.get("kind") == plots.OFFLOAD_SOLVED_KIND else "imposed"
+    amount = (
+        "an unknown amount of propellant"
+        if removed is None
+        else f"{float(kg_to_t(removed)):.1f} t less propellant ({how}"
+        + (
+            ""
+            if s1 is None or tot is None
+            else f"; {float(to_percent(s1)):.1f}% of the stage-1 load, "
+            f"{float(to_percent(tot)):.1f}% of all"
+        )
+        + ")"
+    )
+    payload = _finite(record.get("payload_kg"), 1)
+    flies = "" if payload is None else f", flying {payload:,.1f} kg"
+    return (
+        f"offload case {name} of {record.get('of')}: {amount}{flies} against "
+        f"{baseline}'s full load at P_ref = {ref}, the same orbit"
+    )
 
 
 def read_series(run_dir: Path, name: str) -> pd.DataFrame:

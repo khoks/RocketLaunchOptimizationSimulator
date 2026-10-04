@@ -4,7 +4,9 @@ output paths, a vertical_1d run refused, unknown runs named, and the two-speed t
 monotone over the whole flight, the playback labels, GIF frame timing, event labels
 that name their runs and values, and the calibration caveat checked against its
 findings note (every record; inside the band said when it is, and the line fits the
-frame). Nothing here needs ffmpeg (a stand-in writer tests its failure)."""
+frame), and runs of the offload block labelled from its record (cases, paired pads, pad
+controls, a case without an offload) with their two-line legend clear of the path and of
+the event labels. Nothing here needs ffmpeg (a stand-in writer tests its failure)."""
 
 from __future__ import annotations
 
@@ -41,11 +43,20 @@ README_VEHICLE = "generic_f9_class_2d_readme_loads"
 """The calibrated vehicles: the gate (mass set C) and the README-loads fork (set A)."""
 CALIBRATION_BAND_PCT = 10.0
 """The calibration band [%] (CLAUDE.md, Calibration: within +/-10 %)."""
+ORBIT_ALT_M = 200_000.0
+ORBIT_RANGE_M = 1_600_000.0
+ASSIST_RANGE_FACTOR = 1.03
+"""The orbit-shaped synthetic ascent (``_row(..., orbit=True)``): it levels off at
+ORBIT_ALT_M with zero climb rate at T_END_S, ORBIT_RANGE_M downrange (an assisted run
+ASSIST_RANGE_FACTOR times further), so the path under the legend runs near its top and
+the 'cutoff' label sits at the top right, as on a real 200 km insertion."""
 
 
-def _row(t_rel: float, offset: float, assist: bool) -> dict[str, object]:
+def _row(t_rel: float, offset: float, assist: bool, orbit: bool = False) -> dict[str, object]:
     """One synthetic time-series row at t_rel [s after release]: a push from -50 m for
-    the assist run, a hold on the pad otherwise, then a smooth climb."""
+    the assist run, a hold on the pad otherwise, then a smooth climb (``orbit``: one that
+    levels off at ORBIT_ALT_M, alt = ORBIT_ALT_M (1 - (1 - t/T_END_S)^3), downrange =
+    ORBIT_RANGE_M (t/T_END_S)^2, times ASSIST_RANGE_FACTOR for the assist run)."""
     if t_rel < 0.0:
         phase = "ASSIST" if assist else "HOLD"
         alt = -50.0 * (t_rel / PUSH_S) ** 2 if assist else 0.0
@@ -62,13 +73,16 @@ def _row(t_rel: float, offset: float, assist: bool) -> dict[str, object]:
             "m_kg": 1000.0,
         }
     head = 5.0 if assist else 0.0
+    frac = t_rel / T_END_S
+    alt = ORBIT_ALT_M * (1.0 - (1.0 - frac) ** 3) if orbit else (head + t_rel) ** 2 * 10.0
+    reach = ORBIT_RANGE_M * (ASSIST_RANGE_FACTOR if assist else 1.0)
     return {
         "t_s": t_rel + offset,
         "t_rel_release_s": t_rel,
         "phase": "GRAVITY_TURN" if t_rel < 40.0 else "LTG_BURN",
         "stage": "stage1" if t_rel < 40.0 else "stage2",
-        "alt_m": (head + t_rel) ** 2 * 10.0,
-        "downrange_m": t_rel**3,
+        "alt_m": alt,
+        "downrange_m": reach * frac**2 if orbit else t_rel**3,
         "speed_rel_mps": 25.0 * head + 20.0 * t_rel,
         "felt_axial_g": 1.5 + t_rel / 40.0,
         "q_pa": 1000.0 * math.sin(math.pi * t_rel / T_END_S),
@@ -76,12 +90,13 @@ def _row(t_rel: float, offset: float, assist: bool) -> dict[str, object]:
     }
 
 
-def _write_run(run_dir: Path, name: str, assist: bool) -> None:
-    """<run_dir>/<name>/timeseries.csv and events.csv of one synthetic planar run."""
+def _write_run(run_dir: Path, name: str, assist: bool, orbit: bool = False) -> None:
+    """<run_dir>/<name>/timeseries.csv and events.csv of one synthetic planar run
+    (``orbit``: the orbit-shaped ascent of ``_row``)."""
     offset = PUSH_S if assist else 0.0  # t_s starts at 0 at the push start
     t_start = -PUSH_S
     times = np.arange(t_start, T_END_S + 1e-9, 0.5)
-    rows = [_row(float(t), offset, assist) for t in times]
+    rows = [_row(float(t), offset, assist, orbit) for t in times]
     folder = run_dir / name
     folder.mkdir(parents=True)
     with (folder / "timeseries.csv").open("w", encoding="utf-8", newline="") as fh:
@@ -101,7 +116,7 @@ def _write_run(run_dir: Path, name: str, assist: bool) -> None:
         writer = csv.DictWriter(fh, fieldnames=EVENT_COLUMNS)
         writer.writeheader()
         for name_ev, t_rel in events:
-            row = _row(t_rel, offset, assist)
+            row = _row(t_rel, offset, assist, orbit)
             writer.writerow(
                 {
                     "t_s": row["t_s"],
@@ -116,19 +131,22 @@ def _write_run(run_dir: Path, name: str, assist: bool) -> None:
             )
 
 
-def _make_run_dir(root: Path, model: str | None = "planar_2d", extra_variants: int = 0) -> Path:
+def _make_run_dir(
+    root: Path, model: str | None = "planar_2d", extra_variants: int = 0, orbit: bool = False
+) -> Path:
     """A synthetic results/<experiment>/<timestamp> directory: the baseline 'pad', the
-    variant 'silo' (an assist push) and ``extra_variants`` more pad copies."""
+    variant 'silo' (an assist push) and ``extra_variants`` more pad copies (``orbit``:
+    every run flies the orbit-shaped ascent of ``_row``)."""
     run_dir = root / "results" / EXPERIMENT / TIMESTAMP
     run_dir.mkdir(parents=True)
     runs = {"pad": {"payload_kg": 1000.0, "status": "inserted"}}
     runs["silo"] = {"payload_kg": 1100.0, "status": "inserted"}
-    _write_run(run_dir, "pad", assist=False)
-    _write_run(run_dir, "silo", assist=True)
+    _write_run(run_dir, "pad", assist=False, orbit=orbit)
+    _write_run(run_dir, "silo", assist=True, orbit=orbit)
     for k in range(extra_variants):
         name = f"var{k}"
         runs[name] = {"payload_kg": None, "status": "impact"}
-        _write_run(run_dir, name, assist=False)
+        _write_run(run_dir, name, assist=False, orbit=orbit)
     metrics: dict[str, object] = {
         "experiment": EXPERIMENT,
         "timestamp_utc": TIMESTAMP,
@@ -513,6 +531,276 @@ def test_help_names_the_specified_metavars_and_defaults(
         assert flag in text
     for default in ("(default: 30;", "(default: 20.0)", "(default: 1280)"):
         assert default in text
+
+
+P_REF_KG = 1000.0
+"""The synthetic offload block's reference payload: the baseline pad's P*."""
+CASE_OFFLOAD_KG = 41262.9
+FIXED_OFFLOAD_KG = 20000.0
+FIXED_PAYLOAD_KG = 1030.0
+PAIRED_PAD_KG = 958.6
+CONTROL_OFFLOAD_KG = 513.6
+CONTROL_M_RES_KG = -0.0016
+"""m_res(0) [kg] of the stage-1 pad control: grams below zero (a resolution effect)."""
+MISSED_M_RES_KG = -3.0
+"""m_res(0) [kg] of the 'both' pad control: a real miss, beyond the search resolution."""
+
+
+def _make_offload_run_dir(root: Path, orbit: bool = False) -> Path:
+    """The synthetic directory of ``_make_run_dir`` plus an offload block, written as
+    results_io writes one: metrics.json ``offload`` (reference, P_ref, a solved case
+    silo_s1 with its paired pad silo_s1__pad, a fixed case silo_fix5, a solved case
+    silo_none whose solve found no offload (its recorded run is the full-load run),
+    pad controls in three modes, each run's record in ``offload.runs``, none of them in
+    ``runs``) and a timeseries.csv and events.csv per offload run (``orbit``: every run
+    flies the orbit-shaped ascent of ``_row``)."""
+    run_dir = _make_run_dir(root, orbit=orbit)
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    inserted, short = "inserted", "short_of_orbit"
+    metrics["offload"] = {
+        "reference": "pad",
+        "reference_payload_kg": P_REF_KG,
+        "cases": [
+            {
+                "name": "silo_s1",
+                "of": "silo",
+                "kind": "solve",
+                "mode": "stage1",
+                "run": "silo_s1",
+                "total_offload_kg": CASE_OFFLOAD_KG,
+                "payload_kg": P_REF_KG,
+                "paired_pad": {"run": "silo_s1__pad", "payload_kg": PAIRED_PAD_KG},
+            },
+            {
+                "name": "silo_fix5",
+                "of": "silo",
+                "kind": "fixed",
+                "mode": "stage1",
+                "run": "silo_fix5",
+                "total_offload_kg": FIXED_OFFLOAD_KG,
+                "payload_kg": FIXED_PAYLOAD_KG,
+                "paired_pad": None,
+            },
+            {
+                "name": "silo_none",
+                "of": "silo",
+                "kind": "solve",
+                "mode": "stage1",
+                "run": "silo_none",
+                "status": "no_offload",
+                "total_offload_kg": 0.0,
+                "payload_kg": P_REF_KG,
+                "paired_pad": None,
+            },
+        ],
+        "pad_controls": [
+            {
+                "mode": "stage1",
+                "run": "pad__offload_stage1",
+                "status": "no_offload",
+                "offload_kg": 0.0,
+                "m_res_kg": CONTROL_M_RES_KG,
+                "resolution_effect": True,
+            },
+            {
+                "mode": "stage2",
+                "run": "pad__offload_stage2",
+                "status": "ok",
+                "offload_kg": CONTROL_OFFLOAD_KG,
+                "m_res_kg": 1e-6,
+                "resolution_effect": False,
+            },
+            {
+                "mode": "both",
+                "run": "pad__offload_both",
+                "status": "no_offload",
+                "offload_kg": 0.0,
+                "m_res_kg": MISSED_M_RES_KG,
+                "resolution_effect": False,
+            },
+        ],
+        "runs": {
+            "silo_s1": {"payload_kg": P_REF_KG, "status": inserted},
+            "silo_s1__pad": {"payload_kg": PAIRED_PAD_KG, "status": inserted},
+            "silo_fix5": {"payload_kg": FIXED_PAYLOAD_KG, "status": inserted},
+            "silo_none": {"payload_kg": P_REF_KG, "status": short},
+            "pad__offload_stage1": {"payload_kg": P_REF_KG, "status": short},
+            "pad__offload_stage2": {"payload_kg": P_REF_KG, "status": inserted},
+            "pad__offload_both": {"payload_kg": P_REF_KG, "status": short},
+        },
+    }
+    (run_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    for name in metrics["offload"]["runs"]:
+        assist = name in ("silo_s1", "silo_fix5", "silo_none")
+        _write_run(run_dir, name, assist=assist, orbit=orbit)
+    return run_dir
+
+
+def _end_phase(run: plots.AnimationRun) -> str:
+    """The readout's phase of ``run`` from its last time on."""
+    return plots._phase_at(run, run.t_end_s)
+
+
+def test_offload_runs_are_labelled_from_the_offload_record(tmp_path: Path) -> None:
+    """A run recorded only in metrics.json ``offload.runs`` takes its payload and status
+    from that record, as replay does: the solved case silo_s1 flies P_REF_KG and reads
+    'inserted' at its end, its legend giving the offload in tonnes (41,262.9 kg / 1000 =
+    41.3 t) and no change against the baseline; the paired pad gives its own P* (959 kg)
+    and 958.6 - 1000 = -41 kg against P_ref. The experiment runs keep their labels word
+    for word (pad 1,000 kg; silo 1,100 kg, +100 kg against it) and the legend title is
+    LEGEND_TITLE unless an offload run is shown, when it names P_ref."""
+    run_dir = _make_offload_run_dir(tmp_path)
+    runs, metrics = plots.load_animation_runs(run_dir, ["pad", "silo", "silo_s1", "silo_s1__pad"])
+    pad, silo, case, paired = runs
+    assert (pad.offload, silo.offload) == (None, None)
+    assert plots._legend_label(pad, pad) == f"pad (baseline): P* {P_REF_KG:,.0f} kg"
+    assert plots._legend_label(silo, pad) == "silo: P* 1,100 kg (+100 kg)"
+    assert case.payload_kg == pytest.approx(P_REF_KG) and case.status == "inserted"
+    assert paired.payload_kg == pytest.approx(PAIRED_PAD_KG) and paired.status == "inserted"
+    assert case.offload is not None and case.offload.kind == plots.OFFLOAD_CASE == "offload case"
+    assert paired.offload is not None and paired.offload.kind == plots.OFFLOAD_PAIRED_PAD
+    offload_t = CASE_OFFLOAD_KG / 1000.0
+    assert plots._legend_label(case, pad) == (
+        f"silo_s1 (offload case): flies P_ref {P_REF_KG:,.0f} kg\n"
+        f"on {offload_t:.1f} t less propellant"
+    )
+    assert "41.3 t" in plots._legend_label(case, pad)
+    assert plots._legend_label(paired, pad) == (
+        f"silo_s1__pad (paired pad): P* {PAIRED_PAD_KG:,.0f} kg "
+        f"({PAIRED_PAD_KG - P_REF_KG:+,.0f} kg vs P_ref)\nwith the same offload, no push"
+    )
+    assert "P* 959 kg (-41 kg vs P_ref)" in plots._legend_label(paired, pad)
+    assert [_end_phase(r) for r in runs] == ["inserted"] * 4
+    assert plots.legend_title(runs[:2], metrics) == plots.LEGEND_TITLE
+    assert plots.LEGEND_TITLE == "payload capacity P* (sweep-optimized)"
+    assert plots.legend_title(runs, metrics) == f"{plots.LEGEND_TITLE}; P_ref = pad's P*"
+
+
+def test_pad_controls_are_labelled_as_pad_controls_not_failures(tmp_path: Path) -> None:
+    """The stage-1 pad control's recorded run ends short_of_orbit by grams by
+    construction (m_res(0) = -0.0016 kg, within the search resolution): it is labelled a
+    pad control flying P_ref with no offload, its second legend line gives 0.0016 kg of
+    propellant short of orbit as a resolution effect, not a failure, and its readout
+    ends '~inserted', not 'ended, short_of_orbit'. An ok control gives its x_pad (513.6
+    kg = 0.5 t); a no_offload control that misses by more (m_res(0) = -3 kg) still reads
+    'ended, short_of_orbit'. A fixed case gives its own P* against P_ref (1,030 - 1,000 =
+    +30 kg) and its imposed 20.0 t."""
+    run_dir = _make_offload_run_dir(tmp_path)
+    names = ["pad", "pad__offload_stage1", "pad__offload_stage2", "pad__offload_both"]
+    runs, _ = plots.load_animation_runs(run_dir, names)
+    pad, stage1, stage2, both = runs
+    assert stage1.status == "short_of_orbit" and stage1.payload_kg == pytest.approx(P_REF_KG)
+    assert stage1.offload is not None and stage1.offload.kind == plots.OFFLOAD_PAD_CONTROL
+    assert stage1.offload.resolution_effect
+    head, detail = plots._legend_label(stage1, pad).split("\n")
+    assert head == f"pad__offload_stage1 (pad control): flies P_ref {P_REF_KG:,.0f} kg, no offload"
+    assert detail.startswith(f"{abs(CONTROL_M_RES_KG):.2g} kg of propellant short of orbit")
+    assert detail.startswith("0.0016 kg") and "resolution effect, not a failure" in detail
+    assert _end_phase(stage1) == plots.NEAR_ORBIT_PHASE == "~inserted"
+    assert plots._legend_label(stage2, pad) == (
+        f"pad__offload_stage2 (pad control): flies P_ref {P_REF_KG:,.0f} kg\n"
+        f"on {CONTROL_OFFLOAD_KG / 1000.0:.1f} t less propellant"
+    )
+    assert _end_phase(stage2) == "inserted"
+    assert both.offload is not None and not both.offload.resolution_effect
+    assert _end_phase(both) == "ended, short_of_orbit"
+    assert "more than the search resolution" in plots._legend_label(both, pad)
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    record, tag = plots.animation_record(metrics, "silo_fix5")
+    assert record["payload_kg"] == FIXED_PAYLOAD_KG and tag is not None
+    assert tag.legend == (
+        f"P* {FIXED_PAYLOAD_KG:,.0f} kg ({FIXED_PAYLOAD_KG - P_REF_KG:+,.0f} kg vs P_ref)\n"
+        f"on {FIXED_OFFLOAD_KG / 1000.0:.1f} t less propellant"
+    )
+    assert "(+30 kg vs P_ref)" in tag.legend and "20.0 t" in tag.legend
+    assert plots.animation_record(metrics, "pad") == (metrics["runs"]["pad"], None)
+    assert plots.animation_record(metrics, "nowhere") == ({}, None)
+
+
+def test_solved_case_without_an_offload_says_it_misses_orbit(tmp_path: Path) -> None:
+    """A solved case whose solve found no offload (status no_offload) records its
+    full-load run (x* = 0), which cannot carry P_ref: its legend says so instead of
+    'flies P_ref ... on 0.0 t less propellant', and its readout ends 'ended,
+    short_of_orbit' (its record's status), not '~inserted' (no resolution effect)."""
+    run_dir = _make_offload_run_dir(tmp_path)
+    runs, _ = plots.load_animation_runs(run_dir, ["pad", "silo_none"])
+    pad, none = runs
+    assert none.payload_kg == pytest.approx(P_REF_KG) and none.status == "short_of_orbit"
+    assert none.offload is not None and none.offload.kind == plots.OFFLOAD_CASE
+    assert not none.offload.resolution_effect
+    assert plots._legend_label(none, pad) == (
+        f"silo_none (offload case): flies P_ref {P_REF_KG:,.0f} kg, no offload\n"
+        "does not reach orbit at P_ref even at full load"
+    )
+    assert "less propellant" not in plots._legend_label(none, pad)
+    assert _end_phase(none) == "ended, short_of_orbit"
+
+
+def test_offload_animation_renders_with_its_legend_inside_the_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``animate --runs pad silo_s1`` writes a GIF; drawn at 1280 and 640 px, the legend
+    of each offload selection (pad with the offloaded silo, the paired pad with it, and
+    the three together) ends left of the trajectory panel's right edge, its bottom lies
+    above every drawn path point under it, it overlaps no event label shown on the
+    trajectory panel at the end of the flight (where the 'cutoff' label sits at the top
+    of the path), its title names P_ref, and the readout ends 'inserted' for every run.
+    The runs fly the orbit-shaped ascent (level at the top, like a real insertion), so
+    the path under the legend runs near its top. Clearances are measured on the drawn
+    artists in pixels, not from the layout rule."""
+    run_dir = _make_offload_run_dir(tmp_path, orbit=True)
+    _no_ffmpeg(monkeypatch)
+    out = tmp_path / "offload.gif"
+    args = ["animate", str(run_dir), "--runs", "pad", "silo_s1", "--out", str(out)]
+    code = main([*args, "--fps", "2", "--seconds", "1", "--width", "320"])
+    assert code == 0, capsys.readouterr().out
+    assert out.is_file()
+    selections = (
+        ["pad", "silo_s1"],
+        ["silo_s1__pad", "silo_s1"],
+        ["pad", "silo_s1", "silo_s1__pad"],
+    )
+    for names in selections:
+        runs, metrics = plots.load_animation_runs(run_dir, names)
+        for width in (1280, 640):
+            size, dpi, _ = plots.frame_geometry(width)
+            fig = plots._AscentFigure(runs, metrics, "toy_2d", size, dpi)
+            canvas = FigureCanvasAgg(fig.fig)
+            fig.draw_frame(fig.t1, 0.0)
+            canvas.draw()
+            renderer = canvas.get_renderer()
+            legend = fig.ax_main.get_legend()
+            assert legend.get_title().get_text().endswith("P_ref = pad's P*")
+            box = legend.get_window_extent(renderer=renderer)
+            assert box.x1 < fig.ax_main.get_window_extent(renderer=renderer).x1, (names, width)
+            path_gap, label_gap = _legend_clearance(fig, renderer)
+            assert path_gap > 0.0, (names, width, path_gap)
+            assert label_gap > 0.0, (names, width, label_gap)
+            assert all(" inserted " in r.get_text() for r in fig.readouts)
+
+
+def _legend_clearance(fig: plots._AscentFigure, renderer: object) -> tuple[float, float]:
+    """(legend bottom less the highest drawn path point under the legend, legend bottom
+    less the top of the highest visible trajectory-panel event label that shares its
+    columns) [px] of a drawn frame; inf when nothing lies under the legend."""
+    ax = fig.ax_main
+    box = ax.get_legend().get_window_extent(renderer=renderer)
+    path_top = -math.inf
+    for run in fig.runs:
+        km = np.column_stack([run.downrange_m, run.alt_m]) / 1000.0
+        px = ax.transData.transform(km)
+        under = px[(px[:, 0] >= box.x0) & (px[:, 0] <= box.x1)]
+        if under.size:
+            path_top = max(path_top, float(under[:, 1].max()))
+    label_top = -math.inf
+    for group in fig.label_groups:
+        artist = group.artist
+        if group.ax is not ax or not artist.get_visible() or not artist.get_text():
+            continue
+        label = artist.get_window_extent(renderer=renderer)
+        if min(box.x1, label.x1) > max(box.x0, label.x0):
+            label_top = max(label_top, label.y1)
+    return box.y0 - path_top, box.y0 - label_top
 
 
 def test_frame_geometry_is_16_by_9_and_even() -> None:

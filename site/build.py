@@ -13,7 +13,8 @@ The site is static. This script:
    The replay pages in ``examples/`` (written by ``launchsim replay``, whose template belongs
    to the simulator) get the site's frame added on the way: a favicon, a top bar back to the
    gallery and the home page, the all-rights-reserved notice and the site's contrast tokens
-   (``site/templates/replay-frame.html``), plus the wording fixes in ``REPLAY_TEXT_FIXES``;
+   (``site/templates/replay-frame.html``), plus the fixes in ``REPLAY_TEXT_FIXES`` and
+   ``REPLAY_PAGE_FIXES``;
    the files in ``site/examples/`` stay as written. Command code blocks in the manual wrap
    at spaces; console output, the usage synopsis and file trees scroll sideways;
 4. writes the "Last updated" stamp (commit date and hash) between the
@@ -132,7 +133,131 @@ REPLAY_TEXT_FIXES = (
         "0.04%, 0.08% and 0.08%). The free kick favours the silo runs, whose q-alpha at the "
         "kick is above the pad's.",
     ),
+    # The close-up note's verb after a single run ("silo_cold starts ... and leave").
+    (
+        "starts 100 m below ground and leave the silo mouth",
+        "starts 100 m below ground and leaves the silo mouth",
+    ),
+    # The close-up's "silo floor, 100 m down" label hangs below its dashed line and, with the
+    # shaft drawn 1.6 depths deep, overprints the time axis's tick labels. Deepen the panel's
+    # lower bound until the line sits at least 16 px above the axis (scaling only).
+    (
+        "const yr = [deepest > 0 ? -1.6 * deepest : -0.05 * ymax, ymax * 1.05];",
+        "const yr = [deepest > 0 ? -Math.max(1.6 * deepest, box.h > 32 ? (deepest * box.h + "
+        "16 * ymax * 1.05) / (box.h - 16) : 0) : -0.05 * ymax, ymax * 1.05];",
+    ),
+    # Labels centred on a point near a canvas edge are cut off there: the last x-axis tick
+    # label of a plot ("2,000" shows as "2,00") and the timeline's last event marker ("Orbit"
+    # shows as "Orbi"; its canvas keeps only 8 px each side). Keep each label inside its canvas
+    # (the tick or marker itself does not move). Drop both once
+    # src/launchsim/templates/replay.html clamps them itself and the pages are regenerated.
+    (
+        "ctx.fillText(fmt(x, xs < 1 ? 1 : 0), px, box.y + box.h + 4);",
+        "{ const s = fmt(x, xs < 1 ? 1 : 0), hw = ctx.measureText(s).width / 2; "
+        "ctx.fillText(s, Math.max(hw + 1, Math.min(px, ctx.canvas.clientWidth - hw - 1)), "
+        "box.y + box.h + 4); }",
+    ),
+    (
+        "if (x - lastX > 60) { ctx.fillText(EVENT_LABEL[e.name] || e.name, x, 0); lastX = x; }",
+        "if (x - lastX > 60) { const s = EVENT_LABEL[e.name] || e.name, "
+        "hw = ctx.measureText(s).width / 2; ctx.fillText(s, Math.max(hw, Math.min(x, w - hw)), "
+        "0); lastX = x; }",
+    ),
 )
+# Fixes for one replay page each (file name in site/examples/ -> (old, new) pairs), applied
+# after REPLAY_TEXT_FIXES. The page text sits in a JSON block, so the new text is ASCII with
+# no double quotes. src/launchsim/replay.py words every offload run as a solved case:
+# comparison_caveats says the runs measure "propellant saved at the same payload and orbit,
+# not a payload change", true of a case's recorded run and a pad control (both fly P_ref)
+# but not of a paired pad, which flies its own payload capacity; the label says "(offload)"
+# and the subtitle compares with the baseline, which the paired-pad page does not show. It
+# also rounds the headline to 41.3 t, 10.0% and 8.0%, where every other page says 41.26 t,
+# 10.04% and 7.96%. Numbers: docs/findings/RQ1-fuel-offload-2d.md (run 20261003T112934Z).
+# Drop an entry once replay.py words it so and the page is regenerated (the build warns
+# when an entry no longer matches its page).
+REPLAY_OFFLOAD_DRIVE = (
+    "Under this drive the release speed and the payload do not depend on the carriage mass",
+    "Under this drive the release speed, the payload and the offload do not depend on the "
+    "carriage mass",
+)
+REPLAY_OFFLOAD_ROUNDING = (
+    "41.3 t less propellant (solved; 10.0% of the stage-1 load, 8.0% of all)",
+    "41.26 t less propellant (solved; 10.04% of the stage-1 load, 7.96% of all)",
+)
+# The structure caveat calls the pushed stack fully fuelled, but on both offload pages the
+# only pushed run, silo_cold_s1, carries 41.26 t less stage-1 propellant; the felt 4.0 g does
+# not depend on the mass under this drive. It also gives no size for the structure that
+# would cancel the offload (findings note, "Structural penalty rows and break-even").
+REPLAY_OFFLOAD_STRUCTURE = (
+    "No structural mass is charged for the assist load case: the fully fuelled stack feels up "
+    "to 4.0 g during the push.",
+    "No structural mass is charged for the assist load case: silo_cold_s1, 41.26 t short of a "
+    "full stage-1 load, feels up to 4.0 g during the push. An assumed +8.1 t of stage-1 dry "
+    "mass leaves 1.98 t of the offload, and about 8.5 t (extrapolated) leaves nothing; no "
+    "structural model exists yet (docs/findings/RQ1-fuel-offload-2d.md, 'Structural penalty "
+    "rows and break-even').",
+)
+REPLAY_PAGE_FIXES: dict[str, tuple[tuple[str, str], ...]] = {
+    "pad-vs-silo-offload.html": (
+        REPLAY_OFFLOAD_DRIVE,
+        REPLAY_OFFLOAD_ROUNDING,
+        REPLAY_OFFLOAD_STRUCTURE,
+        # The headline page has no paired pad, so it states the pre-registered reading (most
+        # of the offload is the lighter stack's thrust-to-weight) and the bridge in words.
+        (
+            "silo_cold_s1 is a run of the offload block, not compared with pad here: what it "
+            "measures is propellant saved at the same payload and orbit, not a payload change "
+            "(summary.md, 'Propellant saved at fixed payload', with its caveats).",
+            "silo_cold_s1 is a run of the offload block, not compared with pad here: what it "
+            "measures is propellant saved at the same payload and orbit, not a payload change "
+            "(summary.md, 'Propellant saved at fixed payload', with its caveats). Read as "
+            "pre-registered, most of the offload is the lighter stack's thrust-to-weight: the "
+            "pad flown with the same 41.26 t offload and no push falls only 1,402.0 kg short of "
+            "the full-load pad's 26,054.4 kg, 3.4% of the offload (the note reports this "
+            "verdict, and argues that it compares payload kilograms with propellant kilograms); "
+            "a delta-v reading chosen after the run gives the lighter stack 28 to 29% (the "
+            "paired-pad replay draws both runs). On the README-loads vehicle, which calibrates "
+            "inside the band (+8.3%), the same case removes 36.01 t, 9.10% of its stage-1 load "
+            "(docs/findings/RQ1-fuel-offload-2d.md, with its caveats).",
+        ),
+    ),
+    "offload-vs-paired-pad.html": (
+        REPLAY_OFFLOAD_DRIVE,
+        REPLAY_OFFLOAD_ROUNDING,
+        REPLAY_OFFLOAD_STRUCTURE,
+        (
+            "compare what each run carries to orbit against the baseline, pad.",
+            "compare the same vehicle, 41.26 t short of a full stage-1 load, flown out of the "
+            "silo and from the pad with no push (the full-load baseline, pad, is not on this "
+            "page).",
+        ),
+        ('"label":"silo_cold_s1__pad (offload)"', '"label":"silo_cold_s1__pad (paired pad)"'),
+        (
+            "paired pad of offload case silo_cold_s1: pad with the same propellant change and "
+            "no assist;",
+            "paired pad of offload case silo_cold_s1: pad with the same 41.26 t stage-1 offload "
+            "and no assist, flying its own payload capacity, 24,652.4 kg (1,402.0 kg short of "
+            "P_ref = 26,054.4 kg);",
+        ),
+        (
+            "silo_cold_s1__pad and silo_cold_s1 are runs of the offload block, not compared "
+            "with pad here: what they measure is propellant saved at the same payload and "
+            "orbit, not a payload change (summary.md, 'Propellant saved at fixed payload', "
+            "with its caveats).",
+            "silo_cold_s1__pad and silo_cold_s1 are runs of the offload block, not compared "
+            "with pad here. silo_cold_s1 carries the pad's payload, P_ref = 26,054.4 kg, with "
+            "41.26 t less stage-1 propellant: it measures propellant saved at the same payload "
+            "and orbit. silo_cold_s1__pad, its paired pad, is the pad with the same offload and "
+            "no push, flown to its own payload capacity: 24,652.4 kg, 1,402.0 kg short of "
+            "P_ref, a payload change. Read as pre-registered, that shortfall is small against "
+            "the offload (3.4%), so most of the offload is the lighter stack's thrust-to-weight "
+            "(the note reports this verdict, and argues that it compares payload kilograms with "
+            "propellant kilograms); a delta-v reading chosen after the run gives the lighter "
+            "stack 28 to 29% (summary.md, 'Propellant saved at fixed payload'; "
+            "docs/findings/RQ1-fuel-offload-2d.md, with its caveats).",
+        ),
+    ),
+}
 
 
 class BuildError(Exception):
@@ -791,10 +916,19 @@ def frame_replay(text: str, parts: dict[str, str], root: str) -> str | None:
 
 
 def fix_replay_text(text: str, label: str, log: BuildLog) -> str:
-    """Apply ``REPLAY_TEXT_FIXES`` to one replay page; a page that still carries the stale
-    sentence afterwards (written for another set of runs) is an error, not a silent pass."""
+    """Apply ``REPLAY_TEXT_FIXES``, then the page's ``REPLAY_PAGE_FIXES``, to one replay page.
+    A page that still carries the stale sentence afterwards (written for another set of runs)
+    is an error, not a silent pass; a page fix that no longer matches its page is a warning."""
     for old, new in REPLAY_TEXT_FIXES:
         text = text.replace(old, new)
+    for old, new in REPLAY_PAGE_FIXES.get(Path(label).name, ()):
+        if old in text:
+            text = text.replace(old, new)
+        elif new not in text:
+            log.warnings.append(
+                f"{label}: a REPLAY_PAGE_FIXES entry no longer matches ({old[:60]!r}...); "
+                "drop it if src/launchsim/replay.py now words this itself"
+            )
     if REPLAY_STALE_TEXT in text:
         log.errors.append(
             f"{label}: the drive caveat still says {REPLAY_STALE_TEXT!r}, which the gallery "
@@ -806,7 +940,7 @@ def fix_replay_text(text: str, label: str, log: BuildLog) -> str:
 
 def frame_replays(out: Path, log: BuildLog) -> int:
     """Add the site's frame to every replay page copied into ``out/examples`` and apply the
-    wording fixes in ``REPLAY_TEXT_FIXES``."""
+    fixes in ``REPLAY_TEXT_FIXES`` and ``REPLAY_PAGE_FIXES``."""
     parts = read_replay_frame()
     count = 0
     for page in sorted((out / REPLAY_DIR).glob("*.html")):

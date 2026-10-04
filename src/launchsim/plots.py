@@ -13,7 +13,9 @@ writers (not the animation).
 ``write_ascent_animation`` (the ``launchsim animate`` command) replays planar_2d runs
 of one results directory as an .mp4 (ffmpeg) or .gif (Pillow): it only reads the
 directory (metrics.json, resolved_config.yaml, <run>/timeseries.csv, <run>/events.csv)
-and never writes inside results/.
+and never writes inside results/. A run of an experiment's offload block (metrics.json
+``offload.runs``: an offload case, a paired pad or a pad control) is labelled from that
+record, as the replay page reads it (``animation_record``, ``offload_tag``).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import json
 import math
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,6 +41,7 @@ from matplotlib.transforms import blended_transform_factory
 from numpy.typing import NDArray
 
 from launchsim.config import PLANAR_2D, VERTICAL_1D
+from launchsim.offload import NO_OFFLOAD_STATUS
 from launchsim.phases import ASSIST_KIND, HOLD_KIND
 from launchsim.phases.planar import (
     COAST,
@@ -406,8 +409,19 @@ ANIMATION_CLOSEUP_HEIGHT_RATIO = 1.35
 """Height of the launch close-up relative to the block of three small time panels (2)."""
 MAIN_HEADROOM = 1.35
 MAIN_HEADROOM_PER_RUN = 0.22
+MAIN_HEADROOM_PER_SECOND_LINE = 0.25
 """The trajectory panel's top is MAIN_HEADROOM times the highest altitude, plus
-MAIN_HEADROOM_PER_RUN per run beyond two: room for the legend above the path."""
+MAIN_HEADROOM_PER_RUN per legend line beyond two (one line per run; a run of the offload
+block has two), plus MAIN_HEADROOM_PER_SECOND_LINE per second line (so per run of the
+offload block): room for the legend above the path and above the 'cutoff' label at the
+path's top right, which the wide two-line legend reaches. A selection without an offload
+run has one line per run, so only the first two terms apply to it (its layout is the
+Phase 2 one). With 0.25 the legend clears both by 4.7 px or more in every 2- and 3-run
+selection with an offload run of results/silo_offload_2d at 1280 and 640 px (0.20: by
+2.7 px; 0.10: it overlaps the 'cutoff' label by up to 4 px; 0: by up to 13 px). Not
+covered: 4-run selections, with or without an offload run, and 3-run selections without
+one, whose legend can still reach the 'cutoff' label (and, at 640 px with four runs, the
+path)."""
 TITLE_MAX_CHARS = 48
 """A title listing more characters of run names than this reads 'N runs (see legend)'."""
 SMALL_PANEL_XMARGIN = 0.015
@@ -471,6 +485,25 @@ PHASE_LABELS: dict[str, str] = {
 }
 """Readout label of each phase of the time series."""
 
+OFFLOAD_CASE = "offload case"
+OFFLOAD_PAIRED_PAD = "paired pad"
+OFFLOAD_PAD_CONTROL = "pad control"
+"""What a run of metrics.json's ``offload.runs`` is (``offload_role``): an offload case's
+recorded run (``offload.cases``, by ``run``), the paired pad of a case (its
+``paired_pad.run``: the reference baseline with the case's propellant change and no
+assist) or a pad control (``offload.pad_controls``, by ``run``)."""
+OFFLOAD_SOLVED_KIND = "solve"
+"""``kind`` of an offload case whose offload was solved at P_ref, so it flies P_ref (a
+``fixed`` case imposes its offload, and its figure is its own P* against P_ref)."""
+NEAR_ORBIT_PHASE = "~inserted"
+"""Readout phase at the end of a pad control whose recorded run misses P_ref by grams
+of residual propellant at the search's resolution (its record's ``resolution_effect``;
+summary.md: not a failure), where any other run that did not insert reads 'ended,
+<status>'."""
+LEGEND_TITLE = "payload capacity P* (sweep-optimized)"
+"""Title of the trajectory panel's legend; with an offload run shown it also says what
+P_ref is (``legend_title``)."""
+
 CALIBRATION_RECORDS: dict[str, tuple[float, float, str]] = {
     "generic_f9_class_2d": (26054.4, 22800.0, "docs/findings/CAL-f9-leo-2d"),
     "generic_f9_class_2d_readme_loads": (24700.0, 22800.0, "docs/findings/CAL-f9-leo-2d"),
@@ -525,12 +558,26 @@ class AnimationEvent:
 
 
 @dataclass(frozen=True)
+class OffloadTag:
+    """How the animation labels a run of metrics.json's ``offload.runs``
+    (``offload_tag``): its kind (OFFLOAD_CASE, OFFLOAD_PAIRED_PAD, OFFLOAD_PAD_CONTROL, or
+    'offload' for a run the block records but names in no case or control), the legend
+    text after its name, and whether its recorded run ends grams of propellant short of
+    orbit by a resolution effect (a pad control: read as a pad control, not a failure)."""
+
+    kind: str
+    legend: str
+    resolution_effect: bool = False
+
+
+@dataclass(frozen=True)
 class AnimationRun:
     """The series of one planar run the animation draws, on the time after release
     t_s [s]: altitude alt_m [m], downrange_m [m], Earth-relative speed [m/s], felt axial
     acceleration [g0], dynamic pressure q_pa [Pa] (NaN in a vented shaft), mass m_kg [kg]
-    and the phase label per row; its drawn events; P* [kg] and status from
-    metrics.json; whether it is the experiment's baseline."""
+    and the phase label per row; its drawn events; its payload [kg] and status from
+    metrics.json (``runs``, or ``offload.runs`` for a run of the offload block); whether
+    it is the experiment's baseline; for a run of the offload block, its OffloadTag."""
 
     name: str
     t_s: FloatArray
@@ -545,6 +592,7 @@ class AnimationRun:
     payload_kg: float | None
     status: str | None
     baseline: bool
+    offload: OffloadTag | None = None
 
     @property
     def t_start_s(self) -> float:
@@ -659,9 +707,113 @@ def _events(path: Path, offset_s: float) -> tuple[AnimationEvent, ...]:
     return tuple(out)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """``value`` when it is a mapping, else {}."""
+    return value if isinstance(value, dict) else {}
+
+
+def _finite_kg(value: Any) -> float | None:
+    """``value`` as a float [kg], or None when it is missing, not a number or not finite."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def offload_role(offload: Mapping[str, Any], name: str) -> tuple[str, dict[str, Any]] | None:
+    """(kind, record) of run ``name`` in metrics.json's ``offload`` block: OFFLOAD_CASE
+    and the case record whose ``run`` it is; OFFLOAD_PAIRED_PAD and the case record whose
+    ``paired_pad.run`` it is; OFFLOAD_PAD_CONTROL and its ``pad_controls`` record; None
+    when the block names it in no case or control. Shared with replay.offload_note."""
+    for case in offload.get("cases") or []:
+        case = _as_dict(case)
+        if case.get("run") == name:
+            return OFFLOAD_CASE, case
+        if _as_dict(case.get("paired_pad")).get("run") == name:
+            return OFFLOAD_PAIRED_PAD, case
+    for control in offload.get("pad_controls") or []:
+        control = _as_dict(control)
+        if control.get("run") == name:
+            return OFFLOAD_PAD_CONTROL, control
+    return None
+
+
+def offload_tag(offload: Mapping[str, Any], name: str, record: Mapping[str, Any]) -> OffloadTag:
+    """The OffloadTag of run ``name`` of metrics.json's ``offload`` block, whose own
+    record (``offload.runs[name]``) is ``record``. Its legend text has two lines (payloads
+    P [kg] rounded to 1 kg, offloads in tonnes to 0.1 t; P is the run's recorded payload):
+    a solved case 'flies P_ref <P> kg' / 'on <x> t less propellant' (x: the case's
+    ``total_offload_kg``); a solved case whose solve found no offload (status
+    no_offload: its recorded run is the full-load run, x* = 0, which cannot carry P_ref)
+    'flies P_ref <P> kg, no offload' / 'does not reach orbit at P_ref even at full
+    load'; a fixed case 'P* <P> kg (<P - P_ref> kg vs P_ref)' / 'on <x> t less
+    propellant'; a paired pad 'P* <P> kg (<P - P_ref> kg vs P_ref)' / 'with the same
+    offload, no push'; an ok pad control 'flies P_ref <P> kg' / 'on <x_pad> t less
+    propellant'; a no_offload pad control 'flies P_ref <P> kg, no offload' / how far short
+    of orbit its recorded run ends [kg of propellant, 2 significant figures] when its
+    record's ``resolution_effect`` holds ('<m> kg of propellant short of orbit: a
+    resolution effect, not a failure'), else 'short of orbit by more than the search
+    resolution'. A run without a payload, or one the block names in no case or control,
+    gets one line: 'payload n/a (<status>)' or 'payload <P> kg'."""
+    role = offload_role(offload, name)
+    kind, rec = ("offload", {}) if role is None else role
+    payload = _finite_kg(record.get("payload_kg"))
+    if payload is None:
+        return OffloadTag(kind, f"payload n/a ({record.get('status')})")
+    if role is None:
+        return OffloadTag(kind, f"payload {payload:,.0f} kg")
+    p_ref = _finite_kg(offload.get("reference_payload_kg"))
+    vs_ref = "" if p_ref is None else f" ({payload - p_ref:+,.0f} kg vs P_ref)"
+    removed = _finite_kg(rec.get("total_offload_kg" if kind == OFFLOAD_CASE else "offload_kg"))
+    less = (
+        "offload not recorded"
+        if removed is None
+        else f"on {float(kg_to_t(removed)):.1f} t less propellant"
+    )
+    near = False
+    if kind == OFFLOAD_PAIRED_PAD:
+        head, detail = f"P* {payload:,.0f} kg{vs_ref}", "with the same offload, no push"
+    elif kind == OFFLOAD_CASE and rec.get("kind") != OFFLOAD_SOLVED_KIND:
+        head, detail = f"P* {payload:,.0f} kg{vs_ref}", less
+    elif kind == OFFLOAD_CASE and rec.get("status") == NO_OFFLOAD_STATUS:
+        head = f"flies P_ref {payload:,.0f} kg, no offload"
+        detail = "does not reach orbit at P_ref even at full load"
+    elif kind == OFFLOAD_PAD_CONTROL and rec.get("status") == NO_OFFLOAD_STATUS:
+        head = f"flies P_ref {payload:,.0f} kg, no offload"
+        near = bool(rec.get("resolution_effect"))
+        m_res = _finite_kg(rec.get("m_res_kg"))
+        short = "grams" if m_res is None else f"{abs(m_res):.2g} kg"
+        detail = (
+            f"{short} of propellant short of orbit: a resolution effect, not a failure"
+            if near
+            else "short of orbit by more than the search resolution"
+        )
+    else:
+        head, detail = f"flies P_ref {payload:,.0f} kg", less
+    return OffloadTag(kind, f"{head}\n{detail}", near)
+
+
+def animation_record(
+    metrics: Mapping[str, Any], name: str
+) -> tuple[dict[str, Any], OffloadTag | None]:
+    """(metrics record, OffloadTag or None) of run ``name``: its ``runs`` record and None
+    for an experiment run; for a run of the offload block (``offload.runs``, as
+    replay.run_source reads it) that record and its ``offload_tag``; ({}, None) for a run
+    metrics.json records in neither."""
+    runs = _as_dict(metrics.get("runs"))
+    if name in runs:
+        return _as_dict(runs[name]), None
+    offload = _as_dict(metrics.get("offload"))
+    offload_runs = _as_dict(offload.get("runs"))
+    if name in offload_runs:
+        record = _as_dict(offload_runs[name])
+        return record, offload_tag(offload, name, record)
+    return {}, None
+
+
 def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> AnimationRun:
     """Read one planar run of a results directory: <name>/timeseries.csv (the columns of
-    ANIMATION_COLUMNS), <name>/events.csv and its metrics.json record. Raises
+    ANIMATION_COLUMNS), <name>/events.csv and its metrics.json record
+    (``animation_record``: ``runs``, or ``offload.runs`` with its OffloadTag). Raises
     AnimationError when the series lacks planar columns or is empty."""
     path = run_dir / name / "timeseries.csv"
     frame = pd.read_csv(path, encoding="utf-8")
@@ -672,7 +824,7 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
         raise AnimationError(f"{path} is empty (a failed search writes no trajectory)")
     t = frame["t_rel_release_s"].to_numpy(dtype=float)
     offset_s = float(frame["t_s"].iloc[0]) - float(t[0])
-    record = metrics.get("runs", {}).get(name, {})
+    record, tag = animation_record(metrics, name)
     payload = record.get("payload_kg")
     return AnimationRun(
         name=name,
@@ -688,6 +840,7 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
         payload_kg=None if payload is None else float(payload),
         status=record.get("status"),
         baseline=name == metrics.get("baseline"),
+        offload=tag,
     )
 
 
@@ -896,11 +1049,16 @@ def _state(run: AnimationRun, t_s: float, values: FloatArray) -> float:
 def _phase_at(run: AnimationRun, t_s: float) -> str:
     """Readout label of the run's phase at ``t_s``: before the series starts 'on pad'
     (a run that begins with a hold-down) or 'not started'; the phase of the last row at
-    or before ``t_s``; from the series' last time on, 'inserted' (or 'ended, <status>')."""
+    or before ``t_s``; from the series' last time on, 'inserted', NEAR_ORBIT_PHASE for a
+    pad control short of orbit by a resolution effect (OffloadTag), or 'ended, <status>'."""
     if t_s < run.t_start_s:
         return "on pad" if str(run.phase[0]) == HOLD_KIND else "not started"
     if t_s >= run.t_end_s:
-        return "inserted" if run.status == "inserted" else f"ended, {run.status}"
+        if run.status == "inserted":
+            return "inserted"
+        if run.offload is not None and run.offload.resolution_effect:
+            return NEAR_ORBIT_PHASE
+        return f"ended, {run.status}"
     i = int(np.clip(np.searchsorted(run.t_s, t_s, side="right") - 1, 0, len(run.t_s) - 1))
     raw = str(run.phase[i])
     return PHASE_LABELS.get(raw, raw.lower())
@@ -943,7 +1101,11 @@ def readout_names(names: Sequence[str], width: int = READOUT_NAME_CHARS) -> list
 
 
 def _legend_label(run: AnimationRun, base: AnimationRun | None) -> str:
-    """Legend entry: name, '(baseline)', P* [kg] and its change against the baseline."""
+    """Legend entry: name, '(baseline)', P* [kg] and its change against the baseline; for
+    a run of the offload block, its name, '(<kind>)' and its OffloadTag text, never a
+    change against the baseline (what it measures is propellant at P_ref)."""
+    if run.offload is not None:
+        return f"{run.name} ({run.offload.kind}): {run.offload.legend}"
     tag = " (baseline)" if run.baseline else ""
     if run.payload_kg is None:
         return f"{run.name}{tag}: P* n/a ({run.status})"
@@ -951,6 +1113,16 @@ def _legend_label(run: AnimationRun, base: AnimationRun | None) -> str:
     if base is not None and base is not run and base.payload_kg is not None:
         text += f" ({run.payload_kg - base.payload_kg:+,.0f} kg)"
     return text
+
+
+def legend_title(runs: Sequence[AnimationRun], metrics: Mapping[str, Any]) -> str:
+    """The legend title: LEGEND_TITLE, and with a run of the offload block shown, what
+    P_ref is: the P* of the offload block's reference baseline (``offload.reference``,
+    else the experiment's baseline)."""
+    if not any(r.offload is not None for r in runs):
+        return LEGEND_TITLE
+    reference = _as_dict(metrics.get("offload")).get("reference") or metrics.get("baseline")
+    return f"{LEGEND_TITLE}; P_ref = {reference}'s P*"
 
 
 def calibration_caveat(vehicle_name: str | None) -> str:
@@ -1070,7 +1242,7 @@ class _AscentFigure:
         for ax in self.ax_small[1:]:
             ax.sharex(self.ax_small[0])
         self._title(metrics)
-        self._main_axes(next((r for r in runs if r.baseline), None))
+        self._main_axes(next((r for r in runs if r.baseline), None), legend_title(runs, metrics))
         self._close_axes()
         self._small_axes()
         self._readout_setup()
@@ -1163,9 +1335,9 @@ class _AscentFigure:
             ha="right",
         )
 
-    def _main_axes(self, base: AnimationRun | None) -> None:
+    def _main_axes(self, base: AnimationRun | None, title: str) -> None:
         """Altitude [km] against downrange [km]: faint full paths, growing trails, moving
-        markers, the P* legend."""
+        markers, the P* legend under ``title`` (``legend_title``)."""
         ax = self.ax_main
         _style_axes(ax)
         x_max = max(float(np.nanmax(m_to_km(r.downrange_m))) for r in self.runs)
@@ -1174,7 +1346,14 @@ class _AscentFigure:
         span = max(x_max - min(x_min, 0.0), 1e-3)
         ax.set_xlim(min(x_min, 0.0) - 0.01 * span, x_max + 0.03 * span)
         n = len(self.runs)
-        headroom = MAIN_HEADROOM + MAIN_HEADROOM_PER_RUN * max(0, n - 2)
+        labels = [_legend_label(run, base) for run in self.runs]
+        second = sum(label.count("\n") for label in labels)
+        lines = n + second
+        headroom = (
+            MAIN_HEADROOM
+            + MAIN_HEADROOM_PER_RUN * max(0, lines - 2)
+            + MAIN_HEADROOM_PER_SECOND_LINE * second
+        )
         top = headroom * y_max if y_max > 0 else 1.0
         ground = _readout_top(n) + READOUT_GROUND_GAP  # axes fraction of 0 km
         bottom = -top * ground / (1.0 - ground)
@@ -1202,7 +1381,7 @@ class _AscentFigure:
                 color=color,
                 linestyle=dash,
                 linewidth=ANIMATION_LINE_WIDTH,
-                label=_plot_text(_legend_label(run, base)),
+                label=_plot_text(labels[i]),
             )
             self.main_trails.append(trail)
             self.main_heads.append(self._head(ax, i, ANIMATION_MARKER_SIZE))
@@ -1214,7 +1393,7 @@ class _AscentFigure:
             edgecolor=PLOT_GRID_COLOR,
             handlelength=2.6,
             borderaxespad=0.4,
-            title="payload capacity P* (sweep-optimized)",
+            title=_plot_text(title),
             title_fontsize=FONT_SMALL_PT,
         )
 
@@ -1662,8 +1841,9 @@ def write_ascent_animation(
     push below ground, the pad's hold-down), the Earth-relative speed [m/s], felt axial
     acceleration [g0] and dynamic pressure [kPa] against time with a cursor, a per-run
     readout (time after release, phase, altitude, speed, mass), each run's payload
-    capacity P* [kg] from metrics.json in the legend and the model's caveats in a
-    footnote. Time follows ``ascent_time_map`` (launch at about real time, the close-up
+    capacity P* [kg] from metrics.json in the legend (for a run of the offload block, its
+    payload and offload from metrics.json ``offload``: ``offload_tag``) and the model's
+    caveats in a footnote. Time follows ``ascent_time_map`` (launch at about real time, the close-up
     faster, the rest fast, a short hold at the end) and the current playback speed is
     shown; each run is interpolated on the frame times and a run that ends earlier holds
     its last state. Raises AnimationError for a non-planar directory, unknown runs, a
