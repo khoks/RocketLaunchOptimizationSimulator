@@ -503,8 +503,8 @@ Test files marked "(suggested)" are a proposed home, not fixed by the plan.
 | 7 | `offload:` block, pipeline and reporting: cases, pad control, sensitivity, energy inputs; per-point sweep solves; summary block; `metrics.json` key; replay role; in-memory entry point | config.py, results_io.py, summary.py, units.py (the MJ, kWh and tonne factors), compare.py, replay.py, cli.py | tests/test_config_planar.py, tests/test_planar_pipeline.py, tests/test_results_io.py (suggested) | Schema refusals; energy arithmetic; small-grid end-to-end; without the block, no `offload` key in metrics.json, no offload section in summary.md, and the step 1 output capture unchanged apart from the additions of steps 2 and 3 | [x] | 6719f92 |
 | 8 | Experiments, pre-registered: `experiments/silo_offload_2d.yaml` and the one-case bridge on the README-loads vehicle; committed before any run | experiments/ | tests/test_config_planar.py | Resolves; committed; clean tree | [x] | c2a4cf0 |
 | 8a | Reporting fixes before the run (found in step 8): payload-sensitivity note for an empty `of`; calibration record for the README-loads fork; sweep-point offload solves record gamma*_ref and flags (KI-028); pre-registration note amended | src/launchsim/summary.py, results_io.py, plots.py, docs/phases/inputs/2026-10-03-sp1-preregistration.md | fast suite; affected tests | Pins unchanged; experiment files unchanged | [x] | d336933 |
-| 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [~] | |
-| 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [ ] | |
+| 9 | Runs and findings: run and sweep from the clean commit; docs/findings/RQ1-fuel-offload-2d.md; physics.md, README results, findings index | results/ (summaries), docs/findings | full suite | No `bug_suspect`; decomposition explains the beat over the ideal screening estimate; honesty review | [x] | fd664a5 |
+| 10 | Close SP1: exit criteria gate; demo recorded; close-out decisions put to the user (B-004 order, which phase is next); the next phase file (SP2 in the planned order) fact-checked; handoff and prompt for it; memory; status lines; cold-read check | docs/, TODO.md, CLAUDE.md, README.md, memory | full suite | Independent gate; final commit | [~] | |
 | P | Public repository and its face (user request 2026-10-02, D-SP1-14 to D-SP1-16): repo khoks/RocketLaunchOptimizationSimulator public, all rights reserved (LICENSE); logo, banner, social preview; user manual docs/manual/; slide deck site/deck/ (HTML and PDF); animation gallery site/examples/; GitHub Pages site built by site/build.py and deployed by .github/workflows/pages.yml; README banner and links; push cadence in the protocol | LICENSE, assets/, docs/manual/, site/, .github/, README.md, docs/process/SESSION_PROTOCOL.md, CLAUDE.md | fast suite; site build with no broken link; visual QA screenshots | Visual, accuracy and compliance reviews; independent gate; Pages deployment succeeds | [x] | 9024d40 (merged e0b9fd8) |
 
 ### Step T. Tracking system
@@ -1007,6 +1007,19 @@ Further points and open questions:
   criterion changed; KI-027 and KI-028 closed; fast suite 1260 passed; two review rounds).
   Sweep 2 keeps its pre-registered verdict at the gamma* cap; the recorded-gamma* reading
   is reported beside it, not adopted. Next: step 9, the runs from this clean commit.
+- 2026-10-03: the pre-registered runs ran from the clean commit b3150c1:
+  results/silo_offload_2d/20261003T112934Z (run, 14 min), 20261003T112949Z (sweeps,
+  21 min) and results/silo_offload_2d_readme/20261003T112956Z (bridge, 2 min), in
+  parallel. No run or comparison is bug_suspect; the stage-1 pad control passes (x_pad 0,
+  m_res(0) = -0.0016 kg, a resolution effect).
+- 2026-10-04: step 9 passed its gate: commit fd664a5 (docs/findings/RQ1-fuel-offload-2d.md,
+  12 figures, README results and status, findings index, physics.md SP1 research notes;
+  four analysts, a writer, three reviewers over two rounds, an independent gate). The
+  session lead added, before the commit, the literal pre-registered paired-pad verdict
+  (it fired: most of the offload is the lighter stack, read as worded) to README.md and
+  the findings index, where only the delta-v reading chosen after the run had been
+  carried. Headline: 41.26 t of stage-1 propellant, 10.04% of stage 1, 7.96% of the total.
+  Next: step 10 (close SP1).
 
 ## 12. Deviations from the plan
 

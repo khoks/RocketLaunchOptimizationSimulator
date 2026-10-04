@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 8a done at d336933; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
+Last updated: 2026-10-01 (Phases 0-2 done; SP1 in progress: step 9 done at fd664a5; see docs/phases/SP1-fuel-offload-planar.md section 7 for the next step).
 
 ## Program
 
@@ -265,7 +265,13 @@ Added 2026-10-03 in SP1 step 8:
 
 - **KI-028** [low, closed 2026-10-03 in SP1 step 8a (d336933): solve_gamma_star_rad and n_flags columns, flag lines in the sweep Checks] A sweep point's offload solve writes none of its own record to disk (gamma*_ref, flags); sweep_index.csv carries only OFFLOAD_SWEEP_COLUMNS and its gamma_star_rad column is the point's payload search, not the solve at x*. Differences between sweep points are then read with the gamma* allowance at its cap rather than from recorded values. Fix before the SP1 run (step 8a), as a pre-registration-note amendment.
 
+Added 2026-10-03 at the SP2 fact-check:
+
+- **KI-029** [low, open, owner SP2] `replay.drive_caveat` (replay.py) ends "Each of these favours the assisted runs.", which is misleading; site/build.py (`REPLAY_TEXT_FIXES`) rewrites the sentence in the gallery pages. Fix it in replay.py (and drop the site rewrite) when SP2 touches replay (SP2 section 5.8 item 5).
+
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
+
+- SP1 (2026-10-03, docs/findings/RQ1-fuel-offload-2d.md; preliminary, sweep-optimized, unthrottled, gate vehicle +14.3% calibration miss): at the pad's payload and orbit the 3 g0, 100 m cold-start silo leaves out 41.26 t of stage-1 propellant, 10.04% of stage 1 and 7.96% of the total (2.76x the ideal-screening estimate, explained by the decomposition; +/-10% arms 38.67-44.46 t; README-loads bridge 36.01 t, 9.10%). Against it: an assumed +8.1 t of stage-1 dry mass leaves 1.98 t (about 8.5 t, extrapolated, cancels it); read as pre-registered, most of the offload is the lighter stack's thrust-to-weight (paired pad 1.4 t short), while a delta-v reading chosen after the run gives the lighter stack 28-29%; max-Q 3.4% above the pad's; the stage-2 case failed its verification. Only exit speed matters (200 m at 1.5 g0 gives the same offload with 2.5 g0 felt on the track). Energy: removed RP-1 heat about 128x the push's electricity (not an efficiency claim).
 
 - Cold start after a 3 g0 / 100 m push: +69.6 m/s at stage-1 burnout vs the pad = 76.7 exit + 5.4 hold-down credit - 14.7 ignition loss (0.5 s + 2 s ramp; exact constant-g form) + 2.2 altitude term. Ideal-screening equivalent 621 kg vs the README's 685 kg: the ignition loss outweighs the pad's hold-down waste.
 - Hot starts under a prescribed-acceleration drive buy no exit speed: they trade 2.7-9.7 t of propellant (5.6-20.6 m/s at burnout vs the instant yardstick) for 0.47-0.85 GJ less drive energy and up to 40% less peak power, and only if the exhaust misses the carriage (f_imp = 1 removes the saving). A force-limited drive (Phase 3) is needed before the hot-start question can be answered.
