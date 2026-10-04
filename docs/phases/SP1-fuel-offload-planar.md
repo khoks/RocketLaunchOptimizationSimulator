@@ -887,8 +887,10 @@ close-out actions are done.
 7. Demo recorded under docs/demos/SP1/: **pass once docs/demos/SP1 is committed.** The
    files are on disk (README, the console output of run, sweep and bridge, the offload
    block, the replay page and its screenshot) and none is ignored by .gitignore.
-8. Public repository current and Pages live with the finding: **pass once pushed and
-   deployed.** The landing page, user manual, slide deck and gallery were refreshed with
+8. Public repository current and Pages live with the finding: **pass (2026-10-04):** main
+   pushed with the close commit 03fe7a7; GitHub Pages run 37228086241 deployed it
+   successfully, and the live landing page shows the finding (41.26 t) and SP7, the gallery's
+   SP1 animation and the manual's offload chapter answer (checked over HTTP). The landing page, user manual, slide deck and gallery were refreshed with
    SP1's finding in the close-out; the criterion is met when main is pushed after the
    closing commit and the Pages deployment succeeds.
 
@@ -1148,6 +1150,10 @@ Further points and open questions:
   regenerated; the findings note's headline caveats and 'What goes against the
   hypothesis' gained the literal pre-registered paired-pad verdict; the pad-control bound
   in section 8 is the run's 1.6178 kg; KI-021 to KI-023 moved to 'later'.
+- 2026-10-04: close commit 03fe7a7 pushed; Pages run 37228086241 succeeded; the live site
+  shows the finding, SP7, the SP1 animation and the offload manual chapter. Exit criterion 8
+  passes, so all eight pass. SP1 is closed; the next session starts SP2 from
+  docs/handoff/NEXT_SESSION.md.
 
 ## 12. Deviations from the plan
 
