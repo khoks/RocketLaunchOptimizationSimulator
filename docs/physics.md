@@ -6079,6 +6079,87 @@ and RQ6-aero-2d-preliminary.md. Three observations belong with the model descrip
   appears after MECO, from a higher, faster MECO state at the same mass (labelled launchsim
   probe, docs/findings/probes/RQ3-2d/probe_eqgamma/).
 
+## SP1 research notes (step 9)
+
+Details and numbers are in docs/findings/RQ1-fuel-offload-2d.md (results
+results/silo_offload_2d/20261003T112934Z and 20261003T112949Z,
+results/silo_offload_2d_readme/20261003T112956Z, git b3150c1754ee). No equation changes
+here; these are observations about the offload solver and its costs on the shipped
+budget.
+
+- **Measured cost.** The three pre-registered commands ran concurrently (started at
+  11:29:34, 11:29:49 and 11:29:56 UTC): `run` 14.1 min to its last file, `sweep` 20.9 min,
+  the bridge 2.1 min, against the serial estimates of 30-50, 39-64 and 3-6 min of the
+  pre-registration (section 10). Sweep points were written 55 to 68 s apart (the
+  sweep-point directory times), each a searched point run plus a verified stage-1 offload
+  solve. The run command writes every run directory at the end (all within its last
+  24 s), so per-solve wall times are not recoverable from its outputs. Evaluation counts
+  (`solve.n_evaluations`): stage-1 solves 37 to 44 (the headline 42), the stage-2 solve
+  63, the both-stage solve 42; pad controls 27 (stage 1), 41 (stage 2), 29 (both).
+- **Decomposition residuals.** Every cross-vehicle decomposition closes far inside
+  `closure_tol_mps` (1e-5 m/s): at most 8.4e-10 m/s over the eleven cases
+  (silo_cold_s1_dry+4t; the others at most 2.9e-11), at most 3.5e-10 m/s over the eight
+  arms, -2.05e-11 m/s on the bridge; the headline's paired attribution 1.7e-11 m/s. The
+  sweep points print only "explained" (residual below the tolerance; the values are not
+  written).
+- **Stage-1 pad control: the resolution effect reproduces.** Gate fork: `no_offload`,
+  m_res(0) = -0.0016377 kg (slope 0.0309 kg/kg, bound 1.62 kg; step 5 measured -0.0016 kg
+  at this budget); README-loads fork: m_res(0) = -0.0015877 kg (slope 0.0391 kg/kg, bound
+  1.28 kg). Both pass as resolution effects. The gate control's recorded run (a `no_offload` solve
+  records its full-load run, "Propellant saved at fixed payload") has status
+  `short_of_orbit`, by those grams; the summary's pad-control table shows only
+  `no_offload`.
+- **Stage-2 pad control: flat, then falling.** On the gate pad at P_ref with gamma*
+  re-optimised, m_res(x) for a stage-2 offload stays within +0.022 kg of zero up to
+  about 0.5 t (+0.0005 kg at 0, +0.0218 kg at 493.4 kg), crosses zero at x_pad = 513.6 kg
+  and falls to -1.05 kg at 1,000 kg (slope 0.0031 kg/kg at x_pad); it changes sign once,
+  so no `offload_nonmonotone`. Stage-2 propellant is worth about nothing at the margin
+  over the first half tonne only. The "Virtual propellant" measurement (0.95 t above the
+  payload root, fixed gamma* 22 deg, adding direction) did not predict the size of the
+  pad control: the pre-registration expected a large one. Its verification gap (+0.231
+  kg) is about 73 kg of x_pad at the recorded slope (0.0031 kg/kg) and about 0.21 t at
+  the final bracket's secant (0.0011 kg/kg, 493.4 to 533.4 kg), so the net stage-2 figure
+  carries 0.07 to 0.21 t from the control alone (estimates). The control also
+  carries the code's `search_vs_final_payload` flag (search x 513.443 kg against the final
+  513.556 kg, above the 1e-4 relative threshold of so small a number). The both-mode
+  control ends at x_pad = 0 (m_res +0.00057 kg at 0, -5.7e-5 kg at 0.025 kg).
+- **Verification gap against the distance the solve moved after its gamma* refine.** The
+  solve refines gamma*_ref once, at X1 (the first root in x), and holds it for X2 and
+  the final search ("Propellant offload at fixed payload", steps 3 to 5). The
+  verification gap P* - P_ref grows with X2 - X1 (run command, metrics.json):
+
+  | case | X2 - X1 | verification P* - P_ref |
+  |---|---|---|
+  | stage-1 cases (headline, 200 m, hot ramp, penalty rows) | 176 to 473 kg | +0.0006 to +0.0088 kg |
+  | silo_cold_both | 593 kg | -0.0003 kg |
+  | silo_cold_s1_s2pre2t | 3,137.5 kg | +0.369 kg |
+  | silo_cold_s2 | 6,693.5 kg | +15.36 kg (flag `offload_verify_mismatch`) |
+
+  The likely cause: when X2 lands far from X1, the gamma* refined for the vehicle
+  offloaded by X1 is no longer optimal at x*, so x* falls short and the verification's own
+  refine, at the offloaded vehicle's payload, finds the extra payload. Inferred, not
+  shown: the verification search's gamma* is not written to disk. Sweep 1's 200 m and
+  300 m points verify to +0.67 and +0.72 kg (the others to 0.005-0.009 kg); their X1 is
+  not on disk. A re-refine at X2 when |X2 - X1| is large is a candidate fix, not made.
+  Expected gap by "Independent verification": about +/-0.05 kg.
+- **The stage-2 solve sits at the edge of the stage-2 guidance.** In its first search in
+  x the linear-tangent shooting converged outside its direct-root window at x = 32 t and
+  28 t (`not_direct_root`; the bracket backed off; the flag's count, 3, is the number of
+  halvings, for 2 failed evaluations); the refine rejected gamma* = 22.94 deg only by the
+  direct-root rule; its first optimum (18.006 deg) sat at the lower edge of the 18 to
+  26 deg window, which was shifted once to 14 to 22 deg, where it ended at 17.49 deg.
+- **A golden-section gamma*_ref on the README-loads fork (observed, not investigated).**
+  The bridge's pad search, its stage-1 pad control and its offload solve all end at the
+  bit-identical gamma*_ref 0.3655465042624468 rad (20.94427191 deg), which is
+  b - 0.381966 (b - a) of the [16, 24] deg refine window around the 20 deg grid point. On
+  the gate fork no gamma*_ref is a golden-section point. Whether the vertex lies within
+  `gamma_xatol_deg` (0.01 deg) of it is not on disk; at the pad's curvature (36.6
+  kg/deg^2) a 0.1 deg offset would cost 0.18 kg of m_res, about 5 kg of offload at the
+  bridge's slope (0.039 kg/kg): small against the bridge reading.
+- **Display convention.** In the summaries' Checks lines, "insertion e 0" and "closure
+  residual 0 m/s" mean below `DISPLAY_ZERO_ABS` (summary._fmt); metrics.json keeps the
+  raw values (for example 5.1e-10 for silo_cold_s1's insertion e).
+
 ## Test-to-equation map
 
 Every expected value in a test is computed there from constants and closed forms,
