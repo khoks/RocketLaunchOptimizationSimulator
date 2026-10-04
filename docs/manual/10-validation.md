@@ -24,7 +24,8 @@ the required tests, separates validation from calibration, and shows how to run 
 | Convergence: tightening tolerances 10x changes payload and margins by < 0.1% | `tests/test_convergence.py`, `tests/test_convergence_2d.py` | passes |
 
 The "passes" column was checked for this manual by running those files, slow tests
-included, at commit `e4f36ee`.
+included: first at commit `e4f36ee`, and again at `cfd9059` (SP1, 2026-10-04), where the
+twelve files ran 253 tests and all passed.
 
 The orbit test uses an ellipse on purpose: in polar coordinates a circular orbit is an
 equilibrium and would pass even with a wrong equation of motion.
@@ -38,9 +39,14 @@ solution (`test_gravity_turn.py`), linear-tangent steering (`test_ltg.py`), the
 ignition-loss forms (`test_ignition_loss.py`), a toy payload search (`test_payload_search.py`),
 max-Q from a constant-thrust rise (`test_max_q.py`), the planar model reducing exactly to the
 1-D one (`test_planar_reductions.py`), the failed-ignition coast (`test_failed_ignition.py`),
-the rocket-equation closure (`test_closure.py`), the atmosphere against the `ambiance`
-reference (`test_atmosphere.py`) and the offload solver's toy cases (`test_offload.py`).
-[docs/physics.md](../physics.md) ends with a test-to-equation map.
+the rocket-equation closure and the cross-vehicle decomposition (`test_closure.py`), the
+atmosphere against the `ambiance` reference (`test_atmosphere.py`), the offload solver's toy
+cases (`test_offload.py`) and the altitude event of a ramp start by height, against the
+constant-g coast closed form (`test_height_event.py`). The offload block's pipeline (the
+schema, the cases, the pad controls, the energy comparison against hand numbers, the sweep
+columns, the summary section, the CLI flags and the replay role among them) is covered by
+`test_offload_pipeline.py`. [docs/physics.md](../physics.md) ends with a test-to-equation
+map.
 
 ## Records and goldens (regression, not validation)
 

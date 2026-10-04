@@ -6,8 +6,8 @@
 `uv run python -m launchsim <command> ...` (or `uv run launchsim <command> ...`).
 
 ```text
-launchsim run     <experiment.yaml> [--results-root DIR] [--variant NAME] [--no-plots] [--no-sensitivity]
-launchsim sweep   <experiment.yaml> [--results-root DIR] [--no-plots]
+launchsim run     <experiment.yaml> [--results-root DIR] [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]
+launchsim sweep   <experiment.yaml> [--results-root DIR] [--no-plots] [--no-offload]
 launchsim animate <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--fps N] [--seconds S] [--width PX]
 launchsim replay  <run_dir> [--runs NAME [NAME ...]] [--out PATH]
 launchsim --version
@@ -18,22 +18,26 @@ launchsim --version
 ## `run`
 
 Flies the baseline and every variant of an experiment, the sensitivity cases of the runs
-that flew, the bounds whose variants flew and (for a calibration file) the cases, then
-writes one results directory.
+that flew, the bounds whose variants flew, (for a calibration file) the cases and (with an
+`offload:` block) the offload cases, pad controls and arms, then writes one results
+directory.
 
 | Argument | Default | Meaning |
 |---|---|---|
 | `experiment` | required | Path to an experiment YAML file |
 | `--results-root DIR` | `<repo root>/results` | Root of the results tree. The repo root is the nearest folder above the experiment file with a `pyproject.toml`; without one, `./results` |
-| `--variant NAME` | all variants | Fly only this variant, plus the baseline. Sensitivity cases run only for these two runs, a bound runs only if it names this variant, and calibration cases are skipped. An unknown name is an error that lists the variants |
+| `--variant NAME` | all variants | Fly only this variant, plus the baseline. Sensitivity cases run only for these two runs, a bound runs only if it names this variant, calibration cases are skipped, and only the offload cases built on this variant run (with the pad controls of their modes and their arms; the others are listed as not run). An unknown name is an error that lists the variants |
 | `--no-plots` | plots on | Skip the PNG plots |
-| `--no-sensitivity` | sensitivity on | Skip the sensitivity cases |
+| `--no-sensitivity` | sensitivity on | Skip the sensitivity cases (the +/- parameter re-runs), the offload block's sensitivity arms included |
+| `--no-offload` | offload on | Skip the experiment's offload block (2-D: the propellant saved at fixed payload); the summary says it was skipped. No effect on a file without the block |
 
 Output: a new directory `<results root>/<experiment>/<UTC timestamp>/`
 ([8. Outputs](08-outputs.md#a-run-directory)). The console prints its path and one line per
 run: the status and any flags; a 2-D run adds P\* [kg], gamma\* [deg] and max-Q [Pa]. A
-calibration run also prints whether its inputs were committed, and a run with sensitivity
-cases prints how many ran.
+calibration run also prints whether its inputs were committed, a run with an offload block
+prints the reference payload and one line per offload case and pad control
+([5b](05b-offload.md#what-the-summary-reports)), and a run with sensitivity cases prints how
+many ran.
 
 ```text
 results: <repo>\results\silo_screening_2d\<timestamp>
@@ -47,7 +51,9 @@ numbers match the shipped record. Caveats: [2. Quick start](02-quick-start.md#st
 How long: the whole 1-D file, with its sensitivity cases, takes seconds. A searched 2-D run
 takes about 7-10 s for the pad and 25-28 s for the lag variants (README), and each
 comparison adds matched-payload evaluations, so a full 2-D file with its sensitivity cases
-takes many minutes.
+takes many minutes. An offload block adds nested payload searches per case: the
+pre-registered `run experiments/silo_offload_2d.yaml` took 14.1 min on the author's machine
+([docs/physics.md](../physics.md), "SP1 research notes").
 
 ## `sweep`
 
@@ -58,8 +64,11 @@ Flies the baseline once and every point of every sweep the file declares.
 | `experiment` | required | Path to an experiment YAML file |
 | `--results-root DIR` | `<repo root>/results` | As for `run` |
 | `--no-plots` | plots on | Skip the PNG plots (a sweep writes plots for every point, so this saves time and disk) |
+| `--no-offload` | offload on | Skip the offload cases a sweep names (no offload columns in `sweep_index.csv`) |
 
 `sweep` has no `--variant` and no `--no-sensitivity`: sweep points never run sensitivity
+cases. A sweep that names offload cases (its `offload:` key) solves them at every point
+([5b](05b-offload.md#sweeps-that-name-offload-cases)); it never runs the offload block's own
 cases. Output: a new directory with `baseline/`, `sweep_<n>/run_<nnnn>/` per point,
 `sweep_<n>/sweep_index.csv` per sweep and a top-level `summary.md`
 ([8. Outputs](08-outputs.md#a-sweep-directory)). The console prints one line per sweep, for
@@ -75,7 +84,7 @@ never writes into it.
 | Argument | Default | Meaning |
 |---|---|---|
 | `run_dir` | required | One results directory of a `planar_2d` `run`: `results/<experiment>/<timestamp>` |
-| `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | Runs to show, at most four. Bound re-runs can be named too |
+| `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | Runs to show, at most four. Bound re-runs and offload runs can be named too. An offload run is labelled from metrics.json's offload record, as `replay` reads it ([5b](05b-offload.md#replaying-an-offloaded-run)); a bound re-run, its paired baseline or a calibration case still reads "P\* n/a (None)", so use `replay` for those |
 | `--out PATH` | `./<experiment>_<timestamp>_animation.mp4`, or `.gif` when ffmpeg is missing | Output file. The extension picks the format: `.mp4` (ffmpeg) or `.gif` (Pillow) |
 | `--fps N` | 30 | Frames per second. A `.gif` stores frame delays in whole 10 ms steps, so it plays at 1000 / delay fps (12 fps plays at 12.5) and at most 50 fps; the command prints the real rate |
 | `--seconds S` | 20.0 | Length of the video [s] |
@@ -104,7 +113,7 @@ is re-simulated.
 | Argument | Default | Meaning |
 |---|---|---|
 | `run_dir` | required | One results directory of a `planar_2d` `run` |
-| `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | At most four. Experiment runs, bound re-runs (compared with their paired baseline) and calibration cases (compared with nothing) can be named |
+| `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | At most four. Experiment runs, bound re-runs (compared with their paired baseline), calibration cases (compared with nothing) and offload runs (labelled "(offload)": a case's recorded run, a paired pad or a pad control; [5b](05b-offload.md#replaying-an-offloaded-run)) can be named |
 | `--out PATH` | `./<experiment>_<timestamp>_replay.html` | Output `.html` file |
 
 The output may not lie inside the run's results tree or inside any folder named `results`;
@@ -136,8 +145,8 @@ These are the project's own command list, kept in [CLAUDE.md](../../CLAUDE.md):
 | Fast tests | `uv run pytest -q -m "not slow"` |
 | All tests | `uv run pytest -q` |
 | Lint and format | `uv run ruff check .` then `uv run ruff format .` |
-| One run | `uv run python -m launchsim run experiments/<name>.yaml` |
-| Sweep | `uv run python -m launchsim sweep experiments/<name>.yaml` |
+| One run | `uv run python -m launchsim run experiments/<name>.yaml [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]` |
+| Sweep | `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]` |
 | Animate a 2-D run | `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]` |
 | Replay page | `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]` |
 

@@ -4,9 +4,9 @@
 
 An experiment file is one YAML file under `experiments/`. It names a vehicle, defines a pad
 baseline and the variants compared with it, and optionally sweeps, sensitivity cases,
-bounds and (for calibration) cases. Everything is validated, and every run's settings are
-built, before anything is integrated or written: a file that is refused leaves no results
-directory and prints one `error:` line.
+bounds, (for calibration) cases and an offload block. Everything is validated, and every
+run's settings are built, before anything is integrated or written: a file that is refused
+leaves no results directory and prints one `error:` line.
 
 The examples come from the shipped files and say which one. Snippets marked "written for
 this manual" are not in a shipped file; each was checked against the config loader.
@@ -30,6 +30,7 @@ this manual" are not in a shipped file; each was checked against the config load
 | `sensitivity` | no | Plus/minus fractions on dotted paths, run by `launchsim run` |
 | `bounds` | no | Named re-runs with overrides, each against a re-run baseline (2-D) |
 | `cases` | no | Independent runs, never compared; only with `label: calibration` |
+| `offload` | no | Propellant offload at fixed payload (2-D, payload search): cases solved or imposed on the variants, pad controls, sensitivity arms, energy inputs ([5b](05b-offload.md)) |
 
 Unknown keys are errors everywhere, so a typo is caught, not ignored.
 
@@ -54,7 +55,7 @@ paths are used as given.
 - `vertical_1d` (the default): straight up, vacuum thrust from sea level, no air, no Earth
   rotation, to stage-1 burnout. Fast. Used by `silo_screening_1d.yaml`.
 - `planar_2d`: a planar ascent over a spherical, rotating Earth with the ICAO atmosphere,
-  drag, back-pressure, guidance and a payload search, to orbit. Used by the other four
+  drag, back-pressure, guidance and a payload search, to orbit. Used by the other six
   shipped files. The vehicle needs exactly two stages and an `aero` block.
 
 ## Shared blocks (experiment level)
@@ -66,7 +67,7 @@ form, when the experiment declares none), and variants, sweeps, sensitivity para
 bounds may not touch them. The one exception is a paired sweep of a `guidance_study`, which
 may vary `guidance.*`.
 
-The four shipped 2-D files declare identical shared blocks (a test pins that). From
+The six shipped 2-D files declare identical shared blocks (a test pins that). From
 `experiments/silo_screening_2d.yaml`:
 
 ```yaml
@@ -287,6 +288,17 @@ sweeps:
 
 Each point's paired pad is written beside it as `run_<nnnn>__pad`.
 
+**Offload cases at every point** (`offload: [case names]`, 2-D only). A sweep of a variant
+may name cases of the experiment's `offload` block (stage-1 solves and fixed cases only);
+each is then solved at every point, and its results become `<case>.<column>` columns of
+`sweep_index.csv`. From `experiments/silo_offload_2d.yaml`:
+
+```yaml
+  - {of: silo_cold, axes: {assist.stroke_m: [25, 50, 100, 200, 300]}, offload: [silo_cold_s1]}
+```
+
+The rules and outputs are in [5b](05b-offload.md#sweeps-that-name-offload-cases).
+
 ## `sensitivity`
 
 Each listed parameter is run at plus and minus the given fraction (between 0 and 1) for
@@ -306,6 +318,17 @@ That is 2 runs x 6 parameters x 2 signs = 24 cases. A case is named
 vehicle parameter, also with the baseline re-run under the same perturbation (the fair
 comparison: same vehicle on both sides). `launchsim run --no-sensitivity` skips them; with
 `--variant` only the cases of the runs that ran are flown.
+
+The same `params` also drive the offload block's sensitivity arms (its `sensitivity_of`;
+[5b](05b-offload.md#the-runs-it-writes)). `of` may be an empty list when only those arms are
+wanted, as in `experiments/silo_offload_2d.yaml`:
+
+```yaml
+sensitivity:
+  of: []
+  params: {vehicle.stages.stage1.dry_mass_t: 0.10, vehicle.stages.stage1.engine.isp_vac_s: 0.10,
+           vehicle.aero.cd_scale: 0.10, assist.drive_efficiency: 0.10}
+```
 
 ## `bounds` (2-D)
 
@@ -365,7 +388,7 @@ More are listed in [11. Troubleshooting](11-troubleshooting.md#configuration-err
 - Never change baseline settings without re-running every variant compared against it.
 - Never tune parameters to make an assist look better; CLAUDE.md treats that as a rule, and
   so should a reader of your results.
-- Run with `--no-sensitivity` while you iterate; run the sensitivity cases before you quote
-  a number.
+- Run with `--no-sensitivity` (and, with an offload block, `--no-offload`) while you
+  iterate; run the sensitivity cases and the offload block before you quote a number.
 
 Next: [5. Assist and ignition](05-assist-and-ignition.md)

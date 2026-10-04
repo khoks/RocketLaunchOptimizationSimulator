@@ -1,0 +1,6 @@
+results: results/silo_offload_2d/20261003T112949Z
+  sweep_1: silo_cold x 5 points over assist.stroke_m: inserted
+  sweep_2: silo_cold_200m x 4 points over assist.stroke_m: inserted
+  sweep_3: silo_cold x 5 points over ignition.stage1.at_depth_m: inserted
+  sweep_4: silo_cold x 4 points over ignition.stage1.at_height_m, ignition.stage1.height_method: inserted
+  sweep_5: silo_cold x 2 points over ignition.stage1.at_height_m, ignition.stage1.height_method: inserted

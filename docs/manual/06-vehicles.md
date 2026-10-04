@@ -1,6 +1,6 @@
 # 6. Vehicle files
 
-[Manual contents](README.md) · Previous: [5. Assist and ignition](05-assist-and-ignition.md) · Next: [7. Commands](07-commands.md)
+[Manual contents](README.md) · Previous: [5b. Propellant offload at fixed payload](05b-offload.md) · Next: [7. Commands](07-commands.md)
 
 A vehicle file under `configs/vehicles/` describes one rocket: its stages and engines, the
 fairing and payload, the screening Isp values and, for the 2-D model, its aerodynamics.
@@ -103,8 +103,8 @@ Falcon 9 data. Drag acts along the velocity relative to the co-rotating air.
 | File | Used by | Masses (stage 1 dry / propellant, stage 2 dry / propellant, fairing) |
 |---|---|---|
 | `generic_f9_class.yaml` | `silo_screening_1d.yaml` | README masses: 25.6 / 395.7, 3.9 / 92.67, 1.9 t; no aero block |
-| `generic_f9_class_2d.yaml` | Every 2-D experiment except the bridge: the **gate vehicle**, mass set C | Full Thrust table: 22.2 / 410.9, 4.0 / 107.5, 1.7 t |
-| `generic_f9_class_2d_readme_loads.yaml` | `silo_bridge_2d_readme.yaml`, calibration case `readme_loads`: mass set A | README masses with the 2-D additions |
+| `generic_f9_class_2d.yaml` | Every 2-D experiment except the two README-loads bridges: the **gate vehicle**, mass set C | Full Thrust table: 22.2 / 410.9, 4.0 / 107.5, 1.7 t |
+| `generic_f9_class_2d_readme_loads.yaml` | `silo_bridge_2d_readme.yaml`, `silo_offload_2d_readme.yaml`, calibration case `readme_loads`: mass set A | README masses with the 2-D additions |
 | `generic_f9_class_2d_recorded_scope.yaml` | Calibration case `recorded_scope`: mass set B | 25.6 / 410.9, 4.0 / 107.5, 1.9 t |
 
 All four share the engines (nine 914.1 kN Merlin-class engines at 311 s vacuum Isp with a
@@ -117,8 +117,10 @@ differences from the 1-D file.
 [CAL-f9-leo-2d](../findings/CAL-f9-leo-2d.md)): to 200 km circular at 28.5 degrees, due
 east, expendable, against SpaceX's published 22,800 kg, the gate vehicle reaches 26,054.4 kg
 (+14.3%, outside the +/-10% band: a miss high, accepted by the user and documented). Set A
-reaches 24,700.0 kg (+8.33%), set B 25,416.3 kg (+11.48%). Every 2-D finding is on the gate
-vehicle and inherits the miss.
+reaches 24,700.0 kg (+8.33%), set B 25,416.3 kg (+11.48%). Every 2-D finding rests on the
+gate vehicle and inherits the miss; the fuel-offload note
+([RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md)) repeats its headline case on
+set A as a robustness row (9.10% of stage 1 there, against 10.04% on the gate vehicle).
 
 ## Never edit a calibrated file; fork it
 

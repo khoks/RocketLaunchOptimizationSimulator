@@ -1,6 +1,6 @@
 # 5. Assist and ignition
 
-[Manual contents](README.md) · Previous: [4. Experiment files](04-experiments.md) · Next: [6. Vehicle files](06-vehicles.md)
+[Manual contents](README.md) · Previous: [4. Experiment files](04-experiments.md) · Next: [5b. Propellant offload at fixed payload](05b-offload.md)
 
 Two blocks of a run decide what makes a silo run different from the pad: `assist` (the
 ground push) and `ignition` (when and how each stage's engines start). This chapter lists
@@ -196,18 +196,20 @@ In 2-D the apex is 300.65 m at 7.843 s and the stack is back at the mouth at 15.
 76.60 m/s, 0.4 m from the axis (README; [RQ3-2d](../findings/RQ3-silo-screening-2d.md)).
 The braked carriage parks 60 m above the mouth, in the fall-back path.
 
-### Ramp start by depth, speed or height (SP1 step 3)
+### Ramp start by depth, speed or height
 
 The stage-1 ramp start can also be stated by where it happens on the push or above the
-mouth. Each form is converted to a time before the run, so the rest of the simulator sees a
-`(t_ign_s, reference)` pair.
+mouth (SP1 steps 3 and 4). A depth, a speed or a closed-form height is converted to a time
+before the run, so the rest of the simulator sees a `(t_ign_s, reference)` pair. A height
+by event is not converted: stage 1 lights when the flown coast after release crosses that
+height.
 
 | Setting | Converts to | Closed form | Refused when |
 |---|---|---|---|
 | `at_depth_m: d` (d >= 0) | time from push start | t = sqrt(2 (L - d) / a) | d > L (deeper than the track) |
 | `at_speed_mps: v` (v >= 0) | time from push start | t = v / a | v above the exit speed (the push never reaches it) |
 | `at_height_m: h` (h > 0), `height_method: closed_form` | time after release | the smaller root of v_e t - g_eff t^2 / 2 = h (a drag-free coast at constant g_eff) | h at or above the drag-free apex v_e^2 / (2 g_eff) |
-| `at_height_m: h`, `height_method: event` | an altitude event in flight | | **Coming in SP1** (step 4). Refused today: `ignition height_method: event (an altitude event in flight) arrives in SP1 step 4; use height_method: closed_form until then` |
+| `at_height_m: h` (h > 0), `height_method: event` | nothing: an altitude event in flight, at the mouth's altitude + h on the coast after release | none (the crossing is found in flight) | h at or above the drag-free apex v_e^2 / (2 g_eff), as for the closed form; in flight, a coast that peaks below the height (below) |
 
 Rules:
 
@@ -222,13 +224,31 @@ Rules:
   always fall inside the push, so they never start a hold; full thrust at the push start
   still needs `t_ign_s < 0` with `reference: push_start`.
 - The closed-form height is exact only for a drag-free coast at constant gravity. The flown
-  coast has drag, 1/r^2 gravity and rotation, so it reaches a slightly different height;
-  both the requested and the achieved height are reported.
-- A request only the conversion can refuse (a speed above the exit speed, a height at or
-  above the apex) is caught before any results directory is made, as one `error:` line.
-- With `fails: true` the conversion still runs, and the request is flagged as ignored.
+  coast has drag, 1/r^2 gravity and rotation, so it reaches a slightly different height
+  (on the gate vehicle the closed form lights 3.8 mm below 40 m and 0.11 m below 200 m;
+  [docs/physics.md](../physics.md), "Silo model"); both the requested and the achieved
+  height are reported.
+- The event height is exact to the event tolerance: stage 1 lights at the crossing, and
+  the thrust schedule, its ramp and the kick deadline count from there as for a time-lit
+  stage. events.csv records an `ignition_height` event right before the `ignition` it
+  triggers. Since nothing is converted, `ramp_start_requested_t_s` is empty for it.
+- **The `no_ignition` band (event only).** The preflight refuses a height at or above the
+  drag-free apex v_e^2 / (2 g_eff), but on `planar_2d` drag makes the flown coast peak
+  lower. For the shipped 3 g, 100 m silo on the gate vehicle the flown apex is about
+  300.65 m against the drag-free 301.06 m, and it moves with payload and C_D (300.61 to
+  300.69 m over the values measured; [docs/physics.md](../physics.md), "Silo model"). A
+  height inside that band of about 0.4 m resolves but never lights: a fixed-guidance run
+  ends `guidance_failed` (kind `no_ignition`), and a searched run ends `search_failed`
+  (kind `grid`, naming no_ignition). Such runs are reported, never hidden. Keep event
+  heights well below the apex; the shipped sweep stops at 200 m.
+- A request only the conversion or the apex check can refuse (a speed above the exit
+  speed, a height at or above the drag-free apex) is caught before any results directory
+  is made, as one `error:` line.
+- With `fails: true` the conversion (or the apex check) still runs, and the request is
+  flagged as ignored; a failed stage stated by a height event is a failed-ignition run with
+  no altitude event.
 
-Written for this manual, three ramp starts on the shipped silo (each is a variant over the
+Written for this manual, four ramp starts on the shipped silo (each is a variant over the
 pad baseline, so the full assist dict is given through the shipped anchor):
 
 ```yaml
@@ -236,22 +256,31 @@ variants:
   silo_ramp_at_50m_depth:   {assist: *silo, ignition: {stage1: {at_depth_m: 50}}}
   silo_ramp_at_30mps:       {assist: *silo, ignition: {stage1: {at_speed_mps: 30}}}
   silo_ramp_40m_above_exit: {assist: *silo, ignition: {stage1: {at_height_m: 40, height_method: closed_form}}}
+  silo_ramp_40m_by_event:   {assist: *silo, ignition: {stage1: {at_height_m: 40, height_method: event}}}
+```
+
+To sweep the event height, give its two keys as two axes, so the rest of the ignition dict
+is kept. From `experiments/silo_offload_2d.yaml` (its fourth sweep, which also solves an
+offload case at every point; [5b](05b-offload.md#sweeps-that-name-offload-cases)):
+
+```yaml
+  - {of: silo_cold, axes: {ignition.stage1.at_height_m: [10, 40, 100, 200],
+                           ignition.stage1.height_method: [event]}, offload: [silo_cold_s1]}
 ```
 
 A 2-D run reports the achieved ramp start from the stage-1 ignition event
 (`ramp_start_t_rel_release_s`, `ramp_start_alt_m`, `ramp_start_depth_m` or
 `ramp_start_height_m`, `ramp_start_speed_mps`, `ramp_start_phase`) and, for a ramp start
-stated by depth, speed or height, the request (`ramp_start_trigger`,
-`ramp_start_requested_t_s` and the requested value). The summary shows ramp-start rows only
-when some run uses one of these forms, and the run gets an assumption line that names the
-request and its closed form.
+stated by depth, speed or height, the request (`ramp_start_trigger`: `depth`, `speed`,
+`height_closed_form` or `height_event`; `ramp_start_requested_t_s`, empty for
+`height_event`; and the requested value). The summary shows ramp-start rows only when some
+run uses one of these forms, and the run gets an assumption line that names the request
+and its closed form (for the event, that nothing is converted).
 
-## Coming in SP1: the `offload:` block
+## The `offload:` block
 
-The headline question of SP1 (how much propellant the push replaces at a fixed payload)
-will be set up with an `offload:` block in the experiment file (SP1 step 7) and run from a
-pre-registered `experiments/silo_offload_2d.yaml` (step 8). Neither exists in the code this
-manual was checked against; the solver core they will use does
-([3. Concepts](03-concepts.md#figures-of-merit)).
+The SP1 question, how much propellant the push replaces at a fixed payload, is set up with
+an `offload:` block in the experiment file. Its keys, the runs it writes and the switches
+that skip it are in [5b. Propellant offload at fixed payload](05b-offload.md).
 
-Next: [6. Vehicle files](06-vehicles.md)
+Next: [5b. Propellant offload at fixed payload](05b-offload.md)

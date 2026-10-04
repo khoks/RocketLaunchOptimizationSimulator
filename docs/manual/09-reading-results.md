@@ -4,8 +4,9 @@
 
 A summary is full of numbers. This chapter says which to look at first, what the checks
 mean, and which caveats travel with every result. The worked numbers come from the shipped
-2-D record `results/silo_screening_2d/20260930T175743Z` and the findings notes; all of them
-are preliminary.
+2-D records `results/silo_screening_2d/20260930T175743Z` and
+`results/silo_offload_2d/20261003T112934Z` and from the findings notes; all of them are
+preliminary.
 
 ## Read in this order
 
@@ -13,7 +14,9 @@ are preliminary.
    comparison is `bug_suspect`, which runs had no screening check, which verdicts change
    within gamma\* +/- h, and which beats of the screening estimate no loss breakdown
    explains. In the shipped 2-D record the first of them reads "No run and no comparison is
-   bug_suspect." A `bug_suspect` blocks findings until it is investigated.
+   bug_suspect." A `bug_suspect` blocks findings until it is investigated. With an offload
+   block, the "Offload checks" lines above them give the stage-1 pad control's verdict and
+   each case's decomposition status ([below](#reading-an-offload-result)).
 2. **The Flags section.** Anything the run wants you to know (a tensile interface, a
    braking drive, an ignored setting, a search flag). "(none)" is the normal case.
 3. **The status rows** of the variant table: run status, search status, run checks,
@@ -23,6 +26,8 @@ are preliminary.
 5. **The losses, loads, energy and power**, and the sensitivity table before quoting any
    number.
 6. **The Assumptions section.** Each line names the runs it applies to.
+7. **With an offload block, the section "Propellant saved at fixed payload"**: its caveats
+   first, then each case as described in [Reading an offload result](#reading-an-offload-result).
 
 ## Run statuses
 
@@ -36,11 +41,13 @@ are preliminary.
 | `no_liftoff` | both | Thrust never passed weight on the pad |
 | `drive_limit` | both | The prescribed push would need a negative drive force; the run stopped on the track ([5](05-assist-and-ignition.md#what-the-drive-does-and-what-it-does-not-model)) |
 | `search_failed` | 2-D | The payload search failed; no recorded run (see `search_failure_kind`) |
-| `guidance_failed` | 2-D | A fixed-guidance run whose guidance failed (for example a kick timeout) |
+| `guidance_failed` | 2-D | A fixed-guidance run whose guidance failed (for example a kick timeout, or `no_ignition`: a ramp start by event height that the coast never reaches) |
 | `bug_suspect` | 2-D | A per-run check failed (closure, loss identity or insertion eccentricity). The trajectory's own status is in `trace_status` |
 
 The search status is `ok`, `no_orbit`, `search_failed`, `none (fixed guidance)` or a skip
-reason such as `skipped (end: impact (ignition stage1 fails))`.
+reason such as `skipped (end: impact (ignition stage1 fails))`. An offload solve has its own
+statuses (`ok`, `no_offload`, `search_failed`; [5b](05b-offload.md#what-it-computes)), and
+an offload pass or arm whose pad has no P\* is `reference_failed`.
 
 ## The loss identity
 
@@ -144,14 +151,215 @@ compares one vehicle with itself. In the shipped record silo_cold's gain stays b
 drive-efficiency cases leave P\* unchanged by construction (they move only the yardstick,
 and only energy and power, respectively).
 
+## Reading an offload result
+
+An offload row ([5b](05b-offload.md)) compares **different vehicles carrying the same
+payload to the same orbit**: the full-load pad, and the assisted vehicle with less
+propellant in its tanks. It is a different kind of comparison from the payload rows above,
+and it has checks of its own. Read a case in this order: the Checks section's "Offload
+checks" lines, the pad controls, the case's status, verification and flags rows, the quoted
+offload with its basis, then the decomposition, the paired pad, the loads beside it, and
+the energy rows last.
+
+### Quoted and gross figures
+
+Each case quotes one offload, and the cases table prints it first with its basis:
+
+- **A stage-1 solve** quotes its x\*, gross: "x\* at P_ref, gross: stage 1, the headline".
+- **A `stage2` or `both` solve** quotes x\* net of the pad control's x_pad, labelled "a
+  property of the vehicle model, not of the assist". The gross rows beside it are not a
+  saving of the assist. Stage 1 is the only headline.
+- **A fixed case** quotes its imposed offload; its figure is its own P\* against P_ref
+  (`payload_delta_kg`).
+- **"not quoted"** means the case's own solve did not end `ok` or `no_offload`, or (for
+  stage 2 and both) the pad control has no offload to net it against.
+
+### Verification and flags
+
+An `ok` solve is re-checked by an independent payload search of the offloaded vehicle,
+which must return P_ref within the printed tolerance (`checks.search_final_flag_rel` x
+P_ref). When it does not, the case carries `offload_verify_mismatch` and its x\* is a lower
+bound (the solve left gamma\* short of its best). In an offload flag, the inner search's
+words "payload" and "P" name the offload x, not a payload; such flags carry the marker
+`(P = offload x)`. In the shipped run the stage-1-only cases verified within 0.009 kg of
+P_ref against a 2.6 kg tolerance (the case with 2 t taken from stage 2 first within
+0.37 kg), and the stage-2 case failed (+15.36 kg), so its gross removal is a flagged lower
+bound ([RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md), "Stage 2 and both
+stages").
+
+### The cross-vehicle decomposition
+
+The matched-payload attribution above compares two runs on one vehicle, where the ideal
+rocket-equation delta-v of the vehicle at P_ref, D_id, is the same on both sides and
+cancels. An offloaded vehicle and the full-load pad differ in D_id by the whole delta-v
+the removed propellant was worth, so the attribution would leave that as its residual and
+call the pair `bug_suspect`. The decomposition keeps each vehicle's own D_id instead
+([docs/physics.md](../physics.md), "Cross-vehicle decomposition"):
+
+    D_id(pad) - D_id(case) = release speed + final speed + gravity + drag + steering
+                             + back-pressure + pre-flight + fairing + margin   (+ residual)
+
+Each term is in m/s, positive when it lets the case fly P_ref on less ideal delta-v: the
+release speed is the head start, the loss terms are the pad's loss minus the case's, the
+pre-flight term is the propellant the pad burns on its hold-down, and the margin term is
+about 0 for two runs at their boundaries. The summary prints each term in m/s and, in
+brackets, in kg of the offload (a proportional split). As with the attribution, **only the
+sum of gravity and steering is read as physics**: the two trade against each other as
+gamma\* moves.
+
+The residual is exactly the difference of the two runs' own closure and loss-identity
+residuals. It must stay below `checks.closure_tol_mps` (1e-5 m/s as shipped), together with
+both runs' own residuals and a check that each trace starts at its vehicle's liftoff mass;
+the status is then `explained`, else `bug_suspect`, which blocks findings. A pass certifies
+the bookkeeping (the masses, each vehicle's D_id and the loss integrals booked
+consistently), not the physics of either run.
+
+The shipped headline case, silo_cold_s1 against the pad, both at P_ref (run summary.md):
+
+| Term | m/s | kg of the 41,262.9 kg | share |
+|---|---|---|---|
+| release speed | +76.707 | +13,869.9 | 33.6% |
+| gravity + steering | +124.710 | +22,549.5 | 54.6% |
+| pre-flight (the pad's 2.7 t burned on the hold-down) | +14.408 | +2,605.2 | 6.3% |
+| back-pressure | +13.280 | +2,401.2 | 5.8% |
+| drag | -0.877 | -158.5 | -0.4% |
+| fairing, final speed, margin | about 0 | about -4 | 0.0% |
+| D_id(pad) - D_id(case) | 228.204 | 41,262.9 | 100% |
+
+Residual 4.5e-12 m/s: `explained`. The pre-flight term is a baseline convention (the pad is
+clamped from ignition at -2 s), not the push.
+
+### The screening rule for offload rows
+
+CLAUDE.md's rule (a result that beats the README's ideal screening estimate must be
+explained by its loss breakdown, or it is treated as a bug) applies to offload rows in this
+form:
+
+- **The yardstick** is the ideal-screening offload: the stage-1 propellant the case's
+  release speed is worth at fixed losses, on the pad's vehicle at P_ref, with the
+  screening's loss-averaged stage-1 Isp. The table prints it, the ratio "stage-1 offload /
+  screening offload" and whether the offload beats it.
+- **It applies to a stage-1 offload with a head start only.** The ratio and the beat flag
+  are `n/a` for a case that also removes stage-2 propellant (a stage-2 kilogram frees about
+  twice the ideal delta-v of a stage-1 one) and for a run released from rest. For a fixed
+  case the beat flag only compares the imposed x with the yardstick.
+- **An offload beyond the yardstick is explained when, and only when, its decomposition
+  closes.** One that does not is `bug_suspect` and blocks the finding. Offload rows never
+  enter the "Unexplained beats" list; their explanation is the decomposition.
+
+The shipped headline removes 41.26 t against a 14.98 t yardstick (ratio 2.755), and the
+decomposition above explains it: more than half of it is lower gravity and steering loss
+(the lighter stack reaches MECO 12.8 s sooner), a third the release speed, and 6% the pad's
+hold-down convention.
+
+### The pad control
+
+The pad control runs the same solve on the pad itself, at its own P\*.
+
+- **For stage 1 it is a consistency test of the solver.** The pad should find nothing to
+  remove. An `ok` control passes when 0 <= x_pad <= bound, with bound =
+  `search.final_payload_xtol_kg` / abs(dm_res/dx), the residual slope taken from the
+  control's own logged evaluations.
+- **`no_offload` by grams is a resolution effect, not a failure.** The full-load pad's P\*
+  is found on the feasible side to within 0.05 kg of residual propellant, so flying exactly
+  P_ref it can miss by grams. A `no_offload` control with -`final_payload_xtol_kg` <
+  m_res(0) < 0 passes and is printed as "a resolution effect: the full-load pad misses
+  P_ref by grams of residual propellant at the feasible-side convention's resolution,
+  within final_payload_xtol_kg; not a failure". The shipped control reads x_pad = 0,
+  m_res(0) = -0.0016 kg, bound 1.62 kg: consistency test pass.
+- **A failing stage-1 control blocks findings.** The Checks section then gets its own line:
+  "Findings are blocked until these are investigated (a stage-1 pad control failed its
+  consistency test of the solver, ...)".
+- **For stage 2 and both there is no test.** The control is the amount the pad itself can
+  leave out, and those cases are quoted net of it. In the shipped run the stage-2 control
+  removed 513.6 kg and carries a flag of its own (`search_vs_final_payload`), which the
+  note reads as an uncertainty of about 0.07 to 0.21 t in the net stage-2 figure.
+
+### The paired pad
+
+The cross-vehicle gravity term mixes two effects: the head start, and a lighter stack whose
+higher thrust-to-weight spends less time against gravity. A case with `paired_pad: true`
+also flies the pad with the same propellant change and no push (`<case>__<baseline>`). The
+table prints its P\*, its shortfall against P_ref, and the assisted vehicle's P\* (its
+verification search) minus the paired pad's: a comparison on one vehicle, attributed by the
+matched-payload attribution at the paired pad's P\* and checked like a variant (a
+`bug_suspect` blocks findings).
+
+In the shipped run the pad offloaded by the same 41.26 t carries 24,652.4 kg, **1,402.0 kg
+short of P_ref**: without the push the same tanks carry 1.4 t less, so the push is needed to
+carry this offload. How much of the offload the lighter stack accounts for depends on the
+reading, and the note gives both:
+
+- **Read as the pre-registration worded it**, the shortfall is set against the offload:
+  1,402 kg against 41.26 t is 3.4%, small, so its branch fires and reads that **most of the
+  offload is the lighter stack's thrust-to-weight**, not the head start. The note reports
+  that verdict and argues that it compares kilograms of payload with kilograms of
+  propellant.
+- **In ideal delta-v, a reading chosen after the run**, 28 to 29% of the 228.2 m/s the
+  offload removes is the lighter stack's own thrust-to-weight gain and 71 to 72% the push at
+  equal stack mass (the pad's hold-down convention included). The range is bracketed by the
+  two orders of the two-step split.
+
+### Loads beside an offload
+
+- **Max-Q** of each offloaded run is printed beside the pad's, unthrottled (an upper bound,
+  and no max-Q limit constrains the solve). A lighter stack climbs faster through the dense
+  air: the shipped headline flies 38,438.5 Pa, **3.35% above the pad's** 37,191.4 Pa, where
+  the full-load silo flew 16.0% below it. The max-Q benefit of the full-load silo is spent
+  once the push is cashed in as propellant.
+- **q-alpha** is not in the offload table; it is in `metrics.json` (`offload.runs`). The
+  headline's is 226.9 Pa rad at the kick, 3.04 times the pad's 74.7 (no angle-of-attack
+  aerodynamics; the kick costs nothing it would in flight).
+- **On the track** the stack still feels 4.0 g (20.81 MN at the interface for the headline),
+  and no structural mass is charged for it except in the assumed penalty rows.
+
+### The energy rows
+
+The ratio of the combustion heat of the removed fuel to the push's electricity is labelled
+"not an efficiency claim", and it is not one: it sets unlike quantities side by side. It
+leaves out producing the removed LOX, extracting, refining and delivering the fuel,
+generation, transmission and storage losses, and the facility beyond the drive; the
+electricity is metered at the drive, at an assumed 50% drive efficiency. The shipped
+headline reads about 128 (12.4 t of RP-1 removed with 28.9 t of LOX, against 1.16 MWh), and
+5.65 with the assumed +8.1 t of stage-1 strengthening. It says nothing about cost, and
+nothing about what share of a rocket's fuel energy a ground drive could replace.
+
+### What the shipped offload run says
+
+From [RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md) (preliminary, pre-registered;
+README, "Fuel replaced at fixed payload (SP1)"). At the pad's payload (26,054.4 kg to
+200 km, 28.5 degrees) the 3 g, 100 m cold-start silo lets the gate vehicle leave out
+**41.26 t of stage-1 propellant: 10.04% of the stage-1 load, 7.96% of the total**, 2.76
+times the ideal-screening offload, the beat explained by the decomposition. The numbers
+that sit beside it:
+
+- **The vehicle model.** The gate vehicle calibrates +14.3% high. On the README-loads fork,
+  which calibrates inside the band, the same case removes 36.01 t (9.10% of stage 1). Read
+  it as 9 to 10% of stage 1 across the two vehicle forks of this model, not as a Falcon 9
+  figure.
+- **Structure.** No structural mass is charged for the 4 g full-stack push. An assumed +2,
+  +4 and +8.1 t of stage-1 dry mass leave 32.29, 22.88 and 1.98 t; about 8.5 t
+  (extrapolated) leaves nothing.
+- **What the push itself does.** The pad flown with the same offload falls 1.4 t short of
+  the payload; read as the pre-registration worded it, most of the offload is the lighter
+  stack's thrust-to-weight, while the delta-v reading chosen after the run gives the lighter
+  stack 28 to 29% ([The paired pad](#the-paired-pad)). 6% is the pad's hold-down convention.
+- **Loads.** Max-Q 3.4% above the pad's; q-alpha 3.0 times the pad's.
+- **Stage 2.** The stage-2 case failed its independent verification; stage-2 and
+  both-stage figures are a property of the vehicle model, never the headline.
+- **Energy.** The heat-to-electricity ratio of about 128 is not an efficiency claim.
+- **Method.** Sweep-optimized guidance (not optimal control), no throttle, a free kick, a
+  prescribed drive with no force or power limit, partly filled tanks of an unchanged
+  vehicle. Under the ±10% sensitivity arms the offload stays between 38.67 and 44.46 t.
+
 ## The caveats, and why each matters
 
 These apply to every 2-D number so far (README, "Caveats that apply to every 2-D number").
 
 | Caveat | Why it matters |
 |---|---|
-| No structural mass is charged for the 4 g full-stack push | At about 184 kg of payload per tonne of stage-1 dry mass, about 8.1 t of silo-only strengthening would cancel the whole silo_cold gain (a linear extrapolation, not a sized structure). This decides whether the headline survives (README roadmap Phase 3, backlog B-004) |
-| The gate vehicle calibrates +14.3% high (accepted, documented) | Every 2-D number inherits the miss. On a vehicle calibrated to 22.8 t the gain would be expected near 1.3 t (derived by proportion, not run) |
+| No structural mass is charged for the 4 g full-stack push | At about 184 kg of payload per tonne of stage-1 dry mass, about 8.1 t of silo-only strengthening would cancel the whole silo_cold gain (a linear extrapolation, not a sized structure). In offload terms each assumed tonne takes 4.5 to 5.1 t off the 41.26 t, and about 8.5 t (extrapolated) takes all of it. This decides whether the headline survives (README roadmap Phase 3, backlog B-004) |
+| The gate vehicle calibrates +14.3% high (accepted, documented) | Every 2-D number inherits the miss. On a vehicle calibrated to 22.8 t the gain would be expected near 1.3 t (derived by proportion, not run); the offload's README-loads bridge gives 9.10% of stage 1 against 10.04% |
 | Guidance is sweep-optimized, not optimal control | The trajectory part of the gain (34% of silo_cold's) is the part a better pad ascent could change, in either direction (README roadmap Phase 5) |
 | Nothing is throttled; the kick is free | Max-Q and q-alpha are upper bounds; q-alpha at the kick is above the pad's in every silo variant |
 | Prescribed acceleration, unbounded drive force | A hot start cannot add exit speed; carriage mass and drive efficiency move only energy and power |
@@ -175,10 +383,25 @@ show them as plainly as the others (README, "Against the hypothesis"):
 - A failed ignition has no abort: the stack falls back to the mouth at 76.6 m/s.
 - The facility is sized by power: a 1.725 GW peak for a 2.6 s push.
 
-The question SP1 is answering, the share of propellant replaced at a fixed payload, has no
-finding yet. A labelled probe found about 10% of stage-1 propellant (41.1 t, 7.9% of the total
-propellant load) before any structural mass is charged; it is a probe, not a finding. At that
-offload the silo run's max-Q (38.4 kPa) is above the full pad's (37.2 kPa), and the gate
-vehicle calibrates +14.3% high ([handoff, section 3](../handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding)).
+The fuel-offload note adds these ([RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md),
+"What goes against the hypothesis"):
+
+- Structural mass can cancel the offload: each assumed tonne of stage-1 strengthening takes
+  4.5 to 5.1 t off, and about 8.5 t (extrapolated) takes all of it.
+- Part of the headline is not the push: 6% is the pad's hold-down convention. Read as the
+  pre-registration worded it, most of the offload is the lighter stack's thrust-to-weight
+  (the pad with the same offload falls only 1.4 t short); in the delta-v reading chosen
+  after the run, 28 to 29% is the lighter stack's own thrust-to-weight gain, which the push
+  makes usable but does not produce.
+- The max-Q benefit disappears: 16% below the pad's at full load becomes 3.35% above it at
+  the offload, and up to 12.5% above at a 300 m stroke.
+- Diminishing returns with depth: the offload per m/s falls from 622 to 429 kg from 25 to
+  300 m; at a fixed exit speed a deeper silo gives the same offload (by construction in
+  this model) for up to 71% more electricity and a longer facility.
+- The earliest hot start loses: lighting at the shaft floor removes 2.6 t less than
+  lighting 75 m deep, under a prescribed drive where thrust on the track buys no speed; a
+  force-limited drive (Phase 3) may change that ordering.
+- A late start is expensive: each second of delay after release costs 4.8 to 5.3 t.
+- The figure depends on the vehicle masses (9.10% of stage 1 on the README-loads fork).
 
 Next: [10. Validation](10-validation.md)

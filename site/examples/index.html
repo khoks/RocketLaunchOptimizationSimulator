@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Animation Examples · launch-assist-sim</title>
-<meta name="description" content="Replays, videos and GIFs of the Phase 2 silo_screening_2d run of launch-assist-sim, each with the command that made it and the caveats it must be read with.">
+<meta name="description" content="Interactive replays and a video of SP1's fuel offload at fixed payload (silo_offload_2d), and replays, videos and GIFs of Phase 2's silo_screening_2d, each with the command that made it and the caveats it must be read with.">
 <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -130,6 +130,13 @@ figcaption { font-size: 0.84rem; color: var(--ink-3); max-width: 95ch; }
 .against li::marker { color: var(--bad); }
 .src { font-size: 0.84rem; color: var(--ink-3); }
 
+/* one group of examples per recorded run (SP1, Phase 2) */
+.group { display: grid; gap: 10px; padding-top: 22px; border-top: 2px solid var(--rule); scroll-margin-top: 12px; min-width: 0; }
+.group > p { margin: 0; max-width: 85ch; color: var(--ink-2); }
+.headline { border-left: 4px solid var(--run-1); }
+.headline .big { font-size: 1.08rem; color: var(--ink); max-width: 80ch; }
+.example > .col > p { max-width: 85ch; }
+
 /* numbers table */
 .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; }
 table.nums { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
@@ -223,14 +230,13 @@ footer p { margin: 0; max-width: 100ch; }
   <section class="hero" aria-labelledby="page-title">
     <p class="kicker">Examples</p>
     <h1 id="page-title">Animation examples</h1>
-    <p class="lede">Three replays of one recorded run, each with the command that made it and the caveats it has to be read with. Every frame is drawn from the run's recorded time series; nothing is re-simulated in the browser or in the videos.</p>
-    <ul class="tags" aria-label="Run provenance">
-      <li>Phase 2 experiment silo_screening_2d</li>
-      <li>run 20260930T175743Z</li>
-      <li>git 7ad381f227a9, clean</li>
+    <p class="lede">Replays of two recorded runs: SP1's fuel offload at fixed payload and Phase 2's silo screening. Each comes with the command that made it and the caveats it has to be read with. Every frame is drawn from the run's recorded time series; nothing is re-simulated in the browser or in the videos.</p>
+    <ul class="tags" aria-label="What every example shares">
+      <li>concept A: vertical silo</li>
       <li>planar <span class="nb">2-D</span>, rotating Earth</li>
       <li>sweep-optimized, unthrottled</li>
       <li>200 km circular, 28.5°, due east</li>
+      <li>gate vehicle, +14.3% calibration miss</li>
     </ul>
   </section>
 </div>
@@ -238,8 +244,8 @@ footer p { margin: 0; max-width: 100ch; }
 <main class="wrap">
   <section class="box status" aria-labelledby="status-h">
     <h3 id="status-h">What these runs are, and what they are not</h3>
-    <p>All three examples come from the shipped run <code>results/silo_screening_2d/20260930T175743Z</code> of the Phase 2 experiment <code>silo_screening_2d</code>, made at git <code>7ad381f227a9</code> (clean, per its <code>metrics.json</code>). They cover concept A only: a vertical silo whose drive imposes a prescribed acceleration. Every finding they illustrate is preliminary and lives in <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/tree/main/docs/findings">docs/findings/</a>.</p>
-    <p>The current phase, SP1, asks how much rocket propellant the silo push replaces at a fixed payload. That question is not answered yet. SP1's fuel-offload runs will be added to this gallery when that phase finishes.</p>
+    <p>The examples come from two shipped runs, each made from a clean commit (per its <code>metrics.json</code>): SP1's <code>results/silo_offload_2d/20261003T112934Z</code> (git <code>b3150c1754ee</code>) and Phase 2's <code>results/silo_screening_2d/20260930T175743Z</code> (git <code>7ad381f227a9</code>). Both cover concept A only: a vertical silo whose drive imposes a prescribed acceleration. Every finding they illustrate is preliminary and lives in <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/tree/main/docs/findings">docs/findings/</a>.</p>
+    <p>Phase 2 asked how much payload the push adds to an unchanged rocket. SP1 asked it the other way round: at the pad's payload and orbit, how much <span class="nb">stage-1</span> propellant can the pushed rocket leave out? Both answers are differences between runs of one vehicle model, not figures for a real Falcon 9.</p>
   </section>
 
   <section class="box caveats" aria-labelledby="caveats-h">
@@ -247,24 +253,190 @@ footer p { margin: 0; max-width: 100ch; }
     <ul>
       <li>Planar point-mass model over a rotating spherical Earth, with a generic C<sub>D</sub>(Mach) table. Guidance is sweep-optimized, not optimal control. Nothing is throttled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds, and the pitch kick has no angle-of-attack aerodynamics.</li>
       <li>The gate vehicle calibrates <span class="num">+14.3%</span> high: <span class="num">26,054.4 kg</span> to a 200 km orbit against the published <span class="num">22,800 kg</span>, outside the ±10% band. It is a documented miss, accepted on 2026-09-30 (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/CAL-f9-leo-2d.md">CAL-f9-leo-2d</a>). Read the numbers as differences between runs.</li>
-      <li>No structural mass is charged for the push: the fully fuelled stack feels <span class="num">4.0 g</span>. About <span class="num">8.1 t</span> of extra <span class="nb">stage-1</span> structure would cancel silo_cold's whole payload gain (a linear extrapolation, not a sized structure).</li>
-      <li>The drive is a prescribed 3 g acceleration with no force or power limit, a massless carriage and no air drag in a vented shaft. Under this drive the release speed and the payload do not depend on carriage mass, drive efficiency or shaft drag: they move only drive energy and power. The massless carriage and the missing shaft drag bias those low (the shaft drag by about <span class="num">0.04%</span> in drive energy and <span class="num">0.08%</span> in peak power and interface force). Under it a hot start cannot add exit speed.</li>
+      <li>No structural mass is charged for the push: the stack feels <span class="num">4.0 g</span> on the track. In payload terms, about <span class="num">8.1 t</span> of extra <span class="nb">stage-1</span> structure would cancel silo_cold's whole gain (a linear extrapolation); in propellant terms, about <span class="num">8.5 t</span> (extrapolated) cancels SP1's whole offload. Neither is a sized structure: no structural model exists yet.</li>
+      <li>The drive is a prescribed 3 g acceleration with no force or power limit, a massless carriage and no air drag in a vented shaft. Under this drive the release speed, the payload and the offload do not depend on carriage mass, drive efficiency or shaft drag: they move only drive energy and power. The massless carriage and the missing shaft drag bias those low (the shaft drag by about <span class="num">0.04%</span> in drive energy and <span class="num">0.08%</span> in peak power and interface force, measured in Phase 2). Under it a hot start cannot add exit speed.</li>
     </ul>
   </section>
 
   <nav aria-label="Examples on this page">
     <ul class="toc">
-      <li><a href="#pad-vs-silo-cold">1 · Pad against cold-start silo</a></li>
-      <li><a href="#ignition-timing">2 · Ignition timing</a></li>
-      <li><a href="#failed-ignition">3 · Failed ignition</a></li>
+      <li><a href="#sp1">SP1: fuel offload</a></li>
+      <li><a href="#pad-vs-silo-offload">SP1.1 · Pad against offloaded silo</a></li>
+      <li><a href="#offload-vs-paired-pad">SP1.2 · Offloaded silo against its paired pad</a></li>
+      <li><a href="#phase2">Phase 2: payload gain</a></li>
+      <li><a href="#pad-vs-silo-cold">2.1 · Pad against cold-start silo</a></li>
+      <li><a href="#ignition-timing">2.2 · Ignition timing</a></li>
+      <li><a href="#failed-ignition">2.3 · Failed ignition</a></li>
       <li><a href="#reproduce">Reproduce</a></li>
     </ul>
   </nav>
 
+  <!-- SP1: fuel offload at fixed payload -->
+  <section class="group" id="sp1" aria-labelledby="sp1-h">
+    <p class="kicker">SP1 · run 20261003T112934Z</p>
+    <h2 id="sp1-h">SP1: fuel offload at fixed payload</h2>
+    <ul class="tags" aria-label="SP1 run provenance">
+      <li>experiment silo_offload_2d</li>
+      <li>run 20261003T112934Z</li>
+      <li>git b3150c1754ee, clean</li>
+      <li>pre-registered (c2a4cf0; Amendment 1, d336933)</li>
+      <li>preliminary, 2026-10-03</li>
+    </ul>
+    <p>The question: with the payload and orbit held at the pad's, how much <span class="nb">stage-1</span> propellant can a silo-pushed rocket leave out? The offloaded rocket flies with its tanks partly filled and every dry mass unchanged, so the comparison is between different vehicles carrying the same payload to the same orbit. Every number below is from <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a>, the README's "Fuel replaced at fixed payload (SP1)" and the run's <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/results/silo_offload_2d/20261003T112934Z/summary.md">summary.md</a>.</p>
+  </section>
+
+  <section class="box headline" aria-labelledby="sp1-headline-h">
+    <h3 id="sp1-headline-h">The headline, and what sits beside it</h3>
+    <p class="big">At the pad's payload (<span class="num">26,054.4 kg</span> to a 200 km circular orbit) the 3 g, 100 m cold-start silo lets the gate vehicle leave out <strong><span class="num">41.26 t</span> of <span class="nb">stage-1</span> propellant: <span class="num">10.04%</span> of the <span class="num">410.9 t</span> <span class="nb">stage-1</span> load, <span class="num">7.96%</span> of the <span class="num">518.4 t</span> total</strong> (silo_cold_s1; sweep-optimized and unthrottled, before any structural mass).</p>
+    <ul>
+      <li><strong>Calibration.</strong> The gate vehicle calibrates <span class="num">+14.3%</span> high. On the README-loads fork, which calibrates inside the band (<span class="num">+8.3%</span>), the same case removes <span class="num">36.01 t</span>, <span class="num">9.10%</span> of its <span class="nb">stage-1</span> load. Read the headline as 9 to 10% of stage 1 across the two vehicle models, not as a Falcon 9 figure.</li>
+      <li><strong>Structure.</strong> Nothing is charged for the <span class="num">4.0 g</span> full-stack push. An assumed <span class="num">+2</span>, <span class="num">+4</span> and <span class="num">+8.1 t</span> of <span class="nb">stage-1</span> dry mass leave <span class="num">32.29</span>, <span class="num">22.88</span> and <span class="num">1.98 t</span>; about <span class="num">8.5 t</span> (extrapolated) leaves nothing.</li>
+      <li><strong>Push or lighter stack?</strong> The pad flown with the same 41.26 t offload falls only <span class="num">1,402.0 kg</span> short of the payload. Read as the pre-registration worded it (that shortfall against the offload, 3.4%), most of the offload is the lighter stack's higher thrust-to-weight, not the push. A delta-v reading chosen after the run gives the lighter stack 28 to 29% of the ideal delta-v saved, the release speed and the head start's trajectory effects 64 to 66%, and the pad's hold-down convention 6 to 7%. The findings note reports both (<a href="#offload-vs-paired-pad">SP1.2</a>).</li>
+      <li><strong>Loads.</strong> Max-Q is <span class="num">3.4%</span> above the pad's, where the full-load silo flew 16.0% below it; <span class="nb">q-alpha</span> at the kick is <span class="num">3.0×</span> the pad's. Nothing throttles or limits either.</li>
+      <li><strong>Stage 2.</strong> The <span class="nb">stage-2</span> offload case failed its independent verification. Stage 1 is the only headline.</li>
+      <li><strong>Energy.</strong> The 12.4 t of RP-1 removed carry about <span class="num">128×</span> the push's <span class="num">1.16 MWh</span> of metered electricity in combustion heat. That is a ratio of unlike quantities, not an efficiency claim or a substitution rate: it leaves out LOX production, fuel supply, grid losses and the facility, and falls to <span class="num">5.65</span> with the assumed +8.1 t of structure.</li>
+      <li><strong>Model.</strong> Sweep-optimized guidance, no throttle, a pitch kick with no angle-of-attack penalty, a prescribed drive, and partly filled tanks of an unchanged vehicle (not one redesigned for the smaller load).</li>
+    </ul>
+  </section>
+
+  <!-- SP1 example 1 -->
+  <article class="example" id="pad-vs-silo-offload" aria-labelledby="sp1-ex1-h">
+    <header>
+      <p class="kicker">SP1.1 · the headline offload</p>
+      <h2 id="sp1-ex1-h">Pad against the offloaded silo</h2>
+      <p class="summary">Two different rockets carrying the same <span class="num">26,054.4 kg</span> to the same 200 km orbit: the fully fuelled pad baseline, and the same vehicle with <span class="num">41.26 t</span> less <span class="nb">stage-1</span> propellant pushed out of a 100 m silo.</p>
+    </header>
+    <figure>
+      <video class="media" controls preload="none" playsinline poster="media/fuel_offload_pad_vs_silo_2d_poster.jpg" width="1280" height="720">
+        <source src="media/fuel_offload_pad_vs_silo_2d.mp4" type="video/mp4">
+        Your browser cannot play this MP4. <a href="media/fuel_offload_pad_vs_silo_2d.gif">Open the GIF instead.</a>
+      </video>
+      <figcaption>The two trajectories nearly overlap at orbit scale; the difference is in the launch close-up and the run table. silo_cold_s1 starts 41.3 t lighter (a liftoff mass of 531.1 t against the pad's 572.4 t) and both end at 200 km with the same 30.1 t on board. The legend gives the pad's P* and, for the offload run, the reference payload P_ref it flies (the pad's P*) and the propellant it carries less; the run table cuts names to 9 characters (<code>silo_col~</code> is silo_cold_s1). The playback speed is printed in the corner, and the poster frame is the last frame, at orbit insertion.</figcaption>
+    </figure>
+    <div class="actions">
+      <a class="btn" href="pad-vs-silo-offload.html">Open the interactive replay</a>
+      <a class="btn ghost" href="media/fuel_offload_pad_vs_silo_2d.mp4">MP4 <span class="size">794 KiB</span></a>
+      <a class="btn ghost" href="media/fuel_offload_pad_vs_silo_2d.gif">GIF <span class="size">845 KiB</span></a>
+    </div>
+    <div class="col">
+      <h3>What it shows</h3>
+      <p><code>pad</code> lights stage 1 two seconds before release with a 2 s thrust ramp while held down, burning <span class="num">2.7 t</span> on the hold-down, then lets go. <code>silo_cold_s1</code> starts <span class="num">41.26 t</span> lighter (tanks partly filled, every dry mass unchanged), is pushed 100 m up the shaft at 3 g net (2.6 s, felt <span class="num">4.0 g</span>, <span class="num">20.81 MN</span> at the interface), leaves the mouth at <span class="num">76.7 m/s</span> and lights 0.5 s later with the same 2 s ramp. Both reach the same orbit with the same payload; silo_cold_s1 reaches MECO <span class="num">12.8 s</span> sooner.</p>
+    </div>
+    <div class="tablewrap">
+      <table class="nums">
+        <thead><tr><th scope="col">Run (both at the pad's payload)</th><th scope="col">liftoff mass</th><th scope="col">MECO after release</th><th scope="col">gravity loss</th><th scope="col">max-Q</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sw" style="background: var(--run-0)"></span><code>pad</code> (baseline)<span class="detail">full load; P* 26,054.4 kg; lit at −2 s, 2 s ramp, held down</span></td><td data-label="Liftoff mass">572,354.4 kg</td><td data-label="MECO">151.3 s</td><td data-label="Gravity loss">1,492.0 m/s</td><td data-label="Max-Q">37.19 kPa</td></tr>
+          <tr><td><span class="sw" style="background: var(--run-1)"></span><code>silo_cold_s1</code><span class="detail">41,262.9 kg less <span class="nb">stage-1</span> propellant; flies 26,054.4 kg; 3 g net over 100 m, release at 76.7 m/s, lit 0.5 s after release, 2 s ramp</span></td><td data-label="Liftoff mass">531,091.5 kg</td><td data-label="MECO">138.5 s</td><td data-label="Gravity loss">1,367.2 m/s</td><td data-label="Max-Q" class="neg">38.44 kPa (+3.35%)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="src">Numbers: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a> (headline table and figures) and the run's <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/results/silo_offload_2d/20261003T112934Z/summary.md">summary.md</a>. Max-Q is unthrottled, an upper bound.</p>
+    <div class="cols">
+      <div class="col">
+        <h3>For the hypothesis</h3>
+        <ul class="for">
+          <li><span class="num">41.26 t</span> of <span class="nb">stage-1</span> propellant left out (<span class="num">10.04%</span> of stage 1, <span class="num">7.96%</span> of the total). The pad's own control removes nothing at this payload, and an independent payload search on the offloaded vehicle returns the pad's payload to within <span class="num">0.0085 kg</span>.</li>
+          <li>It is <span class="num">2.76×</span> the ideal-screening estimate (<span class="num">14.98 t</span>), and the loss breakdown explains the difference, so it is not treated as a bug. Of the <span class="num">228.2 m/s</span> of ideal delta-v the offloaded vehicle does without: release speed <span class="num">76.7 m/s</span> (34%), lower gravity and steering loss <span class="num">124.7 m/s</span> (55%), the pad's hold-down burn <span class="num">14.4 m/s</span> (6%), back-pressure <span class="num">13.3 m/s</span> (6%), drag <span class="num">−0.9 m/s</span>.</li>
+          <li>Under every ±10% sensitivity arm (<span class="nb">stage-1</span> dry mass, Isp, C<sub>D</sub>, drive efficiency) it stays between <span class="num">38.67</span> and <span class="num">44.46 t</span>.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>Against it, stated as plainly</h3>
+        <ul class="against">
+          <li>No structural mass is charged for the <span class="num">4.0 g</span> push. Each tonne of assumed <span class="nb">stage-1</span> strengthening takes 4.5 to 5.1 t off the offload; at <span class="num">+8.1 t</span> only <span class="num">1.98 t</span> (0.48% of stage 1) remains, and about <span class="num">8.5 t</span> (extrapolated) takes all of it.</li>
+          <li>Read as the pre-registration worded it, most of the offload is the lighter stack's higher thrust-to-weight, which the push makes usable but does not produce. Read in ideal delta-v, an interpretation chosen after the run, the lighter stack is 28 to 29% of it (<a href="#offload-vs-paired-pad">SP1.2</a>).</li>
+          <li>Part of it is a baseline convention: <span class="num">14.4 m/s</span> of the 228.2 m/s (6.3%) is the pad's clamped hold-down burn, which a silo lit after release does not pay.</li>
+          <li>The max-Q benefit is spent: the full-load silo's max-Q was 16.0% below the pad's; offloaded, it is <span class="num">3.35%</span> above it. <span class="nb">q-alpha</span> at the kick is <span class="num">226.9</span> against the pad's <span class="num">74.7 Pa rad</span>, and the model charges nothing for it.</li>
+          <li>The figure depends on the vehicle masses: <span class="num">9.10%</span> of stage 1 (36.01 t) on the README-loads fork against 10.04% here.</li>
+          <li>The facility: <span class="num">1,156.4 kWh</span> of electricity per launch at an assumed 50% drive efficiency, a <span class="num">1.597 GW</span> peak drive power, and <span class="num">160 m</span> long including <span class="num">60 m</span> of braking.</li>
+        </ul>
+      </div>
+    </div>
+    <details class="cmd">
+      <summary>Commands that made it</summary>
+      <div class="cmd-body">
+        <p>From the repository root, against the run directory (git <code>b3150c1754ee</code>, clean); the replay was rendered on 2026-10-04 with launch-assist-sim 0.1.0 at commit <code>cfd9059</code>. Offload runs are not in the default selection of <code>replay</code> or <code>animate</code>, so they are named with <code>--runs</code>.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_offload_2d/20261003T112934Z --runs pad silo_cold_s1 --out site/examples/pad-vs-silo-offload.html</code></pre></div>
+        <p>The MP4, GIF and poster were rendered on 2026-10-04 with launch-assist-sim 0.1.0 on top of commit <code>cfd9059</code>, with SP1 step 10a's change that makes <code>animate</code> label offload runs from the offload record of <code>metrics.json</code>, as <code>replay</code> does. Before it, <code>animate</code> labelled <code>silo_cold_s1</code> "P* n/a (None)". The MP4 took about 2 minutes and the GIF under a minute on a laptop.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_offload_2d/20261003T112934Z --runs pad silo_cold_s1 --out site/examples/media/fuel_offload_pad_vs_silo_2d.mp4</code></pre></div>
+        <p>The poster is the MP4's last frame:</p>
+        <div class="codeblock"><pre><code>ffmpeg -sseof -0.1 -i site/examples/media/fuel_offload_pad_vs_silo_2d.mp4 -frames:v 1 -q:v 2 -update 1 site/examples/media/fuel_offload_pad_vs_silo_2d_poster.jpg</code></pre></div>
+        <p>The GIF came out of <code>animate</code> at 4.9 MiB, so it was re-quantised to a 128-colour palette with ffmpeg as in 2.2, keeping the last frame's 1.24 s hold (<code>-final_delay 124</code>; without it ffmpeg stretches the hold to 1.28 s). The frames and their timing are unchanged; the file is 845 KiB.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_offload_2d/20261003T112934Z --runs pad silo_cold_s1 --out fuel_offload_pad_vs_silo_2d_raw.gif --fps 12 --width 640</code></pre></div>
+        <div class="codeblock"><pre><code>ffmpeg -i fuel_offload_pad_vs_silo_2d_raw.gif -vf "split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" -final_delay 124 site/examples/media/fuel_offload_pad_vs_silo_2d.gif</code></pre></div>
+      </div>
+    </details>
+  </article>
+
+  <!-- SP1 example 2 -->
+  <article class="example" id="offload-vs-paired-pad" aria-labelledby="sp1-ex2-h">
+    <header>
+      <p class="kicker">SP1.2 · head start or lighter stack?</p>
+      <h2 id="sp1-ex2-h">The offloaded silo against its paired pad</h2>
+      <p class="summary">The same rocket, <span class="num">41.26 t</span> short of a full <span class="nb">stage-1</span> load, flown twice: from the pad, and out of the silo. It separates what the push does from what the lighter stack does on its own.</p>
+    </header>
+    <div class="actions">
+      <a class="btn" href="offload-vs-paired-pad.html">Open the interactive replay</a>
+    </div>
+    <div class="col">
+      <h3>What it shows</h3>
+      <p><code>silo_cold_s1__pad</code> is the paired pad: the pad baseline with the same <span class="num">41,262.9 kg</span> <span class="nb">stage-1</span> offload and no push, flown to its own payload capacity. <code>silo_cold_s1</code> is SP1.1's offloaded silo run. No video was made of this pair; the replay draws both side by side.</p>
+    </div>
+    <div class="tablewrap">
+      <table class="nums">
+        <thead><tr><th scope="col">Run</th><th scope="col">payload</th><th scope="col">vs the pad's 26,054.4 kg</th><th scope="col">gravity loss</th><th scope="col">max-Q</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sw" style="background: var(--run-0)"></span><code>silo_cold_s1__pad</code><span class="detail">the pad with the same 41.26 t offload, no push; lit at −2 s, 2 s ramp, held down</span></td><td data-label="Payload">24,652.4 kg (P*)</td><td data-label="Vs the pad" class="neg">−1,402.0 kg</td><td data-label="Gravity loss">1,406.2 m/s</td><td data-label="Max-Q" class="neg">44.56 kPa (+19.8%)</td></tr>
+          <tr><td><span class="sw" style="background: var(--run-1)"></span><code>silo_cold_s1</code><span class="detail">the same offload, pushed out of the silo; flies the pad's payload, and its own payload search returns the same</span></td><td data-label="Payload">26,054.4 kg (flown)</td><td data-label="Vs the pad">+0</td><td data-label="Gravity loss">1,367.2 m/s</td><td data-label="Max-Q" class="neg">38.44 kPa (+3.35%)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="src">Numbers: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a>, "Head start or lighter stack? The paired pad", and the run's summary.md. Max-Q is unthrottled and compared with the full pad's 37.19 kPa; each gravity loss is at its own run's payload.</p>
+    <div class="cols">
+      <div class="col">
+        <h3>What it says</h3>
+        <ul>
+          <li>The push is needed to carry the offload: without it the same tanks carry <span class="num">1,402.0 kg</span> less payload. At equal stack mass the head start is worth <span class="num">1,402.0 kg</span>, 93.5% of the <span class="num">1,498.8 kg</span> it is worth on the fully fuelled stack.</li>
+          <li><strong>Read as the pre-registration worded it</strong>, the "small margin" branch fires: 1,402.0 kg is 3.4% of the 41,262.9 kg offload, so most of the offload is the lighter stack's thrust-to-weight, not the head start. The findings note states that verdict but does not adopt it, because it compares kilograms of payload with kilograms of propellant.</li>
+          <li><strong>Read in ideal delta-v</strong>, an interpretation chosen after the run: of the <span class="num">228.2 m/s</span> the offload removes, the release speed is <span class="num">76.7 m/s</span> (34%), the head start's trajectory effects at equal stack mass 69 to 74 m/s (30 to 33%), the pad's hold-down convention 14 to 16 m/s (6 to 7%), and the lighter stack's own thrust-to-weight gain <span class="num">63 to 67 m/s</span> (28 to 29%). The two orders of a two-step split bracket each range.</li>
+          <li>Offloading without a push raises max-Q far more: the paired pad's is 19.8% above the full pad's, the offloaded silo's 3.35%.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>Read it with</h3>
+        <ul class="against">
+          <li>As <code>replay</code> writes the page, its caveat line calls both runs "propellant saved at the same payload and orbit". For the paired pad that is wrong: it measures the payload the offloaded rocket carries without the push (24,652.4 kg). The copy here has that caveat, the paired pad's label and the subtitle corrected when the site is built (the command's own output keeps them).</li>
+          <li>The delta-v split is a difference between runs, and one order of it mixes two payloads (24,652 kg and 26,054 kg), so it is bracketed, not exact.</li>
+          <li>The paired pad is held down while its engines ramp up, the same baseline convention as the full pad's, and the free kick, missing throttle and sweep-optimized guidance apply to both runs.</li>
+        </ul>
+      </div>
+    </div>
+    <details class="cmd">
+      <summary>Command that made it</summary>
+      <div class="cmd-body">
+        <p>From the repository root, against the run directory (git <code>b3150c1754ee</code>, clean); rendered on 2026-10-04 with launch-assist-sim 0.1.0 at commit <code>cfd9059</code>. <code>replay</code> accepts a paired pad by name: it is a run of the offload block.</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_offload_2d/20261003T112934Z --runs silo_cold_s1__pad silo_cold_s1 --out site/examples/offload-vs-paired-pad.html</code></pre></div>
+      </div>
+    </details>
+  </article>
+
+  <!-- Phase 2: payload gain from the push -->
+  <section class="group" id="phase2" aria-labelledby="phase2-h">
+    <p class="kicker">Phase 2 · run 20260930T175743Z</p>
+    <h2 id="phase2-h">Phase 2: payload gain from the silo push</h2>
+    <ul class="tags" aria-label="Phase 2 run provenance">
+      <li>experiment silo_screening_2d</li>
+      <li>run 20260930T175743Z</li>
+      <li>git 7ad381f227a9, clean</li>
+    </ul>
+    <p>The same rocket with its full propellant load, from the pad and from the silo: how much more payload the push lets it carry, and what the ignition timing and a failed ignition do.</p>
+  </section>
+
   <!-- Example 1 -->
   <article class="example" id="pad-vs-silo-cold" aria-labelledby="ex1-h">
     <header>
-      <p class="kicker">Example 1 · the headline comparison</p>
+      <p class="kicker">2.1 · the headline comparison</p>
       <h2 id="ex1-h">Pad against cold-start silo</h2>
       <p class="summary">The same rocket flown to a 200 km circular orbit twice: from the pad, and pushed out of a 100 m silo at 3 g net before its engines light.</p>
     </header>
@@ -327,7 +499,7 @@ footer p { margin: 0; max-width: 100ch; }
   <!-- Example 2 -->
   <article class="example" id="ignition-timing" aria-labelledby="ex2-h">
     <header>
-      <p class="kicker">Example 2 · RQ2, hot or cold start</p>
+      <p class="kicker">2.2 · RQ2, hot or cold start</p>
       <h2 id="ex2-h">Ignition timing: four ways to light stage 1</h2>
       <p class="summary">The same 3 g, 100 m push with four different <span class="nb">stage-1</span> startups, to see what lighting the engines late costs.</p>
     </header>
@@ -393,7 +565,7 @@ footer p { margin: 0; max-width: 100ch; }
   <!-- Example 3 -->
   <article class="example" id="failed-ignition" aria-labelledby="ex3-h">
     <header>
-      <p class="kicker">Example 3 · RQ3, the abort case</p>
+      <p class="kicker">2.3 · RQ3, the abort case</p>
       <h2 id="ex3-h">Failed ignition: the push with no engines</h2>
       <p class="summary">What happens to a fully fuelled stack pushed out of the silo at 76.7 m/s when stage 1 never lights.</p>
     </header>
@@ -439,7 +611,7 @@ footer p { margin: 0; max-width: 100ch; }
     <details class="cmd">
       <summary>Commands that made it</summary>
       <div class="cmd-body">
-        <p>From the repository root, against the run directory (git <code>7ad381f227a9</code>); rendered on 2026-10-02 with launch-assist-sim 0.1.0 at commit <code>e4f36ee</code>. The GIF was re-quantised with ffmpeg as in example 2 (2.7 MB down to 662 KiB; frames and timing unchanged).</p>
+        <p>From the repository root, against the run directory (git <code>7ad381f227a9</code>); rendered on 2026-10-02 with launch-assist-sim 0.1.0 at commit <code>e4f36ee</code>. The GIF was re-quantised with ffmpeg as in 2.2 (2.7 MB down to 662 KiB; frames and timing unchanged).</p>
         <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs silo_cold silo_failed --out site/examples/failed-ignition.html</code></pre></div>
         <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs silo_cold silo_failed --out site/examples/media/failed_ignition_2d.mp4</code></pre></div>
         <div class="codeblock"><pre><code>uv run python -m launchsim animate results/silo_screening_2d/20260930T175743Z --runs silo_cold silo_failed --out failed_ignition_2d_raw.gif --fps 12 --width 640</code></pre></div>
@@ -451,18 +623,22 @@ footer p { margin: 0; max-width: 100ch; }
   <section class="box" id="reproduce" aria-labelledby="repro-h">
     <h3 id="repro-h">Reproduce</h3>
     <p><strong>Permission first.</strong> The repository is public to read, but no license is granted. Cloning it and running the simulator is a use the <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">license</a> does not cover, so ask the copyright holder for written permission first (through GitHub, <code>@khoks</code>). The steps below are for the author and for anyone who has that permission.</p>
-    <p>Only each run's <code>summary.md</code> is tracked in git (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/results/silo_screening_2d/20260930T175743Z/summary.md">this run's summary</a>); the time series the replays need stay local. On a fresh clone, run the experiment first, then point <code>replay</code> or <code>animate</code> at the new timestamped directory it prints. A run made today is a new run at a newer commit, not the <code>7ad381f</code> run shown here, so compare its <code>summary.md</code> before reusing these numbers. The <a href="../manual/index.html">user manual</a> covers both commands in full.</p>
+    <p>Only each run's <code>summary.md</code> is tracked in git (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/results/silo_offload_2d/20261003T112934Z/summary.md">SP1's run</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/results/silo_screening_2d/20260930T175743Z/summary.md">Phase 2's run</a>); the time series the replays need stay local. On a fresh clone, run the experiment first, then point <code>replay</code> or <code>animate</code> at the new timestamped directory it prints. A run made today is a new run at a newer commit, not the <code>b3150c1</code> or <code>7ad381f</code> runs shown here, so compare its <code>summary.md</code> before reusing these numbers. The <a href="../manual/index.html">user manual</a> covers both commands in full.</p>
     <div class="codeblock"><pre><code>uv sync</code></pre></div>
+    <p>SP1, example SP1.1 (offload runs must be named with <code>--runs</code>):</p>
+    <div class="codeblock"><pre><code>uv run python -m launchsim run experiments/silo_offload_2d.yaml --no-sensitivity</code></pre></div>
+    <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_offload_2d/&lt;new timestamp&gt; --runs pad silo_cold_s1 --out pad-vs-silo-offload.html</code></pre></div>
+    <p>Phase 2, example 2.1:</p>
     <div class="codeblock"><pre><code>uv run python -m launchsim run experiments/silo_screening_2d.yaml --no-sensitivity</code></pre></div>
     <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_screening_2d/&lt;new timestamp&gt; --runs pad silo_cold --out pad-vs-silo-cold.html</code></pre></div>
-    <p>A searched <span class="nb">2-D</span> run takes about 7–10 s for the pad and 25–28 s for the lag variants, so the whole experiment takes a few minutes. <code>--variant silo_cold</code> is enough for example 1. Output names ending in <code>_replay.html</code>, <code>_animation.mp4</code> or <code>_animation.gif</code> are ignored by git.</p>
+    <p>SP1's run solves eleven offload cases, pad controls in three modes and a paired pad (and eight offload sensitivity arms, which <code>--no-sensitivity</code> skips), so it takes far longer than Phase 2's. There a searched <span class="nb">2-D</span> run takes about 7–10 s for the pad and 25–28 s for the lag variants, so the whole experiment takes a few minutes, and <code>--variant silo_cold</code> is enough for example 2.1. Output names ending in <code>_replay.html</code>, <code>_animation.mp4</code> or <code>_animation.gif</code> are ignored by git.</p>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
     <p><a href="../index.html">Home</a> · <a href="../manual/index.html">User manual</a> · <a href="../deck/index.html">Slide deck</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">Source on GitHub</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md">Findings index</a></p>
-    <p>Data: <code>results/silo_screening_2d/20260930T175743Z</code> (git 7ad381f227a9, clean). Replay pages and the ignition-timing and failed-ignition animations rendered on 2026-10-02 with launch-assist-sim 0.1.0 at commit e4f36ee; the pad against silo_cold animation is the README capture.</p>
+    <p>Data: <code>results/silo_offload_2d/20261003T112934Z</code> (git b3150c1754ee, clean) for SP1, whose replay pages were rendered on 2026-10-04 with launch-assist-sim 0.1.0 at commit cfd9059 and whose animation the same day with SP1 step 10a's animate change on top of it; <code>results/silo_screening_2d/20260930T175743Z</code> (git 7ad381f227a9, clean) for Phase 2, whose replay pages and ignition-timing and failed-ignition animations were rendered on 2026-10-02 at commit e4f36ee; the pad against silo_cold animation is the README capture.</p>
     <p class="license">© 2026 Rahul Singh Khokhar. All rights reserved. This work is public to read, but no license is granted: you may not copy, modify, share or use any part of it, commercially or otherwise, without written permission. It is not open source. See <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a>.</p>
   </div>
 </footer>

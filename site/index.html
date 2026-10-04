@@ -82,20 +82,64 @@
         <p>Kerbal Space Program, OpenRocket and RocketPy all start a rocket from a pad or a short launch rail, so none of them can answer it. Here the launch-assist phase is a swappable model, and the rocket after release is the same rocket, flying its own sweep-optimized ascent.</p>
         <p><strong>The hypothesis under test:</strong> any ground-supplied velocity, however small, cuts the propellant the rocket needs, or raises its payload. The simulator's real job is to measure the penalties that can eat that gain.</p>
       </div>
-      <div class="box caveats" id="status-now">
+      <div class="box finding" id="status-now">
         <div class="status-head">
-          <h3>Status: not answered yet</h3>
-          <span class="label wip">In progress · phase SP1</span>
+          <h3>Answer so far, on the planar model</h3>
+          <span class="label done">Preliminary finding · phase SP1</span>
+          <span class="label planned">Pre-registered · run 2026-10-03</span>
         </div>
-        <p>This is the headline question of the current phase, SP1, on the planar model. The answer is being computed there: tonnes, % of <span class="nb">stage-1</span> propellant and % of total propellant, with the energy comparison and the structural-mass caveat beside the number. SP1 replaces the probe below with a solved, verified and caveated number, whatever that number turns out to be.</p>
-        <p><span class="label probe">Probe, not a finding</span> A hand-read handoff probe found that the 3 g / 100 m cold-start silo carried the pad's payload with about <span class="num">10%</span> less <span class="nb">stage-1</span> propellant (<span class="num">41.1 t</span>, <span class="num">7.9%</span> of total propellant), before any structural mass is charged. Its caveats travel with it:</p>
-        <ul class="probe-caveats">
-          <li>The structural mass for the 4 g full-stack push may decide it: about <span class="num">8.1 t</span> of <span class="nb">stage-1</span> strengthening would cancel the <span class="nb">2-D</span> payload gain, and added dry mass cuts the offload as well.</li>
-          <li>The offloaded silo run's <span class="nb">max-Q</span> (<span class="num">38.4 kPa</span>) is above the full pad's (<span class="num">37.2 kPa</span>), so the <span class="nb">max-Q</span> relief in the results below does not hold at that offload.</li>
-          <li>The gate vehicle calibrates <span class="num">+14.3%</span> high, and guidance is sweep-optimized and unthrottled.</li>
-          <li>The push is a prescribed 3 g with a massless carriage and no shaft drag, and the tanks are partly filled with their dry mass unchanged.</li>
+        <div class="finding-grid">
+          <div class="finding-main">
+            <p class="finding-big"><span class="num">41.26 t</span></p>
+            <p class="finding-what">of <span class="nb">stage-1</span> propellant left out: <strong><span class="num">10.04%</span> of the <span class="nb">stage-1</span> load (410.9 t) and <span class="num">7.96%</span> of the total (518.4 t)</strong>, with the pad's payload (<span class="num">26,054.4 kg</span>) still delivered to the same 200 km circular orbit at 28.5°.</p>
+            <p class="finding-how">The case: the 3 g / 100 m cold-start silo (released at 76.7 m/s, engines lit 0.5 s later with a 2 s ramp) on the gate vehicle model, sweep-optimized and unthrottled. The offloaded vehicle's own payload search returns the pad's payload to within 0.01 kg, and the pad itself can leave out nothing. Under the ±10% sensitivity arms (<span class="nb">stage-1</span> dry mass, Isp, C<sub>D</sub>, drive efficiency) it stays between <span class="num">38.67</span> and <span class="num">44.46 t</span>. It is 2.76× the ideal-screening estimate (14.98 t), and the loss breakdown explains the beat.</p>
+          </div>
+          <div class="finding-cav">
+            <h4>Read it with these, beside the number</h4>
+            <ul>
+              <li><strong>A vehicle model, not a Falcon 9.</strong> The gate vehicle calibrates <span class="num">+14.3%</span> high. On the README-loads fork, which calibrates inside the band (+8.3%), the same case leaves out <span class="num">36.01 t</span>, <span class="num">9.10%</span> of its <span class="nb">stage-1</span> load: read it as 9–10% of stage 1 across the two models.</li>
+              <li><strong>Before structural mass.</strong> Nothing is charged for the 4 g full-stack push. An assumed +8.1 t of <span class="nb">stage-1</span> dry mass leaves <span class="num">1.98 t</span>, and about <span class="num">8.5 t</span> (extrapolated) cancels it.</li>
+              <li><strong>Much of it is the lighter stack, not the push.</strong> Read as the pre-registration worded it, most of the offload is the lighter stack's thrust-to-weight: the pad flown with the same offload falls only 1.4 t short. A <span class="nb">delta-v</span> reading chosen after the run gives the lighter stack 28–29% (below).</li>
+              <li><strong>Loads.</strong> The offloaded run's unthrottled <span class="nb">max-Q</span> is <span class="num">3.4%</span> above the pad's (38.4 against 37.2 kPa): the full-load silo's 16% reduction is spent. <span class="nb">q-alpha</span> at the kick is 3.0× the pad's, and the stack feels 4.0 g on the track.</li>
+              <li><strong>The model.</strong> Sweep-optimized guidance, no throttle, a free kick (no angle-of-attack aerodynamics), a prescribed 3 g drive with a massless carriage and a vented shaft, and partly filled tanks with every dry mass unchanged.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="finding-cards">
+          <section class="fcard" aria-labelledby="fc-pen">
+            <h4 id="fc-pen">Structure can cancel it</h4>
+            <table class="mini">
+              <caption>Assumed <span class="nb">stage-1</span> dry mass added to the silo run only</caption>
+              <thead><tr><th scope="col">Added</th><th scope="col" class="n">Offload<br>left</th><th scope="col" class="n">% of<br>stage 1</th><th scope="col" class="n"><span class="nb">Max-Q</span><br>vs pad</th></tr></thead>
+              <tbody>
+                <tr><td>none (headline)</td><td class="n">41.26 t</td><td class="n">10.04%</td><td class="n">+3.35%</td></tr>
+                <tr><td>+2 t</td><td class="n">32.29 t</td><td class="n">7.86%</td><td class="n">−2.18%</td></tr>
+                <tr><td>+4 t</td><td class="n">22.88 t</td><td class="n">5.57%</td><td class="n">−7.57%</td></tr>
+                <tr><td>+8.1 t</td><td class="n">1.98 t</td><td class="n">0.48%</td><td class="n">−18.19%</td></tr>
+                <tr class="extra"><td>about 8.5 t</td><td class="n">0</td><td class="n" colspan="2">extrapolated</td></tr>
+              </tbody>
+            </table>
+            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure: no structural model exists yet (README Phase 3).</p>
+          </section>
+          <section class="fcard" aria-labelledby="fc-pair">
+            <h4 id="fc-pair">Head start or lighter stack?</h4>
+            <p>The pad flown with the same 41.26 t offload and no push carries <span class="num">24,652.4 kg</span>, <strong>1,402.0 kg short</strong> of the pad's payload, so the push is needed to carry the offload.</p>
+            <p><span class="reading">As pre-registered</span> That shortfall is 3.4% of the offload, which is small, so the pre-registered branch fires: most of the offload is the lighter stack's thrust-to-weight, not the head start. The note reports this verdict, and argues that it compares payload kilograms with propellant kilograms.</p>
+            <p><span class="reading">Read after the run</span> In ideal <span class="nb">delta-v</span>, a reading chosen after the run, the lighter stack's own thrust-to-weight gain is 28–29% of the 228.2 m/s saved; the release speed and the head start's trajectory effects are 64–66%, and the pad's hold-down convention 6–7%.</p>
+          </section>
+          <section class="fcard" aria-labelledby="fc-bridge">
+            <h4 id="fc-bridge">The bridge: the README masses</h4>
+            <p>The robustness check against the calibration miss: a vehicle with other stage masses that calibrates inside the ±10% band (+8.3%). The same case leaves out <span class="num">36.01 t</span>, <span class="num">9.10%</span> of its 395.7 t <span class="nb">stage-1</span> load (2.53× its screening estimate).</p>
+            <p>That is 9.4% lower, in relative terms, than on the gate vehicle: inside the pre-registered agreement band of about 10%, near its edge. Its paired pad (the same offload, no push) falls 1,309.5 kg short of that fork's payload, 3.6% of the 36.01 t offload in kilograms (derived). The findings note applies the pre-registered small-margin reading to the headline only, not to the bridge. In ideal <span class="nb">delta-v</span>, a reading chosen after the run, the lighter stack is 26–27% of the bridge's 208.67 m/s (28–29% on the gate vehicle).</p>
+            <p>Whether the gate vehicle's calibration miss inflates its figure is not established.</p>
+          </section>
+        </div>
+        <ul class="finding-also">
+          <li><strong>Stage 1 is the only headline.</strong> The stage-2 case (31.90 t gross) failed its independent verification, so it is a flagged lower bound; as pre-registered, stage-2 and both-stage numbers are labelled a property of the vehicle model.</li>
+          <li><strong>The energy ratio is not an efficiency claim.</strong> The 12.4 t of RP-1 removed carry about 128× the push's 1.16 MWh of metered electricity in combustion heat (5.65× with the assumed +8.1 t). The ratio of unlike quantities leaves out LOX production, fuel supply, grid losses and the facility.</li>
+          <li><strong>Depth and ignition.</strong> At a fixed exit speed the offload is the same by construction in this model (50 to 300 m of stroke within 0.07 kg); where the thrust ramp starts moves it from 26.7 to 47.0 t, under the prescribed drive.</li>
         </ul>
-        <p class="src">Sources: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding">handoff, section 3</a> (the probe), the <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/SP1-fuel-offload-planar.md">SP1 phase file</a> and the <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/README.md">program board</a>.</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a> (the findings note, caveats first) and the README's <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/README.md#fuel-replaced-at-fixed-payload-sp1">Fuel replaced at fixed payload (SP1)</a>. Pre-registered in docs/phases/inputs; run from commit b3150c1.</p>
       </div>
     </div>
   </section>
@@ -185,11 +229,12 @@
       <p>Everything here is <strong>preliminary</strong>. It covers concept A only (the vertical silo, with a drive that imposes a prescribed acceleration) on the planar <span class="nb">2-D</span> model, with guidance that is sweep-optimized, not optimal-control. Each number is copied from a findings note, and its main caveat sits beside it. The full set is in the README's <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/README.md#results-so-far">Results so far</a>.</p>
     </div>
     <div class="results">
-      <article class="result pending">
+      <article class="result finding">
         <h3>Propellant replaced at fixed payload</h3>
-        <p class="big">In progress</p>
-        <p class="sub">The headline question is being computed in phase SP1. There is no finding yet.</p>
-        <p class="caveat"><strong>Probe, not a finding:</strong> about 10% of <span class="nb">stage-1</span> propellant (41.1 t, 7.9% of total propellant) on the 3 g / 100 m cold-start silo, read off by hand, before any structural mass is charged. Its caveats (the uncharged structural mass, a <span class="nb">max-Q</span> above the full pad's at that offload, the +14.3% calibration, sweep-optimized and unthrottled guidance, the idealised push and the partly filled tanks) are listed under <a href="#status-now">Status: not answered yet</a> above.</p>
+        <p class="big">41.26 t <small>of <span class="nb">stage-1</span> propellant</small></p>
+        <p class="sub"><span class="num">10.04%</span> of the <span class="nb">stage-1</span> load and <span class="num">7.96%</span> of the total, with the pad's <span class="num">26,054.4 kg</span> still delivered to the 200 km orbit: the 3 g / 100 m cold-start silo. Under the ±10% sensitivity arms it stays between <span class="num">38.67</span> and <span class="num">44.46 t</span>; on the README masses (calibrated inside the band) it is <span class="num">36.01 t</span>, <span class="num">9.10%</span>.</p>
+        <p class="caveat"><strong>Caveat:</strong> before structural mass (about 8.5 t of assumed <span class="nb">stage-1</span> dry mass, extrapolated, cancels it); on the gate vehicle model (+14.3%); sweep-optimized and unthrottled, with <span class="nb">max-Q</span> 3.4% above the pad's. Read as pre-registered, most of it is the lighter stack's thrust-to-weight (the pad with the same offload falls only 1.4 t short); a <span class="nb">delta-v</span> reading chosen after the run gives the lighter stack 28–29%. The full set is under <a href="#status-now">Answer so far</a> above.</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a></p>
       </article>
 
       <article class="result">
@@ -220,8 +265,8 @@
         <h3>Aerodynamic loads</h3>
         <p class="big">−16.0% <span class="nb">max-Q</span></p>
         <p class="sub">Unthrottled <span class="nb">max-Q</span> falls from <span class="num">37.19</span> to <span class="num">31.24 kPa</span>, and the drag loss falls 3.5 m/s. But <span class="nb">q-alpha</span> at the kick rises to 1.7–3.4× the pad's (130–251 Pa rad at 77 m/s), and the model charges no penalty for it.</p>
-        <p class="caveat"><strong>Caveat:</strong> nothing is throttled and there is no angle-of-attack aerodynamics, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds; <span class="nb">max-Q</span> sits at the standard atmosphere's tropopause kink (11.02 km). The −16.0% is at full load: in the fuel-offload probe, the silo run with 10% less <span class="nb">stage-1</span> propellant reaches 38.4 kPa, above the full pad's 37.2 kPa (probe, not a finding).</p>
-        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ6-aero-2d-preliminary.md">RQ6-aero-2d-preliminary</a>; the probe: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding">handoff, section 3</a></p>
+        <p class="caveat"><strong>Caveat:</strong> nothing is throttled and there is no angle-of-attack aerodynamics, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds; <span class="nb">max-Q</span> sits at the standard atmosphere's tropopause kink (11.02 km). The −16.0% is at full load: once the push is cashed in as propellant (the 41.26 t offload), the silo run reaches 38.4 kPa, 3.4% above the pad's 37.2 kPa.</p>
+        <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ6-aero-2d-preliminary.md">RQ6-aero-2d-preliminary</a>; at the offload: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a></p>
       </article>
 
       <article class="result against">
@@ -287,6 +332,17 @@
       <h2 id="against-h">What goes against the hypothesis</h2>
       <p>Stated as plainly as the results that support it. Every item is from the README's Results so far and the findings notes it cites.</p>
     </div>
+    <h3 class="against-h">Propellant at fixed payload (SP1)</h3>
+    <ul class="against-list">
+      <li><strong>Structure can cancel the offload.</strong> Each tonne of assumed <span class="nb">stage-1</span> strengthening takes 4.5–5.1 t off the 41.26 t. At +8.1 t only 1.98 t (0.48% of stage 1) remains, and about 8.5 t (extrapolated) takes all of it. How much structure a 4 g full-stack push needs is unknown in this model.</li>
+      <li><strong>Part of the headline is not the push.</strong> 14.4 m/s of the 228.2 m/s of ideal <span class="nb">delta-v</span> saved (6.3%) is the pad's clamped hold-down burn, a baseline convention. By a difference between runs, another 28–29% is the lighter stack's own thrust-to-weight gain, which the push makes usable but does not produce; read as pre-registered, most of the offload is the lighter stack.</li>
+      <li><strong>The <span class="nb">max-Q</span> benefit disappears.</strong> The full-load silo's 16% lower <span class="nb">max-Q</span> becomes 3.35% above the pad's once the push is cashed in as propellant, and up to 12.5% above at a 300 m stroke; <span class="nb">q-alpha</span> at the kick is 3.0× the pad's. Nothing throttles or limits either.</li>
+      <li><strong>Diminishing returns with depth.</strong> The offload per m/s of exit speed falls from 622 to 429 kg as the stroke grows from 25 to 300 m at 3 g. At a fixed exit speed a gentler push costs up to 71% more electricity and a longer facility for the same offload.</li>
+      <li><strong>A late start is expensive.</strong> Each second of ignition delay after release costs 4.8–5.3 t of offload.</li>
+      <li><strong>The figure depends on the vehicle masses.</strong> On the README-loads fork, which calibrates inside the band, the offload is 9.10% of stage 1 rather than 10.04%.</li>
+      <li><strong>Stage 2 is not a headline.</strong> The stage-2 case failed its independent verification (a flagged lower bound), and why its figure is so large is unresolved.</li>
+    </ul>
+    <h3 class="against-h">Payload at full load (Phase 2)</h3>
     <ul class="against-list">
       <li><strong>Structural mass could cancel the gain.</strong> No structural mass is charged for the 4.0 g full-stack load (22.5 MN at the interface). At about 184 kg of payload per tonne of <span class="nb">stage-1</span> dry mass, about 8.1 t of silo-only strengthening would cancel the whole gain (a linear extrapolation, not a sized structure).</li>
       <li><strong>Part of the headline is not the push.</strong> The pad's 2.7 t clamped ramp is a baseline convention, and it accounts for 130.7 kg gross (83.1 kg net). Against a pad lit at release, the gain is +1,415.8 kg.</li>
@@ -328,8 +384,8 @@
         </thead>
         <tbody>
           <tr><td class="phase">Phases 0–2</td><td>Scaffold; the <span class="nb">1-D</span> vertical model with staging and the silo push; the <span class="nb">2-D</span> rotating-Earth ascent to orbit with drag, guidance and payload search. The calibration missed high (+14.3%), accepted and documented.</td><td><span class="label done">Done</span></td></tr>
-          <tr><td class="phase">SP1</td><td>Launch settings (silo depth with exit speed, where the thrust ramp starts) and the fuel offload at fixed payload on the planar model: a findings note with the % of propellant replaced, and a replay of the full pad against the offloaded silo.</td><td><span class="label wip">In progress</span></td></tr>
-          <tr><td class="phase">SP2</td><td>A local app with an animated <span class="nb">2-D</span> launch scene: set depth, ramp start and offload, press Launch, watch pad and silo side by side.</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">SP1</td><td>Launch settings (silo depth with exit speed, where the thrust ramp starts) and the fuel offload at fixed payload on the planar model: the findings note <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a> (41.26 t, 10.04% of <span class="nb">stage-1</span> propellant, preliminary and before structural mass), the pre-registered run that reproduces it, and a replay of the full pad against the offloaded silo.</td><td><span class="label done">Done 2026-10-04</span></td></tr>
+          <tr><td class="phase">SP2</td><td>A local app with an animated <span class="nb">2-D</span> launch scene: set depth, ramp start and offload, press Launch, watch pad and silo side by side.</td><td><span class="label wip">Next</span></td></tr>
           <tr><td class="phase">SP3</td><td><span class="nb">3-D</span> dynamics, stage 1: a <span class="nb">3-DOF</span> point mass over a rotating sphere, validated against the planar model.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP4</td><td>The launch shown on a globe in the app, and the offload question re-checked on the <span class="nb">3-D</span> model.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP5</td><td><span class="nb">3-D</span> dynamics, stage 2: an oblate Earth (ellipsoid and J2).</td><td><span class="label planned">Planned</span></td></tr>

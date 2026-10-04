@@ -11,20 +11,42 @@ may not copy, modify, share or use it, commercially or otherwise, without writte
 implement or commercialise them.
 
 **How much propellant does the silo push save?**
-Not answered yet. That is the headline question of the current phase, SP1, and the answer is
-being computed there (at a fixed payload, on the planar model). A labelled probe found about
-10% of stage-1 propellant (41.1 t, 7.9% of the total propellant load) on the 3 g, 100 m
-cold-start silo, before any structural mass is charged. It is a probe, not a finding. At that
-offload the silo run's max-Q (38.4 kPa) is above the full pad's (37.2 kPa), and the gate
-vehicle calibrates +14.3% high ([handoff, section 3](../handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding)).
+On this model, preliminary: at the pad's payload and orbit the 3 g, 100 m cold-start silo
+lets the gate vehicle leave out **41.26 t of stage-1 propellant, 10.04% of the stage-1 load
+and 7.96% of the total** ([RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md),
+pre-registered SP1 runs). It is a difference between runs of a vehicle model, not a Falcon 9
+figure, and these caveats travel with it:
+
+- the gate vehicle calibrates +14.3% high; on the README-loads fork, which calibrates inside
+  the band, the same case removes 36.01 t (9.10% of stage 1);
+- guidance is sweep-optimized and nothing is throttled;
+- no structural mass is charged for the 4 g full-stack push: an assumed +8.1 t of stage-1
+  dry mass leaves 1.98 t, and about 8.5 t (extrapolated) cancels it;
+- read as the pre-registration worded it, most of the offload is the lighter stack's
+  thrust-to-weight (the pad flown with the same offload falls only 1.4 t short of the
+  payload), while a delta-v reading chosen after the run gives the lighter stack 28 to 29%;
+- the offloaded run's max-Q is 3.4% above the pad's (the full-load silo's was 16% below);
+- the stage-2 case failed its independent verification, and stage-2 figures are a property
+  of the vehicle model, not the headline;
+- the heat-to-electricity ratio of about 128 is not an efficiency claim.
+
+[9. Reading results](09-reading-results.md#what-the-shipped-offload-run-says) has the rest.
+
+**Does this show that electricity can replace a share of a rocket's fuel?**
+No such claim follows. The figure is propellant left out of a partly filled tank of one
+vehicle model at one payload, before any structure is charged for the push, and the energy
+ratio beside it sets unlike quantities side by side: it leaves out producing the oxidiser,
+supplying the fuel, grid losses and the facility, and says nothing about cost.
 
 **So what has been found?**
 Preliminary results for the vertical silo only, in [docs/findings/](../findings/README.md).
 On the 2-D gate vehicle the cold-start silo (3 g net over 100 m, 76.7 m/s at the mouth)
-carries +1,498.8 kg (+5.75%) more to a 200 km orbit than the pad. That comes with caveats
-that could cancel it: no structural mass is charged for the 4 g full-stack push (about 8.1 t
-of strengthening would cancel the gain), the vehicle calibrates +14.3% high, and the guidance
-is sweep-optimized and unthrottled ([9. Reading results](09-reading-results.md#the-caveats-and-why-each-matters)).
+carries +1,498.8 kg (+5.75%) more to a 200 km orbit than the pad, or, read the other way,
+leaves out 41.26 t of stage-1 propellant at the pad's payload (above). That comes with
+caveats that could cancel it: no structural mass is charged for the 4 g full-stack push
+(about 8.1 t of strengthening would cancel the payload gain, about 8.5 t the offload), the
+vehicle calibrates +14.3% high, and the guidance is sweep-optimized and unthrottled
+([9. Reading results](09-reading-results.md#the-caveats-and-why-each-matters)).
 
 **Does every m/s of assist help, as the hypothesis says?**
 In the ideal rocket equation, yes: about 9 kg of payload per m/s on the README vehicle. In the
@@ -32,7 +54,10 @@ simulations so far the answer is mixed. The 77 m/s silo gains about twice the id
 before structural mass; but a full hot start ties the cold start, a slow startup after
 release gives back a large part of the gain, and at the slowest swept push (0.5 g over 50 m)
 the trajectory term is negative and a third of the small gain is the pad's own hold-down
-burn ([9. Reading results](09-reading-results.md#results-that-go-against-the-hypothesis)).
+burn. In the offload runs the max-Q benefit is spent, the offload per m/s falls with depth,
+each second of ignition delay after release costs 4.8 to 5.3 t, and assumed structure takes
+4.5 to 5.1 t of offload per tonne
+([9. Reading results](09-reading-results.md#results-that-go-against-the-hypothesis)).
 
 **Why is the 2-D gain about twice the README's hand estimate? Is that a bug?**
 The hand estimate holds every loss constant. A vertical release is not constant-loss: in
@@ -71,7 +96,15 @@ the result "not a payload result". Use the 2-D model for payload.
 **Why are the hot starts not better than the cold start?**
 Under a prescribed acceleration the drive supplies whatever force the push needs, so thrust on
 the track buys no exit speed; it only trades propellant for drive energy and peak power. The
-hot-start question waits for a force-limited drive (Phase 3).
+hot-start question waits for a force-limited drive (Phase 3). In the offload runs every hot
+start beats lighting at the mouth, and lighting 75 m deep removes the most (46.96 t), but
+lighting at the shaft floor removes 2.6 t less than that: the extra propellant burned on the
+track buys nothing under this drive.
+
+**How do I run the offload experiment myself?**
+`uv run python -m launchsim run experiments/silo_offload_2d.yaml` (long; see
+[5b](05b-offload.md)). Its summary gains the section "Propellant saved at fixed payload";
+replay an offloaded run beside the pad with `replay ... --runs pad silo_cold_s1`.
 
 **Can I change a vehicle file?**
 Not a calibrated one: copy it to a new file and change the copy
@@ -120,18 +153,26 @@ It raised after the directory was created. See
 | **max-Q** | The largest dynamic pressure of the flight. Unthrottled here, so an upper bound |
 | **MECO** | Main engine cutoff: stage-1 burnout |
 | **mouth** | The top of the silo, the track exit |
-| **offload** | Propellant removed at a fixed payload. The SP1 headline quantity; the experiment block for it is coming in SP1 |
+| **no_ignition** | A ramp start by event height that the coast after release never reaches (its apex lies below the height); the run ends `guidance_failed` or `search_failed` |
+| **no_offload** | The status of an offload solve whose vehicle cannot carry P_ref even with full tanks (x\* = 0) |
+| **offload** | Propellant removed from a full load at a fixed payload and orbit, with the tanks partly filled and every dry mass unchanged; set up with the experiment's `offload:` block ([5b](05b-offload.md)) |
+| **offload decomposition (cross-vehicle)** | The split of the ideal delta-v an offloaded vehicle does without, D_id(pad) - D_id(case), into the release speed and the differences in the losses, the pre-flight burn, the fairing term and the margin; `explained` when it closes, else `bug_suspect` |
 | **omega_p** | The Earth rotation rate in the plane of the launch, omega_E cos(lat) sin(az) |
 | **P0** | The payload in the vehicle file (22.8 t on the Falcon 9-class files) |
 | **P\*** | Payload capacity: the largest payload that reaches the target orbit with zero residual propellant |
+| **P_ref** | The reference payload of an offload: the full-load pad's P\* on the same vehicle and orbit |
+| **pad control** | The offload solve run on the pad itself: for stage 1 a consistency test of the solver; for stage 2 and both the amount those cases are quoted net of |
+| **paired pad** | The pad flown with an offload case's propellant change and no push (`<case>__<baseline>`); it separates the head start from the lighter stack |
 | **paired sweep** | A sweep that re-runs the baseline at every point with the same overrides (2-D) |
+| **penalty row** | An offload case with `stage1_dry_mass_added_t`: an assumed stage-1 dry mass added to the assisted run, a parametric stand-in for structure, not a sized one |
 | **pre-registration** | Fixing inputs and rules in a commit before a run, so they cannot drift toward a wanted answer |
 | **probe** | A labelled one-off calculation outside the shipped experiments. Never a finding |
 | **q-alpha** | Dynamic pressure times the angle between thrust and air-relative velocity, an aerodynamic load indicator |
 | **ramp** | A linear thrust startup over `t_ramp_s` |
-| **ramp start** | When a stage's thrust ramp begins: by time, or (stage 1 on a silo run) by depth, speed or height |
+| **ramp start** | When a stage's thrust ramp begins: by time, or (stage 1 on a silo run) by depth, speed or height (by a closed form or by an altitude event in flight) |
 | **release** | The moment the vehicle leaves the track or the hold-down opens |
 | **residual propellant** | Stage-2 propellant left at insertion, at the vehicle payload. Negative means a virtual shortfall |
+| **resolution effect** | A stage-1 pad control that ends `no_offload` because the full-load pad misses P_ref by grams of residual propellant (between -0.05 and 0 kg); it passes the consistency test |
 | **screening, screening yardstick** | The ideal rocket-equation payload gain of a release speed, with all losses held constant. The yardstick a run's dP\* is checked against |
 | **sensitivity case** | A run with one parameter moved by plus or minus a fraction |
 | **silo** | Concept A: a vertical shaft whose drive pushes the rocket out |
@@ -146,3 +187,4 @@ It raised after the directory was created. See
 | **v_rel** | Velocity relative to the co-rotating air (Earth-relative). Drag, Mach, q and the loss accounting use it |
 | **validation** | Checking that the code solves its equations, against closed forms in the tests |
 | **variant** | A named partial run merged over the baseline |
+| **x\*** | The solved offload: the largest evaluated x at which the assisted run still carries P_ref with residual propellant >= 0 |

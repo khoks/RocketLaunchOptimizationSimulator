@@ -60,11 +60,10 @@ key path.
 | `bare value; vehicle files need {value, source} or {value, assumed: true}` | A plain number in a vehicle file | Write `{value: ..., source: "..."}` or `{value: ..., assumed: true}` |
 | `constant_accel needs exactly one of net_accel_g or exit_speed_mps beside stroke_m` | Neither, or both | State the push one way ([5](05-assist-and-ignition.md#stating-the-push-two-ways)) |
 | `keys [...] of two exclusive families are given together` | Two ways of stating one setting in one dict, often through a YAML anchor merge | Remove one; write the dict out instead of `<<: *anchor` |
-| `ignition height_method: event ... arrives in SP1 step 4` | The altitude-event ramp start is not built yet | Use `height_method: closed_form` |
 | `ignition at_height_m and height_method come together` | One without the other | Give both |
 | `at_depth_m ... is deeper than the track` | Depth larger than `stroke_m` | Reduce the depth |
 | `at_speed_mps ... exceeds the exit speed ...: the push never reaches it` | Speed above the exit speed | Reduce it, or raise the exit speed |
-| `at_height_m ... is at or above the drag-free apex ...` | The coast never reaches that height | Lower the height |
+| `at_height_m ... is at or above the drag-free apex ...` | The coast never reaches that height (either height method) | Lower the height |
 | `a ramp start by at_depth_m needs an assist model` | A depth, speed or height trigger on a pad | Use it on a silo run only |
 | `reference push_start needs an assist model (a pad run has no push)` | `push_start` on a pad | Use `reference: release` |
 | `ignition fails: true requires end: impact` | A failed ignition must end on the ground | Add `end: impact` |
@@ -80,6 +79,17 @@ key path.
 | `cases need label: calibration` | `cases` in a normal experiment | Use variants or bounds |
 | `... is not a valid results directory name`, `... is reserved by the results layout`, `... is longer than 64 characters` | A name that cannot be a folder | Rename ([4](04-experiments.md#top-level-keys)) |
 | `variant 'x' not in experiment 'y': [...]` | `--variant` with an unknown name | Use one of the listed names |
+| `offload: a planar_2d block ...`, `offload: ... needs search.figure_of_merit payload` | An `offload:` block on a 1-D file, or without a payload search | Use `planar_2d` with `figure_of_merit: payload` |
+| `offload reference 'x' must be the baseline ...` | `reference` names another run | Name the baseline |
+| `offload case 'x': of 'pad' is the baseline ...` | A case built on the baseline | Build it on a variant; the pad's own offload is the pad control |
+| `offload case 'x': give exactly one of solve ... or fixed ...` | Both or neither | Give one |
+| `a fixed offload states exactly one of stage1_t, stage1_fraction, ...` | No key, two keys, or a null in `fixed` | Give exactly one key with a number |
+| `... a stage2 solve is quoted net of the pad control ...` (or `... solves stage2, which is quoted net of a pad control ...`) | A `stage2` or `both` solve without `pad_control: true`, or named in `sensitivity_of` or a sweep's `offload` | Set `pad_control: true`; name only stage-1 solves and fixed cases in arms and sweeps |
+| `offload case 'x': stage2_offload_t is taken before a stage-1 case only ...` | A stage-2 pre-offload on a stage-2 or both case | Use it on a stage-1 case |
+| `... takes N t of propellant from stage '...', which carries M t (an offload beyond the load ...)` | A fixed offload or pre-offload at or beyond a stage's load | Lower it |
+| `offload sensitivity_of re-solves its cases ...: declare the sensitivity block` | `sensitivity_of` without a `sensitivity` block | Add one (its `of` may be `[]`) |
+| `offload energy fuel_mass_t ...` | The energy block misses a stage, names an unknown one, or gives more fuel than the stage's propellant | One entry per stage, each no more than its propellant |
+| `sweep N: offload names cases of the experiment's offload block, which this experiment does not declare` | A sweep's `offload` key without a block | Declare the block, or drop the key |
 
 ## Problems during or after a run
 
@@ -88,7 +98,21 @@ key path.
   unexpected input; the next run creates a new directory.
 - **Status `search_failed`.** The payload search could not bracket or converge; see
   `search_failure_kind` and `search_failure_message` in `metrics.json`. The run has no
-  recorded trajectory, so its plots and time series are empty.
+  recorded trajectory, so its plots and time series are empty. A searched run whose ramp
+  start by event height lies just below the drag-free apex fails this way (kind `grid`,
+  naming `no_ignition`): the flown coast, slowed by drag, peaks below the height
+  ([5](05-assist-and-ignition.md#ramp-start-by-depth-speed-or-height)). Lower the height.
+- **An offload case reads `offload_verify_mismatch`.** Its independent payload search did
+  not return P_ref within the tolerance; its x\* is a lower bound. Report it as such
+  ([9](09-reading-results.md#verification-and-flags)).
+- **An offload case reads "not quoted".** Its own solve did not end `ok` or `no_offload`,
+  or (stage 2 and both) its pad control has no offload to net it against.
+- **The offload section says `reference_failed`.** The pad baseline (or, for an arm, the
+  pad under that perturbation) found no payload capacity, so there is no P_ref to solve at.
+- **"Findings are blocked ... a stage-1 pad control failed its consistency test".** The
+  pad control found propellant to remove from the pad itself beyond the resolution bound,
+  missed P_ref with full tanks by more than grams, or its solve failed. Do not quote any
+  offload until it is investigated ([9](09-reading-results.md#the-pad-control)).
 - **Status `drive_limit`.** The thrust on the track exceeded what the prescribed
   acceleration needs; see [5](05-assist-and-ignition.md#what-the-drive-does-and-what-it-does-not-model).
 - **Status `bug_suspect` or a `bug_suspect` comparison.** A per-run check or a blocking
@@ -98,8 +122,9 @@ key path.
   started. A calibration run with uncommitted inputs prints `PREREGISTRATION DIRTY` and is
   not a valid calibration record.
 - **It is slow.** A 2-D run searches each run's payload capacity, and every comparison adds
-  matched-payload evaluations. While you iterate, use `--variant NAME`, `--no-sensitivity`
-  and `--no-plots`. Sweeps fly every point one after another (there is no parallel option
+  matched-payload evaluations, and an offload block runs nested payload searches per case.
+  While you iterate, use `--variant NAME`, `--no-sensitivity`, `--no-offload` and
+  `--no-plots`. Sweeps fly every point one after another (there is no parallel option
   yet; backlog B-011).
 
 ## animate and replay

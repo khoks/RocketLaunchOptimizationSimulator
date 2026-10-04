@@ -144,6 +144,35 @@ footer .license { font-weight: 500; color: var(--ink); }
 .status-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
 .box ul.probe-caveats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 32px; max-width: none; }
 .box .src { font-size: 0.86rem; color: var(--ink-2); }
+.box h4 { font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); margin: 0; }
+/* The answer box: the headline with its caveats beside it, then three cards (penalty rows,
+   paired pad, bridge) and the remaining caveats. */
+.box.finding { border-left: 4px solid var(--run-1); gap: 14px; }
+.box.finding > .status-head h3 { color: var(--accent-ink); }
+.finding-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 14px 28px; align-items: start; }
+.finding-main { display: grid; gap: 8px; align-content: start; }
+.finding-big { font-family: var(--font-display); font-weight: 700; font-size: 3.6rem; line-height: 0.95; letter-spacing: 0.01em; color: var(--ink); }
+.finding-what { font-size: 1.1rem; line-height: 1.45; }
+.finding-how { font-size: 0.93rem; color: var(--ink-2); }
+.finding-cav { background: var(--caution-bg); border: 1px solid var(--rule); border-left: 4px solid var(--caution); border-radius: 6px; padding: 12px 14px; display: grid; gap: 8px; align-content: start; }
+.finding-cav h4 { color: var(--caution); }
+.box .finding-cav ul { font-size: 0.93rem; gap: 6px; }
+.finding-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.fcard { border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); padding: 12px 14px; display: grid; gap: 8px; align-content: start; min-width: 0; font-size: 0.93rem; }
+.fcard p { color: var(--ink-2); }
+.fcard p strong { color: var(--ink); }
+.reading { display: inline-block; margin-right: 4px; font-family: var(--font-display); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); border-bottom: 2px solid var(--run-1); line-height: 1.25; }
+table.mini { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.mini caption { text-align: left; color: var(--ink-3); font-size: 0.8rem; padding-bottom: 4px; }
+.mini th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 0 4px 10px; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+.mini td { padding: 3px 0 3px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.mini td.n, .mini th.n { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.mini th.n { font-family: var(--font-body); }
+.mini th:first-child, .mini td:first-child { padding-left: 0; white-space: normal; }
+.mini tbody tr:first-child td { font-weight: 600; color: var(--ink); }
+.mini tr.extra td { color: var(--ink-3); border-bottom: 0; }
+.box ul.finding-also { font-size: 0.93rem; color: var(--ink-2); max-width: none; }
+.finding-also strong { color: var(--ink); }
 
 .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
 .step { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
@@ -180,6 +209,8 @@ footer .license { font-weight: 500; color: var(--ink); }
 .result .src { font-size: 0.82rem; color: var(--ink-3); }
 .result.pending { border-top-color: var(--caution); background: var(--caution-bg); grid-column: 1 / -1; }
 .result.pending .big { color: var(--caution); }
+.result.finding { border-top-color: var(--run-1); grid-column: 1 / -1; }
+.result .big small { font-size: 0.45em; font-weight: 600; color: var(--ink-2); letter-spacing: 0.02em; }
 .result.against { border-top-color: var(--bad); }
 .result.calib { border-top-color: var(--ink-3); grid-column: 1 / -1; }
 
@@ -198,6 +229,7 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .table-note { margin: 0 0 -6px; font-size: 0.86rem; color: var(--ink-2); max-width: 95ch; }
 
 .against-list { margin: 0; padding-left: 1.2rem; display: grid; gap: 10px; max-width: 100ch; }
+.against-h { margin: 4px 0 -6px; color: var(--ink); }
 .against-list li::marker { color: var(--bad); }
 .against-list strong { font-weight: 600; }
 
@@ -289,6 +321,7 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 }
 @media (max-width: 960px) {
   .steps, .results { grid-template-columns: minmax(0, 1fr); }
+  .finding-grid, .finding-cards { grid-template-columns: minmax(0, 1fr); }
   .prior, .links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .manual { grid-template-columns: minmax(0, 1fr); gap: 18px; padding-top: 16px; }
   .manual-nav { position: static; max-height: none; }
@@ -302,6 +335,7 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   .lede { font-size: 1.03rem; }
   .question .ask { font-size: 1.35rem; }
   .result .big { font-size: 2rem; }
+  .finding-big { font-size: 2.8rem; }
   .prior, .links { grid-template-columns: minmax(0, 1fr); }
   .pager { grid-template-columns: minmax(0, 1fr); }
   .pager .next { grid-column: 1; }

@@ -100,17 +100,26 @@ In increasing fidelity:
 The 1-D model has no orbit. Its figure of merit is the speed at stage-1 burnout, and its
 "payload equivalents" are screening conversions, not payload results.
 
-**Coming in SP1: propellant offload at fixed payload.** The headline question of SP1 is how
-much propellant the silo push replaces while the payload stays fixed. The solver core
-exists (`src/launchsim/offload.py`, SP1 step 5): it removes propellant x from stage 1 (or
-stage 2, or both at the same fraction) and finds the largest x for which the vehicle still
-inserts the reference payload, the full-load pad's P\* on the same vehicle and orbit. It is
-not reachable from experiment files yet; the `offload:` block arrives in SP1 step 7. The
-only number so far is a labelled probe: about 10% of stage-1 propellant (41.1 t, 7.9% of the
-total propellant load) on the 3 g, 100 m cold-start silo, before any structural mass is
-charged. It is a probe, not a finding. At that offload the silo run's max-Q (38.4 kPa) is
-above the full pad's (37.2 kPa), and the gate vehicle calibrates +14.3% high
-([handoff, section 3](../handoff/archive/2026-09-30-phases-0-2.md#3-the-headline-question-and-a-first-answer-probe-not-a-finding)).
+**Propellant offload at fixed payload (SP1).** The other way to read the same push: hold the
+payload and the orbit fixed, and ask how much propellant the assisted rocket can leave out.
+The solver removes propellant x from stage 1 (or stage 2, or both at the same fraction),
+with the tanks partly filled and every dry mass unchanged, and finds the largest x for which
+the assisted vehicle still inserts the reference payload P_ref, the full-load pad's P\* on
+the same vehicle and orbit. The comparison is then between different vehicles carrying the
+same payload. It is set up with an experiment's `offload:` block
+([5b](05b-offload.md)) and read as in
+[9. Reading results](09-reading-results.md#reading-an-offload-result).
+
+The pre-registered finding ([RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md),
+preliminary): on the gate vehicle the 3 g, 100 m cold-start silo leaves out 41.26 t of
+stage-1 propellant, 10.04% of the stage-1 load and 7.96% of the total, at the pad's payload
+and orbit. That is a difference between runs of a vehicle model that calibrates +14.3% high
+(the README-loads fork gives 36.01 t, 9.10%), sweep-optimized and unthrottled, before any
+structural mass is charged (an assumed +8.1 t of stage-1 dry mass leaves 1.98 t; about
+8.5 t, extrapolated, cancels it). Read as the pre-registration worded it, most of the
+offload is the lighter stack's thrust-to-weight (the pad flown with the same offload falls
+only 1.4 t short of the payload), while a delta-v reading chosen after the run gives the
+lighter stack 28 to 29%. The offloaded run's max-Q is 3.4% above the pad's.
 
 ## Guidance, and what "sweep-optimized" means
 
@@ -171,7 +180,8 @@ Every summary reports, against the pad:
   5 g gives 160 m.
 
 Rockets normally see 4 g only near burnout, with nearly empty tanks. No structural mass is
-charged for that load in any result so far; it is the caveat that could cancel the gain
-(README roadmap Phase 3, backlog B-004).
+charged for that load in any result so far, except as assumed penalty rows in the offload
+experiment; it is the caveat that could cancel the gain (README roadmap Phase 3, backlog
+B-004).
 
 Next: [4. Experiment files](04-experiments.md)

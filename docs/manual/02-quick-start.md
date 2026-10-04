@@ -17,6 +17,8 @@ Each file in `experiments/` defines a pad baseline and its variants on one vehic
 | `silo_bridge_2d_readme.yaml` | `planar_2d` | pad, pad_instant, silo_instant and silo_cold on the README masses |
 | `guidance_trigger_2d.yaml` | `planar_2d` | Kick-trigger fairness study (pad and silo_cold, a paired sweep) |
 | `calibration_f9_2d.yaml` | `planar_2d` | Calibration against the published Falcon 9 payload (labelled calibration) |
+| `silo_offload_2d.yaml` | `planar_2d` | Propellant offload at fixed payload (SP1, pre-registered): pad, three silo variants, eleven offload cases, pad controls, eight sensitivity arms, five sweeps that solve an offload case at every point ([5b](05b-offload.md)) |
+| `silo_offload_2d_readme.yaml` | `planar_2d` | The offload headline case repeated on the README masses (the calibration bridge) |
 
 ## Step 1: a 1-D run (seconds)
 
@@ -116,6 +118,20 @@ engines lit 0.5 s later with a 2 s ramp), both flown to a 200 km orbit, replayed
 recorded time series of `results/silo_screening_2d/20260930T175743Z`. Point-mass planar
 model, sweep-optimized and unthrottled, on the gate vehicle that calibrates +14.3% high, with
 no structural mass charged for the 4 g push.*
+
+## Step 6 (optional, long): the offload experiment
+
+```text
+uv run python -m launchsim run experiments/silo_offload_2d.yaml --variant silo_cold --no-sensitivity
+```
+
+This flies the pad, silo_cold and the offload cases built on silo_cold, and adds the section
+"Propellant saved at fixed payload" to the summary: how much stage-1 propellant the silo
+lets the vehicle leave out at the pad's payload. Every case runs nested payload searches, so
+expect a long run (the full pre-registered `run` of this file took 14.1 min). What the
+options do is in [5b](05b-offload.md#skipping-parts-of-it); how to read the result, with
+the caveats that must travel with it, in
+[9. Reading results](09-reading-results.md#reading-an-offload-result).
 
 ## On a fresh clone
 
