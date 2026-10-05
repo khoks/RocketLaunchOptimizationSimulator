@@ -1,6 +1,6 @@
 # SP2: Local app and 2-D launch scene
 
-Status: not started
+Status: in progress (session 2026-10-05)
 
 Written 2026-09-30 in the SP1 session (step T) from the approved plan
 ([inputs/2026-09-30-SP1-approved-plan.md](inputs/2026-09-30-SP1-approved-plan.md), section
@@ -35,6 +35,21 @@ Program board: [README.md](README.md).
 
 This file is a brief, not the detailed design. The detailed design is made in SP2's own
 Plan mode (step A0) and approved by the user before any code is written.
+
+Started 2026-10-05. On 2026-10-05, in step A0, the user answered Q1 to Q7 (section 10) and
+approved the design saved as
+[inputs/2026-10-05-SP2-design.md](inputs/2026-10-05-SP2-design.md), with decisions D-SP2-01
+to D-SP2-38 (section 3; full text in TODO.md). That design supersedes sections 5, 7 and 8
+of this file where they differ. Section 7 and section 8 below now hold the approved step
+table and exit criteria. Sections 1 to 5 are kept as the brief they were: read them for
+the background and the constraints, and the design for what is built. Section 6 has a
+re-check at b69ff0c at its top and keeps its older tables as written. Section 12 lists
+what the design changed against this brief. The design's sources are saved beside it: nine
+survey reports ([inputs/2026-10-05-SP2-survey/](inputs/2026-10-05-SP2-survey/README.md)),
+six reviews of its first draft
+([inputs/2026-10-05-SP2-review/](inputs/2026-10-05-SP2-review/README.md)) and the two
+mock-ups the user approved
+([inputs/2026-10-05-SP2-mockups/](inputs/2026-10-05-SP2-mockups/README.md)).
 
 ## 1. Goal and what you can see at the end
 
@@ -181,6 +196,57 @@ a results directory is never overwritten and nothing in `results/` is deleted wi
 no magic numbers outside `constants.py` and configs; I/O lives only in the listed modules;
 every new dependency is justified in one line; caveats are reported as plainly as results;
 public text follows the same honesty rules and never calls the project open source.
+
+**Decisions of SP2's own planning (2026-10-05, step A0).** D-SP2-01 to D-SP2-08 are the
+user's answers to Q1 to Q7 (section 10); D-SP2-09 to D-SP2-38 are design decisions the
+user approved with the plan. One line each; the text in TODO.md's decisions log is
+authoritative, and the reasons and measurements are in the design
+([inputs/2026-10-05-SP2-design.md](inputs/2026-10-05-SP2-design.md), section 3).
+
+| Id | What it decides |
+|---|---|
+| D-SP2-01 | Q1: a standalone HTML export of the scene (`launchsim scene`) and a video export are in SP2 |
+| D-SP2-02 | Q2: the app and the scene work offline with system fonts; the replay page stays as it is |
+| D-SP2-03 | Q3: app runs go to `results/app/<UTC timestamp>/`, and each summary.md is tracked |
+| D-SP2-04 | Q3 follow-up: app summaries carry an exploratory banner and are committed at step boundaries and before any pre-registered run |
+| D-SP2-05 | Q4: the presets are SP1's configurations plus the Phase 2 screening variants |
+| D-SP2-06 | Q5: the gate vehicle only |
+| D-SP2-07 | Q6: fixed and solved offloads; the stage-2 and both-stage forms under Advanced, with the pad control forced on |
+| D-SP2-08 | Q7: a schematic cross-section as in the mock-up, light and dark |
+| D-SP2-09 | One daemon worker thread in the server process; one job at a time; no cancel |
+| D-SP2-10 | The cached pad: app code composes the public pieces in `run_experiment`'s order (results_io.py unchanged); the key is a digest of the baseline's run dict, the vehicle dict and the server-start git state; each hit is re-wrapped |
+| D-SP2-11 | Provenance: the git state is read once at server start and stored beside the launch-time state; a launch is refused when src, configs, experiments, pyproject.toml or uv.lock changed since the start |
+| D-SP2-12 | Exploratory marking: a third experiment label value, `exploratory`, a banner in summary.md with both git states, and one line in the replay and animation caveats of that directory |
+| D-SP2-13 | A1's compatibility policy: `run_data.RunDataError`; the old names stay in plots and replay; the ffmpeg test and `plots.calibration_caveat` stay in plots; cli.py is not edited in A1; existing tests unchanged |
+| D-SP2-14 | KI-017: one output-path rule (replay's stricter one) for animate, replay and scene |
+| D-SP2-15 | KI-016: fixed in the reader (`read_events` returns every row; `with_drop_masses` adds the mass before and after each drop for the four fairing cases); the planner is not touched |
+| D-SP2-16 | The scene's time grid is a selection of CSV rows, never a resample |
+| D-SP2-17 | Attitude: drawn along `pitch_rad` while thrust is on, in the hold and on the track; the drawn angle is held when unpowered |
+| D-SP2-18 | Display geometry in `configs/display/` (`f9_class.yaml`, `scene.yaml`), read only by a new pure module `display.py`; an import-guard test keeps display, scene and app out of the run path |
+| D-SP2-19 | Spent stage and fairing halves: a numerical vacuum coast from the rebuilt event state; display-only |
+| D-SP2-20 | Carriage after release: drawn braking at `brake_decel_g` over `braking_distance_m` on rails above the release point; outlines on a run that ends in impact |
+| D-SP2-21 | Player code: seven replay helpers copied verbatim and pinned by a test; the scene has its own rate law; replay.html is not edited in SP2 |
+| D-SP2-22 | The app shows the scene in a same-origin iframe of the server-rendered scene page; the page in the app is the exported page |
+| D-SP2-23 | Step A1a, before the scene: caveat wording fixed at source in replay.py (KI-029 and more), so replay and scene share one caveat source; site/build.py keeps only its three template canvas patches and its editorial additions |
+| D-SP2-24 | KI-018: Pillow is declared in the dev extra |
+| D-SP2-25 | Progress: the five stages the app owns, with elapsed time and an expected range; no callback in results_io.py or offload.py; every solve launch runs its pad control; only the pad is cached |
+| D-SP2-26 | App launches write no PNG plots |
+| D-SP2-27 | A fixed offload is labelled "imposed offload", never "saved"; the panel shows P* - P_ref with its reading; no fly-out at P_ref |
+| D-SP2-28 | Default pair for any directory: the baseline on the left; on the right the first solved stage-1 case, else the first assisted variant that is not a yardstick, else one full-width panel |
+| D-SP2-29 | The command: port 8765, `--port N` (0 = a free port), `--open`, `--results-root PATH`; the URL is printed as http://127.0.0.1:<port>/ |
+| D-SP2-30 | Video: MP4 through ffmpeg only, by frame-stepped capture from the app page; no GIF from the app |
+| D-SP2-31 | Requests: whitelisted keys, enumerated choices, real booleans, finite bounded numbers; the experiment is built from a frozen basis; a launch keeps a committed name only when its resolved configuration equals the committed one |
+| D-SP2-32 | Server guard: a per-route policy table, tested by raw sockets; neither new template assigns HTML from data |
+| D-SP2-33 | Brand: the app page inlines the logo mark and a data-URI tab icon, each compared with its file by a test; the scene page carries the tab icon only |
+| D-SP2-34 | replay.html does not take the site's contrast tokens in SP2; KI-019 is re-owned to the phase that next edits replay.html |
+| D-SP2-35 | Each panel has a fixed-scale close-up of the vehicle beside the true-scale view, which shows the rocket while its body is at least 3 px wide and a marker after that |
+| D-SP2-36 | The results panel and every caveat are built from the directory shown; SP1's headline lives in one constant checked against the findings note; a launch equal to a committed case says "a reproduction, not new evidence" |
+| D-SP2-37 | Commits: app summaries are results and go in their own commit; reviewers and gates launch into a scratch results root; only the demo launches go to results/app/ (amends the session protocol, section 4) |
+| D-SP2-38 | Exit criteria: 17 (section 8), with the changes against the brief's 14 listed there |
+
+Not taken (design, section 3): vendored or Google fonts (Q2); the README-loads vehicle
+(Q5); a cancel button; sensitivity arms and sweeps from the form; a CLI video command; a
+GIF from the app.
 
 ## 4. Entry criteria
 
@@ -778,6 +844,159 @@ project (no `package.json`, no bundler) and the 2-D scene needs none.
 
 ## 6. Inventory of the code this phase touches
 
+### Re-check of 2026-10-05 at b69ff0c (SP2 start)
+
+Done in step A0 by a read-only survey (protocol section 3, item 5). The full tables, the
+users of every moved name and the method are in
+[inputs/2026-10-05-SP2-survey/01-inventory-recheck.md](inputs/2026-10-05-SP2-survey/01-inventory-recheck.md);
+this subsection holds what a step needs first. The tables further down are kept as they
+were written at b3150c1 and are not corrected in place.
+
+**The diff of the header** listed four files, as the handoff said (673 insertions, 73
+deletions): `site/build.py`, `src/launchsim/plots.py`, `src/launchsim/replay.py` and
+`tests/test_animate.py` (SP1 step 10a, commit 5007515). Every other inventoried file is
+byte-identical to b3150c1, and its lines below hold, with the one exception named at the
+end of this list.
+
+- The line numbers given below and in section 5 (5.2, 5.3, 5.8) for `plots.py`,
+  `replay.py` and `tests/test_animate.py` are those of b3150c1 and have moved.
+- `plots.py` is 1,881 lines (below: 1,701) and every line moved: by +3 near the top, +33
+  at the calibration block, +48 at the readers, +153 from `load_animation_runs` to
+  `frame_geometry`, +172 at `calibration_caveat`, +179 at `write_ascent_animation`.
+- `replay.py` is 1,244 lines (below and in 5.9: 1,246). Nothing moved up to `run_source`
+  (244-319); everything after `offload_note` (322-362) is 2 lines lower.
+- `tests/test_animate.py` is 814 lines (below: 526) with 26 tests, none slow. The old
+  tests moved by +18. It holds three monkeypatches on plots, not the one the brief names.
+- `site/build.py` is 1,162 lines (1,028 at b3150c1). It has five `REPLAY_TEXT_FIXES`
+  pairs, not one, and a second table, `REPLAY_PAGE_FIXES`, of eleven page-specific fixes.
+- `_resolved_config_dict` is at `results_io.py` 590 (590-622), not 588; its inline `runs`
+  block is 597-601, not 597-599. This was already so at b3150c1.
+
+**`plots.py`: the symbols the brief and the design name**
+
+| Symbol | Below (b3150c1) | At b69ff0c |
+|---|---|---|
+| `plot_stem` | not listed (it was at 90) | 93-96 (`PLOT_STEM_UNSAFE` at 90) |
+| `AnimationError` | 309 | 312 |
+| `ANIMATION_MAX_RUNS` | 321 | 324 |
+| `RESULTS_TREE_NAME` | 344 | 347 |
+| `CALIBRATION_RECORDS` | 474-487 | 507-510 (docstring to 520) |
+| `CALIBRATION_BAND`, `CALIBRATION_BAND_EDGE_REL_TOL`, `CALIBRATION_GATE_VEHICLE` | 488, 492, 497 | 521, 525, 530 |
+| `calibration_gap`, `inside_calibration_band` | 501, 508 | 534-538, 541-544 |
+| `AnimationRun` | 528 | 573-610 (class line 574); new field `offload` (595) |
+| `ANIMATION_COLUMNS` | 565 | 613-623 (the same nine columns) |
+| `_read_json`, `_read_yaml` | 579, 588 | 627-633, 636-642 |
+| `animation_run_names` | 597 | 645-658 |
+| `check_planar_run_dir` | 613 | 661-680 |
+| `_events` | 635 | 683-707 |
+| `read_animation_run` | 662 | 813-844 (its record now comes from `animation_record`, 827) |
+| `load_animation_runs` | 694 | 847-869 |
+| `ascent_time_map` | 748 | 901-910 |
+| `_results_tree` | 809 | 962-972 (the name test at 969) |
+| `_is_inside` | 822 | 975-977 |
+| `default_animation_path` | 827 | 980-993 |
+| `check_animation_out` | 843 | 996-1017 (tree test 1006, ffmpeg test 1011) |
+| `frame_geometry` | 867 | 1020-1032 |
+| `calibration_caveat` | 956 | 1128-1146 (reads `CALIBRATION_RECORDS` at 1135) |
+| `animation_caveats` | not listed | 1149 (calls `calibration_caveat` at 1161) |
+| `_AscentFigure` | 1041 | 1213-1815 |
+| `write_ascent_animation` | 1639-1701 | 1818-1881 (`FFMpegWriter(...)` at 1867) |
+
+**`replay.py`: the symbols the brief and the design name.** Unchanged lines:
+`ReplayError` 57, `REPLAY_TEMPLATE` 62, `REPLAY_DATA_TOKEN` 64, the grid constants 68-77,
+the roles 93-97, `REPLAY_COLUMNS` 102, `SERIES_FIELDS` 119-128, `_read_json` 148,
+`_read_yaml` 157, `check_replay_run_dir` 166, `select_runs` 198, `run_source` 244-319.
+
+| Symbol | Below (b3150c1) | At b69ff0c |
+|---|---|---|
+| `offload_note` | 322 | 322-362 (rewritten on `plots.offload_role`; the same strings) |
+| `read_series` | 367 | 365 |
+| `_finite` | 385 | 383 |
+| `replay_grid`, `defined_mask`, `series_values`, `run_series` | 396, 407, 417, 432 | 394, 405, 415, 430 |
+| `run_events` | 447 | 445 |
+| `push_accel_g`, `assist_text` | 521, 531 | 519, 529 |
+| `calibration_caveat` | 664 | 662-685 |
+| `structure_caveat` | not listed | 688 ("the fully fuelled stack" at 700) |
+| `drive_caveat` | 736, the stale sentence at 763 | 734-761, the stale sentence at 761 |
+| `comparison_caveats` | not listed | 805-840 (the offload sentence 831-839) |
+| `caveats` | 845 | 843-878 |
+| `closeup_notes` | not listed | 881-925 ("and leave" at 900) |
+| `ROLE_LABELS`, `run_label` | not listed | 964-968, 972 |
+| `run_record` | 982-1062 | 980-1060 |
+| `source_text` | 1065 (`plots._results_tree` at 1069) | 1063 (1067) |
+| `replay_data` | 1107 | 1105-1160 |
+| `embed_json`, `load_template`, `render_page` | 1168, 1176, 1182 | 1166, 1174, 1180 |
+| `results_ancestors` | 1190 | 1188 (`RESULTS_TREE_NAME` at 1193) |
+| `protected_tree` | 1199 (`_results_tree` 1205, `_is_inside` 1206) | 1197 (1203, 1204) |
+| `default_replay_path` | 1211 (`plots.plot_stem` at 1219) | 1209 (1217) |
+| `check_replay_out` | 1224 | 1222-1234 |
+| `write_replay_page` | 1239 | 1237-1244 |
+
+**`tests/test_animate.py`.** `_make_run_dir` 134 (below: 119); the animate path tests of
+section 5.2 are `test_default_output_is_outside_the_run_dir` 198-213 and
+`test_custom_results_root_is_protected` 478-486 (below: 180-195 and 460-468);
+`test_calibration_record_matches_its_findings_note` 299-326 (below: 281);
+`test_calibration_band_includes_both_edges` 355-375 (below: its setattr at 353). New in
+step 10a: `_make_offload_run_dir` 549-636, a synthetic results directory with an offload
+block (three cases, one paired pad, three pad controls), and four tests (644, 679, 720,
+739).
+
+**The three monkeypatches** (all in `tests/test_animate.py`; no test patches the replay
+module). They fix where a function may live after A1:
+
+| Line | Patch | What it pins |
+|---|---|---|
+| 371 | `mp.setattr(plots, "CALIBRATION_RECORDS", edge)`, then `plots.calibration_caveat("edge_2d")` at 372 | `plots.calibration_caveat` must read the name `CALIBRATION_RECORDS` from the plots module at call time (the brief gives this one, at 353) |
+| 515 | `monkeypatch.setattr(plots, "FFMpegWriter", _BrokenFFMpeg)`, then `main(["animate", ..., "--out", "a.mp4"])`, expecting "error: ffmpeg failed" | `check_animation_out` (ffmpeg test at plots 1011), `default_animation_path` (988) and `write_ascent_animation` (1867) all resolve `FFMpegWriter` in the plots namespace, so the ffmpeg test stays in a plots function. Not in the brief |
+| 170 (`_no_ffmpeg`, used at 221, 245, 752) | `monkeypatch.setattr(plots.FFMpegWriter, "isAvailable", classmethod(lambda cls: False))` | patches matplotlib's class object; it holds wherever the check lives, as long as `plots.FFMpegWriter` stays an attribute of plots. Not in the brief |
+
+**What step 10a added to `plots.py`** (no line below names them; A1 must house them):
+`OFFLOAD_CASE` 488, `OFFLOAD_PAIRED_PAD` 489, `OFFLOAD_PAD_CONTROL` 490,
+`OFFLOAD_SOLVED_KIND` 495, `NEAR_ORBIT_PHASE` 498, `LEGEND_TITLE` 503, `OffloadTag`
+560-570, `_as_dict` 710-712, `_finite_kg` 715-719, `offload_role` 722-737, `offload_tag`
+740-792, `animation_record` 795-810, `legend_title` 1118-1125, and the import
+`from launchsim.offload import NO_OFFLOAD_STATUS` at 44. `replay.py` uses
+`plots.offload_role` (330), `plots.OFFLOAD_PAIRED_PAD` (334), `plots.OFFLOAD_PAD_CONTROL`
+(339) and `plots.OFFLOAD_SOLVED_KIND` (344); the tests use `plots.OFFLOAD_CASE`,
+`OFFLOAD_PAIRED_PAD` and `OFFLOAD_PAD_CONTROL` (660, 661, 693, 729). `_as_dict` duplicates
+`replay._mapping` (221), `_finite_kg` is close to `replay._finite` (383), and
+`animation_record` repeats part of `replay.run_source` (244). Step 10a also added the
+figure-layout constant `MAIN_HEADROOM_PER_SECOND_LINE` (412), which stays in plots.
+
+**The two fix tables of `site/build.py`** (`REPLAY_MARKER` 88, `REPLAY_STALE_TEXT` 122,
+`fix_replay_text` 918-938):
+
+| Table | Lines | Content |
+|---|---|---|
+| `REPLAY_TEXT_FIXES` | 123-166 | Five (old, new) pairs applied to every framed replay page: (1) the drive caveat's stale closing sentence (replay.py 761); (2) "and leave" to "and leaves" (replay.py 900); (3) to (5) three patches of the template's canvas JavaScript: the close-up's lower bound, so the "silo floor" label clears the time axis, the x-axis tick label clamped inside its canvas, and the timeline's event label clamped |
+| `REPLAY_PAGE_FIXES` | 200-260 | A dict from a page's file name to (old, new) pairs applied after the text fixes: four pairs for `pad-vs-silo-offload.html` and seven for `offload-vs-paired-pad.html`, sharing `REPLAY_OFFLOAD_DRIVE` (178), `REPLAY_OFFLOAD_ROUNDING` (183) and `REPLAY_OFFLOAD_STRUCTURE` (191); the others reword the subtitle, the paired pad's role label, the paired-pad note and the comparison caveat |
+
+A page that still holds `REPLAY_STALE_TEXT` is a build error; a page fix that matches
+neither its old nor its new text is only a warning.
+
+**Facts the brief has wrong or missing**, each of which changes the design (design,
+section 2; the evidence is in the survey reports, each of which ends with its own list):
+
+- The shared blocks are `dynamics`, `site`, `guidance`, `search`, `target_orbit` and
+  `checks`. The integrator is not a shared block (section 5.6 says it is, and omits
+  `dynamics`).
+- `propellant` is the generic depletion event; MECO is the `propellant` row with stage 1
+  (section 5.4 reads as if the name meant MECO only).
+- No `liftoff` row and no pad `ramp_end` row exist on disk (section 5.4 lists both among
+  the events).
+- In-phase events are also written twice in the CSV, not only phase boundaries (section
+  5.3).
+- A failed search writes a complete directory with an empty time series (section 5.6
+  describes only the crash case, a directory with `FAILED.txt`).
+- The composed run path writes `FAILED.txt` only if `app.py` does: the marker is written
+  inside `run_experiment` (results_io.py 886-887), which the composition does not call.
+- On Windows the standard-library server lets two processes bind one port unless exclusive
+  binding is set.
+- The config accepts `true`, numeric strings, inf and NaN for several numbers (section 5.7
+  counts "a missing or non-numeric value" among the refusals that work; TODO.md KI-030).
+
+### The inventory as checked at b3150c1 (2026-10-03)
+
 Checked at b3150c1 on 2026-10-03 by the SP1 session: every `def`, `class` and constant line
 below was found by grep at that commit; ranges are a definition's first and last line. The
 previous check was at 2eebcae on 2026-09-30; SP1 changed `cli.py`, `config.py`,
@@ -994,131 +1213,186 @@ animations under `site/examples/`.
 
 ## 7. Steps
 
-Proposed, to confirm in SP2's Plan mode (step A0). Each step runs the protocol's loop:
-implementer, adversarial reviewers (protocol section 4, item 2: a physics or numerics
-skeptic on every code step, A1 to A6, with the most to check in A1 (pre- and post-drop
-masses, the shared resampling), A2 (the rebuilt separation state, the mu/r^2 vacuum coast
-and its energy and angular-momentum tests, the mass closure of the tank levels, the
-event-aligned grid) and A4 (the job runner, the baseline cache key, the app-against-CLI
-numbers); a CLAUDE.md compliance auditor on every step; a visual-QA reviewer on anything
-drawn; an honesty auditor on labels and caveats), up to two fix rounds, an independent
-gate, commit, tracker update (its own commit at once), then `git push origin main` and a
-check that the Pages deployment succeeded (protocol section 4, items 6 and 7). Standing
-gate on every code step: fast suite green, ruff clean, golden 1-D,
-the planar digest pin and the planar output capture unchanged, no shipped experiment or
-vehicle file changed.
+Approved by the user on 2026-10-05 (step A0). The table is the one of the design
+([inputs/2026-10-05-SP2-design.md](inputs/2026-10-05-SP2-design.md), section 5) with the
+Status and Commit columns added. It replaces the table this brief proposed; section 12
+lists the differences.
+
+Each step runs the protocol's loop: implementer; reviewers (a numerics skeptic on A1 to
+A6v; a CLAUDE.md compliance auditor on every step; a visual-QA reviewer on anything drawn,
+through a 127.0.0.1 server; an honesty auditor on labels and caveats; a security reviewer
+on A4b and A6v); up to two fix rounds; an independent gate; one commit; the tracker commit
+(`SP2 step <k>: trackers (<hash>)`); push; the Pages check. Standing gates: fast suite
+green, ruff clean, golden 1-D, the planar digest pin and the output capture unchanged, no
+shipped experiment or vehicle file changed, replay.html's sha256 unchanged. Tests run on
+synthetic directories or a 1.5 s fixed-guidance run in a temporary folder, never on
+results/. Reviewers and gates start the app with a scratch results root, so nothing they
+launch is committed (D-SP2-37; protocol section 4, "App runs").
 
 Status marks: `[ ]` not started, `[~]` in progress, `[x]` done, `[!]` blocked or needs a
 decision.
 
 | # | Step | Main files | Tests | Gate | Status | Commit |
 |---|---|---|---|---|---|---|
-| A0 | Plan mode: check the entry criteria (with the `git diff --stat` of the header); re-check section 6 if needed; list the open KI and B items owned by SP2; put the questions of section 10 to the user; settle the open design points; detailed design; one static mock-up frame of the scene and of the app page, shown inline in the chat (a widget or an SVG) or written to the scratchpad, not to the repository (Plan mode cannot write repository files); confirm steps, tolerances and exit criteria | this file | - | User approval of the plan and the mock-up | [ ] | |
-| A1 | Shared run-data module: readers, directory checks, run discovery, roles (offload included), series and event readers (pre- and post-drop mass), resampling, calibration data, one output-path rule; `plots.py` and `replay.py` switched to it, the old names kept as re-exports (section 5.2, compatibility policy). First action, before any edit: generate the reference replay page at the SP2 start commit (the note below the table) | `run_data.py` (new), `plots.py`, `replay.py`, `cli.py`, `.gitignore`, `pyproject.toml` (if KI-018 is taken); `results_io.py` unchanged (its import at 143 goes through the plots re-export of `CALIBRATION_RECORDS`) | `tests/test_run_data.py` (new); `test_animate.py`, `test_replay.py`, `test_config_planar.py` and `test_offload_pipeline.py` unchanged, any edit a logged deviation | Replay page of the reference directory byte-identical to the reference page (same sha256; the hash at A1's gate commit recorded in the session log); animate tests pass; no `plots._` call left in `replay.py`; the four fairing drop cases of section 5.8 item 1 tested | [ ] | |
-| A2 | Scene data payload and display geometry: display block with sources or `assumed`; payload with attitude, thrust, stage, track columns, tank levels (offload runs' own vehicle blocks), event-aligned grid, rebuilt separation states, display-only coast, caveats | `scene.py` (new), `configs/display/` (new), `config.py` (display model), `docs/physics.md` (display-only section) | `tests/test_scene.py` (new): strict JSON, nulls in the shaft, mass closure of the tank levels (silo_failed, whose `payload_kg` is null, included), the liftoff-mass identity of section 5.3, staging state against `speed_inertial_mps`, energy and angular momentum of the coast, 1-D and sweep-point refusal, an offloaded run's starting fill, the stage-1 pad control's `short_of_orbit` run loads, a zero-offload pad control with no `vehicle` entry of its own (`pad__offload_stage1`, `pad__offload_both`) takes the top-level vehicle block and closes its mass, the offload caveats come from `metrics.json` `offload.caveats` | An independent agent compares the payload of the reference directory and of `silo_cold_s1` in 20261003T112934Z with their CSVs at sampled times; every display number sourced or `assumed`; vehicle files untouched | [ ] | |
-| A3 | 2-D scene renderer, one panel: silo, pad, rocket to scale, attitude, plume, tanks, hold-down, release, kick, staging, fairing, basic camera, HUD, caveats; a page-state hook for QA; an internal page writer (`scene.render_page` and a write helper, proposed) that exists whatever Q1 decides; the standalone export command if chosen (Q1) | `templates/scene.html` (new), `scene.py`, `cli.py` (only for the export) | template string checks, ASCII page, `node --check`, output path refusals of the page writer | Visual QA round 1 through a 127.0.0.1 server on pad, silo_cold, silo_hot_ramp_on_track, silo_failed and silo_cold_s1: the page writer writes the pages to the scratchpad and `uv run python -m http.server <port> --bind 127.0.0.1 --directory <scratchpad>` serves them (the app does not exist until A4) | [ ] | |
-| A4 | App server and job runner: `app` command, endpoints, loopback binding and Host check, one job at a time in a background worker, progress, the CLI's resolve and preflight from a dict, the composition of the in-memory path with the cached baseline, exploratory label, results location and ignore rule | `app.py` (new), `cli.py`, `.gitignore`; `results_io.py` only if A0 adds a hook (progress or pad-control cache) | `tests/test_app.py` (new): server on a free port with a stub runner; status codes; refusals write nothing; busy refusal; no path outside the results root; charset header; the baseline runs once for two launches; progress states; the provenance of section 5.6 as A0 settles it (the server-start git state recorded with each launch and in the cache key; a launch after a HEAD change refused); one slow end-to-end launch on a small grid | Fast and slow suites; a reviewer confirms nothing but 127.0.0.1 is bound and no client path is opened; app result equals the CLI's for the same configuration | [ ] | |
-| A5 | Form and launch flow: fields as built in SP1 (section 5.7), presets, refusal messages, progress, results panel with caveats, run browser, the scene inside the page | `templates/app.html` (new), `app.py` | form-to-experiment mapping, one test per field and per refusal; template checks | Each preset launched from the browser through 127.0.0.1: a results directory appears, its resolved config equals the form's values, its scene plays | [ ] | |
-| A6 | Side by side and camera polish: two panels on one clock and one zoom, scale bars, the not-to-scale icon label, zoom out to Earth's curvature, event ticker, reduced motion, dark mode, the brand tokens | `templates/scene.html`, `templates/app.html` | template checks; camera transform checks through the page-state hook | Visual QA round 2 | [ ] | |
-| A7 | Visual QA, full: the checklist of sampled times and runs against the CSV; screenshots in both themes; audit of display-only labels, the exploratory label and the caveats | `docs/demos/SP2/` | the QA table itself | Independent visual-QA reviewer and honesty auditor; every row of the table passes or is logged as a deviation | [ ] | |
-| A8 | Close SP2: exit-criteria gate; full suite; demo recorded; CLAUDE.md (commands, layout, I/O modules, status), README quick start and status, the user manual, TODO.md, the program board; public face (landing page, deck and PDF, gallery, manual) refreshed and the site built with no broken link; the next phase's file fact-checked (SP7 in the planned order, D-SP1-18, or the phase the user chooses at close-out); handoff and prompt for that phase; memory; cold-read check; push and Pages deployment | docs, site, TODO.md, CLAUDE.md, README.md, memory | full suite; site build | Independent gate; final commit; deployment green | [ ] | |
+| A0 | Plan and mock-ups | the design ([inputs/2026-10-05-SP2-design.md](inputs/2026-10-05-SP2-design.md)), this file | - | The user's approval (given 2026-10-05) | [x] | the start commit, "Start SP2: status in progress" (its hash is filled in by the first tracker commit) |
+| A1 | run_data; plots and replay switched; KI-002, KI-016, KI-017 | run_data.py, plots.py, replay.py, physics.md, CLAUDE.md | test_run_data.py (27 of survey 06: readers, roles, the four fairing cases, output-path corners, the runs-block digest, import rule) | Reference page, seven more and the five gallery pages byte-identical; existing tests unchanged; no `plots._` call in replay.py | [ ] | |
+| A1b | Pillow in the dev extra (KI-018) | pyproject.toml, uv.lock | - | Lock diff is that line only; exact golden tier passes; reference sha256 unchanged | [ ] | |
+| A1a | Caveat wording at source (KI-029) | replay.py, plots.py, site/build.py, site/examples/ | per-clause tests (22 t sled, failed run, q-alpha below the baseline, paired pad, an offloaded push) | The gate of the design's section 4.3 (below the table); honesty review; the diff against the reference page recorded | [ ] | |
+| A2 | display.py, display files, payload, physics.md section | display.py, scene.py, configs/display/ | test_display.py (coast energy, angular momentum and the closed form; the coast reproduces the recorded staging-coast rows; separation state; row selection; transform), test_scene.py (strict JSON, nulls in the shaft, null payload, bound runs and cases, zero-offload pad control, offload caveats, refusals) | Independent comparison of the payload with the CSVs of the reference directory, silo_cold_s1, silo_cold_lag and silo_instant; the load-time checks pass on every run folder of every complete planar directory on disk (56 today), results in the session log; every display number sourced or assumed | [ ] | |
+| A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [ ] | |
+| A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [ ] | |
+| | Checkpoint 1: `launchsim scene` is complete | | | | | |
+| A4 | appform and `run_launch` | appform.py, app.py, config.py, summary.py | each preset resolves to the committed variant; every refusal one line and nothing written; key-by-key equality with `run_experiment`; faked-seam offload launch with a fresh and a cached pad; counting test; banner and both git states; one slow real launch with a stage-1 solve | Fast and slow suites; honesty review of the banner | [ ] | |
+| A4b | Server | app.py, cli.py | raw-socket guard table (the survey's 38 cases plus Sec-Fetch-Site, path decoding, body limits, two simultaneous launches); header table; injection test; leak test; Ctrl+Break subprocess test | Only 127.0.0.1 bound and a second server fails; no client path opened; an interrupted job leaves FAILED.txt; security review | [ ] | |
+| A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [ ] | |
+| | Checkpoint 2: the request is met | | | | | |
+| A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [ ] | |
+| A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [ ] | |
+| A8 | Close | docs, TODO.md, memory | full suite | The 17 exit criteria; close-out question to the user; SP7's file fact-checked after the last code commit; handoff, memory, cold read; push and Pages | [ ] | |
+
+"Criterion" in the table means an exit criterion of section 8; "survey 06" and "the
+survey's 38 cases" are inputs/2026-10-05-SP2-survey/06-run-data-refactor-plan.md and
+07-server-and-worker.md; what each step builds is in the design's section 4.
+
+If room runs out, in this order and each put to the user when it happens: the video export
+(logged as a backlog item, criterion 15's second half open only with the user's
+acceptance); the seven screening presets; ticker and gauge polish. An in-progress handoff
+is written at a checkpoint if A7 and A8 would no longer fit.
+
+A1a's gate (the design's section 4.3): the build reports no fix-table warning; each
+editorial replacement string is in the built offload pages; the diff of the five built
+pages before and after is recorded; a page of silo_sled_22t alone does not say "massless".
 
 The reference page of A1 and of exit criterion 10. "The reference directory" is
 `results/silo_screening_2d/20260930T175743Z` with the runs `pad`, `silo_cold`,
-`silo_hot_ramp_on_track` and `silo_failed` (four is the page's limit). SP1 edited
-`replay.py` (steps 2, 7 and 8a; the page changed from 300,810 to 247,949 bytes), so the
-page made "before the refactor" is generated at the SP2 start commit, as the first action
-of A1 and before any file is edited:
+`silo_hot_ramp_on_track` and `silo_failed` (four is the page's limit). The page made
+"before the refactor" is generated at the SP2 start commit, as the first action of A1 and
+before any file is edited:
 
     uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs pad silo_cold silo_hot_ramp_on_track silo_failed --out <scratchpad>/reference_replay.html
 
 Record its sha256 and the commit in the session log and keep the file in the scratchpad
-for the session. For information: at b3150c1 the page is 247,949 bytes with sha256
-3ca23dc5ce6532e6b9e3fd4656ab4846bcb4cdddfced7a077ce05c9411fd1eab (generated twice on
-2026-10-03, identical); if the SP2 start commit gives another value, replay.py changed in
-SP1's last steps and the new value is the reference. On a fresh clone the CSVs are
-missing: re-run the experiment first (entry criterion 6) and use the new directory, naming
-it in the session log.
+for the session. The expected value at b69ff0c is 247,949 bytes, sha256
+3ca23dc5ce6532e6b9e3fd4656ab4846bcb4cdddfced7a077ce05c9411fd1eab: the A0 survey generated
+the page at b69ff0c, by this command and in memory, and got that value, the same as at
+b3150c1 (survey 06, section 0). If A1 gets another value, find the cause before editing
+anything. On a fresh clone the CSVs are missing: re-run the experiment first (entry
+criterion 6) and use the new directory, naming it in the session log.
 
-Notes on the order. A1 comes first because the scene, the app and the two existing commands
-all stand on it, and its gate (a byte-identical replay page) is cheap. The scene (A2, A3) is
-built and checked on recorded directories before the server exists, so a drawing fault is
-never mixed up with a server fault: A3's pages come from the internal page writer and are
-served by Python's standard-library `http.server` bound to 127.0.0.1, whether or not Q1
-chooses the export command. The app (A4, A5) then only has to produce a directory
-and hand it to a scene that already works. A replay text change (section 5.8 item 5, the
-contrast tokens of 5.10) comes after A1's gate, never inside it, and is logged in the
-session log as one of the deliberate changes exit criterion 10 allows.
+The reference page exercises only the `run` role, so more pages are compared in A1 (the
+design's section 4.2): seven more pages that cover the bound, paired-baseline, case,
+offload and second-calibration branches, hashed before and after; and the five committed
+gallery pages, which, regenerated with their recorded commands, must leave
+`git status --porcelain site/examples` empty. Kept as they are: the six `-0.0` tokens, the
+key order, the `pd.read_csv` arguments.
+
+Notes on the order. A1 comes first because the scene, the app and the two existing
+commands all stand on it, and its gate (byte-identical pages) is cheap. A1b is its own
+small step: its gate is that the lock diff is one line. A1a comes after A1's
+byte-identical gate, never inside it, and before the scene, so that the scene takes its
+caveats from wording already fixed at source (D-SP2-23); it changes the replay page's
+bytes on purpose, and the diff against the reference page is recorded for exit criterion
+10. The scene (A2, A3, A3b) is built and checked on recorded directories before the
+server exists, so a drawing fault is never mixed up with a server fault. The page
+contract is fixed before A3, and the camera and the close-up are in A3, because A3's gate
+checks flights that leave the first view within seconds; A3b adds the rest of the flight,
+the second panel, the rate law and the themes. Checkpoint 1 is a complete
+`launchsim scene`. The form builder and the launch function (A4) come before the server
+(A4b), which needs them, and the page (A5) comes last; the app then only has to produce a
+directory and hand it to a scene that already works. Checkpoint 2 is the user's request
+met. The video (A6v) comes after checkpoint 2 because it is the first item to be deferred
+if room runs out. Public-site material is built and reviewed in A7, so that the close
+(A8) does not overrun.
 
 ## 8. Exit criteria
 
-Each is checked by an independent gate at the end of the phase. Tolerances marked "proposed"
-are confirmed or changed in A0 and then fixed. The phase closes with an open criterion only
-if the user accepts the miss, and the miss is logged.
+Approved by the user on 2026-10-05 (step A0, D-SP2-38); the tolerances are fixed. The 17
+criteria below are those of the design
+([inputs/2026-10-05-SP2-design.md](inputs/2026-10-05-SP2-design.md), section 6), word for
+word. They replace the 14 this brief proposed; the paragraph after the list says what
+changed. Each is checked by an independent gate at the end of the phase. The phase closes
+with an open criterion only if the user accepts the miss, and the miss is logged.
 
-1. **The app starts.** `uv run python -m launchsim app` serves the app page on 127.0.0.1 and
-   on no other interface, and prints the URL.
-2. **Launch works for every setting.** From the form, a launch with each of the following
-   produces a normal results directory (resolved config, git hash, `metrics.json`, time
-   series and events per run, `summary.md`) whose resolved config holds the form's values:
-   exit speed; net acceleration; each of the five ramp-start ways; a solved stage-1
-   offload; a fixed offload; a stage-2 offload (with its pad control); a structural
-   penalty. The scene of that directory then plays in the app.
-3. **Same numbers as the CLI.** For one configuration, the app's payload capacity and offload
-   result equal those of `launchsim run` on the equivalent YAML within 0.002 kg (proposed;
-   the paths are meant to be the same code).
-4. **Refusals.** Each bad input of section 5.7 gives a one-line message in the form and
-   writes nothing under the results root. A second Launch during a running job is refused.
-5. **The scene matches the run data.** For pad, silo_cold, one hot start, one offloaded run
-   (`silo_cold_s1` of 20261003T112934Z) and silo_failed, at sampled times that include push
-   start, mid-push, release, ignition, ramp end, the kick, MECO, staging, the fairing drop,
-   cutoff or impact, and at least five times between them, the page state read from the
-   running page equals the run's CSV within (proposed): altitude within the larger of 0.5%
-   and 1 m; downrange within the larger of 0.5% and 10 m; attitude within 0.5 deg; thrust
-   on or off exactly outside a startup ramp, and the plume fraction within 0.02 of
-   `thrust_vac_N` over the stage's full value; the stage shown; each event shown within one
-   grid step of its time.
-6. **The offload is visible and right.** An offloaded run's stage tank starts at one minus
-   its offload fraction within 1% (proposed) and reads empty at its `propellant` event; the
-   rebuilt stack mass equals `m_kg` at every sampled time within 1 kg (proposed).
-7. **Honest labels.** The page names every display-only item (shapes, spent stage and
-   fairing paths, carriage after release, the enlarged icon, the body axis), marks app runs
-   as exploratory, and shows the model caveats (calibration +14.3%, no structural mass for
-   the push, sweep-optimized and unthrottled guidance, the drive model) and, for offload
-   runs, the offload caveats beside the numbers; stage-2 and both-stage offloads are shown
-   net of the pad control and labelled a property of the vehicle model.
-8. **Browse and replay.** The app lists the recorded planar run directories and plays
-   `results/silo_screening_2d/20260930T175743Z` and `results/silo_offload_2d/20261003T112934Z`
-   (or their re-runs). A 1-D directory, a sweep directory or sweep point and a failed
-   directory are refused with a clear message.
-9. **The pad baseline is cached.** A second launch with an unchanged baseline does not run
-   the pad again (a test with a counting stub, and the timing in the demo record).
-10. **Loader and fixes.** `animate` and `replay` pass their tests on the shared module. At
-    A1's gate commit, the replay page of the reference directory (named in section 7,
-    below the step table) was byte-identical to the reference page generated at the SP2
-    start commit (same sha256; both hashes and the commit recorded in the session log).
-    At the close, the page differs from the reference page only by the deliberate replay
-    changes logged after A1's gate (section 5.8 item 5, the contrast tokens of 5.10, if
-    taken), each with its test, as a diff of the two pages recorded in the session log
-    shows; if no such change was taken, it is still byte-identical. One output-path rule serves
-    `animate`, `replay` and the scene page writer (and the export, if chosen); no private
-    cross-module helper call remains; the event reader gives pre- and post-drop mass for
-    all four fairing cases of section 5.8 item 1.
-11. **Tests and guards.** New tests for the payload, the server API and the form mapping run
-    in the fast tier (one end-to-end launch may be slow-marked); the full suite is green;
-    ruff is clean; golden 1-D, the planar digest pin and the planar output capture are
-    unchanged; no shipped experiment or vehicle file is changed.
-12. **No new Python dependency**, or each one is justified in one line and logged as a
-    decision. No request leaves the machine unless the user chose that in Q2.
-13. **Documents and public face.** CLAUDE.md (commands, layout, I/O modules, status line),
-    README (quick start, status), the user manual (the `app` command, the form, the
-    outputs), the display-only section, TODO.md and the program board are current; the
-    landing page, the deck and its PDF and the gallery are refreshed, the site builds with
-    no broken link, main is pushed and the Pages deployment is green; the next phase's file
-    (SP7 in the planned order, D-SP1-18, or the phase the user chooses at close-out) has
-    been fact-checked against the code; the handoff and the prompt for that phase are written;
-    memory is updated.
-14. **Demo recorded** under `docs/demos/SP2/`.
+How to read the section numbers inside them: "section 5.7" is this file's; "section 4.4"
+and "section 4.9" are the design's (the load-time checks of the tank series, and the list
+of what the scene shows that the model does not support); "survey 08" is
+inputs/2026-10-05-SP2-survey/08-docs-site-tests.md.
+
+1. The app starts: 127.0.0.1 only, URL printed, a second server on the same port fails.
+2. A launch works for: exit speed; net acceleration; each of the five ramp-start ways; a
+   solved stage-1 offload; an imposed offload; a stage-2 offload with its pad control; a
+   structural penalty; the screening presets. Each writes a normal results directory whose
+   resolved config holds the form's values, and its scene plays, or the page says why there
+   is none.
+3. Same numbers as the CLI: the silo_cold_s1 preset launched from the app gives the payload
+   capacity and offload of results/silo_offload_2d/20261003T112934Z within 0.002 kg.
+4. Refusals: each bad input of section 5.7 gives a one-line message and writes nothing;
+   1e400, a 400-digit integer, `true` and "3" in a number field are refused; a second
+   Launch during a job and a launch after the code changed are refused.
+5. The scene matches the run data, for pad, silo_cold, silo_hot_ramp_on_track, silo_cold_s1
+   and silo_failed, at push start, mid-push, release, ignition, ramp end, the kick, MECO,
+   staging, the fairing drop, cutoff or impact and at least five times between. At an event
+   time the page shows the later of the two CSV rows. Altitude within the larger of 0.5%
+   and 1 m; downrange within the larger of 0.5% and 10 m; attitude within 0.5 deg wherever
+   the model defines one (thrust on, hold, on the track), measured from the painted base
+   and nose; the base painted within 1 px of the transform; thrust on equal to the event
+   rule at every CSV row; plume fraction within 0.02 at every CSV row except a run's last;
+   the stage exact; each event at its row time within 1e-6 s. The payload builder checks
+   the data half of this at every CSV row.
+6. The offload is visible and right: every tank starts at one minus its offload fraction
+   within 1e-4 of the full load; the stage-1 tank reads under 1 kg at the stage-1
+   `propellant` event; the tank checks of section 4.4 hold at every row; the rebuilt stack
+   mass equals `m_kg` within 1 kg (the interpolation and rounding check).
+7. Honest labels: the page names every item of section 4.9; app runs are marked exploratory
+   on the page, in metrics.json, in summary.md (with the server-start git state), in the
+   replay and animation of that directory and in every video frame; caveats are those of
+   the run shown and include every caveat the replay page gives; stage-2 and both solves
+   are net of the pad control as a property of the vehicle model; an imposed offload is
+   never called saved; shapes meet 3:1 and text 4.5:1 in both themes.
+8. Browse and replay: the app lists the recorded directories and plays
+   silo_screening_2d/20260930T175743Z and silo_offload_2d/20261003T112934Z; a 1-D
+   directory, a sweep, a failed, an incomplete and an unreadable directory stay listed with
+   their reason and the listing stays usable.
+9. The pad is cached: a second launch does not fly the baseline again.
+10. Loader and fixes: animate and replay pass their unchanged tests on run_data; at A1's
+    commit the reference page was byte-identical; at the close it differs only by A1a's
+    wording and the exploratory line, as a recorded diff shows; one output-path rule; no
+    private cross-module call; mass before and after for the four fairing cases;
+    replay.html unchanged.
+11. Tests and guards: new tests in the fast tier (one slow launch); full suite green; ruff
+    clean; golden 1-D, digest pin and output capture unchanged; no shipped experiment or
+    vehicle file changed; the import guard holds; no resource warning from the server.
+12. Dependencies: Pillow in the dev extra, justified; nothing else new. The app, the scene
+    and the exported page make no request off the machine (a template scan, the page's
+    Content-Security-Policy, and the browser's network list).
+13. Documents and public face current: CLAUDE.md, README (quick start, status), the manual
+    (the app chapter and the pages survey 08 lists), physics.md, TODO.md, the board; the
+    landing page, the deck and its PDF, the gallery with an exported scene and a video made
+    from the recorded directories; the gallery's "nothing is re-simulated" sentence
+    reworded; site built with no broken link; main pushed and Pages green; SP7's file
+    fact-checked; handoff and prompt written; memory updated.
+14. Demo recorded under docs/demos/SP2/: commands (the headless Edge ones included),
+    screenshots in both themes, the QA table, the API record of one launch and one refusal
+    with wall-clock times.
+15. Export: `launchsim scene` writes a standalone page that plays with no server; the app
+    exports an MP4 of a two-panel scene with the caveat footer.
+16. Watchable, read through the state hook for pad beside silo_cold_s1 and pad beside
+    silo_cold: the close-up vehicle is at least 120 px long at every time; the nose moves
+    at least 4 px at each run's kick; staging, stage-2 ignition and the fairing drop each
+    stay on screen at least 1.5 wall seconds under the default rate; separated bodies are
+    drawn at least 4 px across.
+17. Requests from another origin are refused: a page on another loopback port or another
+    host cannot start a launch, post a frame or make the server build a scene (the guard
+    table in the fast suite, and once with a real browser in the demo).
+
+Changes against the brief's 14: 1 (+ second server); 2 (+ screening presets; a run that did
+not fly); 3 (compared with SP1's recorded run instead of a scratch YAML); 4 (+ number
+types, code change); 5 (attitude only where the model defines one; "thrust on or off
+exactly outside a ramp" replaced by the event rule and a per-row plume tolerance, because a
+lag startup has no ramp end; painted points added; events at 1e-6 s); 6 (1% tightened to
+1e-4; tank checks added, because the mass rebuild alone is an identity); 7 (+ the mark on
+every export; contrast); 8 (+ incomplete and unreadable); 10 (the allowed differences
+named); 12 (Pillow); 15, 16 and 17 new.
 
 ## 9. Demo script
 
@@ -1165,6 +1439,47 @@ value read from the page, pass or fail); a text record of the API calls for one 
 one refusal, with the launch's wall-clock time; the exported scene page if the export
 exists. Check with `git status` that the exported page is not ignored (section 5.8 item 4).
 
+**Added by the approved design (2026-10-05).** The steps above stay. The design adds:
+
+10. In every scene, look at the close-up beside the true-scale view of each panel
+    (D-SP2-35): the vehicle at a fixed scale with its attitude, plume and tank fills, and,
+    at staging and at the fairing drop, the gap and the opening halves, each marked "drawn,
+    not computed". In the true-scale view, look at the marker with a heading tick that
+    replaces the rocket once its body is under 3 px wide, and at the path trace with its
+    event markers.
+11. Choose a screening preset (D-SP2-05), for example `silo_sled_22t` or `silo_hot_full`,
+    and launch. Look at: the caveats, which are built from the run shown (D-SP2-36); those
+    of the 22 t sled do not say that the carriage is massless.
+12. Choose the failed-ignition preset (`silo_failed`) and launch. Look at: the status
+    banner over the scene, the fall-back, the carriage and rails drawn as outlines, and
+    the ticker saying that the planar model has no contact (D-SP2-20).
+13. Export a video from the app (step A6v, D-SP2-30): an MP4 of `pad` beside
+    `silo_cold_s1`. Look at: "frame n of N" and Cancel during the capture; the path of the
+    written file on the page; the caveat footer on the frames, with the exploratory line
+    when the directory is an app run.
+14. Once, with a real browser: a page served from another loopback port tries to start a
+    launch and is refused (exit criterion 17).
+
+The standalone export was chosen (Q1, D-SP2-01) and its command is `launchsim scene`. The
+demo page gets a hyphenated file name, because `.gitignore` gains the default output
+patterns `*_scene.html` and `*_scene.mp4`, which would also ignore a demo file whose name
+ends in `_scene.html`. Use this command instead of the one above:
+
+    uv run python -m launchsim scene results/silo_screening_2d/20260930T175743Z --runs pad silo_cold --out docs/demos/SP2/pad-vs-silo-cold-scene.html
+
+Where the launches go (D-SP2-37; protocol section 4, "App runs"):
+
+- Demo launches are made from a clean tree, after the last code commit, so that their
+  directories under `results/app/` record a clean git state. Their summaries are committed
+  in their own commit (`SP2 step <k>: app summaries`).
+- Review and gate launches start the app with `--results-root <a scratch folder>`, so
+  nothing they launch is committed.
+- Gallery, deck and manual material comes only from the two recorded directories of exit
+  criterion 8, not from an app run.
+
+Also recorded in `docs/demos/SP2/` (exit criterion 14): the headless Edge commands that
+wrote the fixed-frame screenshots and the `#qa` state dump.
+
 ## 10. Risks and open questions
 
 **Questions SP2's Plan mode puts to the user** (recommendation first, as the user prefers;
@@ -1180,40 +1495,73 @@ the user has often chosen the more ambitious option, so give it fairly with its 
 | Q6 | Offload input: a fixed amount, a solve for the largest, or both; which modes? | Both; fixed is the default; stage-1 solve and fixed cases in the main form; stage-2 and both-stage solves behind an "advanced" switch with the pad control forced on and the vehicle-model label | A fixed offload is one payload search (seconds); a solve with its verification takes about 90-110 s more, plus about 30 s per pad control; stage-2 and both numbers are only honest net of their pad control (D-SP1-10) |
 | Q7 | Look of the scene | A schematic cross-section in the brand's palette (section 5.10), with dark mode; the mock-up of A0 is approved before the renderer is built | A realistic rendering would imply detail the model does not have |
 
+**Answers (2026-10-05, step A0).** The user answered all seven; the decisions are logged in
+TODO.md.
+
+| # | The user's answer | Decision |
+|---|---|---|
+| Q1 | A standalone HTML export (`launchsim scene`) and a video. More than the recommendation, which left the video to the backlog; D-SP2-30 fixes how the video is made (MP4 through ffmpeg, from the app) | D-SP2-01 |
+| Q2 | Offline, with system fonts; the replay page stays as it is and keeps its font links (D-SP2-34). The recommendation; the fonts are not vendored | D-SP2-02 |
+| Q3 | `results/app/<UTC timestamp>/`, with each summary.md tracked. Not the recommendation, which was to ignore them | D-SP2-03 |
+| Q3, follow-up | Each app summary carries an exploratory banner; the summaries are committed at step boundaries and before any pre-registered run (D-SP2-37 fixes the commit they go in) | D-SP2-04 |
+| Q4 | SP1's configurations plus the Phase 2 screening variants. More than the recommendation | D-SP2-05 |
+| Q5 | The gate vehicle only. The recommendation | D-SP2-06 |
+| Q6 | Fixed and solved; the stage-2 and both-stage forms under Advanced, with the pad control forced on. The recommendation | D-SP2-07 |
+| Q7 | A schematic cross-section as in the mock-up, light and dark. The recommendation; the two mock-ups are saved in inputs/2026-10-05-SP2-mockups/ | D-SP2-08 |
+
 **Open design points for A0 (no user decision needed unless they change scope)**
+
+Each point is marked with the decision that settled it on 2026-10-05 (approved with the
+design).
 
 - What run a fixed-offload launch shows. SP1 records a fixed case's run as its own payload
   search at its own P* (SP1 step 7, deviation 2): its figure is P* - P_ref, and its
   decomposition at P_ref is computed in memory by `sim.matched_run` and not written.
   Recommended: show the recorded run with P* - P_ref beside it; a fly-out at P_ref would
   need new code and is not in scope. A solved case's recorded run already flies P_ref
-  (0 <= m_res < 0.05 kg).
+  (0 <= m_res < 0.05 kg). **Settled: D-SP2-27** (as recommended; labelled "imposed
+  offload", never "saved").
 - Worker thread or child process (section 5.6). Recommended: thread, after measuring how
-  responsive the server stays during a 90-110 s solve.
+  responsive the server stays during a 90-110 s solve. **Settled: D-SP2-09** (a thread;
+  measured in A0).
 - How the cached baseline enters the run path. Recommended: the composition of SP1's
   in-memory path in `app.py`, leaving `results_io.py` unchanged (section 5.6).
+  **Settled: D-SP2-10** (as recommended; each cache hit is re-wrapped).
 - The git provenance of a long-running server (section 5.6). Recommended: record the git
   state at server start beside the launch-time state, key the baseline cache on it, and
-  refuse a launch after a HEAD change.
+  refuse a launch after a HEAD change. **Settled: D-SP2-11** (the refusal is on a change
+  under src, configs, experiments, pyproject.toml or uv.lock, not on any HEAD change).
 - A1's compatibility policy (section 5.2). Recommended: re-exports of the old names, the
   two caveat sentences left in their modules, existing tests unchanged.
+  **Settled: D-SP2-13.**
 - Whether the pad controls (and the paired pad) are cached across launches: needs a hook in
   `planar_offload`. Recommended: no, unless the measured wait bothers the user.
+  **Settled: D-SP2-25** (no; only the pad is cached).
 - Progress granularity: a coarse stage line without touching the pipeline, or a callback
-  in results_io.py or offload.py. Recommended: the coarse line.
+  in results_io.py or offload.py. Recommended: the coarse line. **Settled: D-SP2-25**
+  (the five stages the app owns; no callback).
 - Exploratory marking: a new `label` value (with a summary banner) or a provenance field.
+  **Settled: D-SP2-12** (a label value, `exploratory`, with a banner).
 - Default run selection for a directory with an offload block (proposed: the pad and the
-  first solved stage-1 case).
+  first solved stage-1 case). **Settled: D-SP2-28** (a rule for any directory).
 - Where the display block lives and how it is validated; where the display-only formulas are
-  documented.
+  documented. **Settled: D-SP2-18** (`configs/display/`, read by `display.py`); the
+  formulas go into a new section of docs/physics.md, "Display-only reconstructions (not
+  part of the model)" (design, sections 4.1 and 4.4).
 - Whether plots are written for app launches. Recommended: yes by default if the time is
   small against the search, otherwise a form switch; measure first.
+  **Settled: D-SP2-26** (no PNG plots; not the recommendation).
 - Placement of the carriage's braking section in the drawing (section 5.5).
+  **Settled: D-SP2-20.**
 - Shared template fragment or deliberate copy between the replay and scene pages.
+  **Settled: D-SP2-21** (a deliberate copy of seven helpers, pinned by a test).
 - Brand assets in the package (section 5.10) and whether the replay page takes the site's
-  contrast tokens.
+  contrast tokens. **Settled: D-SP2-33** (the marks are inlined) **and D-SP2-34** (it does
+  not, in SP2).
 - Whether SP2 takes the replay drive-caveat fix (section 5.8 item 5).
-- Port, and whether the command opens the browser itself.
+  **Settled: D-SP2-23** (yes, widened into step A1a).
+- Port, and whether the command opens the browser itself. **Settled: D-SP2-29** (port
+  8765; an `--open` option).
 
 **Risks**
 
@@ -1238,15 +1586,150 @@ the user has often chosen the more ambitious option, so give it fairly with its 
 | R17 | The public site depends on replay's wording and marker (`site/build.py`: `REPLAY_MARKER`, `REPLAY_TEXT_FIXES`) | Keep the marker; run the site build after any replay text change and at the close; drop the text fix in the same change that fixes replay.py (section 5.8 item 5) |
 | R18 | Brand assets live outside the package, so an installed app has no logo or favicon | Inline the mark in the template with a test against `assets/brand/favicon.svg` (section 5.10) |
 
+**The five risks the approved design ranks (2026-10-05; design, section 8)**, in its
+order, each with what the design does about it:
+
+1. The session ends before the app exists: two checkpoints, a deferral order, an
+   in-progress handoff at a checkpoint (protocol section 10).
+2. Renderer rework after QA: the camera is in the first scene step; the page contract is
+   fixed before A3.
+3. Gates that pollute results/ or cannot run in agent time: a scratch results root, the dry
+   run in the browser plus an API driver, the close reusing A5's record when the launch
+   code is unchanged.
+4. A flaky suite: the launch as a plain function, a faked-seam offload test, one slow
+   launch (60-130 s), the server as a context manager, a leak test, Ctrl+Break handling.
+5. A close that overruns: public-site material is built and reviewed in A7.
+
+Also from the design's section 8:
+
+- Launch times measured on this machine on 2026-10-05: the pad 18-46 s; a plain launch
+  about 50 s; a stage-1 solve launch about 130 s without its pad control (about 30 s
+  more). A stage-2 or both-stage pad control is budgeted at 90-110 s by SP1's
+  pre-registration and is not yet measured.
+- Accepted risk: other local processes and users of this machine can reach the server.
+- config.py and summary.py change by a few lines (the label value and its banner), so
+  SP7's inventory is re-checked at the close.
+- Plan mode froze the background survey agents for 43 minutes; workflows run outside it
+  (protocol section 11).
+
 ## 11. Session log
 
-Empty: the phase has not started.
+**2026-10-05 (session 1).**
+
+- Start checklist (protocol section 3), run at b69ff0c:
+  - The tree was clean.
+  - Item 3 fails literally in two places, both for a known reason. HEAD's subject is "SP1:
+    exit criterion 8 confirmed (pushed 03fe7a7, Pages run 37228086241)", not the
+    bookkeeping subject: b69ff0c is one docs-only commit after "Close SP1: trackers,
+    handoff, next phase file" (03fe7a7) and records SP1's exit criterion 8 in the SP1
+    phase file. And `git diff --stat 5007515 HEAD` lists, beside docs/, TODO.md, CLAUDE.md
+    and README.md, pages under site/ (the public-face refresh, d3dc509), which the
+    protocol's list of bookkeeping paths does not name. It lists no code, tests, configs,
+    experiments or results. The closing commit 5007515 is an ancestor of HEAD.
+  - Fast suite: 1264 passed, 35 deselected in 98.55 s.
+  - `gh` is authenticated and the last Pages run is green (37228154471).
+  - Entry criteria 1 to 10 are met (node v24.11.1, ffmpeg 8.1, Edge installed).
+  - The diff of the header lists site/build.py, src/launchsim/plots.py,
+    src/launchsim/replay.py and tests/test_animate.py, as the handoff said. Section 6 was
+    re-checked against the code (survey 01:
+    inputs/2026-10-05-SP2-survey/01-inventory-recheck.md) and the corrections are at its
+    top.
+  - Open items owned by SP2 in TODO.md: KI-002, KI-016, KI-017, KI-018, KI-019 and KI-029.
+    No backlog item targets SP2.
+- Step A0 (planning):
+  - The two mock-ups (one frame of the scene, one second before release, and the app
+    page) were shown in the chat.
+  - Q1 to Q7 and a follow-up to Q3 were put to the user and answered (D-SP2-01 to
+    D-SP2-08).
+  - A nine-part read-only code survey was made at b69ff0c.
+  - The first draft of the design was read by six independent reviewers (numerics,
+    honesty, compliance, security, delivery, interaction design): 2 blocker, 49 major and
+    31 minor findings.
+  - The second version, with the findings folded in, was approved by the user, and
+    D-SP2-09 to D-SP2-38 with it. Step A0's gate (the user's approval) passed.
+  - The inputs were saved under inputs/: 2026-10-05-SP2-design.md, 2026-10-05-SP2-survey/,
+    2026-10-05-SP2-review/ and 2026-10-05-SP2-mockups/.
+  - Bookkeeping for the start commit ("Start SP2: status in progress"): the status in the
+    three places and the handoff line; D-SP2-01 to D-SP2-38 logged in TODO.md, milestone
+    M13 corrected, KI-019 re-owned and KI-030 to KI-034 added; this file's sections 3 and
+    6 to 13 brought to the approved design; the protocol amended (section 4, "App runs",
+    D-SP2-37; section 11, the note below).
+- Process note. Plan mode froze the background survey agents from 11:12 to 11:55 local
+  time (43 minutes): an agent that writes scratch files cannot work while the session is
+  in Plan mode. Workflows run outside Plan mode; enter it only to present a finished plan
+  (now in protocol section 11).
+- Next: step A1 (the shared run-data module). Its first action, before any edit, is to
+  generate the reference page and the other pages named in section 7 and to record their
+  sha256.
 
 ## 12. Deviations from the plan
 
-None. The changes the SP1 close-out fact-check made to this file on 2026-10-03 are
-corrections of the brief to the code as SP1 left it, not deviations of SP2; they are listed
-at the top of section 6.
+The changes the SP1 close-out fact-check made to this file on 2026-10-03 are corrections
+of the brief to the code as SP1 left it, not deviations of SP2; they are listed in section
+6, under "The inventory as checked at b3150c1".
+
+Step A0 (2026-10-05): what the approved design changes against this brief. The user
+approved these with the design (D-SP2-01 to D-SP2-38). They are listed because sections 1
+to 5 still describe the brief's proposal.
+
+1. **Step table.** Against the brief's A0 to A8: A1b (Pillow in the dev extra) and A1a
+   (caveat wording at source) are added after A1. A3 is split into A3 and A3b, with the
+   camera law and the close-up in A3 (the brief had a basic camera in A3 and the zoom out
+   to Earth's curvature in A6). A4 is split into A4 (the launch function, with the form
+   builder moved forward from A5) and A4b (the server). The brief's A6 (side by side and
+   camera polish) is merged into A3b. A6v (the video) is added. The public-site material
+   moves from the close (A8) into A7. Two checkpoints and a deferral order are new.
+   Reasons, from the delivery review of the first draft
+   (inputs/2026-10-05-SP2-review/05-delivery.md): a first renderer step gated on flights
+   it has no camera to show, a server step that needs the form builder of the step after
+   it, and no cut line if room runs out. The loop gains a security reviewer on A4b and
+   A6v, the standing gate that replay.html's sha256 is unchanged, and the rule that tests
+   run on synthetic directories or a short run in a temporary folder, never on results/.
+2. **Exit criteria.** 17 instead of 14 (D-SP2-38). The changes are listed item by item at
+   the end of section 8 ("Changes against the brief's 14"): criteria 15 (export), 16
+   (watchable) and 17 (requests from another origin) are new, and criteria 1 to 8, 10 and
+   12 changed. The reason D-SP2-38 gives: three of the brief's tolerances were
+   unmeasurable or vacuous on recorded data. Two the design explains: the exact thrust-on
+   test "outside a startup ramp" (a lag startup has no ramp end) and the stack-mass
+   rebuild of criterion 6 (alone it is an identity). Not in the design's paragraph, found
+   by comparing with the brief's text: criterion 11 also gains the import guard and "no
+   resource warning from the server"; criterion 13 gains physics.md by name, the exported
+   scene and the video in the gallery (made from the recorded directories) and the
+   reworded "nothing is re-simulated" sentence; criterion 14 names what the demo records;
+   criterion 9 is shortened (the counting test is in step A4's tests; the timing in the
+   demo record is no longer asked for).
+3. **Time grid** (D-SP2-16, against section 5.3). The scene's grid is a selection of CSV
+   rows, never a resample. The brief proposed the replay's grid plus the event times, with
+   linear interpolation; that grid misses the brief's own criterion on recorded data
+   (pitch by 10.7 deg, plume by 0.98, mass by 29.8 t).
+4. **No PNG plots for app launches** (D-SP2-26). A normal results directory has plots
+   (CLAUDE.md, "Experiments and reporting"), and section 10 recommended writing them by
+   default. An app launch writes none (`run_launch(..., plots=False)`): a PNG of an
+   exploratory run would carry no mark, and the scene replaces it.
+5. **App summaries are tracked** (D-SP2-03, the user's answer to Q3), against the brief's
+   recommendation to ignore `results/app/` wholly. What follows from it: the exploratory
+   banner and the commit points (D-SP2-04), a commit of their own, scratch results roots
+   for reviews and gates (D-SP2-37), and the amendment of the session protocol.
+6. **A wider A1a** (D-SP2-23). The brief's item (section 5.8 item 5) was one sentence of
+   `replay.drive_caveat`, to be taken or left. A1a makes the drive caveat data-driven and
+   also corrects, at source, the structure caveat, the paired-pad label and note, the
+   comparison note, the rounding, the subtitle and one verb; the five gallery pages are
+   regenerated. site/build.py keeps its three template canvas patches (replay.html is
+   frozen in SP2; TODO.md KI-031) and its editorial additions.
+7. **MP4 only** (D-SP2-30). The brief had video export out of scope unless the user asked
+   for it; the user asked (Q1, D-SP2-01). The design delivers an MP4 through ffmpeg from
+   the app, and no GIF from the app and no CLI video command.
+8. **Display geometry in `display.py`, not in `config.py`** (D-SP2-18). The brief's step
+   A2 listed `config.py` (display model) among its files. The display files are read by a
+   new pure module; config.py changes in SP2 only by the `exploratory` label value.
+9. **Player helpers** (D-SP2-21, against sections 5.4 and 5.9). The brief proposed reusing
+   the replay page's clock, scrubber and rate select as they are, through a shared
+   fragment or a guarded copy. Seven helpers are copied verbatim and pinned by a test
+   (`readPalette`, `idxAt`, `valAt`, `phaseAt`, `setupCanvas`, `tick`, `setPlaying`), and
+   the scene has its own rate law instead of the replay's Auto rate.
+
+Correction to the design (a record, not edited): its section 4.6 says "the video routes of
+4.9"; the video routes are in its section 4.8.
 
 ## 13. Prompt to start this phase
 
@@ -1357,3 +1840,31 @@ at the top of section 6.
 > have the cold-read check done, make the closing commit, push, and confirm the Pages
 > deployment. Report anything that undercuts the hypothesis, and anything the scene would
 > show that the model does not support, as plainly as the rest.
+
+The prompt above started the session of 2026-10-05 and is kept unchanged (the handoff
+holds the same text). It predates the approved design: where it says 14 exit criteria,
+section 8 now has 17.
+
+**Prompt to resume this phase** (protocol section 10; paste it into a fresh Claude Code
+session opened in this folder if a session ends before SP2 is complete):
+
+> Read docs/handoff/NEXT_SESSION.md first, then docs/process/SESSION_PROTOCOL.md,
+> docs/phases/README.md, docs/phases/SP2-launch-app-2d-scene.md with its step table
+> (section 7) and its session log (section 11), CLAUDE.md, TODO.md, README.md, and the
+> memory index
+> (C:\Users\rahul\.claude\projects\D--DEV-ClaudeProjects-SpaceRocketOptimization\memory\MEMORY.md)
+> with the notes it links. Then read the approved design,
+> docs/phases/inputs/2026-10-05-SP2-design.md, and the survey reports under
+> docs/phases/inputs/2026-10-05-SP2-survey/ that the step in hand names.
+>
+> We are resuming phase SP2 of launch-assist-sim: the local app with the 2-D launch scene.
+> SP2 is in progress. The approved design is
+> docs/phases/inputs/2026-10-05-SP2-design.md; it supersedes sections 5, 7 and 8 of the
+> brief where they differ, and its decisions are D-SP2-01 to D-SP2-38 in TODO.md. Resume
+> at the first step of the table that is not marked [x], and never repeat a passed gate.
+> Run the start checklist of protocol section 3 (for a phase in progress, item 3 is the
+> check of section 10: every [x] row has its commit in `git log`, and the tree is clean or
+> holds only tracker edits) and skip the status change of item 8. Add your own dated entry
+> to the session log. Keep the step loop and the standing gates of section 7, and report
+> anything that undercuts the hypothesis, and anything the scene would show that the model
+> does not support, as plainly as the rest.

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 680 592" role="img">
+<title>Mock-up frame of the 2-D launch scene, one second before release</title>
+<desc>Two panels on one clock and one scale. Left: the pad rocket held down with its engines at half thrust. Right: the silo cross-section with the unlit rocket riding the carriage up the 100 m shaft, its stage-1 tank 90% full.</desc>
+<style>
+/* Added 2026-10-05 so that the file renders on its own: plain fallback values for the
+   classes (t, ts, th, box, c-gray, leader) and the variable (--s) that the chat widget host
+   supplied. They are not the project's brand tokens. */
+svg { --s: #444441; background: #ffffff; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.t { font-size: 14px; fill: #2c2c2a; }
+.ts { font-size: 12px; fill: #5f5e5a; }
+.th { font-size: 14px; font-weight: 500; fill: #2c2c2a; }
+.box { fill: #ffffff; stroke: #b4b2a9; stroke-width: 0.5; }
+.c-gray { fill: #e8e6df; stroke: #5f5e5a; stroke-width: 0.5; }
+.leader { fill: none; stroke: #888780; stroke-width: 0.5; }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="th" x="185" y="30" text-anchor="middle">Pad, full propellant load</text>
+<text class="th" x="495" y="30" text-anchor="middle">Silo 100 m, 3 g, stage 1 −41.3 t</text>
+<rect class="box" x="40" y="44" width="290" height="430" rx="2"/>
+<rect class="box" x="350" y="44" width="290" height="430" rx="2"/>
+<rect class="c-gray" x="40" y="234" width="128" height="240" style="stroke:none"/>
+<rect class="c-gray" x="202" y="234" width="128" height="240" style="stroke:none"/>
+<rect class="c-gray" x="168" y="262" width="34" height="212" style="stroke:none"/>
+<path d="M40 234H168V262H202V234H330" fill="none" stroke="var(--s)" stroke-width="1"/>
+<rect class="c-gray" x="350" y="234" width="135" height="240" style="stroke:none"/>
+<rect class="c-gray" x="505" y="234" width="135" height="240" style="stroke:none"/>
+<rect class="c-gray" x="485" y="454" width="20" height="20" style="stroke:none"/>
+<path d="M350 234H485V454H505V234H640" fill="none" stroke="var(--s)" stroke-width="1"/>
+<line x1="482" y1="245" x2="482" y2="454" stroke="var(--s)" stroke-width="5" stroke-dasharray="2 20"/>
+<line x1="508" y1="245" x2="508" y2="454" stroke="var(--s)" stroke-width="5" stroke-dasharray="2 20"/>
+<path d="M52 56V64M52 60H162M162 56V64" fill="none" stroke="var(--s)" stroke-width="1"/>
+<text class="ts" x="107" y="78" text-anchor="middle">50 m</text>
+<path d="M362 56V64M362 60H472M472 56V64" fill="none" stroke="var(--s)" stroke-width="1"/>
+<text class="ts" x="417" y="78" text-anchor="middle">50 m</text>
+<rect x="70" y="100" width="10" height="60" fill="#378ADD"/>
+<rect x="70" y="100" width="10" height="60" fill="none" stroke="var(--s)" stroke-width="0.5"/>
+<text class="ts" x="75" y="176" text-anchor="middle">S1</text>
+<text class="ts" x="75" y="192" text-anchor="middle">100%</text>
+<rect x="120" y="100" width="10" height="60" fill="#378ADD"/>
+<rect x="120" y="100" width="10" height="60" fill="none" stroke="var(--s)" stroke-width="0.5"/>
+<text class="ts" x="125" y="176" text-anchor="middle">S2</text>
+<text class="ts" x="125" y="192" text-anchor="middle">100%</text>
+<rect x="380" y="106" width="10" height="54" fill="#378ADD"/>
+<rect x="380" y="100" width="10" height="60" fill="none" stroke="var(--s)" stroke-width="0.5"/>
+<text class="ts" x="385" y="176" text-anchor="middle">S1</text>
+<text class="ts" x="385" y="192" text-anchor="middle">90%</text>
+<rect x="430" y="100" width="10" height="60" fill="#378ADD"/>
+<rect x="430" y="100" width="10" height="60" fill="none" stroke="var(--s)" stroke-width="0.5"/>
+<text class="ts" x="435" y="176" text-anchor="middle">S2</text>
+<text class="ts" x="435" y="192" text-anchor="middle">100%</text>
+<polygon points="181,226 189,226 185,246" fill="#EF9F27"/>
+<rect x="160" y="226" width="16" height="8" fill="var(--s)"/>
+<rect x="194" y="226" width="16" height="8" fill="var(--s)"/>
+<rect x="176" y="220" width="5" height="6" fill="var(--s)"/>
+<rect x="189" y="220" width="5" height="6" fill="var(--s)"/>
+<rect x="181" y="134" width="8" height="84" fill="#378ADD"/>
+<rect x="181" y="218" width="8" height="8" fill="var(--s)"/>
+<rect x="181" y="134" width="8" height="92" fill="none" stroke="var(--s)" stroke-width="1"/>
+<rect x="181" y="123" width="8" height="11" fill="none" stroke="var(--s)" stroke-width="1"/>
+<rect x="181" y="101" width="8" height="18" fill="#378ADD"/>
+<rect x="181" y="101" width="8" height="22" fill="none" stroke="var(--s)" stroke-width="1"/>
+<path d="M181 101L179.3 96V83L185 72L190.7 83V96L189 101Z" fill="none" stroke="var(--s)" stroke-width="1"/>
+<rect x="486" y="370" width="18" height="6" fill="#EF9F27"/>
+<rect x="491" y="286.4" width="8" height="75.6" fill="#378ADD"/>
+<rect x="491" y="362" width="8" height="8" fill="var(--s)"/>
+<rect x="491" y="278" width="8" height="92" fill="none" stroke="var(--s)" stroke-width="1"/>
+<rect x="491" y="267" width="8" height="11" fill="none" stroke="var(--s)" stroke-width="1"/>
+<rect x="491" y="245" width="8" height="18" fill="#378ADD"/>
+<rect x="491" y="245" width="8" height="22" fill="none" stroke="var(--s)" stroke-width="1"/>
+<path d="M491 245L489.3 240V227L495 216L500.7 227V240L499 245Z" fill="none" stroke="var(--s)" stroke-width="1"/>
+<text class="ts" x="60" y="218">Clamps closed</text>
+<line class="leader" x1="154" y1="215" x2="175" y2="223"/>
+<text class="th" x="222" y="100">Hold-down</text>
+<text class="ts" x="222" y="120">Thrust 50%</text>
+<text class="ts" x="222" y="138">Altitude 0 m</text>
+<text class="ts" x="222" y="156">Speed 0 m/s</text>
+<text class="ts" x="222" y="174">Felt 1.0 g</text>
+<text class="th" x="532" y="100">Push, unlit</text>
+<text class="ts" x="532" y="120">Thrust 0%</text>
+<text class="ts" x="532" y="138">Depth 62 m</text>
+<text class="ts" x="532" y="156">Speed 47 m/s</text>
+<text class="ts" x="532" y="174">Felt 4.0 g</text>
+<text class="ts" x="532" y="192">Drive 20.7 MN</text>
+<text class="ts" x="466" y="303" text-anchor="end">Drive rings</text>
+<line class="leader" x1="470" y1="299" x2="479" y2="299"/>
+<text class="ts" x="466" y="377" text-anchor="end">Carriage</text>
+<line class="leader" x1="470" y1="373" x2="485" y2="373"/>
+<text class="ts" x="520" y="286">Tank 90% full</text>
+<line class="leader" x1="517" y1="282" x2="500" y2="282"/>
+<line x1="628" y1="238" x2="628" y2="450" stroke="var(--s)" stroke-width="0.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text class="ts" x="622" y="348" text-anchor="end">100 m</text>
+<text class="th" x="40" y="500">T −1.00 s after release</text>
+<text class="ts" x="640" y="500" text-anchor="end">Rate: auto (1x)</text>
+<line x1="40" y1="520" x2="640" y2="520" stroke="var(--s)" stroke-width="1"/>
+<path d="M70 514V526M250 514V526M300 514V526M370 514V526M612 514V526" fill="none" stroke="var(--s)" stroke-width="1"/>
+<circle cx="62" cy="520" r="5" fill="#EF9F27"/>
+<text class="ts" x="70" y="542" text-anchor="middle">Release</text>
+<text class="ts" x="250" y="542" text-anchor="middle">MECO</text>
+<text class="ts" x="300" y="542" text-anchor="middle">Staging</text>
+<text class="ts" x="370" y="542" text-anchor="middle">Fairing</text>
+<text class="ts" x="612" y="542" text-anchor="middle">Cutoff</text>
+<rect x="40" y="559" width="10" height="10" fill="#378ADD"/>
+<text class="ts" x="56" y="568">Propellant</text>
+<rect x="140" y="559" width="10" height="10" fill="#EF9F27"/>
+<text class="ts" x="156" y="568">Thrust and drive</text>
+<text class="ts" x="290" y="568">Display only: shapes, clamps, carriage, rings</text>
+</svg>

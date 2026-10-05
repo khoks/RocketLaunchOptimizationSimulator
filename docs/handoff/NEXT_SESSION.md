@@ -2,6 +2,7 @@
 
 ## 1. Header
 
+- SP2 started 2026-10-05. If you are a new session and the phase file says in progress, resume per SESSION_PROTOCOL.md section 10 from the step table.
 - Written 2026-10-04, at the close of phase SP1 (session started 2026-09-30), following
   docs/process/SESSION_PROTOCOL.md sections 7 and 8.
 - Phase just closed: **SP1**, launch settings and fuel offload at fixed payload (planar

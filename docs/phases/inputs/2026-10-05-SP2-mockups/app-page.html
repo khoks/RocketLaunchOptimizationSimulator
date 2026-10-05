@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SP2 mock-up of the app page (approved 2026-10-05; every number illustrative)</title>
+<style>
+/* Added 2026-10-05 so that the file renders on its own: plain fallback values for what the
+   chat widget host supplied (the variables, .sr-only, base styles of form controls, and two
+   plain glyphs in place of the icon font). They are not the project's brand tokens. */
+:root {
+  --surface-1: #f1efe8; --surface-2: #ffffff;
+  --border: #d3d1c7; --border-strong: #b4b2a9; --border-stronger: #888780;
+  --text-secondary: #5f5e5a; --text-muted: #73726c;
+  --bg-warning: #faeeda; --text-warning: #854f0b; --border-warning: #ba7517;
+  --bg-success: #eaf3de; --text-success: #3b6d11;
+  --fill-primary: #2c2c2a; --on-primary: #ffffff;
+  --radius: 8px;
+}
+body { margin: 0 auto; max-width: 720px; padding: 0 16px; background: #faf9f5; color: #2c2c2a;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; }
+button, input, select { font: inherit; font-size: 13px; padding: 6px 10px; box-sizing: border-box;
+  border: 0.5px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-2); color: inherit; }
+.ti { font-style: normal; }
+.ti-rocket::before { content: "\25B2"; }
+.ti-player-play::before { content: "\25BA"; }
+</style>
+</head>
+<body>
+<style>
+.f{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.f label{font-size:13px;color:var(--text-secondary)}
+.r{display:flex;gap:8px;align-items:center;font-size:13px}
+.card{background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem}
+.pill{font-size:12px;padding:4px 10px;border-radius:var(--radius);background:var(--bg-success);color:var(--text-success)}
+.m{background:var(--surface-1);border-radius:var(--radius);padding:12px}
+.m p{margin:0}
+.row{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:0.5px solid var(--border);font-size:13px}
+</style>
+<h2 class="sr-only">Mock-up of the launch-assist-sim app page: a launch form, the job progress, results with caveats beside them, the scene player and the list of recorded runs.</h2>
+<div style="padding:1rem 0">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+<i class="ti ti-rocket" style="font-size:20px" aria-hidden="true"></i>
+<span style="font-weight:500;font-size:16px">launch-assist-sim</span>
+<span style="font-size:13px;color:var(--text-secondary)">127.0.0.1:8765</span>
+<span style="margin-left:auto;font-size:12px;padding:4px 10px;border-radius:var(--radius);background:var(--bg-warning);color:var(--text-warning)">Exploratory runs, not findings</span>
+</div>
+<div style="display:grid;grid-template-columns:minmax(0,250px) minmax(0,1fr);gap:16px">
+<div class="card">
+<div class="f"><label>Preset</label><select><option>Silo cold start, solved stage-1 offload</option><option>Pad alone</option><option>Silo cold start, 3 g, 100 m</option><option>Silo hot ramp on the track</option><option>Silo 200 m, same exit speed</option><option>Fixed 5% stage-1 offload</option><option>Fixed 10% stage-1 offload</option></select></div>
+<div class="f"><label>Launch site</label><div class="r"><button>Pad only</button><button style="background:var(--surface-1);border-color:var(--border-stronger)">Silo</button></div></div>
+<div class="f"><label>Silo depth</label><div class="r"><input type="number" value="100" style="width:90px"><span>m</span></div></div>
+<div class="f"><label>Push set by</label><div class="r"><select style="flex:1"><option>Net acceleration</option><option>Exit speed</option></select><input type="number" value="3" style="width:56px"><span>g</span></div><span style="font-size:12px;color:var(--text-muted)">Gives exit speed 76.7 m/s</span></div>
+<div class="f"><label>Stage-1 thrust ramp starts</label><select><option>Time after release</option><option>Time after push start</option><option>Depth below the mouth</option><option>Speed on the push</option><option>Height above the mouth, by event</option><option>Height above the mouth, closed form</option></select><div class="r"><input type="number" value="0.5" style="width:90px"><span>s</span></div></div>
+<div class="f"><label>Propellant</label><select><option>Solve the largest offload</option><option>Full load</option><option>Fixed offload</option></select><select><option>Stage 1</option><option>Stage 2 (advanced)</option><option>Both stages (advanced)</option></select></div>
+<div class="f"><label>Stage-2 pre-offload</label><div class="r"><input type="number" value="0" style="width:90px"><span>t</span></div></div>
+<div class="f"><label>Assumed structural penalty</label><div class="r"><input type="number" value="0" style="width:90px"><span>t of stage-1 dry mass</span></div></div>
+<button style="width:100%;background:var(--fill-primary);color:var(--on-primary);font-weight:500">Launch</button>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px">
+<div class="card">
+<div class="r"><span style="font-weight:500;font-size:14px">Launch 20261005T181204Z</span><span style="margin-left:auto;color:var(--text-secondary)">Done in 2 min 44 s</span></div>
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+<span class="pill">Preflight</span><span class="pill">Pad baseline, cached</span><span class="pill">Silo run 14 s</span><span class="pill">Offload solve 104 s</span><span class="pill">Pad control 31 s</span><span class="pill">Written</span>
+</div>
+<p style="font-size:12px;color:var(--text-muted);margin:10px 0 0">results/app/20261005T181204Z</p>
+</div>
+<div class="card">
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+<div class="m"><p style="font-size:13px;color:var(--text-secondary)">Stage-1 propellant left out</p><p style="font-size:24px;font-weight:500">41.26 t</p></div>
+<div class="m"><p style="font-size:13px;color:var(--text-secondary)">Share of the stage-1 load</p><p style="font-size:24px;font-weight:500">10.04%</p></div>
+<div class="m"><p style="font-size:13px;color:var(--text-secondary)">Max-Q against the pad</p><p style="font-size:24px;font-weight:500">+3.4%</p></div>
+<div class="m"><p style="font-size:13px;color:var(--text-secondary)">Payload held</p><p style="font-size:24px;font-weight:500">26,054 kg</p></div>
+</div>
+<div style="border-left:2px solid var(--border-warning);border-radius:0;padding:4px 0 4px 12px;margin-top:14px;font-size:13px;color:var(--text-secondary);line-height:1.6">
+Exploratory run. Findings come only from committed experiments.<br>
+The gate vehicle calibrates +14.3% high.<br>
+No structural mass is charged for the 4 g push. An assumed +8.1 t leaves 1.98 t.<br>
+Sweep-optimized, unthrottled guidance.
+</div>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:16px">
+<div class="r"><button aria-label="Play"><i class="ti ti-player-play" aria-hidden="true"></i></button><input type="range" min="0" max="100" value="4" step="1" style="flex:1" aria-label="Scene time"><select style="width:110px"><option>Auto rate</option><option>1x</option><option>5x</option><option>30x</option></select></div>
+<div style="height:72px;margin-top:10px;border:0.5px dashed var(--border-strong);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text-secondary)">Scene: pad and silo side by side, as in the frame above</div>
+</div>
+<div class="card" style="margin-top:16px">
+<span style="font-weight:500;font-size:14px">Recorded runs</span>
+<div class="row" style="margin-top:8px"><span style="flex:1">app / 20261005T181204Z</span><span style="color:var(--text-secondary)">exploratory, 5 runs</span><button>Open</button></div>
+<div class="row"><span style="flex:1">silo_offload_2d / 20261003T112934Z</span><span style="color:var(--text-secondary)">19 runs, 72 MB</span><button>Open</button></div>
+<div class="row"><span style="flex:1">silo_screening_2d / 20260930T175743Z</span><span style="color:var(--text-secondary)">12 runs, 45 MB</span><button>Open</button></div>
+<div class="row"><span style="flex:1;color:var(--text-muted)">silo_offload_2d / 20261003T112949Z</span><span style="color:var(--text-muted)">Sweep, no scene</span></div>
+</div>
+</div>
+</body>
+</html>

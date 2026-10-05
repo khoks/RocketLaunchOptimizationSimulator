@@ -156,6 +156,18 @@ Rules for runs that produce findings:
 - Never tune a parameter to make an assist look better. Published claims and probe
   numbers are things to compare against, not targets.
 
+App runs (decision D-SP2-37, 2026-10-05). A launch from the local app (`launchsim app`,
+built in SP2) writes a results directory under `results/app/`, and its top-level
+`summary.md` is tracked like every other run's (D-SP2-03).
+
+- App summaries are results. They are committed in their own commit, subject
+  `SP<n> step <k>: app summaries`, never in a tracker or bookkeeping commit, and before
+  any pre-registered run, so that the run starts from a clean tree.
+- Reviewers and gates start the app with a scratch results root
+  (`--results-root <scratch folder>`), so nothing they launch is committed.
+- Demo launches are made from a clean tree after the last code commit.
+- No app run is cited in `docs/findings/`: an app run is exploratory and is marked so.
+
 Steps may run as multi-agent workflows. A workflow that loses agents (for example an
 expired login) can be resumed from its run id and replays cached steps.
 
@@ -384,6 +396,9 @@ Tools and shell (Windows 11, PowerShell 5.1 and Git Bash):
   surveys) as soon as it arrives (TODO.md KI-020).
 - Background Explore agents took from 10 minutes to 2.5 hours of wall clock in that
   session. Do not wait idle for them: put the open questions to the user while they run.
+- Plan mode freezes background workflow agents that write scratch files (2026-10-05: nine
+  survey agents were idle for 43 minutes). Run workflows outside Plan mode, and enter it
+  only to present a finished plan.
 
 Code and data:
 
