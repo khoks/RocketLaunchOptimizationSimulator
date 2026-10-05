@@ -1788,9 +1788,30 @@ D_id - (J_vac + pre + fair + dv_margin) is zero up to the integration error of J
 when the mass bookkeeping (payload, fairing, staging, the maps, the depletion) is right;
 `checks.closure_tol_mps` (1e-5 m/s) gates it (status `bug_suspect`, "Screening-beat
 rule (2-D)").
-The run supplies m_fs (flight start), the stage burnouts and the `fairing` event (its
-record holds the mass before the drop; the drop counts as at staging under rule
-staging or when the event lies in COAST_STAGING).
+The run supplies m_fs (flight start), the stage burnouts and the `fairing` event. The
+drop counts as at staging under rule staging or when the event lies in COAST_STAGING;
+otherwise the fairing is carried into stage 2 and, when a `fairing` event exists, the
+closure takes m_f+ as the event's mass less F2, the record then holding the mass before
+the drop (with no event, rule never or the criterion never met, m_f+ = m3 as above).
+Which side of the drop a record holds depends on how the planner logs it
+(`phases/planar.py`, `_stage_and_coast` and `_fly_stage2`), in one of four ways:
+
+- in the stage-2 burn, at the heating event (a `fairing` record in LTG_BURN): the state
+  before the drop, F included;
+- at stage-2 ignition, when the criterion was first met during the staging coast (a
+  `fairing` record in LTG_BURN at t_ign2, after the `ignition` record and with its
+  mass): the state before the drop, F included;
+- at staging, when the criterion is already met there (a `fairing` record in
+  COAST_STAGING, after the `staging` record and with its time and mass): the state after
+  the staging map, which removed m_d1 and F, so the mass after both drops;
+- under rule staging the map removes F with m_d1 and no `fairing` record is logged: the
+  `staging` record alone, as always the state after its map, holds the mass after both
+  drops.
+
+A reader of events.csv need not carry these rules: `run_data.with_drop_masses` reports
+the mass before and after every drop for the four cases (the stage first, then the
+fairing, when both leave in one map; under rule staging it adds a fairing row at the
+staging time, marked as not recorded).
 
 **Measured** (gamma* 20 deg, 22.8 t, the LTG pair solved, recorded at rtol 1e-10):
 residual -7.7e-8 m/s (pad), -9.3e-8 (silo_cold), -9.4e-8 (silo_hot_full), -7.8e-8

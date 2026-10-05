@@ -46,6 +46,7 @@ src/launchsim/
   results_io.py  run directories, provenance (git, pre-registration state), writers, experiment and sweep entry points
   plots.py       plot writers (Agg) and the `animate` MP4/GIF replay
   replay.py      the `replay` command: a self-contained interactive HTML replay page (template in templates/replay.html)
+  run_data.py    shared read-only reader of a results directory: file readers, directory check, run selection and roles, series and event readers (mass before and after each drop), calibration records, the output-path rule; no matplotlib
   optimize.py    ascent optimization (Phase 5)
   cli.py
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
@@ -137,7 +138,7 @@ Calibration is separate from validation; label it as such:
 ## Code style
 
 - Python 3.12, type hints everywhere, frozen dataclasses for parameters, pydantic to validate YAML.
-- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py and replay.py.
+- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py and run_data.py.
 - Small functions with docstrings. No magic numbers outside constants.py and configs.
 - ruff for lint and format. Mark tests slower than 5 s with `@pytest.mark.slow`.
 

@@ -14,10 +14,16 @@ clock (the time after release: REPLAY_EARLY_DT_S steps up to REPLAY_EARLY_END_S,
 REPLAY_LATE_DT_S), q and Mach as JSON null where they are undefined (inside a vented
 shaft, where no air drag is modelled), the events of events.csv and the headline
 metrics of metrics.json, plus the text of the page (subtitle, run labels, notes,
-caveats) generated from the run data. Run selection and the output-path rules are
-those of ``launchsim animate`` (plots.animation_run_names: the baseline plus up to
-three variants in summary order; at most plots.ANIMATION_MAX_RUNS runs; the default
-output goes to the current directory, never into the results tree).
+caveats) generated from the run data. Run selection and the output-path rule are the
+shared ones of run_data, which ``launchsim animate`` uses too (run_data.run_names: the
+baseline plus up to three variants in summary order; at most run_data.MAX_RUNS runs; the
+default output goes to the current directory, never into a results tree).
+
+The reading itself lives in run_data.py (SP2 step A1): the file readers, the directory
+check, run selection, ``run_source``, the series and event readers, the resampling
+helpers, the calibration records and the output-path rule. The names this module had
+for them stay importable here, as the same objects or as thin wrappers that raise
+ReplayError with the replay's wording.
 
 A selected run is an experiment run (metrics.json ``runs``, compared with the
 baseline), a bound re-run or its paired baseline (``bounds``: compared with the paired
@@ -38,25 +44,24 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
-import yaml
 
-from launchsim import __version__, plots
-from launchsim.config import PLANAR_2D, VERTICAL_1D
+from launchsim import __version__, run_data
 from launchsim.phases import HOLD_KIND
 from launchsim.summary import UPPER_BOUND_REASONS
-from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, rad_to_deg, t_to_kg, to_percent
+from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, t_to_kg
 
 
-class ReplayError(ValueError):
+class ReplayError(run_data.RunDataError):
     """A user-facing replay problem (a wrong run directory, run name or output path, a
-    run without planar columns): the CLI prints it as one error line."""
+    run without planar columns): the CLI prints it as one error line. A
+    run_data.RunDataError (so still a ValueError): the shared readers raise it when the
+    replay calls them."""
 
 
 REPLAY_TEMPLATE = ("templates", "replay.html")
@@ -65,17 +70,21 @@ REPLAY_DATA_TOKEN = "__REPLAY_DATA__"
 """The template's placeholder for the embedded JSON."""
 REPLAY_SUFFIXES = (".html", ".htm")
 """Output extensions ``write_replay_page`` accepts."""
-REPLAY_EARLY_END_S = 40.0
-"""End of the finely sampled launch segment [s after release]."""
-REPLAY_EARLY_DT_S = 0.1
-"""Sample step of the launch segment [s]."""
-REPLAY_LATE_DT_S = 1.0
-"""Sample step after REPLAY_EARLY_END_S [s]."""
-REPLAY_GRID_DECIMALS = 6
-"""Decimals [s] to which grid times are rounded before de-duplication, so a REPLAY_*_DT_S
-step that lands on a run's first or last time does not give two samples."""
-REPLAY_TIME_DECIMALS = 3
-"""Decimals [s] of the sample and event times written into the page."""
+REPLAY_WORDING = "replay shows"
+"""Subject and verb of the replay's refusals in the shared checks (run_data.check_run_dir,
+run_data.run_source)."""
+REPLAY_EARLY_END_S = run_data.GRID_EARLY_END_S
+"""End of the finely sampled launch segment [s after release] (run_data.GRID_EARLY_END_S)."""
+REPLAY_EARLY_DT_S = run_data.GRID_EARLY_DT_S
+"""Sample step of the launch segment [s] (run_data.GRID_EARLY_DT_S)."""
+REPLAY_LATE_DT_S = run_data.GRID_LATE_DT_S
+"""Sample step after REPLAY_EARLY_END_S [s] (run_data.GRID_LATE_DT_S)."""
+REPLAY_GRID_DECIMALS = run_data.GRID_DECIMALS
+"""Decimals [s] to which grid times are rounded before de-duplication
+(run_data.GRID_DECIMALS)."""
+REPLAY_TIME_DECIMALS = run_data.TIME_DECIMALS
+"""Decimals [s] of the sample and event times written into the page
+(run_data.TIME_DECIMALS)."""
 YARDSTICK_SHOWN_KG = 0.5
 """|ideal screening - screening yardstick| [kg] above which the page shows the summary's
 yardstick under the ideal screening (they differ when the yardstick basis is P0)."""
@@ -90,33 +99,30 @@ DRY_MASS_PARAM = "vehicle.stages.stage1.dry_mass_t"
 INSERTED = "inserted"
 """metrics.json status of a run that reached the target orbit."""
 
-ROLE_RUN = "run"
-ROLE_BOUND = "bound"
-ROLE_PAIRED_BASELINE = "paired_baseline"
-ROLE_CASE = "case"
-ROLE_OFFLOAD = "offload"
+ROLE_RUN = run_data.ROLE_RUN
+ROLE_BOUND = run_data.ROLE_BOUND
+ROLE_PAIRED_BASELINE = run_data.ROLE_PAIRED_BASELINE
+ROLE_CASE = run_data.ROLE_CASE
+ROLE_OFFLOAD = run_data.ROLE_OFFLOAD
 """What a selected run is in metrics.json: an experiment run, a bound re-run, the
 paired baseline of a bound re-run, a case, or a run of the offload block (an offload
-case's recorded run, a paired pad or a pad control: ``offload.runs``; run_source)."""
+case's recorded run, a paired pad or a pad control: ``offload.runs``; run_source). The
+run_data constants under their names here."""
 
 REPLAY_COLUMNS = (
-    *plots.ANIMATION_COLUMNS,
+    *run_data.PLANAR_BASE_COLUMNS,
     "gamma_rel_rad",
     "mach",
 )
-"""timeseries.csv columns the replay reads (a planar_2d run writes all of them)."""
+"""timeseries.csv columns the replay reads (a planar_2d run writes all of them): the
+shared base columns (the animation's nine) and two more."""
 
-
-def wrapped_deg(angle_rad: np.ndarray) -> np.ndarray:
-    """An angle [rad] wrapped to [-180, 180] deg: a falling vehicle's flight-path angle
-    reads about -90 deg, not 270 deg (atan2 of its sine and cosine; NaN stays NaN)."""
-    return np.asarray(rad_to_deg(np.arctan2(np.sin(angle_rad), np.cos(angle_rad))), dtype=float)
-
-
-Converter = Callable[[np.ndarray], np.ndarray]
+wrapped_deg = run_data.wrapped_deg
+"""run_data.wrapped_deg (the same object): an angle [rad] wrapped to [-180, 180] deg."""
+Converter = run_data.Converter
 """A unit conversion applied to a timeseries.csv column before resampling."""
 
-SERIES_FIELDS: tuple[tuple[str, str, Converter | None, int], ...] = (
+SERIES_FIELDS: tuple[run_data.SeriesField, ...] = (
     ("alt_m", "alt_m", None, 1),
     ("x_km", "downrange_m", m_to_km, 3),
     ("v", "speed_rel_mps", None, 2),
@@ -128,7 +134,8 @@ SERIES_FIELDS: tuple[tuple[str, str, Converter | None, int], ...] = (
 )
 """(page field, timeseries.csv column, unit conversion or None, decimals) of each
 resampled series; v is the Earth-relative speed and gamma the flight-path angle of the
-Earth-relative velocity, wrapped to [-180, 180] deg before resampling."""
+Earth-relative velocity, wrapped to [-180, 180] deg before resampling. The replay page's
+own field list: run_data.run_series takes it as an argument."""
 
 LOSS_KEYS = (
     "gravity_loss_mps",
@@ -143,24 +150,25 @@ PLUS_MINUS = "\u00b1"
 
 
 # ------------------------------------------------------------------ reading
+#
+# The readers live in run_data. The names below are what this module called them before
+# SP2 step A1: plain re-exports where the function cannot raise, thin wrappers that pass
+# ReplayError and the replay's words where it can.
 
-
-def _read_json(path: Path) -> dict[str, Any]:
-    """A JSON mapping read as UTF-8 (NaN literals allowed), or {} when missing."""
-    if not path.is_file():
-        return {}
-    with path.open(encoding="utf-8") as fh:
-        data = json.load(fh)
-    return data if isinstance(data, dict) else {}
-
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    """A YAML mapping read as UTF-8, or {} when missing."""
-    if not path.is_file():
-        return {}
-    with path.open(encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
-    return data if isinstance(data, dict) else {}
+_mapping = run_data.as_mapping
+"""run_data.as_mapping: ``value`` when it is a mapping, else {}."""
+_entry_config = run_data.entry_config
+"""run_data.entry_config: (run block, vehicle name or None) of one run entry."""
+_finite = run_data.finite
+"""run_data.finite: a finite float (rounded, a negative zero made 0.0), or None."""
+overrides_text = run_data.overrides_text
+offload_note = run_data.offload_note
+replay_grid = run_data.sample_grid
+"""run_data.sample_grid: the common-clock sample times [s after release] of a run."""
+defined_mask = run_data.defined_mask
+series_values = run_data.series_values
+results_ancestors = run_data.results_ancestors
+protected_tree = run_data.protected_tree
 
 
 def check_replay_run_dir(run_dir: Path) -> dict[str, Any]:
@@ -169,76 +177,17 @@ def check_replay_run_dir(run_dir: Path) -> dict[str, Any]:
     results directory (a sweep point's metrics.json has no ``runs``), or a run of
     another model (vertical_1d has no downrange or flight-path angle to replay).
 
-    Not plots.check_planar_run_dir: that one raises AnimationError with animate's
-    wording and cannot tell a sweep point from a vertical_1d run."""
-    if not run_dir.is_dir():
-        raise ReplayError(f"run directory not found: {run_dir}")
-    metrics = _read_json(run_dir / "metrics.json")
-    if not metrics:
-        raise ReplayError(
-            f"{run_dir} has no metrics.json; pass one results directory "
-            "(results/<experiment>/<timestamp>)"
-        )
-    if not isinstance(metrics.get("runs"), dict):
-        raise ReplayError(
-            f"{run_dir} is not an experiment results directory (its metrics.json lists no "
-            "runs: a sweep point or a single run's folder); pass "
-            "results/<experiment>/<timestamp>"
-        )
-    model = metrics.get("model")
-    if model != PLANAR_2D:
-        shown = VERTICAL_1D if model is None else str(model)
-        raise ReplayError(
-            f"{run_dir} is a {shown} run; replay shows planar_2d runs only "
-            "(a vertical_1d run has no downrange or flight-path angle to show)"
-        )
-    return metrics
+    run_data.check_run_dir with the replay's wording; plots.check_planar_run_dir is the
+    same check with animate's."""
+    return run_data.check_run_dir(run_dir, error=ReplayError, wording=REPLAY_WORDING)
 
 
 def select_runs(run_dir: Path, runs: Sequence[str] | None) -> list[str]:
-    """The run names to replay: ``runs`` as given, or the default of
-    plots.animation_run_names (the baseline plus up to three variants, summary order).
-    Raises ReplayError for unknown or repeated names, no runs, or more than
-    plots.ANIMATION_MAX_RUNS."""
-    default, available = plots.animation_run_names(run_dir)
-    names = list(default if runs is None else runs)
-    unknown = [n for n in names if n not in available]
-    if unknown:
-        raise ReplayError(
-            f"unknown run(s) {', '.join(unknown)} in {run_dir}; available: {', '.join(available)}"
-        )
-    if len(set(names)) != len(names):
-        raise ReplayError(f"a run is named twice: {', '.join(names)}")
-    if not names:
-        raise ReplayError(f"no runs with a timeseries.csv in {run_dir}")
-    if len(names) > plots.ANIMATION_MAX_RUNS:
-        raise ReplayError(
-            f"{len(names)} runs requested; at most {plots.ANIMATION_MAX_RUNS} fit one replay"
-        )
-    return names
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    """``value`` when it is a mapping, else {}."""
-    return value if isinstance(value, dict) else {}
-
-
-def _entry_config(entry: Any) -> tuple[dict[str, Any], str | None]:
-    """(run block, vehicle name or None) of one resolved_config.yaml run entry."""
-    entry = _mapping(entry)
-    return _mapping(entry.get("run")), _mapping(entry.get("vehicle")).get("name")
-
-
-def overrides_text(overrides: Mapping[str, Any]) -> str:
-    """' (with vehicle.aero.reference_area_m2 = 21.24)' for a bound's config overrides
-    (YAML keys and units, as metrics.json records them), '' when there are none."""
-    if not overrides:
-        return ""
-    items = [
-        f"{key} = {value:g}" if isinstance(value, int | float) else f"{key} = {value}"
-        for key, value in overrides.items()
-    ]
-    return f" (with {', '.join(items)})"
+    """The run names to replay: ``runs`` as given, or the default of run_data.run_names
+    (the baseline plus up to three variants, summary order). Raises ReplayError for
+    unknown or repeated names, no runs, or more than run_data.MAX_RUNS
+    (run_data.select_runs)."""
+    return run_data.select_runs(run_dir, runs, what="replay", error=ReplayError)
 
 
 def run_source(metrics: dict[str, Any], config: dict[str, Any], name: str) -> dict[str, Any]:
@@ -247,218 +196,45 @@ def run_source(metrics: dict[str, Any], config: dict[str, Any], name: str) -> di
     comparison, the run it is compared with (None: not compared), its run block, its
     vehicle name (None: the experiment's vehicle) and a note on what it is (for an
     offload run ``offload_note``). Raises ReplayError for a run folder that metrics.json
-    does not describe."""
-    baseline = metrics.get("baseline")
-    if name in _mapping(metrics.get("runs")):
-        run_cfg, vehicle = _entry_config(_mapping(config.get("runs")).get(name))
-        return {
-            "role": ROLE_RUN,
-            "metrics": _mapping(metrics["runs"][name]),
-            "comparison": {}
-            if name == baseline
-            else _mapping(_mapping(metrics.get("comparison")).get(name)),
-            "compared_to": None if name == baseline else baseline,
-            "config": run_cfg,
-            "vehicle": vehicle,
-            "note": "",
-        }
-    bound_cfgs = _mapping(config.get("bound_runs"))
-    for bound in metrics.get("bounds") or []:
-        bound = _mapping(bound)
-        what = str(bound.get("bound", "bound"))
-        override = overrides_text(_mapping(bound.get("overrides")))
-        if bound.get("run") == name:
-            run_cfg, vehicle = _entry_config(bound_cfgs.get(name))
-            paired = bound.get("paired_baseline")
-            return {
-                "role": ROLE_BOUND,
-                "metrics": _mapping(bound.get("metrics")),
-                "comparison": _mapping(bound.get("comparison_vs_paired_baseline")),
-                "compared_to": None if paired is None else str(paired),
-                "config": run_cfg,
-                "vehicle": vehicle,
-                "note": f"{what} re-run of {bound.get('of')}{override}, compared with {paired}",
-            }
-        if bound.get("paired_baseline") == name:
-            run_cfg, vehicle = _entry_config(bound_cfgs.get(name))
-            return {
-                "role": ROLE_PAIRED_BASELINE,
-                "metrics": _mapping(bound.get("paired_baseline_metrics")),
-                "comparison": {},
-                "compared_to": None,
-                "config": run_cfg,
-                "vehicle": vehicle,
-                "note": f"paired baseline of the {what} re-run {bound.get('run')}{override}",
-            }
-    if name in _mapping(metrics.get("cases")):
-        run_cfg, vehicle = _entry_config(_mapping(config.get("cases")).get(name))
-        return {
-            "role": ROLE_CASE,
-            "metrics": _mapping(metrics["cases"][name]),
-            "comparison": {},
-            "compared_to": None,
-            "config": run_cfg,
-            "vehicle": vehicle,
-            "note": "case with its own settings, not compared with the baseline",
-        }
-    offload = _mapping(metrics.get("offload"))
-    if name in _mapping(offload.get("runs")):
-        run_cfg, vehicle = _entry_config(_mapping(config.get("offload_runs")).get(name))
-        return {
-            "role": ROLE_OFFLOAD,
-            "metrics": _mapping(offload["runs"][name]),
-            "comparison": {},
-            "compared_to": None,
-            "config": run_cfg,
-            "vehicle": vehicle,
-            "note": offload_note(offload, name, str(baseline)),
-        }
-    raise ReplayError(
-        f"{name} has a timeseries.csv but metrics.json describes it nowhere (not in runs, "
-        "bounds, cases or offload runs); replay shows the runs metrics.json records"
-    )
-
-
-def offload_note(offload: Mapping[str, Any], name: str, baseline: str) -> str:
-    """What an offload run is, from metrics.json's ``offload`` record: an offload case's
-    recorded run (how much propellant it carries less, in tonnes and as a share of the
-    stage-1 and total loads, and the payload it flies against the reference payload), a
-    paired pad (the pad with a case's propellant change) or a pad control. Which one is
-    plots.offload_role, shared with the animation's labels."""
-    p_ref = _finite(offload.get("reference_payload_kg"), 1)
-    ref = f"{p_ref:,.1f} kg" if p_ref is not None else "the reference payload"
-    role = plots.offload_role(offload, name)
-    if role is None:
-        return "a run of the offload block"
-    kind, record = role
-    if kind == plots.OFFLOAD_PAIRED_PAD:
-        return (
-            f"paired pad of offload case {record.get('name')}: {baseline} with the same "
-            "propellant change and no assist"
-        )
-    if kind == plots.OFFLOAD_PAD_CONTROL:
-        return f"pad control ({record.get('mode')}): {baseline}'s own offload at P_ref = {ref}"
-    removed = _finite(record.get("total_offload_kg"))
-    s1 = _finite(record.get("stage1_fraction"))
-    tot = _finite(record.get("total_fraction"))
-    how = "solved" if record.get("kind") == plots.OFFLOAD_SOLVED_KIND else "imposed"
-    amount = (
-        "an unknown amount of propellant"
-        if removed is None
-        else f"{float(kg_to_t(removed)):.1f} t less propellant ({how}"
-        + (
-            ""
-            if s1 is None or tot is None
-            else f"; {float(to_percent(s1)):.1f}% of the stage-1 load, "
-            f"{float(to_percent(tot)):.1f}% of all"
-        )
-        + ")"
-    )
-    payload = _finite(record.get("payload_kg"), 1)
-    flies = "" if payload is None else f", flying {payload:,.1f} kg"
-    return (
-        f"offload case {name} of {record.get('of')}: {amount}{flies} against "
-        f"{baseline}'s full load at P_ref = {ref}, the same orbit"
-    )
+    does not describe (run_data.run_source)."""
+    return run_data.run_source(metrics, config, name, error=ReplayError, wording=REPLAY_WORDING)
 
 
 def read_series(run_dir: Path, name: str) -> pd.DataFrame:
     """<run_dir>/<name>/timeseries.csv sorted on the time after release, one row per
     time (the last of duplicates, which phase boundaries write twice). Raises
-    ReplayError for a series without REPLAY_COLUMNS or an empty one."""
-    path = run_dir / name / "timeseries.csv"
-    frame = pd.read_csv(path, encoding="utf-8")
-    missing = [c for c in REPLAY_COLUMNS if c not in frame.columns]
-    if missing:
-        raise ReplayError(f"{path} lacks planar columns {missing}; not a planar_2d run")
-    if frame.empty:
-        raise ReplayError(f"{path} is empty (a failed search writes no trajectory)")
-    frame = frame.sort_values("t_rel_release_s", kind="stable")
-    return frame.drop_duplicates("t_rel_release_s", keep="last").reset_index(drop=True)
+    ReplayError for a series without REPLAY_COLUMNS or an empty one
+    (run_data.read_series)."""
+    return run_data.read_series(run_dir, name, REPLAY_COLUMNS, error=ReplayError)
 
 
 # ------------------------------------------------------------------ resampling
 
 
-def _finite(value: Any, decimals: int | None = None) -> float | None:
-    """``value`` as a float (rounded to ``decimals``, a negative zero made 0.0), or None
-    when it is missing, not a number or not finite (JSON has no NaN)."""
-    if isinstance(value, bool) or not isinstance(value, int | float | np.number):
-        return None
-    out = float(value)
-    if not math.isfinite(out):
-        return None
-    return (out if decimals is None else round(out, decimals)) + 0.0  # -0.0 -> 0.0
-
-
-def replay_grid(t0_s: float, t1_s: float) -> np.ndarray:
-    """Common-clock sample times [s after release] of a run spanning t0_s..t1_s:
-    t0_s, the REPLAY_EARLY_DT_S grid up to REPLAY_EARLY_END_S, the REPLAY_LATE_DT_S grid
-    after it, and t1_s; sorted and unique."""
-    first = math.ceil(t0_s / REPLAY_EARLY_DT_S) * REPLAY_EARLY_DT_S
-    early = np.arange(first, min(REPLAY_EARLY_END_S, t1_s), REPLAY_EARLY_DT_S)
-    late = np.arange(REPLAY_EARLY_END_S, t1_s, REPLAY_LATE_DT_S)
-    grid = np.concatenate([[t0_s], early, late, [t1_s]])
-    return np.unique(np.round(grid, REPLAY_GRID_DECIMALS))
-
-
-def defined_mask(t_s: np.ndarray, values: np.ndarray, grid: np.ndarray) -> list[bool]:
-    """Mask of the ``grid`` samples whose bracketing source samples of ``values`` (on
-    ``t_s``) are both defined; a sample on a source time needs only that one."""
-    defined = np.isfinite(values)
-    j = np.clip(np.searchsorted(t_s, grid, side="right") - 1, 0, len(t_s) - 1)
-    k = np.clip(j + 1, 0, len(t_s) - 1)
-    bad = ~defined[j] | (~defined[k] & (grid > t_s[j]))
-    return [not b for b in bad]
-
-
-def series_values(
-    t_s: np.ndarray, values: np.ndarray, grid: np.ndarray, decimals: int
-) -> list[float | None]:
-    """``values`` (on ``t_s``) linearly resampled on ``grid`` and rounded; None (JSON
-    null) where a bracketing source value is undefined (q and Mach in a vented shaft)."""
-    ok = defined_mask(t_s, values, grid)
-    defined = np.isfinite(values)
-    if not bool(defined.any()):
-        return [None] * len(grid)
-    y = np.interp(grid, t_s[defined], values[defined])
-    return [
-        round(float(v), decimals) + 0.0 if good else None for v, good in zip(y, ok, strict=True)
-    ]
-
-
 def run_series(frame: pd.DataFrame) -> dict[str, Any]:
     """The resampled series of one run: t [s after release], each SERIES_FIELDS field
-    and the phase name per sample (the phase of the last row at or before it)."""
-    t = frame["t_rel_release_s"].to_numpy(dtype=float)
-    grid = replay_grid(float(t[0]), float(t[-1]))
-    out: dict[str, Any] = {"t": [round(float(v), REPLAY_TIME_DECIMALS) for v in grid]}
-    for field, column, convert, decimals in SERIES_FIELDS:
-        raw = frame[column].to_numpy(dtype=float)
-        values = raw if convert is None else np.asarray(convert(raw), dtype=float)
-        out[field] = series_values(t, values, grid, decimals)
-    idx = np.clip(np.searchsorted(t, grid, side="right") - 1, 0, len(t) - 1)
-    out["phase"] = frame["phase"].astype(str).to_numpy()[idx].tolist()
-    return out
+    and the phase name per sample (the phase of the last row at or before it)
+    (run_data.run_series with the replay's field list)."""
+    return run_data.run_series(frame, SERIES_FIELDS)
 
 
 def run_events(path: Path, offset_s: float) -> list[dict[str, Any]]:
     """Every event of events.csv: time after release (t_s - ``offset_s``) [s], name,
-    stage, altitude [m], downrange [km] and Earth-relative speed [m/s]."""
-    if not path.is_file():
-        return []
-    frame = pd.read_csv(path, encoding="utf-8")
+    stage, altitude [m], downrange [km] and Earth-relative speed [m/s]. A projection of
+    run_data.read_events to these six keys, in this order, with the page's rounding; the
+    downrange is rounded without the negative-zero fix of ``_finite``, so a small
+    negative downrange stays -0.0 (as the page has always written it)."""
     out = []
-    for row in frame.to_dict("records"):
-        downrange = _finite(row.get("downrange_m"))
+    for row in run_data.read_events(path, offset_s, error=ReplayError):
+        downrange = _finite(row.downrange_m)
         out.append(
             {
-                "t": _finite(float(row["t_s"]) - offset_s, REPLAY_TIME_DECIMALS),
-                "name": str(row["event"]),
-                "stage": str(row.get("stage", "")),
-                "alt_m": _finite(row.get("alt_m"), 1),
+                "t": _finite(row.t_rel_s, REPLAY_TIME_DECIMALS),
+                "name": row.name,
+                "stage": "" if row.stage is None else row.stage,
+                "alt_m": _finite(row.alt_m, 1),
                 "x_km": None if downrange is None else round(float(m_to_km(downrange)), 3),
-                "v": _finite(row.get("speed_rel_mps"), 2),
+                "v": _finite(row.speed_rel_mps, 2),
             }
         )
     return out
@@ -660,22 +436,22 @@ def fraction_text(lo: float, hi: float) -> str:
 
 
 def calibration_caveat(vehicle: str) -> str:
-    """The calibration caveat of a vehicle from plots.CALIBRATION_RECORDS: its gap and
-    whether it lies within the gate band (``plots.inside_calibration_band``) or outside
-    it, a documented miss; or a note that it has no calibration record."""
-    record = plots.CALIBRATION_RECORDS.get(vehicle)
+    """The calibration caveat of a vehicle from run_data.CALIBRATION_RECORDS: its gap and
+    whether it lies within the gate band (``run_data.inside_calibration_band``) or
+    outside it, a documented miss; or a note that it has no calibration record."""
+    record = run_data.CALIBRATION_RECORDS.get(vehicle)
     if record is None:
         return (
             f"Vehicle {vehicle} has no calibration record on file: read these numbers as "
             "differences between runs, not as absolute payloads."
         )
     model_kg, reference_kg, note = record
-    gap = plots.calibration_gap(model_kg, reference_kg)
+    gap = run_data.calibration_gap(model_kg, reference_kg)
     side = "high" if gap >= 0.0 else "low"
-    band_pct = 100 * plots.CALIBRATION_BAND
+    band_pct = 100 * run_data.CALIBRATION_BAND
     band = (
         f"within the {PLUS_MINUS}{band_pct:.0f}% gate"
-        if plots.inside_calibration_band(gap)
+        if run_data.inside_calibration_band(gap)
         else f"outside the {PLUS_MINUS}{band_pct:.0f}% gate, a documented miss"
     )
     return (
@@ -991,7 +767,7 @@ def run_record(
     that is compared with one and reached orbit; losses only for a run that reached
     orbit (a run that fell back has no meaningful loss budget)."""
     frame = read_series(run_dir, name)
-    offset_s = float(frame["t_s"].iloc[0]) - float(frame["t_rel_release_s"].iloc[0])
+    offset_s = run_data.release_offset_s(frame)
     m, comp = source["metrics"], source["comparison"]
     assist = run_assist(source["config"])
     assisted = is_assisted(assist)
@@ -1021,7 +797,7 @@ def run_record(
         "status": status,
         "inserted": inserted,
         **run_series(frame),
-        "events": run_events(run_dir / name / "events.csv", offset_s),
+        "events": run_events(run_dir / name / run_data.EVENTS_FILE, offset_s),
         "payload_kg": _finite(m.get("payload_kg"), 1),
         "payload_delta_kg": _finite(comp.get("payload_delta_kg"), 1) if compared else None,
         "ideal_screening_kg": _finite(
@@ -1064,7 +840,7 @@ def source_text(run_dir: Path) -> str:
     """The run directory as results/<experiment>/<timestamp> (POSIX), relative to the
     parent of its results tree."""
     resolved = run_dir.resolve()
-    tree = plots._results_tree(run_dir)  # the animate command's results-tree rule
+    tree = run_data.results_tree(run_dir)  # the run's own tree, case-sensitive
     try:
         return resolved.relative_to(tree.parent).as_posix()
     except ValueError:
@@ -1107,7 +883,7 @@ def replay_data(run_dir: Path, runs: Sequence[str] | None) -> dict[str, Any]:
     module docstring); raises ReplayError for a wrong directory or run selection."""
     metrics = check_replay_run_dir(run_dir)
     names = select_runs(run_dir, runs)
-    config = _read_yaml(run_dir / "resolved_config.yaml")
+    config = run_data.read_yaml(run_dir / run_data.CONFIG_FILE)
     sources = {n: run_source(metrics, config, n) for n in names}
     baseline = str(metrics.get("baseline"))
     base_cfg, _ = _entry_config(_mapping(config.get("runs")).get(baseline))
@@ -1185,53 +961,27 @@ def render_page(data: dict[str, Any]) -> str:
     return template.replace(REPLAY_DATA_TOKEN, embed_json(data))
 
 
-def results_ancestors(path: Path) -> list[Path]:
-    """The resolved ancestors of ``path`` (inclusive) named plots.RESULTS_TREE_NAME,
-    ignoring case, innermost first: every results tree ``path`` lies in, whichever run
-    it belongs to."""
-    resolved = path.resolve()
-    name = plots.RESULTS_TREE_NAME.casefold()
-    return [p for p in (resolved, *resolved.parents) if p.name.casefold() == name]
-
-
-def protected_tree(path: Path, run_dir: Path) -> Path | None:
-    """The outermost results tree holding ``path``: the run's own tree (the animate
-    command's rule, plots._results_tree, which also covers a tree written with
-    --results-root under another name) or any folder named plots.RESULTS_TREE_NAME;
-    None when ``path`` lies in neither."""
-    trees = results_ancestors(path)
-    own = plots._results_tree(run_dir)
-    if plots._is_inside(path, own):
-        trees.append(own.resolve())
-    return min(trees, key=lambda p: len(p.parts)) if trees else None
-
-
 def default_replay_path(run_dir: Path, cwd: Path) -> Path:
     """<cwd>/<experiment>_<timestamp>_replay.html; when cwd is inside a results tree (the
     run's own or any folder named results) the file goes next to the outermost such
-    tree instead (results/ is never hand-edited)."""
-    metrics = _read_json(run_dir / "metrics.json")
-    resolved = run_dir.resolve()
-    experiment = str(metrics.get("experiment", resolved.parent.name))
-    timestamp = str(metrics.get("timestamp_utc", resolved.name))
-    name = plots.plot_stem(f"{experiment}_{timestamp}", "replay") + REPLAY_SUFFIXES[0]
-    tree = protected_tree(cwd, run_dir)
-    return (cwd if tree is None else tree.parent) / name
+    tree instead (results/ is never hand-edited; run_data.default_output_path)."""
+    experiment, timestamp = run_data.run_identity(run_dir)
+    name = run_data.plot_stem(f"{experiment}_{timestamp}", "replay") + REPLAY_SUFFIXES[0]
+    return run_data.default_output_path(run_dir, cwd, name)
 
 
 def check_replay_out(out_path: Path, run_dir: Path) -> None:
     """Raise ReplayError for an output that is not .html, lies inside a results tree
-    (protected_tree: the run's own or any folder named results), or whose folder does
-    not exist."""
-    if out_path.suffix.lower() not in REPLAY_SUFFIXES:
-        raise ReplayError(f"output {out_path} must end in .html")
-    if protected_tree(out_path, run_dir) is not None:
-        raise ReplayError(
-            f"output {out_path} is inside the results tree; results/ is never edited by "
-            "hand, so write the page elsewhere (--out)"
-        )
-    if not out_path.parent.is_dir():
-        raise ReplayError(f"output folder does not exist: {out_path.parent}")
+    (run_data.protected_tree: the run's own or any folder named results), or whose
+    folder does not exist, in that order (run_data.check_output)."""
+    run_data.check_output(
+        out_path,
+        run_dir,
+        suffixes=REPLAY_SUFFIXES,
+        suffix_text=REPLAY_SUFFIXES[0],
+        what="page",
+        error=ReplayError,
+    )
 
 
 def write_replay_page(run_dir: Path, runs: Sequence[str] | None, out_path: Path) -> Path:

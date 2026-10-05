@@ -16,13 +16,18 @@ directory (metrics.json, resolved_config.yaml, <run>/timeseries.csv, <run>/event
 and never writes inside results/. A run of an experiment's offload block (metrics.json
 ``offload.runs``: an offload case, a paired pad or a pad control) is labelled from that
 record, as the replay page reads it (``animation_record``, ``offload_tag``).
+
+The reading it shares with the replay page lives in run_data.py (SP2 step A1): the file
+readers, the directory check, run selection, the series and event readers, the offload
+roles, the calibration records, ``plot_stem`` and the output-path rule. The names this
+module had for them stay importable here, as the same objects or as thin wrappers that
+raise AnimationError with animate's wording; ``calibration_caveat`` and the ffmpeg test
+stay here.
 """
 
 from __future__ import annotations
 
-import json
 import math
-import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -30,8 +35,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
-import yaml
 from matplotlib.animation import FFMpegWriter, PillowWriter
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
@@ -40,7 +43,8 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.transforms import blended_transform_factory
 from numpy.typing import NDArray
 
-from launchsim.config import PLANAR_2D, VERTICAL_1D
+from launchsim import run_data
+from launchsim.config import PLANAR_2D
 from launchsim.offload import NO_OFFLOAD_STATUS
 from launchsim.phases import ASSIST_KIND, HOLD_KIND
 from launchsim.phases.planar import (
@@ -87,13 +91,11 @@ PLOT_TRACK_PANELS: tuple[PlotPanel, ...] = (
 PLOT_SERIES_COLORS: tuple[str, ...] = (PLOT_SERIES_COLOR, "#d6742a")
 
 
-PLOT_STEM_UNSAFE = re.compile(r"[^A-Za-z0-9_.-]+")
-
-
-def plot_stem(prefix: str, quantity: str) -> str:
-    """File stem ``<prefix>_<quantity>`` with every run of characters outside
-    ``[A-Za-z0-9_.-]`` replaced by ``_`` (a name such as ``F/N`` becomes ``F_N``)."""
-    return PLOT_STEM_UNSAFE.sub("_", f"{prefix}_{quantity}")
+PLOT_STEM_UNSAFE = run_data.PLOT_STEM_UNSAFE
+plot_stem = run_data.plot_stem
+"""run_data.plot_stem and its pattern (the same objects; ``sim`` re-exports them from
+here): the file stem ``<prefix>_<quantity>`` with every run of characters outside
+``[A-Za-z0-9_.-]`` replaced by ``_``."""
 
 
 def _plot_text(text: str) -> str:
@@ -309,10 +311,11 @@ type FloatArray = NDArray[np.float64]
 """A 1-D float series of an animated run."""
 
 
-class AnimationError(ValueError):
+class AnimationError(run_data.RunDataError):
     """A user-facing animation problem (a wrong run directory, run name, output path or
     frame setting, ffmpeg missing for .mp4 or failing while encoding): the CLI prints
-    it as one error line."""
+    it as one error line. A run_data.RunDataError (so still a ValueError): the shared
+    readers raise it when the animation calls them."""
 
 
 ANIMATION_FORMATS = (".mp4", ".gif")
@@ -321,9 +324,14 @@ ANIMATION_DEFAULT_FPS = 30
 ANIMATION_DEFAULT_SECONDS = 20.0
 ANIMATION_DEFAULT_WIDTH_PX = 1280
 ANIMATION_MIN_WIDTH_PX = 320
-ANIMATION_MAX_RUNS = 4
-ANIMATION_DEFAULT_VARIANTS = 3
-"""The default selection: the baseline plus up to this many variants, in summary order."""
+ANIMATION_WORDING = "animate draws"
+"""Subject and verb of animate's refusal in the shared directory check
+(run_data.check_run_dir)."""
+ANIMATION_MAX_RUNS = run_data.MAX_RUNS
+"""Most runs one animation shows (run_data.MAX_RUNS)."""
+ANIMATION_DEFAULT_VARIANTS = run_data.DEFAULT_VARIANTS
+"""The default selection: the baseline plus up to this many variants, in summary order
+(run_data.DEFAULT_VARIANTS)."""
 ANIMATION_FIG_WIDTH_IN = 10.0
 """Design width of the frame [in]: the dpi is width_px / this, so the picture (and every
 font relative to it) is the same at any pixel width. 10 in keeps 8 pt text about 7 px
@@ -344,8 +352,9 @@ GIF_MIN_DELAY_MS = 20
 MP4_CRF = 20
 """H.264 constant rate factor of the .mp4 (lower is higher quality; 20 is visually clean
 for these line drawings at under 1 MB per 20 s)."""
-RESULTS_TREE_NAME = "results"
-"""Name of the generated results tree; an animation is never written inside it."""
+RESULTS_TREE_NAME = run_data.RESULTS_TREE_NAME
+"""Name of the generated results tree; an animation is never written inside one
+(run_data.RESULTS_TREE_NAME)."""
 
 TIMELINE_LAUNCH_END_S = 3.0
 """Time after release [s] that ends the launch segment of the timeline: the push, the
@@ -485,14 +494,13 @@ PHASE_LABELS: dict[str, str] = {
 }
 """Readout label of each phase of the time series."""
 
-OFFLOAD_CASE = "offload case"
-OFFLOAD_PAIRED_PAD = "paired pad"
-OFFLOAD_PAD_CONTROL = "pad control"
+OFFLOAD_CASE = run_data.OFFLOAD_CASE
+OFFLOAD_PAIRED_PAD = run_data.OFFLOAD_PAIRED_PAD
+OFFLOAD_PAD_CONTROL = run_data.OFFLOAD_PAD_CONTROL
 """What a run of metrics.json's ``offload.runs`` is (``offload_role``): an offload case's
-recorded run (``offload.cases``, by ``run``), the paired pad of a case (its
-``paired_pad.run``: the reference baseline with the case's propellant change and no
-assist) or a pad control (``offload.pad_controls``, by ``run``)."""
-OFFLOAD_SOLVED_KIND = "solve"
+recorded run, the paired pad of a case or a pad control. The run_data constants (moved
+there in SP2 step A1) under their names here."""
+OFFLOAD_SOLVED_KIND = run_data.OFFLOAD_SOLVED_KIND
 """``kind`` of an offload case whose offload was solved at P_ref, so it flies P_ref (a
 ``fixed`` case imposes its offload, and its figure is its own P* against P_ref)."""
 NEAR_ORBIT_PHASE = "~inserted"
@@ -504,44 +512,20 @@ LEGEND_TITLE = "payload capacity P* (sweep-optimized)"
 """Title of the trajectory panel's legend; with an offload run shown it also says what
 P_ref is (``legend_title``)."""
 
-CALIBRATION_RECORDS: dict[str, tuple[float, float, str]] = {
-    "generic_f9_class_2d": (26054.4, 22800.0, "docs/findings/CAL-f9-leo-2d"),
-    "generic_f9_class_2d_readme_loads": (24700.0, 22800.0, "docs/findings/CAL-f9-leo-2d"),
-}
-"""Calibration record per vehicle (resolved_config.yaml vehicle.name) for the footnote:
-(model payload capacity P* [kg] of its calibration run, published reference [kg], the
-findings note). Both from results/calibration_f9_2d/20260930T100100Z against 22,800 kg
-to LEO (spacex.com, expendable): generic_f9_class_2d, the gate vehicle (mass set C, run
-pad), P* 26,054.4 kg, +14.27%, outside the band (a documented miss, accepted
-2026-09-30); generic_f9_class_2d_readme_loads (mass set A, README loads, case
-readme_loads; SP1 step 8a), P* 24,700.0 kg, +8.33%, inside the band. A re-run
-calibration must update these entries; tests/test_animate.py checks each against the
-note and tests/data/calibration_record.json. A vehicle not listed gets a 'no calibration
-record' caveat."""
-CALIBRATION_BAND = 0.10
-"""Relative payload band of the calibration gate (CLAUDE.md, Calibration: within +/-10%
-of the published figure); the footnote and the replay page say when a record lies
-inside it (``inside_calibration_band``)."""
-CALIBRATION_BAND_EDGE_REL_TOL = 1e-12
-"""Relative tolerance [-] on the band's edges: P*/reference - 1 rounds either way in
-floating point (25,080 kg against 22,800 kg, exactly +10%, computes to
-0.10000000000000009; 20,520 kg, exactly -10%, to -0.09999999999999998), so both edges
-count as inside, as "within +/-10%" says. 1e-12 of the band is 2.3e-9 kg at 22,800 kg."""
-CALIBRATION_GATE_VEHICLE = "generic_f9_class_2d"
+CALIBRATION_RECORDS = run_data.CALIBRATION_RECORDS
+"""Calibration record per vehicle: run_data.CALIBRATION_RECORDS, the same dict object
+(its docstring holds the provenance). ``calibration_caveat`` below reads this module's
+name at call time, so a test can put another table in its place."""
+CALIBRATION_BAND = run_data.CALIBRATION_BAND
+"""Relative payload band of the calibration gate (run_data.CALIBRATION_BAND)."""
+CALIBRATION_BAND_EDGE_REL_TOL = run_data.CALIBRATION_BAND_EDGE_REL_TOL
+"""Relative tolerance [-] on the band's edges (run_data.CALIBRATION_BAND_EDGE_REL_TOL)."""
+CALIBRATION_GATE_VEHICLE = run_data.CALIBRATION_GATE_VEHICLE
 """The pre-registered calibration gate (mass set C), named "Gate vehicle" in the footnote."""
-
-
-def calibration_gap(model_kg: float, reference_kg: float) -> float:
-    """The relative gap of a calibration record: model payload capacity model_kg [kg]
-    over the published reference reference_kg [kg], less 1 [-] (positive: the model
-    carries more)."""
-    return model_kg / reference_kg - 1.0
-
-
-def inside_calibration_band(gap: float) -> bool:
-    """True when a calibration gap [-] (``calibration_gap``) lies inside the gate band,
-    edges included: abs(gap) <= CALIBRATION_BAND (1 + CALIBRATION_BAND_EDGE_REL_TOL)."""
-    return abs(gap) <= CALIBRATION_BAND * (1.0 + CALIBRATION_BAND_EDGE_REL_TOL)
+calibration_gap = run_data.calibration_gap
+inside_calibration_band = run_data.inside_calibration_band
+"""run_data.calibration_gap and run_data.inside_calibration_band (the same objects):
+the relative gap of a record [-] and whether it lies inside the gate band."""
 
 
 @dataclass(frozen=True)
@@ -610,106 +594,57 @@ class AnimationRun:
         return float(np.nanmax(self.felt_axial_g[push])) if bool(np.any(push)) else None
 
 
-ANIMATION_COLUMNS = (
-    "t_s",
-    "t_rel_release_s",
-    "phase",
-    "alt_m",
-    "downrange_m",
-    "speed_rel_mps",
-    "felt_axial_g",
-    "q_pa",
-    "m_kg",
-)
-"""timeseries.csv columns the animation reads (a planar_2d run writes all of them)."""
+ANIMATION_COLUMNS = run_data.PLANAR_BASE_COLUMNS
+"""timeseries.csv columns the animation reads (a planar_2d run writes all of them):
+run_data.PLANAR_BASE_COLUMNS, the same tuple."""
 
-
-def _read_json(path: Path) -> dict[str, Any]:
-    """A JSON mapping read as UTF-8, or {} when the file does not exist."""
-    if not path.is_file():
-        return {}
-    with path.open(encoding="utf-8") as fh:
-        data = json.load(fh)
-    return data if isinstance(data, dict) else {}
-
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    """A YAML mapping read as UTF-8, or {} when the file does not exist."""
-    if not path.is_file():
-        return {}
-    with path.open(encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
-    return data if isinstance(data, dict) else {}
-
-
-def animation_run_names(run_dir: Path) -> tuple[list[str], list[str]]:
-    """(default selection, every animatable run) of a results directory. Animatable: a
-    subdirectory holding timeseries.csv; metrics.json's run order (the summary order)
-    comes first, other run directories (bound re-runs) follow, sorted. The default is
-    the baseline plus up to ANIMATION_DEFAULT_VARIANTS variants, in summary order."""
-    metrics = _read_json(run_dir / "metrics.json")
-    have = {p.name for p in run_dir.iterdir() if (p / "timeseries.csv").is_file()}
-    ordered = [name for name in metrics.get("runs", {}) if name in have]
-    available = ordered + sorted(have - set(ordered))
-    baseline = metrics.get("baseline")
-    head = [baseline] if baseline in ordered else []
-    variants = [name for name in ordered if name != baseline]
-    default = head + variants[:ANIMATION_DEFAULT_VARIANTS]
-    return (default or available[: ANIMATION_DEFAULT_VARIANTS + 1]), available
+animation_run_names = run_data.run_names
+"""run_data.run_names (the same object): (default selection, every animatable run) of a
+results directory. Animatable: a subdirectory holding timeseries.csv; metrics.json's run
+order (the summary order) comes first, other run directories (bound re-runs) follow,
+sorted. The default is the baseline plus up to ANIMATION_DEFAULT_VARIANTS variants, in
+summary order."""
+offload_role = run_data.offload_role
+"""run_data.offload_role (the same object): (kind, record) of a run of metrics.json's
+``offload`` block, shared with the replay page's note."""
 
 
 def check_planar_run_dir(run_dir: Path) -> dict[str, Any]:
     """Return metrics.json of a planar_2d results directory; raise AnimationError for a
-    missing directory, a directory without metrics.json, or a run of another model
-    (vertical_1d has no downrange or altitude-over-a-curved-Earth series to draw)."""
-    if not run_dir.is_dir():
-        raise AnimationError(f"run directory not found: {run_dir}")
-    metrics = _read_json(run_dir / "metrics.json")
-    if not metrics:
-        raise AnimationError(
-            f"{run_dir} has no metrics.json; pass one results directory "
-            "(results/<experiment>/<timestamp>)"
-        )
-    model = metrics.get("model")
-    if model != PLANAR_2D:
-        shown = VERTICAL_1D if model is None else str(model)
-        raise AnimationError(
-            f"{run_dir} is a {shown} run; animate draws planar_2d runs only "
-            "(a vertical_1d run has no downrange or flight-path angle to show)"
-        )
-    return metrics
+    missing directory, a directory without metrics.json, a directory that is not an
+    experiment's results directory, or a run of another model (vertical_1d has no
+    downrange or altitude-over-a-curved-Earth series to draw).
+
+    The shared check of run_data (run_data.check_run_dir) with animate's wording. A
+    deliberate change of SP2 step A1 (D-SP2-14): a directory whose metrics.json has no
+    ``runs`` mapping (a sweep point, a single run's folder) is now reported as "not an
+    experiment results directory", as replay reports it; before, animate called a
+    planar sweep point "a vertical_1d run"."""
+    return run_data.check_run_dir(run_dir, error=AnimationError, wording=ANIMATION_WORDING)
 
 
 def _events(path: Path, offset_s: float) -> tuple[AnimationEvent, ...]:
     """The drawn events of events.csv (EVENT_LABELS), their t_s converted to the time
     after release by subtracting ``offset_s`` (the run's t_s - t_rel_release_s). A
-    stage-2 ignition is labelled 'S2 ignition'."""
-    if not path.is_file():
-        return ()
-    frame = pd.read_csv(path, encoding="utf-8")
+    stage-2 ignition is labelled 'S2 ignition'. A projection of run_data.read_events
+    (every row) to the rows drawn, with the recorded values unrounded.
+
+    A reader-side change of SP2 step A1: run_data.read_events requires only the t_s and
+    event columns, so an events.csv without alt_m or downrange_m now reads like one
+    without speed_rel_mps always did. Its rows are kept, not skipped, with NaN (not
+    None) in each missing column, and a marker at NaN draws nothing. Before A1 this
+    function read alt_m and downrange_m by attribute and such a file raised."""
     out: list[AnimationEvent] = []
-    for row in frame.itertuples(index=False):
-        name = str(row.event)
-        if name not in EVENT_LABELS:
+    for row in run_data.read_events(path, offset_s, error=AnimationError):
+        if row.name not in EVENT_LABELS:
             continue
-        label = EVENT_LABELS[name]
-        if name == "ignition" and str(getattr(row, "stage", "stage1")) != "stage1":
+        label = EVENT_LABELS[row.name]
+        if row.name == "ignition" and row.stage not in (None, "stage1"):
             label = "S2 ignition"
         out.append(
-            AnimationEvent(
-                float(row.t_s) - offset_s,
-                label,
-                float(row.alt_m),
-                float(row.downrange_m),
-                float(getattr(row, "speed_rel_mps", math.nan)),
-            )
+            AnimationEvent(row.t_rel_s, label, row.alt_m, row.downrange_m, row.speed_rel_mps)
         )
     return tuple(out)
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    """``value`` when it is a mapping, else {}."""
-    return value if isinstance(value, dict) else {}
 
 
 def _finite_kg(value: Any) -> float | None:
@@ -717,24 +652,6 @@ def _finite_kg(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     return float(value) if math.isfinite(value) else None
-
-
-def offload_role(offload: Mapping[str, Any], name: str) -> tuple[str, dict[str, Any]] | None:
-    """(kind, record) of run ``name`` in metrics.json's ``offload`` block: OFFLOAD_CASE
-    and the case record whose ``run`` it is; OFFLOAD_PAIRED_PAD and the case record whose
-    ``paired_pad.run`` it is; OFFLOAD_PAD_CONTROL and its ``pad_controls`` record; None
-    when the block names it in no case or control. Shared with replay.offload_note."""
-    for case in offload.get("cases") or []:
-        case = _as_dict(case)
-        if case.get("run") == name:
-            return OFFLOAD_CASE, case
-        if _as_dict(case.get("paired_pad")).get("run") == name:
-            return OFFLOAD_PAIRED_PAD, case
-    for control in offload.get("pad_controls") or []:
-        control = _as_dict(control)
-        if control.get("run") == name:
-            return OFFLOAD_PAD_CONTROL, control
-    return None
 
 
 def offload_tag(offload: Mapping[str, Any], name: str, record: Mapping[str, Any]) -> OffloadTag:
@@ -799,13 +716,13 @@ def animation_record(
     for an experiment run; for a run of the offload block (``offload.runs``, as
     replay.run_source reads it) that record and its ``offload_tag``; ({}, None) for a run
     metrics.json records in neither."""
-    runs = _as_dict(metrics.get("runs"))
+    runs = run_data.as_mapping(metrics.get("runs"))
     if name in runs:
-        return _as_dict(runs[name]), None
-    offload = _as_dict(metrics.get("offload"))
-    offload_runs = _as_dict(offload.get("runs"))
+        return run_data.as_mapping(runs[name]), None
+    offload = run_data.as_mapping(metrics.get("offload"))
+    offload_runs = run_data.as_mapping(offload.get("runs"))
     if name in offload_runs:
-        record = _as_dict(offload_runs[name])
+        record = run_data.as_mapping(offload_runs[name])
         return record, offload_tag(offload, name, record)
     return {}, None
 
@@ -814,16 +731,12 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
     """Read one planar run of a results directory: <name>/timeseries.csv (the columns of
     ANIMATION_COLUMNS), <name>/events.csv and its metrics.json record
     (``animation_record``: ``runs``, or ``offload.runs`` with its OffloadTag). Raises
-    AnimationError when the series lacks planar columns or is empty."""
-    path = run_dir / name / "timeseries.csv"
-    frame = pd.read_csv(path, encoding="utf-8")
-    missing = [c for c in ANIMATION_COLUMNS if c not in frame.columns]
-    if missing:
-        raise AnimationError(f"{path} lacks planar columns {missing}; not a planar_2d run")
-    if frame.empty:
-        raise AnimationError(f"{path} is empty (a failed search writes no trajectory)")
+    AnimationError when the series lacks planar columns or is empty. The series is read
+    as written (run_data.read_series_frame: file order, both rows of a phase boundary),
+    not sorted and de-duplicated as the replay page reads it."""
+    frame = run_data.read_series_frame(run_dir, name, ANIMATION_COLUMNS, error=AnimationError)
     t = frame["t_rel_release_s"].to_numpy(dtype=float)
-    offset_s = float(frame["t_s"].iloc[0]) - float(t[0])
+    offset_s = run_data.release_offset_s(frame)
     record, tag = animation_record(metrics, name)
     payload = record.get("payload_kg")
     return AnimationRun(
@@ -836,7 +749,7 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
         q_pa=frame["q_pa"].to_numpy(dtype=float),
         m_kg=frame["m_kg"].to_numpy(dtype=float),
         phase=frame["phase"].astype(str).to_numpy(dtype=object),
-        events=_events(run_dir / name / "events.csv", offset_s),
+        events=_events(run_dir / name / run_data.EVENTS_FILE, offset_s),
         payload_kg=None if payload is None else float(payload),
         status=record.get("status"),
         baseline=name == metrics.get("baseline"),
@@ -849,23 +762,10 @@ def load_animation_runs(
 ) -> tuple[list[AnimationRun], dict[str, Any]]:
     """(the selected runs, metrics.json) of a planar results directory. ``runs`` None
     selects the default (``animation_run_names``); unknown or repeated names, more than
-    ANIMATION_MAX_RUNS names, or a non-planar directory raise AnimationError."""
+    ANIMATION_MAX_RUNS names, or a non-planar directory raise AnimationError (the
+    directory check first, then run_data.select_runs)."""
     metrics = check_planar_run_dir(run_dir)
-    default, available = animation_run_names(run_dir)
-    names = list(default if runs is None else runs)
-    unknown = [n for n in names if n not in available]
-    if unknown:
-        raise AnimationError(
-            f"unknown run(s) {', '.join(unknown)} in {run_dir}; available: {', '.join(available)}"
-        )
-    if len(set(names)) != len(names):
-        raise AnimationError(f"a run is named twice: {', '.join(names)}")
-    if not names:
-        raise AnimationError(f"no runs with a timeseries.csv in {run_dir}")
-    if len(names) > ANIMATION_MAX_RUNS:
-        raise AnimationError(
-            f"{len(names)} runs requested; at most {ANIMATION_MAX_RUNS} fit one animation"
-        )
+    names = run_data.select_runs(run_dir, runs, what="animation", error=AnimationError)
     return [read_animation_run(run_dir, n, metrics) for n in names], metrics
 
 
@@ -959,62 +859,44 @@ def animation_playback_fps(fps: int, suffix: str) -> float:
     return 1000.0 / delay_ms
 
 
-def _results_tree(run_dir: Path) -> Path:
-    """The results tree holding ``run_dir`` (<tree>/<experiment>/<timestamp>): its
-    nearest ancestor (inclusive) named RESULTS_TREE_NAME; else, for a tree written with
-    --results-root elsewhere, the parent of the experiment directory (the run directory
-    itself when that parent is a filesystem root)."""
-    resolved = run_dir.resolve()
-    for candidate in (resolved, *resolved.parents):
-        if candidate.name == RESULTS_TREE_NAME:
-            return candidate
-    root = resolved.parent.parent
-    return resolved if root == root.parent else root
-
-
-def _is_inside(path: Path, root: Path) -> bool:
-    """True when ``path`` is ``root`` or below it (both resolved)."""
-    return path.resolve().is_relative_to(root.resolve())
-
-
 def default_animation_path(run_dir: Path, cwd: Path, *, ffmpeg: bool | None = None) -> Path:
     """<cwd>/<experiment>_<timestamp>_animation.mp4, or .gif when ffmpeg is missing
-    (``ffmpeg`` None asks matplotlib). When cwd is inside the results tree the file goes
-    next to that tree instead: an animation is never written into results/."""
-    metrics = _read_json(run_dir / "metrics.json")
-    resolved = run_dir.resolve()
-    experiment = str(metrics.get("experiment", resolved.parent.name))
-    timestamp = str(metrics.get("timestamp_utc", resolved.name))
+    (``ffmpeg`` None asks matplotlib). When cwd is inside a results tree the file goes
+    next to the outermost such tree instead: an animation is never written into
+    results/.
+
+    The folder comes from the shared rule (run_data.default_output_path). A deliberate
+    change of SP2 step A1 (D-SP2-14, KI-017): a results tree is the run's own tree or
+    any folder named results in any letter case, as for replay; before, only the run's
+    own tree counted, so from a working directory inside another results folder the
+    default landed inside that folder."""
+    experiment, timestamp = run_data.run_identity(run_dir)
     have_ffmpeg = FFMpegWriter.isAvailable() if ffmpeg is None else ffmpeg
     suffix = ".mp4" if have_ffmpeg else ".gif"
     name = plot_stem(f"{experiment}_{timestamp}", "animation") + suffix
-    tree = _results_tree(run_dir)
-    folder = tree.parent if _is_inside(cwd, tree) else cwd
-    return folder / name
+    return run_data.default_output_path(run_dir, cwd, name)
 
 
 def check_animation_out(out_path: Path, run_dir: Path) -> None:
-    """Raise AnimationError for an output outside ANIMATION_FORMATS, inside the results
+    """Raise AnimationError for an output outside ANIMATION_FORMATS, inside a results
     tree (results/ is generated, never hand-edited), a .mp4 without ffmpeg, or a folder
-    that does not exist."""
-    suffix = out_path.suffix.lower()
-    if suffix not in ANIMATION_FORMATS:
-        raise AnimationError(
-            f"output {out_path} must end in {' or '.join(ANIMATION_FORMATS)} "
-            "(the extension picks the format)"
-        )
-    if _is_inside(out_path, _results_tree(run_dir)):
-        raise AnimationError(
-            f"output {out_path} is inside the results tree; results/ is never edited by "
-            "hand, so write the animation elsewhere (--out)"
-        )
-    if suffix == ".mp4" and not FFMpegWriter.isAvailable():
+    that does not exist, in that order.
+
+    The extension, tree and folder checks are the shared ones (the three parts of
+    run_data.check_output); the ffmpeg test stays here, between the tree and the folder.
+    A deliberate change of SP2 step A1 (D-SP2-14, KI-017): the tree check is the stricter
+    rule replay uses (run_data.protected_tree): an output is refused inside the run's
+    own tree and inside any folder named results in any letter case; before, an output
+    in another results folder, or in the outer tree of a nested pair, was accepted."""
+    suffix_text = f"{' or '.join(ANIMATION_FORMATS)} (the extension picks the format)"
+    run_data.check_output_suffix(out_path, ANIMATION_FORMATS, suffix_text, error=AnimationError)
+    run_data.check_outside_results(out_path, run_dir, what="animation", error=AnimationError)
+    if out_path.suffix.lower() == ".mp4" and not FFMpegWriter.isAvailable():
         raise AnimationError(
             "writing .mp4 needs ffmpeg on PATH (or matplotlib's animation.ffmpeg_path); "
             "install ffmpeg or ask for a .gif"
         )
-    if not out_path.parent.is_dir():
-        raise AnimationError(f"output folder does not exist: {out_path.parent}")
+    run_data.check_output_folder(out_path, error=AnimationError)
 
 
 def frame_geometry(width_px: int) -> tuple[tuple[float, float], float, tuple[int, int]]:
@@ -1121,7 +1003,8 @@ def legend_title(runs: Sequence[AnimationRun], metrics: Mapping[str, Any]) -> st
     else the experiment's baseline)."""
     if not any(r.offload is not None for r in runs):
         return LEGEND_TITLE
-    reference = _as_dict(metrics.get("offload")).get("reference") or metrics.get("baseline")
+    offload = run_data.as_mapping(metrics.get("offload"))
+    reference = offload.get("reference") or metrics.get("baseline")
     return f"{LEGEND_TITLE}; P_ref = {reference}'s P*"
 
 
@@ -1860,7 +1743,8 @@ def write_ascent_animation(
     t1 = max(r.t_end_s for r in selected)
     times = ascent_time_map(t0, t1, n_frames)
     speeds = playback_speeds(t0, t1, n_frames, play_fps)
-    vehicle = (_read_yaml(run_dir / "resolved_config.yaml").get("vehicle") or {}).get("name")
+    config = run_data.read_yaml(run_dir / run_data.CONFIG_FILE)
+    vehicle = (config.get("vehicle") or {}).get("name")
     figure = _AscentFigure(selected, metrics, vehicle, size_in, dpi)
     writer: FFMpegWriter | PillowWriter
     if out.suffix.lower() == ".mp4":
