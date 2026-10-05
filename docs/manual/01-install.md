@@ -18,7 +18,8 @@
 
 The package depends on numpy, scipy, pandas, matplotlib, pydantic, PyYAML and `ambiance`
 (the ICAO standard atmosphere, used as the reference in the tests). The dev extra adds
-pytest and ruff. The exact versions are in `pyproject.toml` and `uv.lock`.
+pytest, ruff and Pillow (declared since SP2 because the tests import it directly; it arrives
+with matplotlib in any case). The exact versions are in `pyproject.toml` and `uv.lock`.
 
 ## Get the repository
 

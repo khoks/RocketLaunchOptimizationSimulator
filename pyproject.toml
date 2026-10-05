@@ -15,7 +15,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0", "ruff>=0.16"]
+# pillow: imported directly by tests/test_animate.py (the GIF frames of `animate`) and by
+# assets/brand/render_png.py; it already arrives through matplotlib, this declares the direct use (KI-018).
+dev = ["pytest>=9.0", "ruff>=0.16", "pillow>=12.0"]
 
 [dependency-groups]
 dev = ["launchsim[dev]"]
