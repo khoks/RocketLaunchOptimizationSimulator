@@ -420,7 +420,7 @@ Results and timing:
 - Machine speed varies about 3x under load (full suite 4-20 min at 2eebcae). A searched
   planar run takes 7-25 s; `silo_screening_2d` took about 27 min for the run and 26 min
   for the sweeps. Budget long runs as background commands.
-- `plots.CALIBRATION_RECORDS` feeds the calibration caveat in `animate` and `replay`;
+- `run_data.CALIBRATION_RECORDS` (re-exported by `plots`) feeds the calibration caveat in `animate` and `replay`;
   update it whenever the calibration is re-run.
 
 Working with the user:
