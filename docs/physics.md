@@ -5525,6 +5525,19 @@ a case without a loader), a partial `site` or `target_orbit` merged over the
 experiment's, and overrides on `vehicle.` paths only. Case names must not collide with
 run or bound names. Cases are not part of `ResolvedExperiment.runs`.
 
+**Labels.** Besides `calibration` and `guidance_study`, `label` takes the value
+`exploratory` (SP2 step A4, D-SP2-12), which the local app sets on every experiment it
+builds from its form: it changes no run, needs `dynamics: planar_2d` and no sweeps
+(only the planar experiment summary prints the banner), allows no `cases`, and makes the
+experiment run's summary.md open with the exploratory banner (an app run, not a
+finding, with the server-start and launch-time git states; that no sensitivity check ran
+when none did; for an app launch, that a run or case under a committed name is a
+reproduction, not new evidence, at the commit the experiment files were read from (or,
+read from no commit, that every name is neutral), and that the M5 anchor check reads
+n/a with one variant per launch; without a server-start record it says the run was
+labelled exploratory but not launched from the app; with an imposed offload it says the
+offload is not propellant saved).
+
 **Bounds (amendment 6).** `bounds:` is a list of `{name, of, overrides,
 paired_baseline: true}`. Each run in `of` (never the baseline) is re-run with the
 overrides as `<of>__<name>`, and the baseline is re-run with the same overrides as

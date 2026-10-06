@@ -50,6 +50,8 @@ src/launchsim/
   run_data.py    shared read-only reader of a results directory: file readers, directory check, run selection and roles, series and event readers (mass before and after each drop), calibration records, the output-path rule; no matplotlib
   display.py     display-only reconstructions of the 2-D scene, pure: the display-file models, tank levels and their load-time checks, separation state and vacuum coast, screen transform and camera law, row selection, held attitude; never model output
   scene.py       the 2-D scene: the data payload of a planar results directory (reads through run_data and configs/display/), its strict-JSON encoding, and the standalone page (render_page fills templates/scene.html; write_scene_page writes only the page, never inside a results tree)
+  appform.py     the local app's form, pure: the basis of the two committed experiments, the request parser (whitelisted keys, enumerated choices, finite bounded numbers), the presets, build_experiment (experiment app, label exploratory, committed names only for committed configurations), the derived values and the one-line refusals
+  app.py         the local app's launch function: load_basis, the server-start git state and the code-change check, the in-memory pad cache, run_launch (results_io's pieces in run_experiment's order, FAILED.txt on any exception, no PNG plots) and the outcome of a written directory; the server comes in SP2 step A4b
   optimize.py    ascent optimization (Phase 5)
   cli.py
   templates/     package-data page templates: replay.html (the replay page; frozen in SP2) and scene.html (the standalone 2-D scene page that scene.py renders and writes; no request, state hook window.launchsimScene)
@@ -143,7 +145,7 @@ Calibration is separate from validation; label it as such:
 ## Code style
 
 - Python 3.12, type hints everywhere, frozen dataclasses for parameters, pydantic to validate YAML.
-- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py, run_data.py and scene.py.
+- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py, run_data.py, scene.py and app.py.
 - Small functions with docstrings. No magic numbers outside constants.py and configs.
 - ruff for lint and format. Mark tests slower than 5 s with `@pytest.mark.slow`.
 

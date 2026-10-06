@@ -154,9 +154,14 @@ VERTICAL_TRACK_DEG = 90.0
 DynamicsKind = Literal["vertical_1d", "planar_2d"]
 VERTICAL_1D: DynamicsKind = "vertical_1d"
 PLANAR_2D: DynamicsKind = "planar_2d"
-ExperimentLabel = Literal["calibration", "guidance_study"]
+ExperimentLabel = Literal["calibration", "guidance_study", "exploratory"]
 CALIBRATION_LABEL: ExperimentLabel = "calibration"
 GUIDANCE_STUDY_LABEL: ExperimentLabel = "guidance_study"
+EXPLORATORY_LABEL: ExperimentLabel = "exploratory"
+"""The label of an experiment the local app builds from its form (SP2 step A4, D-SP2-12):
+never a finding; it needs dynamics planar_2d and no sweeps, allows no ``cases``, and the
+experiment run's summary.md opens with the exploratory banner. Equal to
+replay.EXPLORATORY_LABEL."""
 PLANAR_KEY = "planar"
 """Run-dict key that holds the injected planar shared blocks (``RunConfig.planar``)."""
 PLANAR_SHARED_KEYS = ("guidance", "search", "target_orbit", "checks")
@@ -1851,7 +1856,10 @@ class ExperimentConfig(_Model):
     ``baseline`` is the injected run) and refused in the baseline itself (except a
     Phase 1 site), in variants, sweeps, sensitivity parameters and bounds. Variant
     values are partial run dicts merged over the baseline. ``label: calibration`` allows
-    ``cases``; ``label: guidance_study`` allows paired ``guidance.*`` sweeps. On
+    ``cases``; ``label: guidance_study`` allows paired ``guidance.*`` sweeps; ``label:
+    exploratory`` (set by the local app on every experiment it builds, D-SP2-12) needs
+    dynamics planar_2d and no sweeps, allows no cases, and makes the experiment run's
+    summary.md open with the exploratory banner. On
     planar_2d a sweep of ``vehicle.*`` paths must be paired, and no per-run path may
     change the ``integrator`` block (sample_dt_s included), so every compared run
     integrates and samples alike.
@@ -1975,6 +1983,11 @@ class ExperimentConfig(_Model):
                 raise ValueError(
                     f"sweep {k}: a paired sweep of the baseline has no pair; sweep a variant"
                 )
+        if self.label == EXPLORATORY_LABEL and (self.dynamics != PLANAR_2D or self.sweeps):
+            raise ValueError(
+                f"label: {EXPLORATORY_LABEL} is the app's: one planar_2d experiment run, no "
+                "sweeps (only the planar experiment summary carries the exploratory banner)"
+            )
         if self.cases and self.label != CALIBRATION_LABEL:
             raise ValueError(f"cases need label: {CALIBRATION_LABEL}")
         for cname, case in self.cases.items():

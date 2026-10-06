@@ -1,17 +1,18 @@
 """The summary.md text of an experiment run, a sweep point and a sweep (moved from
 sim.py; pure: builds strings, writes nothing). A planar_2d experiment gets
 ``planar_experiment_summary`` and ``planar_sweep_summary`` (PLANAR_VARIANT_ROWS, the
-CALIBRATION banner, the guidance label (sweep-optimized or fixed), the bounds, cases and
-screening lines and, with an offload block, the section "Propellant saved at fixed
-payload": ``offload_section`` of the block's plain record, with its caveats,
-``offload_caveats``).
+CALIBRATION banner or, for an app run, the exploratory banner, the guidance label
+(sweep-optimized or fixed), the bounds, cases and screening lines and, with an offload
+block, the section "Propellant saved at fixed payload": ``offload_section`` of the
+block's plain record, with its caveats, ``offload_caveats``).
 
 ``experiment_summary`` assembles the sections in the CLAUDE.md order: the per-variant
 table against the baseline (``variants_table``, rows ``variant_rows``), the sensitivity
 table, the flags, the attributed assumptions and the checks (identity lines and the
 release-speed bound). ``sweep_summary`` is the top-level text of a sweep and
 ``sweep_point_header`` names a sweep point. Numbers are SI with the unit in each row
-label; cells print 6 significant digits (``_fmt``). ``sim`` re-exports every name.
+label; cells print 6 significant digits (``_fmt``). ``sim`` re-exports every name of
+the module before SP2 (the exploratory banner of SP2 step A4 is read here only).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from launchsim import run_data
 from launchsim.compare import (
     ATTRIBUTION_TERMS,
     BUG_SUSPECT,
@@ -47,6 +49,8 @@ from launchsim.compare import (
 )
 from launchsim.config import (
     CALIBRATION_LABEL,
+    EXPLORATORY_LABEL,
+    OFFLOAD_GROSS_MODES,
     PLANAR_2D,
     RAMP_START_TIME,
     SEARCHED_FIGURES,
@@ -691,6 +695,179 @@ CALIBRATION_BANNER = (
     "verdict and the checklist)."
 )
 """The banner every calibration-labelled summary opens with (plan section 7)."""
+EXPLORATORY_BANNER_HEAD = (
+    "> **EXPLORATORY app run, not a finding.** Launched from the local app's form, not from "
+    "a committed experiment file, and not pre-registered."
+)
+"""The first two sentences of the banner an exploratory summary opens with (D-SP2-12;
+``exploratory_banner`` adds the code states and the caveats)."""
+EXPLORATORY_NOT_APP_HEAD = (
+    "> **EXPLORATORY run, not a finding.** Labelled exploratory but not launched from the "
+    "app (no server-start record), and not pre-registered."
+)
+"""The head of the banner instead of EXPLORATORY_BANNER_HEAD when the git record has no
+server-start state: an exploratory-labelled experiment run from the command line."""
+EXPLORATORY_IMPOSED_TEXT = (
+    "An imposed offload is not propellant saved: the section "
+    '"Propellant saved at fixed payload" and its basis line describe solved cases; an '
+    "imposed case flies its own payload capacity P*, read as P* - P_ref (positive: it "
+    "carries more than the pad, so the offload is not the largest possible; negative: a "
+    "payload loss)."
+)
+"""What the banner adds when the offload block has an imposed (fixed) case (D-SP2-27):
+SP1's section title and basis line are printed for any offload block."""
+EXPLORATORY_IMPOSED_NOT_NETTED_TEXT = (
+    "An imposed stage-2 or both-stage offload is a property of the vehicle model and is not "
+    "netted: it has no pad control, whatever the caveats below say of netting."
+)
+"""What the banner adds when an imposed case takes propellant from stage 2 (D-SP2-07)."""
+EXPLORATORY_REPRODUCTION_TEXT = (
+    "A run or case under a committed name (every name but silo, pad_variant, a neutral case "
+    "name `silo_<tag>` such as silo_s1 or silo_fix7pct, and that case's paired pad "
+    "`silo_<tag>__pad`) has that name's configuration in the experiment files at commit "
+    "{commit}: a reproduction, not new evidence (the code may differ from the recorded "
+    "run's)."
+)
+"""What the banner of an app launch adds when the app read the experiment files from a
+commit (D-SP2-36; the name patterns in code spans, so that a Markdown renderer does not
+take ``<tag>`` for an HTML tag; ``{commit}``, the first 12 characters of the hash under
+EXPLORATORY_BASIS_COMMIT_KEY): the app keeps a committed name only for the committed
+configuration (appform.build_experiment), so a kept name marks a reproduction; not said
+of an exploratory run without a server-start record."""
+EXPLORATORY_UNCOMMITTED_BASIS_TEXT = (
+    "The experiment files were not read from a commit, so every variant and case has a "
+    "neutral name and no run here is called a reproduction of a committed one."
+)
+"""What the banner of an app launch says instead of EXPLORATORY_REPRODUCTION_TEXT when
+its git record names no commit for the experiment files (git gave none at server
+start)."""
+EXPLORATORY_NO_ANCHOR_TEXT = (
+    "The M5 anchor check (dP* against silo_instant minus pad_instant plus the pad's "
+    "pre-flight term) needs both anchor runs in one experiment; an app launch flies one "
+    "variant, so M5 reads n/a."
+)
+"""What the banner of an app launch with a variant adds (compare.anchor_from needs both
+anchor runs; the app builds at most one variant)."""
+EXPLORATORY_NO_SENSITIVITY_TEXT = (
+    "No sensitivity check ran: the Sensitivity section's vehicle.aero.cd_scale cases are "
+    "those of the committed experiments, not of this directory."
+)
+"""What the banner adds when no sensitivity case and no offload sensitivity arm ran (the
+app declares none): CLAUDE.md's +/-10% check of a headline number was not made here."""
+EXPLORATORY_BASIS_COMMIT_KEY = "basis_commit"
+"""Key of the app's git record that holds the full hash of the commit the app read the
+committed experiment and vehicle files from at server start (None: not read from a
+commit, so no name is committed)."""
+EXPLORATORY_PUSH_CAVEAT = "no structural mass for the push"
+EXPLORATORY_NO_PUSH_CAVEAT = "a pad launch (no push)"
+"""The banner's push caveat: the first when a run has an assist, else the second."""
+EXPLORATORY_SERVER_START_KEY = "server_start"
+"""Key of the app's git record that holds the git state the app's server recorded once at
+its start (hash, dirty, error): the commit whose code the launch imported."""
+EXPLORATORY_LAUNCH_DIRTY_KEY = "launch_dirty"
+"""Key of the app's git record that holds the working-tree state at launch; the record's
+own ``dirty`` is true when either state is dirty (D-SP2-11)."""
+EXPLORATORY_NO_GIT_HASHES = ("no-git",)
+"""git_info hashes whose dirty flag means nothing (git missing or not a repository): the
+banner reads their state as unknown."""
+
+
+def _tree_state(dirty: Any, hash_: Any = None) -> str:
+    """'clean', 'dirty' or 'unknown' for a git dirty flag (True, False, None); unknown
+    as well for a hash in EXPLORATORY_NO_GIT_HASHES."""
+    if hash_ in EXPLORATORY_NO_GIT_HASHES or dirty is None:
+        return "unknown"
+    return "dirty" if dirty else "clean"
+
+
+def _imposed_lines(offload: Mapping[str, Any] | None) -> list[str]:
+    """The banner's sentences on imposed offloads: EXPLORATORY_IMPOSED_TEXT when a case of
+    the offload record is imposed (kind fixed), and EXPLORATORY_IMPOSED_NOT_NETTED_TEXT
+    when one of them takes propellant from stage 2 (a mode other than OFFLOAD_GROSS_MODES);
+    [] without an offload record or an imposed case."""
+    if not offload:
+        return []
+    fixed = [c for c in offload.get("cases") or [] if c.get("kind") == "fixed"]
+    if not fixed:
+        return []
+    out = [EXPLORATORY_IMPOSED_TEXT]
+    if any(c.get("mode") not in OFFLOAD_GROSS_MODES for c in fixed):
+        out.append(EXPLORATORY_IMPOSED_NOT_NETTED_TEXT)
+    return out
+
+
+def _app_lines(git: Mapping[str, Any], runs: Mapping[str, RunResult]) -> list[str]:
+    """The banner's sentences of an app launch: EXPLORATORY_REPRODUCTION_TEXT with the
+    commit the experiment files were read from (``git[EXPLORATORY_BASIS_COMMIT_KEY]``),
+    else EXPLORATORY_UNCOMMITTED_BASIS_TEXT; EXPLORATORY_NO_ANCHOR_TEXT when ``runs``
+    holds a variant beside the baseline."""
+    commit = git.get(EXPLORATORY_BASIS_COMMIT_KEY)
+    if isinstance(commit, str) and commit:
+        out = [EXPLORATORY_REPRODUCTION_TEXT.format(commit=commit[:12])]
+    else:
+        out = [EXPLORATORY_UNCOMMITTED_BASIS_TEXT]
+    if len(runs) > 1:
+        out.append(EXPLORATORY_NO_ANCHOR_TEXT)
+    return out
+
+
+def exploratory_banner(
+    git: Mapping[str, Any],
+    vehicle_name: str,
+    runs: Mapping[str, RunResult],
+    offload: Mapping[str, Any] | None = None,
+    *,
+    sensitivity_ran: bool = False,
+) -> str:
+    """The banner of an exploratory (app) summary, one blockquote line (D-SP2-12):
+    EXPLORATORY_BANNER_HEAD (EXPLORATORY_NOT_APP_HEAD when the git record has no
+    server-start state: not an app launch); the code states, the server-start commit with
+    its state (``git[EXPLORATORY_SERVER_START_KEY]``; without it, that there is no
+    server-start record) and the working tree at launch
+    (``git[EXPLORATORY_LAUNCH_DIRTY_KEY]``, else ``git['dirty']``), each clean, dirty or
+    unknown; then where the findings are and the run's caveats: the calibration gap of
+    vehicle_name from run_data.CALIBRATION_RECORDS (or that it has none), no structural
+    mass for the push (EXPLORATORY_NO_PUSH_CAVEAT when no run of ``runs`` has an assist),
+    the guidance (sweep-optimized when any of ``runs`` searched, else fixed) and
+    unthrottled; EXPLORATORY_NO_SENSITIVITY_TEXT unless ``sensitivity_ran`` (a
+    sensitivity case or an offload sensitivity arm ran); for an app launch (a
+    server-start record) whether a committed name marks a reproduction and the M5 anchor
+    check (``_app_lines``, D-SP2-36); then, when ``offload`` (the offload block's record)
+    has an imposed case, that it is not propellant saved (``_imposed_lines``,
+    D-SP2-27)."""
+    start = git.get(EXPLORATORY_SERVER_START_KEY)
+    launch = _tree_state(git.get(EXPLORATORY_LAUNCH_DIRTY_KEY, git.get("dirty")), git.get("hash"))
+    if isinstance(start, Mapping):
+        head = EXPLORATORY_BANNER_HEAD
+        code = (
+            f"Code: the commit imported at server start ({start.get('hash', 'no-git')}, "
+            f"{_tree_state(start.get('dirty'), start.get('hash'))}); working tree at launch: "
+            f"{launch}."
+        )
+    else:
+        head = EXPLORATORY_NOT_APP_HEAD
+        code = f"Code: no server-start record; working tree at the run: {launch}."
+    record = run_data.CALIBRATION_RECORDS.get(vehicle_name)
+    if record is None:
+        calibration = f"No calibration record for {vehicle_name}"
+    else:
+        gap = run_data.calibration_gap(record[0], record[1])
+        calibration = f"Calibration {float(to_percent(gap)):+.1f}%"
+    searched = any(
+        rr.result.metrics.get("figure_of_merit") in SEARCHED_FIGURES for rr in runs.values()
+    )
+    guidance = "sweep-optimized" if searched else "fixed guidance"
+    pushed = any(getattr(rr.resolved.run.assist, "model", "none") != "none" for rr in runs.values())
+    push = EXPLORATORY_PUSH_CAVEAT if pushed else EXPLORATORY_NO_PUSH_CAVEAT
+    text = (
+        f"{head} {code} Do not cite; findings are in docs/findings/. "
+        f"{calibration}, {push}, {guidance}, unthrottled."
+    )
+    sensitivity = [] if sensitivity_ran else [EXPLORATORY_NO_SENSITIVITY_TEXT]
+    app = _app_lines(git, runs) if head == EXPLORATORY_BANNER_HEAD else []
+    return " ".join([text, *sensitivity, *app, *_imposed_lines(offload)])
+
+
 PREREGISTRATION_DIRTY_FLAG = "preregistration_dirty"
 """Marker of a calibration run whose pre-registered inputs (configs/, experiments/) were
 not all committed when it ran (plan amendment 1): not a valid calibration record."""
@@ -2007,7 +2184,8 @@ def offload_check_lines(record: Mapping[str, Any]) -> list[str]:
 
 def planar_experiment_summary(er: ExperimentResult, header_lines: Sequence[str] = ()) -> str:
     """The summary.md text of a planar experiment: the CALIBRATION banner (label
-    calibration), the title, the comparison basis and the guidance label
+    calibration) or the exploratory banner (label exploratory, ``exploratory_banner``),
+    the title, the comparison basis and the guidance label
     (``guidance_label``: sweep-optimized, or fixed guidance), the per-variant table
     (PLANAR_VARIANT_ROWS), with an offload block its section "Propellant saved at fixed
     payload" (``offload_section``; the block's runs then also join the flags and the
@@ -2018,10 +2196,23 @@ def planar_experiment_summary(er: ExperimentResult, header_lines: Sequence[str] 
     gamma*-sensitive verdicts). Without an offload block the text is what it was before
     the block existed."""
     runs = er.runs
+    all_runs = {**runs, **er.cases}
     banner = [CALIBRATION_BANNER, ""] if er.label == CALIBRATION_LABEL else []
+    if er.label == EXPLORATORY_LABEL:
+        record = None if er.offload is None else er.offload.record
+        arms = bool((record or {}).get("sensitivity"))
+        banner = [
+            exploratory_banner(
+                er.git,
+                er.vehicle_name,
+                all_runs,
+                record,
+                sensitivity_ran=bool(er.sensitivity) or arms,
+            ),
+            "",
+        ]
     banner += preregistration_lines(er.preregistration)
     budget = f"- Search budget id: {er.search_budget_id}" if er.search_budget_id else None
-    all_runs = {**runs, **er.cases}
     offload: list[str] = []
     if er.offload is not None:
         offload = [OFFLOAD_SECTION_TITLE, "", offload_section(er.offload.record), ""]
