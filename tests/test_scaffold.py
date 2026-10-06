@@ -35,6 +35,7 @@ PHYSICS_MODULES = [
     "assist/constant_accel",
     "assist/none",
     "assist/track",
+    "display",  # the scene's display-only reconstructions (SP2 step A2, design 4.1)
 ]
 
 

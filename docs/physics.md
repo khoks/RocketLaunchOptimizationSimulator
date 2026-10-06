@@ -20,8 +20,10 @@ rules, the phase state machine, loss accounting, the ignition-after-release
 loss, the assist energy identity, the silo model and its reported quantities, hot
 starts, the failed-ignition coast, the figures of merit and their convergence, and
 the planar experiment schema (the shared blocks every run of an experiment carries);
-then every assumption the code emits, collected in one list, and the test-to-equation
-map.
+then every assumption the code emits, collected in one list, the display-only
+reconstructions of the 2-D scene (not part of the model: tank levels, a vacuum coast of
+the dropped bodies, the screen transform, the camera, the held attitude and the row
+selection; SP2 step A2), and the test-to-equation map.
 
 ## Atmosphere
 
@@ -6180,6 +6182,264 @@ budget.
 - **Display convention.** In the summaries' Checks lines, "insertion e 0" and "closure
   residual 0 m/s" mean below `DISPLAY_ZERO_ABS` (summary._fmt); metrics.json keeps the
   raw values (for example 5.1e-10 for silo_cold_s1's insertion e).
+
+## Display-only reconstructions (not part of the model)
+
+Modules: `src/launchsim/display.py` (pure) and `src/launchsim/scene.py` (I/O: reads a
+results directory through run_data and the display files under `configs/display/`).
+Tests: `tests/test_display.py`, `tests/test_scene.py`. SP2 step A2 (design
+docs/phases/inputs/2026-10-05-SP2-design.md section 4.4, D-SP2-16 to D-SP2-20).
+
+**What is display-only and why.** The 2-D launch scene replays a recorded planar_2d run:
+its path, thrust and mass come from the time series as written, and nothing in this
+section changes a model equation, frame, event, integrator setting, loss term, search
+or solver. The model is a point mass with a reference area, a thrust direction and one
+mass; a watchable picture needs a vehicle with a length, tanks with levels, a spent stage
+and fairing halves that fall away, a body that keeps an attitude when its engines are
+off, and a camera. Those are reconstructions from the recorded rows and from two display
+files whose every number is `{value, source}` or `{value, assumed: true, note}`
+(`configs/display/f9_class.yaml`, `configs/display/scene.yaml`; display.py validates
+them with the vehicle file's Quantity and refuses unknown keys). The scene builder reads
+through run_data only (never results_io, sim or compare), an import guard keeps display
+and scene out of the run path, and every scene page carries the footer "The vehicle's
+path, thrust and mass are replayed from the recorded time series. The spent stage,
+fairing halves, carriage after release and unpowered attitude are display-only
+reconstructions and are not model output." Units in this section: SI and radians;
+rows are the rows of timeseries.csv in file order, both rows of every doubled time kept.
+
+**Generic shape** (`display.generic_geometry`, `display.body_diameter_from_area_m`: a
+vehicle no display file lists, flagged `generic` with the reason). The body diameter
+D = sqrt(4 A_ref / pi) from the vehicle block's `aero.reference_area_m2`; the stack length
+L = fineness x D; the fairing, stage-2, interstage and engine-section lengths are their
+scene.yaml fractions of L and stage 1 takes the remainder; the fairing diameter and the
+shaft, ring, carriage, rail, mount and clamp sizes are their ratios times D (the `generic`
+block of scene.yaml, every ratio assumed, the Falcon 9-class proportions). Every number's
+provenance names the ratio it came from.
+
+**Tank levels** (`display.tank_levels`). With m the row's `m_kg`, P the payload the run
+flew (`payload_kg` of its metrics record as run_data.run_source resolves it: runs,
+offload.runs, bounds[].metrics, bounds[].paired_baseline_metrics, cases; the vehicle
+block's `payload_mass_t` when the metric is null), d1, p1, d2, p2 the dry masses and
+propellant loads and f the fairing mass of the run's OWN vehicle block (the entry's
+`vehicle` block when it has one, else the experiment's), and on the fairing-attached
+flag:
+
+    stage-1 rows:   prop1 = m - P - d2 - f on - p2 - d1,   prop2 = p2
+    stage-2 rows:   prop2 = m - P - d2 - f on,              prop1 held at its last stage-1 value
+
+The fairing is attached on every row before its `fairing` event row and on the first of
+the rows at that time (the state before the drop), gone from the rest; a `fairing` row
+in COAST_STAGING, or none under a rule that drops it at staging (run_data.with_drop_masses
+adds the unrecorded row), means attached exactly on the stage-1 rows; no row under another
+rule means attached throughout; a vehicle without a fairing mass is never attached. The
+fills are `prop_k / full load k` of the FILL-REFERENCE block: the experiment's top-level
+vehicle block for entries under `runs`, `bound_runs` and `offload_runs` (so an offloaded
+tank starts at one minus its offload fraction), and the entry's own block for a `case`
+(a calibration case with its own vehicle file flies full tanks at its own loads). The
+page rebuilds the stack mass as P + d2 + f on + prop2 + (d1 + prop1 on stage-1 rows);
+that rebuild is an identity on the rows the series were built from, so the checks below
+are what tests a wrong flag or payload. Load-time checks, at every row, returned as a
+verdict and never raised (`display.tank_checks`; a run that fails still loads and is
+flagged): the liftoff identity m[0] = d1 + p1 + d2 + p2 + f + P within 1 kg (and the
+metric `liftoff_mass_kg`); each tank never rises (1e-3 kg: the CSV's 12 digits leave
+1e-6 kg of noise) and takes no step above 1 kg across the two rows of any one time
+(staging and the fairing drop included); the stage-2 tank equals its load within 1 kg on
+every row before stage-2 ignition and `recorded_m_res_kg` within 1 kg on the last row of
+a flight that reached cutoff or depletion; the stage-1 tank reads under 1 kg at the
+stage-1 `propellant` event; each tank's start fill equals one minus its offload fraction
+(the case record's `stage1_fraction` and `stage2_fraction` for an offload case or its
+paired pad, else the two blocks' loads) within 1e-4; the rebuilt stack mass from the
+rounded, interpolated samples equals `m_kg` within 1 kg at every row (the interpolation
+and rounding check); and the row selection converged ("Row selection" below: a selection
+that did not is a failing item, not a second flag). Measured on every complete planar
+directory on disk (56 run folders; table in the step-A2 session log of
+docs/phases/SP2-launch-app-2d-scene.md): the liftoff identity closes to 5e-7 kg, the tank
+steps to 5e-7 kg, the rebuilt mass to 0.05 kg (the 0.1 kg rounding of the tank samples)
+on 52 runs, 0.08 to 0.09 kg on the three runs with an offloaded stage-2 tank
+(silo_cold_s2, silo_cold_both and pad__offload_stage2 of silo_offload_2d: a stage-2 load
+that is not a multiple of 0.1 kg rounds on the constant pre-staging stage-2 series too,
+so two rounded tanks add) and 0.51 kg on silo_cold_lag, whose 1 - exp(-t/tau) flow is not
+linear between the selected rows; every check passing.
+
+**Thrust-on rule.** An engine is on at a row when, for some stage, the time of that
+stage's `ignition` row is <= t and t < the earliest time, at or after it, of the stage's
+own `propellant` row or of a `cutoff`, `ignition_failed` or `end` row. A stage without an
+ignition row (a failed ignition) is never on; the last row of a flight, which still
+records full thrust at the cutoff instant, reads off. The plume fraction is
+`thrust_vac_N` over the stage's full vacuum thrust (engine count times per-engine vacuum
+thrust of the run's own vehicle block; delivered thrust is clamped to zero for the first
+rows of a sea-level ramp and would hide the ignition), and the drawn plume is the
+fraction times the flag. Both are read at the sample index, never from a separately
+rounded event time (the subtraction event t_s - t_release lands up to 5e-11 s off the
+doubled rows); events are matched to rows on the run clock `t_s`, where every recorded
+event has an exact row. An event with no row at its exact `t_s` (the synthesised
+ramp_end) is matched to the rows at the nearest time within 1e-6 s
+(`display.EVENT_TIME_TOL_S`), else left unmatched and flagged `row_matched: false`.
+
+**Separation state** (`display.separation_state`; frame: the planar Earth-centred
+inertial frame of "Frames and datum", state [r, theta, v_r, v_theta]). From an event
+row's altitude alt above the datum R_E, Earth-fixed downrange d, Earth-relative speed V
+and flight-path angle gamma_rel of the Earth-relative velocity, at t after release, with
+omega_p = omega_E cos(lat) sin(az) of the site (0 without rotation):
+
+    r = R_E + alt
+    theta = d / R_E + omega_p t         (t the time after release)
+    v_r = V sin(gamma_rel)
+    v_theta = V cos(gamma_rel) + omega_p r
+
+theta is the inverse of the model's downrange r_datum (theta - omega_p (t - t_fs)) when
+the flight start t_fs is the release (dynamics.planar_observables: the release, or the
+liftoff root when the hold is extended past it; every recorded run has
+hold_extension_s = 0). An extended hold shifts theta by the constant
+omega_p x hold_extension_s, which cancels in the coast: its equations are autonomous in
+theta and its downrange uses theta - theta0 only. hypot(v_r, v_theta) reproduces the
+row's `speed_inertial_mps` to 9e-9 m/s on every recorded staging and fairing row (survey
+09 section 2.1; tested to 1e-6 m/s on a real run and to 1e-15 relative on synthetic
+numbers).
+
+**Vacuum coast** (`display.vacuum_coast`, D-SP2-19). The planar two-body right-hand side,
+the ascent equations of "Planar ascent state and equations of motion" with T = 0 and
+D = 0:
+
+    dr/dt = v_r,   dtheta/dt = v_theta / r,   dv_r/dt = v_theta^2 / r - mu / r^2,   dv_theta/dt = -v_r v_theta / r
+
+integrated with scipy DOP853 at rtol 1e-12 (absolute tolerances 1e-6 m, 1e-14 rad,
+1e-9 m/s) from the separation state until r = R_E (a terminal event, descending) or a
+20,000 s limit, with an apex event at v_r = 0. The path is reported Earth-fixed and
+Earth-relative: d(t) = d0 + R_E ((theta - theta0) - omega_p (t - t0)) and V_rel =
+hypot(v_r, v_theta - omega_p r); the scene clips the drawn path at the run's last time
+and reports each body's own apex, impact time, impact speed and impact downrange whether
+or not they fall inside the run. It ignores drag, lift, attitude and the body's shape: a
+body falling through the atmosphere would not follow this path (the recorded staging
+coast itself differs from it by the recorded drag: 0.011 to 0.060 m/s over the 11 s coast
+across the 30 runs with a staging coast (29 inserted, and pad__offload_stage1, which
+ended short of orbit) of results/silo_screening_2d/20260930T175743Z and
+results/silo_offload_2d/20261003T112934Z; 0.028 m/s for the reference pad at 69 to 80 km,
+0.013 m/s for silo_cold at 75 to 86 km, 0.055 m/s for silo_cold_s1__pad at 64 to 75 km
+and 0.060 m/s for the aero bound pad__aero_bound; the test's fixed-guidance pad gives
+0.053 m/s at 66 to 76 km).
+
+*Measured gap* (`display.coast_gap_m`, carried per spent stage in the payload as
+`staging_coast_gap_m` over `staging_coast_rows` rows). The coast from the staging row's
+separation state is evaluated exactly at the time of every recorded COAST_STAGING row at
+or after the staging row (the integrator's dense output, never an interpolation between
+samples), the coast point and the recorded point are both mapped to the screen
+(`display.screen_xy`, below) and the hypot of their x and y differences is taken; the
+gap is the largest over those rows; None (NaN) when no such row follows the separation,
+as for a fairing dropped under thrust. Measured on 2026-10-05 over the 55 run folders
+with a staging coast in the six complete planar directories under results/ (the 56th,
+silo_failed, has none; table in the step-A2 session log of
+docs/phases/SP2-launch-app-2d-scene.md): 0.197 m for pad and 0.089 m for
+silo_cold of results/silo_screening_2d/20260930T175743Z (222 rows over the 11 s coast at
+69.5 to 80.4 km and 75.2 to 85.9 km); 0.608 m at most, on silo_cold_s1__pad of
+results/silo_offload_2d_readme/20261003T112956Z (staging at 62.8 km, in denser air);
+0.416 m on pad__aero_bound of the screening directory and on the aref_fairing case of
+both calibration directories (the larger reference area); 0.382 m on silo_cold_s1__pad
+of results/silo_offload_2d/20261003T112934Z; 0.048 m at least (the alt_300 case). The
+gap grows with the recorded drag the coast ignores, so a run that stages lower, or
+flies a larger reference area, sits further from its coast; nothing bounds it for a
+run not yet flown, which is why each page quotes its own.
+Tests: specific energy and angular momentum drift under 1e-8 relative (measured 4e-13);
+the time of flight, apex altitude and impact arc against the closed form (h = r v_theta,
+E = v^2 / 2 - mu / r, p = h^2 / mu, e = sqrt(1 + 2 E h^2 / mu^2), a = -mu / (2 E), the
+true anomaly from e cos f0 = p / r - 1 and e sin f0 = v_r h / mu, impact on the
+descending branch at f = 2 pi - acos((p / R_E - 1) / e), times through the eccentric and
+mean anomaly; `display.kepler_coast`) to 1e-6 relative; the coast from a real run's
+staging row within 1 m of its recorded COAST_STAGING rows and, with the recorded drag
+integral taken out, within 0.01 m/s, and its measured gap between the interpolated
+residuals' bounds; `coast_gap_m` reading under 1e-6 m on the coast's own samples and the
+hand-computed screen distance of a moved point.
+
+**Screen transform** (`display.screen_xy`, `display.screen_angle_rad`). A plane through the
+launch site with x downrange and y up, Earth's surface a circle through the origin:
+
+    x = (R_E + alt) sin(d / R_E),   y = (R_E + alt) cos(d / R_E) - R_E
+
+A body at pitch p above its local horizontal (the thrust direction while lit) is drawn at
+the screen angle p - d / R_E counter-clockwise from +x, because the local horizontal has
+tilted by the arc; a canvas whose y axis points down rotates by the negative of that (the
+wrong sign differs by 1.8 to 3.2 deg in the gravity turn, survey 09 section 3.1). Screen y
+is not altitude: at cutoff a run at 200 km altitude sits at y = -21.6 km; the HUD reads
+`alt_m`. `alt_m` is drawn at the rocket's base, a display choice.
+
+**Camera law** (`display.running_extent_m`, `display.view_height_m`). With E(t) the running
+maximum over the scene time of hypot(max(alt, 0) - alt_floor + L, |d| / aspect) (alt_floor
+the lowest altitude the view must hold, L the stack length, aspect the panel width over
+its height) over the runs shown,
+
+    H(t) = sqrt(H_MIN^2 + (margin E(t))^2)
+
+is the view height in metres, with H_MIN = 150 m and margin = 1.25 from scene.yaml (both
+assumed). A smooth maximum, so the launch view blends into the growing one without a
+corner; a running maximum, so the view never shrinks (a fall-back stays zoomed out after
+its apex); a function of the scene time alone, so scrubbing and playing give the same view.
+
+**Held-angle rule** (`display.attitude_defined`, `display.held_screen_angle_rad`,
+D-SP2-17). The model defines an attitude where thrust is on, in the hold (vertical) and on
+the track (the track angle); there the drawn angle is p - d / R_E as recorded, the instant
+steps at the kick and at stage-2 ignition included. Elsewhere `pitch_rad` follows v_rel
+and a point mass has no body axis, so the drawn angle holds the last defined SCREEN angle
+(not the pitch: the local horizontal keeps tilting under a held body); a row with no
+defined row before it keeps its own angle. A row in an unpowered phase (COAST_PRE_IGN,
+COAST_STAGING, COAST) is never defined, including the pre-map row at an ignition time that
+the time-based thrust flag already marks on (its recorded thrust is 0 N and its pitch the
+coast's v_rel angle), so the held angle runs up to the ignition step: without this rule
+the drawn angle dipped by about 2 deg on the one sample before stage-2 ignition of every
+recorded orbital flight. The spent stage and the fairing halves hold the vehicle's screen
+angle on the row before their separation map.
+
+**Row selection** (`display.select_rows`, D-SP2-16). The scene's time grid is a selection
+of the run's own CSV rows, never a resample: both rows of every doubled time, every
+event row, the first and last rows, every 2nd row until 40 s after release and every
+20th row after; then, in bounded passes (at most 30; one pass on every recorded run),
+the row with the worst residual-over-tolerance of each contiguous stretch of rows outside
+half of its tolerance is inserted, until every CSV row of every interpolated field is
+within half of each tolerance under linear interpolation of the selected rows: altitude
+the larger of 0.5 % and 1 m, downrange the larger of 0.5 % and 10 m, pitch and the drawn
+angle 0.5 deg, plume fraction 0.02, each tank 1 kg (exit criteria 5 and 6; the other
+half is left for the page's rounding: times to 6 decimals, since 1 kg of stage-1 flow is
+0.37 ms, tanks to 0.1 kg). Step series (stage index, phase, fairing on, thrust on) are
+read at the sample index and never interpolated; an event's page time is its matched
+row's time, the same number as its two samples. A selection still outside half of a
+tolerance after the 30 passes is reported as a failing load-time check item of the run
+(the run still loads and is flagged). On the recorded runs the base selection
+alone misses the 2 s startup ramp (1.7 kg of mass) and the apex of a fall-back (11 deg of
+pitch); the insertion adds about 20 rows in the ramp and 3 around the apex (survey 09
+section 5).
+
+**What the scene shows that the model does not support** (design 4.9, carried as data in
+the payload and named on the page). Every shape and length (the vehicle's shape and the
+widths and sizes of the shaft, rings, carriage, rails, mount and clamps come from
+configs/display; the shaft depth and the rail length are the run's own stroke and braking
+distance), and the point of the drawing that sits at `alt_m` (the base). The body
+attitude (the model has a thrust direction;
+while the engines are off outside the hold and the track the drawn attitude is held at the
+last screen angle the model defines, thrust on, in the hold or on the track; the steps at
+the kick and at stage-2 ignition are the model's). The spent stage and the fairing halves:
+a drag-free coast shown with each run's own computed impact speed and downrange, nothing
+the model flew; each spent stage shown carries its own measured gap from the vehicle's
+recorded staging-coast rows (`staging_coast_gap_m`, the paragraph "Measured gap" above):
+0.197 and 0.089 m for pad and silo_cold of results/silo_screening_2d/20260930T175743Z
+over their 11 s coasts, and at most 0.608 m over the 55 recorded run folders with a
+staging coast measured on 2026-10-05 (silo_cold_s1__pad of
+results/silo_offload_2d_readme/20261003T112956Z, staging at 62.8 km in denser air;
+0.416 m on pad__aero_bound and the aref_fairing case, both with the larger reference
+area), below one pixel at the camera scale of that time (hundreds of metres per pixel),
+so the gap drawn then is a drawing choice; nothing bounds the gap of a run not yet flown,
+so each page quotes the shown run's own; both fairing halves follow one path; a
+body still in flight when the run ends is drawn stopped there. The plume
+inside the shaft and the carriage beneath lit engines (the model has a vented shaft and
+one impingement fraction that moves only track forces and drive energy). The carriage
+after release and where it brakes (the model gives a braking distance only); a failed
+ignition falling back along the obstacle-free path (no contact with the carriage, the
+mouth or the shaft). One propellant level per stage, tanks reading empty at depletion
+(no residual or reserve is modelled). The pad's liftoff marker (the model logs release;
+a pad whose hold is not extended lifts off at release) and the ramp-end marker of a run
+whose ramp ends in or at the end of the hold (a pad, or a hot start held before the push
+such as silo_hot_full: the ignition time plus the ramp length; the hold is sampled in
+closed form with no event rules, so no row is logged, although the engine is lit and the
+mass burns there), both synthesised from the metrics; and the marker that replaces the
+rocket when its body is under the pixel threshold.
 
 ## Test-to-equation map
 

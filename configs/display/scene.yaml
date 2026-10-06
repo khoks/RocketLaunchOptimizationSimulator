@@ -1,0 +1,29 @@
+# Scene settings of the 2-D launch scene (SP2, D-SP2-18): the camera law, the pixel
+# thresholds and the proportions of the generic shape drawn for a vehicle that has no
+# display file under configs/display/. Nothing here enters the model. Every number is
+# {value, assumed: true, note} (config.Quantity; display.SceneDisplayConfig refuses a
+# bare number or an unknown key). Lengths in metres, pixel sizes in CSS pixels, the
+# rest dimensionless ratios.
+
+camera:
+  min_view_height_m: {value: 150.0, assumed: true, note: "H_MIN, the floor of the camera law H = sqrt(H_MIN^2 + (margin E)^2); the launch view itself comes from the extent term: 174 m on the pad and 260 m for a 70 m stack on a 100 m shaft (survey 09 section 4.2)"}
+  margin: {value: 1.25, assumed: true, note: "the margin on the running extent E; the flown path then stays inside about 0.81 of the view (survey 09 section 4.2)"}
+
+to_scale_min_body_px: {value: 3.0, assumed: true, note: "the true-scale view draws the rocket while its body is at least this wide in pixels, then a position marker with a heading tick (D-SP2-35)"}
+marker_size_px: {value: 7.0, assumed: true, note: "size of the position marker that replaces the rocket in the true-scale view; a drawing choice"}
+closeup_stack_px: {value: 160.0, assumed: true, note: "length of the stack in the fixed-scale close-up (D-SP2-35); exit criterion 16 asks at least 120 px"}
+
+generic:
+  fineness: {value: 19.1, assumed: true, note: "stack length over body diameter of the generic shape: 70.0 m / 3.66 m of the Falcon 9-class display file"}
+  fairing_fraction: {value: 0.187, assumed: true, note: "fairing length over stack length: 13.1 m / 70.0 m of the Falcon 9-class display file"}
+  stage2_fraction: {value: 0.127, assumed: true, note: "stage-2 length over stack length: 8.9 m / 70.0 m of the Falcon 9-class display file"}
+  interstage_fraction: {value: 0.086, assumed: true, note: "interstage length over stack length: 6.0 m / 70.0 m of the Falcon 9-class display file"}
+  engine_section_fraction: {value: 0.029, assumed: true, note: "engine-section length over stack length: 2.0 m / 70.0 m of the Falcon 9-class display file"}
+  fairing_diameter_ratio: {value: 1.42, assumed: true, note: "fairing diameter over body diameter: 5.2 m / 3.66 m of the Falcon 9-class display file"}
+  shaft_diameter_ratio: {value: 1.91, assumed: true, note: "shaft diameter over body diameter: 7.0 m / 3.66 m of the Falcon 9-class display file (wider than the fairing)"}
+  ring_pitch_ratio: {value: 2.73, assumed: true, note: "ring pitch over body diameter: 10.0 m / 3.66 m"}
+  ring_size_ratio: {value: 0.11, assumed: true, note: "ring size over body diameter: 0.4 m / 3.66 m"}
+  carriage_height_ratio: {value: 0.82, assumed: true, note: "carriage height over body diameter: 3.0 m / 3.66 m"}
+  brake_rail_width_ratio: {value: 0.16, assumed: true, note: "brake-rail width over body diameter: 0.6 m / 3.66 m"}
+  pad_mount_height_ratio: {value: 1.09, assumed: true, note: "pad mount height over body diameter: 4.0 m / 3.66 m"}
+  clamp_size_ratio: {value: 0.27, assumed: true, note: "clamp size over body diameter: 1.0 m / 3.66 m"}

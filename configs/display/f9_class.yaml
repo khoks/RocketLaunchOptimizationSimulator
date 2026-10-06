@@ -1,0 +1,33 @@
+# Display geometry of the Falcon 9-class vehicles (SP2, D-SP2-18): the shapes the 2-D
+# launch scene draws. Nothing here enters the model; the model has a reference area and
+# no length. Every number is {value, source} or {value, assumed: true, note}, as the
+# vehicle files do (config.Quantity); a bare number fails validation (display.py).
+# Lengths in metres. The sum stage1 + interstage + stage2 + fairing is the drawn stack:
+# 42.0 + 6.0 + 8.9 + 13.1 = 70.0 m, the published height of Falcon 9 with its fairing.
+
+name: f9_class
+applies_to:
+  - generic_f9_class
+  - generic_f9_class_2d
+  - generic_f9_class_2d_readme_loads
+  - generic_f9_class_2d_recorded_scope
+
+vehicle:
+  body_diameter_m: {value: 3.66, source: "configs/vehicles/generic_f9_class_2d.yaml aero.reference_area_m2 = 10.52 m^2 = pi 3.66^2 / 4 (the vehicle files cite Falcon User's Guide 2021 Table 2-1, 3.66 m body); SpaceX's Falcon 9 page rounds the diameter to 3.7 m"}
+  stage1_length_m: {value: 42.0, assumed: true, note: "SpaceX publishes the 70 m total height (spacex.com Falcon 9 page) and no stage lengths; the split into stage 1, interstage and stage 2 is a drawing proportion chosen so that the four lengths sum to 70.0 m with the 13.1 m fairing; not a published figure"}
+  interstage_length_m: {value: 6.0, assumed: true, note: "see stage1_length_m: a share of the 70 m total, not a published figure"}
+  stage2_length_m: {value: 8.9, assumed: true, note: "see stage1_length_m: the remainder of the 70 m total after stage 1, the interstage and the 13.1 m fairing"}
+  fairing_length_m: {value: 13.1, source: "spacex.com Falcon 9 page, Fairing: height 13.1 m / 43 ft"}
+  fairing_diameter_m: {value: 5.2, source: "spacex.com Falcon 9 page, Fairing: diameter 5.2 m / 17.1 ft"}
+  engine_section_length_m: {value: 2.0, assumed: true, note: "the octaweb engine bay drawn at the base of stage 1 (part of its length); a drawing proportion, not a published figure"}
+
+silo:
+  shaft_diameter_m: {value: 7.0, assumed: true, note: "a drawn shaft wide enough for the 5.2 m fairing with clearance; the model has a vented shaft and no shaft geometry"}
+  ring_pitch_m: {value: 10.0, assumed: true, note: "spacing of the rings drawn on the shaft wall, a visual depth cue only"}
+  ring_size_m: {value: 0.4, assumed: true, note: "thickness of the drawn rings, a visual cue only"}
+  carriage_height_m: {value: 3.0, assumed: true, note: "the drawn carriage under the vehicle; the model gives it a mass and no size"}
+  brake_rail_width_m: {value: 0.6, assumed: true, note: "width of the rails drawn above the mouth over the model's braking distance (D-SP2-20); the model gives the distance only"}
+
+pad:
+  mount_height_m: {value: 4.0, assumed: true, note: "the drawn launch mount under the vehicle's base; the model has a hold-down force and no structure"}
+  clamp_size_m: {value: 1.0, assumed: true, note: "the drawn hold-down clamps; a visual cue for the hold, not a structure"}

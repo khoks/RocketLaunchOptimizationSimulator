@@ -47,9 +47,12 @@ src/launchsim/
   plots.py       plot writers (Agg) and the `animate` MP4/GIF replay
   replay.py      the `replay` command: a self-contained interactive HTML replay page (template in templates/replay.html)
   run_data.py    shared read-only reader of a results directory: file readers, directory check, run selection and roles, series and event readers (mass before and after each drop), calibration records, the output-path rule; no matplotlib
+  display.py     display-only reconstructions of the 2-D scene, pure: the display-file models, tank levels and their load-time checks, separation state and vacuum coast, screen transform and camera law, row selection, held attitude; never model output
+  scene.py       the scene data payload of a planar results directory (I/O: reads through run_data and configs/display/, writes nothing) and its strict-JSON encoding
   optimize.py    ascent optimization (Phase 5)
   cli.py
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
+configs/display/   display-only geometry of the 2-D scene (one YAML per vehicle family, applies_to names the vehicles; scene.yaml for the camera, pixel thresholds and the generic shape); every number has `source:` or `assumed: true`; nothing here enters the model
 experiments/       one YAML per experiment: baseline, variants, sweep axes
 results/           generated, never hand-edited; gitignored except */summary.md
 docs/physics.md    equations and assumptions; the source of truth for the math
@@ -138,7 +141,7 @@ Calibration is separate from validation; label it as such:
 ## Code style
 
 - Python 3.12, type hints everywhere, frozen dataclasses for parameters, pydantic to validate YAML.
-- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py and run_data.py.
+- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py, run_data.py and scene.py.
 - Small functions with docstrings. No magic numbers outside constants.py and configs.
 - ruff for lint and format. Mark tests slower than 5 s with `@pytest.mark.slow`.
 
