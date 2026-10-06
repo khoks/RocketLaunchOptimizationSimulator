@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-06 (SP2 in progress: steps A1 to A4 done; next A4b).
+Last updated: 2026-10-06 (SP2 in progress: steps A1 to A4b done; next A5).
 
 ## Program
 
@@ -349,6 +349,7 @@ Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the 
 - **KI-034** [low, open, owner later] A step startup at release records thrust 0 on its first flight row. In results/silo_screening_2d/20260930T175743Z/silo_instant/timeseries.csv both rows at t_rel 0 (ASSIST and KICK) have `thrust_vac_N` = 0; the next row, at +0.0427 s, has 8,226,900 N, with `m_kg` already 115.13 kg lower (full flow from the ignition instant). The metric `t_ign_rel_release_s_stage1` is 1.78e-15 s, so the row is sampled a rounding step before ignition (vehicle.py 104: dt < 0 gives 0). The same in silo_bridge_2d_readme. pad_instant (first row 1.0) and stage-2 ignition (0, then 1) are as expected. Consequences for a reader: linear interpolation between the two rows draws a 43 ms thrust ramp the model does not have, and a check that rebuilds mass by integrating thrust must leave out that first interval (57.6 kg). Evidence: docs/phases/inputs/2026-10-05-SP2-review/01-numerics.md, finding 5.
 - **KI-035** [low, open, owner SP2 (the next step allowed to edit tests/test_scene.py), else standing] Fast-tier tests can exceed CLAUDE.md's 5 s mark when the machine is loaded: in SP2 step A3's runs tests/test_golden_1d.py took 5.84 s, tests/test_search.py 5.57 s, and tests/test_scene.py::test_run_path_modules_never_import_display_or_scene was reported over 5 s by one reviewer (2.8-2.9 s alone). Split the import check into a cheaper fast part and a slow part, or mark it slow, when a step may edit that file; the timings of the other two depend on load.
 - **KI-036** [low, open, owner the phase that next edits replay.py] `replay.py` (around line 1820) writes `bool(git.get("dirty"))` into the page, so a directory whose git state is unknown (dirty None, for example an exploratory app run started outside a repository) reads as clean on the replay page; the scene page and the app's banner show it as unknown. Found by the SP2 step A4 honesty review.
+- **KI-037** [low, open, owner SP2 (the manual's app chapter in A8)] Stopping `uv run python -m launchsim app` with Ctrl+Break: the server prints its stop lines, writes FAILED.txt for a running launch and exits 0, but `uv` itself exits 3221225786 (0xC000013A, a console-interrupt exit), so the shell sees a failure and its prompt may return before the server has finished. Ctrl+C is the documented stop; say so in the manual. Found by the SP2 step A4b gate.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 
