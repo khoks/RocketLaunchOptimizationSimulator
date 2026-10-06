@@ -1240,7 +1240,7 @@ decision.
 | A1a | Caveat wording at source (KI-029) | replay.py, plots.py, site/build.py, site/examples/ | per-clause tests (22 t sled, failed run, q-alpha below the baseline, paired pad, an offloaded push) | The gate of the design's section 4.3 (below the table); honesty review; the diff against the reference page recorded | [x] | 41f838a |
 | A2 | display.py, display files, payload, physics.md section | display.py, scene.py, configs/display/ | test_display.py (coast energy, angular momentum and the closed form; the coast reproduces the recorded staging-coast rows; separation state; row selection; transform), test_scene.py (strict JSON, nulls in the shaft, null payload, bound runs and cases, zero-offload pad control, offload caveats, refusals) | Independent comparison of the payload with the CSVs of the reference directory, silo_cold_s1, silo_cold_lag and silo_instant; the load-time checks pass on every run folder of every complete planar directory on disk (56 today), results in the session log; every display number sourced or assumed | [x] | 58d1ad2 |
 | A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [x] | 3f8b807 |
-| A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [ ] | |
+| A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [x] | a864a57 |
 | | Checkpoint 1: `launchsim scene` is complete | | | | | |
 | A4 | appform and `run_launch` | appform.py, app.py, config.py, summary.py | each preset resolves to the committed variant; every refusal one line and nothing written; key-by-key equality with `run_experiment`; faked-seam offload launch with a fresh and a cached pad; counting test; banner and both git states; one slow real launch with a stage-1 solve | Fast and slow suites; honesty review of the banner | [ ] | |
 | A4b | Server | app.py, cli.py | raw-socket guard table (the survey's 38 cases plus Sec-Fetch-Site, path decoding, body limits, two simultaneous launches); header table; injection test; leak test; Ctrl+Break subprocess test | Only 127.0.0.1 bound and a second server fails; no client path opened; an interrupted job leaves FAILED.txt; security review | [ ] | |
@@ -1729,8 +1729,26 @@ Also from the design's section 8:
   since scene.py may not import plots and a copy would give the caveats two sources).
   Fast suite 1468 passed, 35 deselected. KI-035 logged (fast-tier timings over 5 s under
   load). Commit 3f8b807.
-- Next: step A3b (scene part 2: marker regime and trace, MECO to cutoff, separated bodies,
-  fairing, two panels on one clock, selectors, ticker, the rate law, themes).
+- Step A3b (2026-10-06): two panels on one clock with a shared camera, flight to orbit, the
+  separated bodies, the rate law. Workflow: implementer; visual-QA and numerics, compliance
+  and security, honesty and watchability reviewers, three passes; fix rounds 2 and 3 (fix
+  round 1 lost to a server 529, its findings re-found and fixed later). The first gate
+  failed G5: at T+190 s nothing showed silo_cold_s1's fairing (its marker 0.14 px from the
+  vehicle at about 950 m/px; the close-up had stopped drawing the halves). Fix round 4: a
+  separated body near its vehicle is drawn on top with a leader label; the close-up keeps
+  the halves until they leave it; max-Q from the run's recorded metrics; short labels keep
+  "display only". Gate re-run (independent): pass on G1-G5 and S1-S5 (418 panel states
+  within the criterion-5 tolerances; close-up stack >= 121 px; nose moves 5.34, 7.78 and
+  4.45 px at the kicks; event windows play in >= 1.67 wall s; bodies 11 px; shared camera
+  exact; no request). Read of criterion 16: the kick is the model's instant pitch step at
+  kick_start (D-SP2-17), so the nose movement is measured from the row just before it.
+  For A7: separated bodies lose their label after their own impact time (447-505 s); the
+  close-up title lags the halves' exit by about 5 s; the payload's frame-caveat field
+  (for captureFrame) goes beyond A3b's brief and is reviewed in A6v. Default playback of
+  pad beside silo_cold_s1: 75 wall s. Fast suite 1479 passed, 35 deselected. Commit a864a57.
+- Checkpoint 1 reached: `launchsim scene` writes a complete two-panel scene page.
+- Next: step A4 (appform and run_launch: request parser, presets, experiment builder, the
+  composition with the cached pad, provenance, label and banner; no HTTP).
 
 ## 12. Deviations from the plan
 
