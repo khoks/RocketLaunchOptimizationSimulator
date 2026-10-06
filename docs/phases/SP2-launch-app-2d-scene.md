@@ -1239,7 +1239,7 @@ decision.
 | A1b | Pillow in the dev extra (KI-018) | pyproject.toml, uv.lock | - | Lock diff is that line only; exact golden tier passes; reference sha256 unchanged | [x] | 78eaefd |
 | A1a | Caveat wording at source (KI-029) | replay.py, plots.py, site/build.py, site/examples/ | per-clause tests (22 t sled, failed run, q-alpha below the baseline, paired pad, an offloaded push) | The gate of the design's section 4.3 (below the table); honesty review; the diff against the reference page recorded | [x] | 41f838a |
 | A2 | display.py, display files, payload, physics.md section | display.py, scene.py, configs/display/ | test_display.py (coast energy, angular momentum and the closed form; the coast reproduces the recorded staging-coast rows; separation state; row selection; transform), test_scene.py (strict JSON, nulls in the shaft, null payload, bound runs and cases, zero-offload pad control, offload caveats, refusals) | Independent comparison of the payload with the CSVs of the reference directory, silo_cold_s1, silo_cold_lag and silo_instant; the load-time checks pass on every run folder of every complete planar directory on disk (56 today), results in the session log; every display number sourced or assumed | [x] | 58d1ad2 |
-| A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [ ] | |
+| A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [x] | 3f8b807 |
 | A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [ ] | |
 | | Checkpoint 1: `launchsim scene` is complete | | | | | |
 | A4 | appform and `run_launch` | appform.py, app.py, config.py, summary.py | each preset resolves to the committed variant; every refusal one line and nothing written; key-by-key equality with `run_experiment`; faked-seam offload launch with a fresh and a cached pad; counting test; banner and both git states; one slow real launch with a stage-1 solve | Fast and slow suites; honesty review of the banner | [ ] | |
@@ -1712,8 +1712,25 @@ Also from the design's section 8:
   from the reference area, fairing 13.1 m by 5.2 m from SpaceX's Falcon 9 page; stage
   lengths, silo, pad and camera numbers assumed. Fast suite 1447 passed, 35 deselected.
   Commit 58d1ad2.
-- Next: step A3 (scene part 1: template, page contract, state hook, page writer, `scene`
-  command, single-panel camera, close-up, push to kick and the whole of silo_failed).
+- Step A3 (2026-10-06): templates/scene.html, scene.render_page and write_scene_page, the
+  `launchsim scene` command. Workflow: implementer; visual-QA and numerics reviewer,
+  compliance and page-security auditor, honesty auditor, three passes; three fix rounds.
+  Gate (independent): 70 #qa states of pad, silo_cold, silo_hot_ramp_on_track,
+  silo_cold_s1 and silo_failed (push start to kick end; silo_failed every 0.5 s) equal the
+  CSV within the criterion-5 tolerances; the painted base-to-nose angle equals the drawn
+  angle within 0.0000 deg; no request (static scan and a net log of a headless Edge load);
+  screenshots in both themes legible. Choices against the brief, kept: the CSP uses the
+  script's sha256 instead of 'unsafe-inline' (A3b must refresh it when the script
+  changes; the test prints the value); the page lists the payload's caveats once (they
+  already hold the offload caveats); the close-up scale is 160 px per current stack; a
+  minimal marker mode exists because the hook's contract names it. Open for later steps,
+  with the reason: the spent-stage and fairing paths, the trace and event markers (A3b);
+  the three model-caveat lines on a captured frame (A6v: the video server computes them,
+  since scene.py may not import plots and a copy would give the caveats two sources).
+  Fast suite 1468 passed, 35 deselected. KI-035 logged (fast-tier timings over 5 s under
+  load). Commit 3f8b807.
+- Next: step A3b (scene part 2: marker regime and trace, MECO to cutoff, separated bodies,
+  fairing, two panels on one clock, selectors, ticker, the rate law, themes).
 
 ## 12. Deviations from the plan
 
