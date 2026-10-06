@@ -15,6 +15,7 @@ does. Anything else (a bug in the simulator) keeps its traceback.
                       [--seconds S] [--width PX]
     launchsim replay <run_dir> [--runs NAME [NAME ...]] [--out PATH]
     launchsim scene <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--display PATH]
+    launchsim app [--port N] [--results-root PATH] [--open]
     launchsim --version
 
 ``--results-root`` defaults to ``<repo root>/results`` (the repository holding the
@@ -34,18 +35,30 @@ close-up of the vehicle, telemetry, events and caveats; it makes no request); th
 default output is ./<experiment>_<timestamp>_scene.html, never inside results/. The
 display files come from ``--display`` or else configs/display of the repository found
 above the working directory, then above the installed package.
+
+``app`` serves the local app on http://127.0.0.1:<port>/ (127.0.0.1 only; port 8765 by
+default, 0 picks a free one; a busy port is one ``error:`` line and exit 1, never another
+port) until Ctrl+C (or Ctrl+Break on Windows), which stops the server, marks a running
+launch FAILED and exits 0. Launches are exploratory and go to <results root>/app/; the
+default results root is <repo root>/results, the repository being the nearest one above
+the working directory, else above the installed package, that holds
+experiments/silo_offload_2d.yaml. ``--open`` opens the page in a new browser tab.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import signal
 import sys
+import webbrowser
+from collections.abc import Iterator
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import yaml
 
-from launchsim import __version__, plots, replay, run_data, scene, sim
+from launchsim import __version__, app, plots, replay, run_data, scene, sim
 from launchsim.compare import CHECK_NA
 from launchsim.config import OFFLOAD_GROSS_MODES, ResolvedExperiment, resolve_experiment
 from launchsim.results_io import OFFLOAD_QUOTED_FAILED, OFFLOAD_QUOTED_NO_CONTROL
@@ -198,6 +211,27 @@ def build_parser() -> argparse.ArgumentParser:
         "Default: configs/display of the repository above the working directory, else "
         "above the installed package.",
     )
+
+    srv = sub.add_parser(
+        "app",
+        help="Serve the local app (launch form, results, scene) on 127.0.0.1 until Ctrl+C.",
+    )
+    srv.add_argument(
+        "--port",
+        type=int,
+        default=app.DEFAULT_PORT,
+        metavar="N",
+        help="Port on 127.0.0.1 (default: %(default)s; 0 picks a free port). A busy port is "
+        "an error, never another port.",
+    )
+    srv.add_argument(
+        "--results-root",
+        default=None,
+        metavar="PATH",
+        help="Root of the results tree the app lists and launches into (<root>/app/). "
+        "Default: <repo root>/results.",
+    )
+    srv.add_argument("--open", action="store_true", help="Open the app page in a new browser tab.")
     return parser
 
 
@@ -567,6 +601,161 @@ def command_scene(args: argparse.Namespace) -> int:
     return 0
 
 
+MAX_PORT = 65535
+"""The largest TCP port."""
+
+
+def app_repo_root(starts: list[Path] | None = None) -> Path:
+    """The repository the app reads its experiments from: the nearest repository
+    (pyproject.toml) above the working directory, else above the installed package, that
+    holds app.OFFLOAD_EXPERIMENT. Raises CliError (one line) when neither does."""
+    for start in starts or [Path.cwd(), Path(app.__file__).resolve().parent]:
+        root = find_repo_root(start)
+        if root is not None and (root / app.OFFLOAD_EXPERIMENT).is_file():
+            return root
+    raise CliError(
+        f"{app.OFFLOAD_EXPERIMENT.as_posix()} not found in a repository above the working "
+        "directory or the installed package: start the app from a checkout of the repository"
+    )
+
+
+INTERRUPT_SIGNALS = tuple(
+    getattr(signal, name) for name in ("SIGINT", "SIGBREAK") if hasattr(signal, name)
+)
+"""The console's stop signals: Ctrl+C, and Ctrl+Break on Windows."""
+
+
+@contextlib.contextmanager
+def interrupts_ignored() -> Iterator[None]:
+    """INTERRUPT_SIGNALS ignored inside the block (a second Ctrl+C or Ctrl+Break while the
+    app stops does nothing), the previous handlers restored after it. Main thread only."""
+    previous: list[tuple[int, Any]] = []
+    try:
+        for sig in INTERRUPT_SIGNALS:
+            previous.append((sig, signal.signal(sig, signal.SIG_IGN)))
+        yield
+    finally:
+        for sig, handler in reversed(previous):
+            signal.signal(sig, handler)
+
+
+def stopping_line() -> str:
+    """What the app prints as soon as Ctrl+C or Ctrl+Break arrives."""
+    return (
+        "launchsim app: stopping; a launch that is writing gets up to "
+        f"{app.STOP_WRITING_GRACE_S:g} s to finish (further Ctrl+C is ignored)"
+    )
+
+
+STOPPED_BEFORE_SERVING_LINE = "launchsim app: stopped before it served"
+"""What the app prints for a Ctrl+C or Ctrl+Break during its start (before the URL)."""
+
+
+def app_server(args: argparse.Namespace) -> tuple[app.AppServer, Path, app.ServerStart]:
+    """(the bound server, the results root, the server-start record) of ``launchsim app``:
+    check the repository (the experiment files, ``app_repo_root``; the display files the
+    scene pages need, scene.DEFAULT_DISPLAY_DIR: CliError at start, not a 500 on every
+    scene), record the server start, read the basis, bind (CliError, one line, for a busy
+    or reserved port)."""
+    repo_root = app_repo_root()
+    display = repo_root / scene.DEFAULT_DISPLAY_DIR
+    if not display.is_dir():
+        raise CliError(
+            f"{scene.DEFAULT_DISPLAY_DIR.as_posix()} not found in {repo_root}: the scene pages "
+            "need it"
+        )
+    results = (
+        Path(args.results_root) if args.results_root is not None else repo_root / RESULTS_DIR_NAME
+    )
+    start = app.take_server_start(repo_root)
+    try:
+        basis = app.load_basis(repo_root, start)
+    except app.BasisError as exc:
+        raise CliError(str(exc)) from exc
+    try:
+        server = app.AppServer(
+            port=args.port,
+            basis=basis,
+            server_start=start,
+            results_root=results,
+            repo_root=repo_root,
+            display_dir=display,
+        )
+    except OSError as exc:
+        if app.port_unavailable(exc):
+            raise CliError(
+                f"port {args.port} on {app.BIND_HOST} is in use or reserved (another launchsim "
+                "app or another program on that port?); stop it or pass --port N (0 picks a "
+                "free one)"
+            ) from exc
+        raise CliError(
+            f"cannot listen on {app.BIND_HOST}:{args.port}: {type(exc).__name__}"
+        ) from exc
+    return server, results, start
+
+
+def command_app(args: argparse.Namespace) -> int:
+    """Serve the local app until Ctrl+C (or Ctrl+Break, handled as Ctrl+C on Windows from
+    the command's first statement): build the server (``app_server``; an interrupt
+    during that start prints STOPPED_BEFORE_SERVING_LINE and returns 0, the server closed
+    if it was bound), print the start lines, serve (``--open``: the URL opened once in
+    the browser). When serving ends by any exception, with further interrupts ignored
+    (``interrupts_ignored``), mark a running launch FAILED (``AppServer.stop_active_job``;
+    one still in its preflight is marked by the worker once its directory exists) and
+    close the server; on an interrupt print ``stopping_line`` first, then one stopped
+    line, and return 0; any other exception is raised again (``main`` prints its error
+    line)."""
+    if not 0 <= args.port <= MAX_PORT:
+        raise CliError(f"--port must be 0 to {MAX_PORT} (0 picks a free port)")
+    previous = None
+    if hasattr(signal, "SIGBREAK"):
+        previous = signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    built: tuple[app.AppServer, Path, app.ServerStart] | None = None
+    try:
+        try:
+            built = app_server(args)
+        except KeyboardInterrupt:
+            with interrupts_ignored():
+                if built is not None:
+                    built[0].close()
+                say(STOPPED_BEFORE_SERVING_LINE)
+            return 0
+        server, results, start = built
+        with server:
+            try:
+                git = start.git
+                state = app.tree_state(git.get("dirty"), git.get("hash"))
+                say(f"launchsim app: {server.url}   (this machine only)")
+                say(f"  results root: {results}")
+                say(
+                    f"  code: git {git.get('hash', 'no-git')} ({state}) as of server start; a "
+                    "launch is refused after a code change: restart the app"
+                )
+                say("  launches are exploratory, not findings")
+                say("  Ctrl+C stops the server; a running launch is stopped and marked FAILED")
+                sys.stdout.flush()
+                if args.open:
+                    webbrowser.open_new_tab(server.url)
+                server.serve_forever(poll_interval=app.SERVE_POLL_S)
+            except BaseException as exc:
+                interrupted = isinstance(exc, KeyboardInterrupt)
+                with interrupts_ignored():
+                    if interrupted:
+                        say(stopping_line())
+                        sys.stdout.flush()
+                    server.stop_active_job()
+                    server.close()
+                if not interrupted:
+                    raise
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGBREAK, previous)
+    stopped = server.stopped_dir
+    tail = "" if stopped is None else f"; the running launch is marked FAILED in {stopped}"
+    say(f"launchsim app: stopped{tail}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns the process exit code: 0 on success, 1 for a configuration or
     file-system error (CliError, OSError), printed as one ``error:`` line. argparse
@@ -579,6 +768,7 @@ def main(argv: list[str] | None = None) -> int:
         "animate": command_animate,
         "replay": command_replay,
         "scene": command_scene,
+        "app": command_app,
     }
     try:
         return commands[args.command](args)

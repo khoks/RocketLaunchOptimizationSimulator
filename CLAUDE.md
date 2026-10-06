@@ -20,6 +20,7 @@ Create these in Phase 0 and keep this list accurate.
 - Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]`
 - Animate a 2-D run (MP4/GIF): `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 - Interactive replay page (HTML): `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
+- Local app (127.0.0.1 only, Ctrl+C stops it): `uv run python -m launchsim app [--port N] [--results-root PATH] [--open]`
 - 2-D launch scene page (standalone HTML): `uv run python -m launchsim scene results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH] [--display PATH]`
 
 ## Layout
@@ -51,10 +52,10 @@ src/launchsim/
   display.py     display-only reconstructions of the 2-D scene, pure: the display-file models, tank levels and their load-time checks, separation state and vacuum coast, screen transform and camera law, row selection, held attitude; never model output
   scene.py       the 2-D scene: the data payload of a planar results directory (reads through run_data and configs/display/), its strict-JSON encoding, and the standalone page (render_page fills templates/scene.html; write_scene_page writes only the page, never inside a results tree)
   appform.py     the local app's form, pure: the basis of the two committed experiments, the request parser (whitelisted keys, enumerated choices, finite bounded numbers), the presets, build_experiment (experiment app, label exploratory, committed names only for committed configurations), the derived values and the one-line refusals
-  app.py         the local app's launch function: load_basis, the server-start git state and the code-change check, the in-memory pad cache, run_launch (results_io's pieces in run_experiment's order, FAILED.txt on any exception, no PNG plots) and the outcome of a written directory; the server comes in SP2 step A4b
+  app.py         the local app's launch function: load_basis, the server-start git state and the code-change check, the in-memory pad cache, run_launch (results_io's pieces in run_experiment's order, FAILED.txt on any exception, no PNG plots) and the outcome of a written directory; the server (AppServer and AppHandler: 127.0.0.1-only bind, the request guard, the routes, one launch worker, the run browser and results-panel data, the Ctrl+C and Ctrl+Break stop)
   optimize.py    ascent optimization (Phase 5)
   cli.py
-  templates/     package-data page templates: replay.html (the replay page; frozen in SP2) and scene.html (the standalone 2-D scene page that scene.py renders and writes; no request, state hook window.launchsimScene)
+  templates/     package-data page templates: replay.html (the replay page; frozen in SP2), scene.html (the standalone 2-D scene page that scene.py renders and writes; no request, state hook window.launchsimScene) and app.html (the app page; a placeholder until step A5)
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
 configs/display/   display-only geometry of the 2-D scene (one YAML per vehicle family, applies_to names the vehicles; scene.yaml for the camera, pixel thresholds and the generic shape); every number has `source:` or `assumed: true`; nothing here enters the model
 experiments/       one YAML per experiment: baseline, variants, sweep axes

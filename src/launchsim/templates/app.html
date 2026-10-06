@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>launch-assist-sim app</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDY0IDY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImxhdW5jaC1hc3Npc3Qtc2ltIj48dGl0bGU+bGF1bmNoLWFzc2lzdC1zaW08L3RpdGxlPjxjbGlwUGF0aCBpZD0iZmMiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9jbGlwUGF0aD48Y2xpcFBhdGggaWQ9ImZyIj48cGF0aCBkPSJNMjggMTguNUMyOCAxMiAzMC42IDcuNCAzMiA1LjVDMzMuNCA3LjQgMzYgMTIgMzYgMTguNVY0N0gyOFoiLz48L2NsaXBQYXRoPjxnIGNsaXAtcGF0aD0idXJsKCNmYykiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI0MSIgZmlsbD0iIzJkNWY4ZiIvPjxyZWN0IHk9IjQxIiB3aWR0aD0iNjQiIGhlaWdodD0iMjMiIGZpbGw9IiMxYzIyMjYiLz48cmVjdCB4PSIyNSIgeT0iNDEiIHdpZHRoPSIxNCIgaGVpZ2h0PSIyMyIgZmlsbD0iIzJiMzIzOCIvPjxwYXRoIGQ9Ik0wIDQyLjI1SDI1TTM5IDQyLjI1SDY0IiBzdHJva2U9IiNiMDlhNzgiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHBhdGggZD0iTTE5LjUgNDguNWg1LjVNMzkgNDguNWg1LjUiIHN0cm9rZT0iI2YwOGE0YiIgc3Ryb2tlLW9wYWNpdHk9IjEuMCIgc3Ryb2tlLXdpZHRoPSIzLjYiLz48cGF0aCBkPSJNMTkuNSA1Ni41aDUuNU0zOSA1Ni41aDUuNSIgc3Ryb2tlPSIjZjA4YTRiIiBzdHJva2Utb3BhY2l0eT0iMC41IiBzdHJva2Utd2lkdGg9IjMuNiIvPjxwYXRoIGQ9Ik0yOCAxOC41QzI4IDEyIDMwLjYgNy40IDMyIDUuNUMzMy40IDcuNCAzNiAxMiAzNiAxOC41VjQ3SDI4WiIgZmlsbD0iI2ZiZmJmOCIvPjxyZWN0IHg9IjMzLjYiIHk9IjQiIHdpZHRoPSIzIiBoZWlnaHQ9IjQ0IiBmaWxsPSIjZGZlNGUxIiBjbGlwLXBhdGg9InVybCgjZnIpIi8+PHJlY3QgeD0iMjgiIHk9IjI3IiB3aWR0aD0iOCIgaGVpZ2h0PSIyLjIiIGZpbGw9IiMxYzIyMjYiLz48cGF0aCBkPSJNMCA0MVY1MkExMiAxMiAwIDAgMCAxMiA2NEg1MkExMiAxMiAwIDAgMCA2NCA1MlY0MSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGM1NjVjIiBzdHJva2Utd2lkdGg9IjUiLz48L2c+PC9zdmc+Cg==">
+<style>
+/* Written by launchsim app (src/launchsim/templates/app.html): a placeholder of SP2 step A4b;
+   step A5 replaces it with the form, the launch progress, the results panel and the scene.
+   The server sends the Content-Security-Policy as a header, with this page's one inline script
+   by its sha256. Every value from the server reaches the page by textContent.
+   Rule for step A5 (exit criterion 17): GET / is the one route another site can reach, so on
+   load this page issues only GET requests to /api/form, /api/job and /api/results. It never
+   starts a launch, sends a dry run or requests /scene/... from location.hash, location.search,
+   document.referrer or a postMessage; those follow a user's click or key only. */
+:root {
+  --bg: #f1f2ee;
+  --panel: #fbfbf8;
+  --ink: #1c2226;
+  --ink-2: #4c565c;
+  --rule: #d6d9d1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161b1e;
+    --panel: #1c2226;
+    --ink: #eef0ea;
+    --ink-2: #b9c0bc;
+    --rule: #333c41;
+  }
+}
+html { background: var(--bg); color: var(--ink); }
+body {
+  margin: 0;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+header { display: flex; align-items: center; gap: 14px; }
+header svg { width: 48px; height: 48px; flex: none; }
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 16px; margin: 24px 0 8px; }
+p { margin: 8px 0; color: var(--ink-2); }
+code { font-family: ui-monospace, Consolas, monospace; color: var(--ink); }
+section { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 4px 16px 12px; margin-top: 16px; }
+ul { margin: 4px 0; padding-left: 20px; }
+li { margin: 3px 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="launch-assist-sim"><title>launch-assist-sim</title><clipPath id="mc"><rect width="64" height="64" rx="12"/></clipPath><clipPath id="mr"><path d="M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V46H28Z"/></clipPath><linearGradient id="mt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbf8" stop-opacity=".5"/><stop offset="1" stop-color="#fbfbf8" stop-opacity="0"/></linearGradient><g clip-path="url(#mc)"><rect width="64" height="41" fill="#2d5f8f"/><rect y="41" width="64" height="23" fill="#1c2226"/><rect x="25" y="41" width="14" height="23" fill="#2b3238"/><path d="M0 42.25H25M39 42.25H64" stroke="#b09a78" stroke-width="2.5"/><path d="M25.6 41V64M38.4 41V64" stroke="#b09a78" stroke-opacity=".55" stroke-width="1.2"/><path d="M19.5 47.5h5.5M39 47.5h5.5" stroke="#f08a4b" stroke-opacity="1.0" stroke-width="2.8"/><path d="M19.5 53.5h5.5M39 53.5h5.5" stroke="#f08a4b" stroke-opacity="0.62" stroke-width="2.8"/><path d="M19.5 59.5h5.5M39 59.5h5.5" stroke="#f08a4b" stroke-opacity="0.32" stroke-width="2.8"/><rect x="28" y="46" width="8" height="15" fill="url(#mt)"/><path d="M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V46H28Z" fill="#fbfbf8"/><rect x="33.6" y="4" width="3" height="43" fill="#dfe4e1" clip-path="url(#mr)"/><rect x="28" y="27" width="8" height="2.2" fill="#1c2226"/><path d="M0 41V52A12 12 0 0 0 12 64H52A12 12 0 0 0 64 52V41" fill="none" stroke="#4c565c" stroke-width="3"/></g></svg>
+<h1>launch-assist-sim: local app</h1>
+</header>
+<p>Serving at <code id="url">(loading)</code>, on this machine only.</p>
+<p>The launch form arrives in step A5.</p>
+<p id="exploratory"></p>
+<section>
+<h2>Results directories</h2>
+<p id="status">Loading the results directories...</p>
+<div id="groups"></div>
+</section>
+</div>
+<script type="application/json" id="app-data">__APP_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var data = JSON.parse(document.getElementById("app-data").textContent);
+  document.getElementById("url").textContent = data.url;
+  document.getElementById("exploratory").textContent =
+    "Every launch from this app is exploratory, not a finding.";
+  var status = document.getElementById("status");
+  var groups = document.getElementById("groups");
+
+  function rowText(row) {
+    var text = row.experiment + "/" + row.timestamp + ": " + row.state;
+    if (!row.playable && row.reason) { text += " (" + row.reason + ")"; }
+    if (row.description) { text += ". " + row.description; }
+    if (row.line && row.state !== "complete") { text += ". " + row.line; }
+    return text;
+  }
+
+  function show(listing) {
+    var total = 0;
+    listing.groups.forEach(function (group) {
+      var title = document.createElement("h2");
+      title.textContent = group.title + " (" + group.rows.length + ")";
+      groups.appendChild(title);
+      var list = document.createElement("ul");
+      group.rows.forEach(function (row) {
+        var item = document.createElement("li");
+        item.textContent = rowText(row);
+        list.appendChild(item);
+        total += 1;
+      });
+      groups.appendChild(list);
+    });
+    var others = listing.not_listed ? "; " + listing.not_listed + " other entries not listed" : "";
+    status.textContent = total + " directories" + others + ".";
+  }
+
+  fetch("/api/results", { cache: "no-store", credentials: "same-origin" })
+    .then(function (response) {
+      if (!response.ok) { throw new Error("HTTP " + response.status); }
+      return response.json();
+    })
+    .then(show)
+    .catch(function (error) {
+      status.textContent = "The results directories could not be loaded: " + error.message;
+    });
+})();
+</script>
+</body>
+</html>
