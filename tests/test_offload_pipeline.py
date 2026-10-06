@@ -1090,8 +1090,8 @@ def test_replay_shows_an_offload_run_beside_the_pad(tmp_path: Path) -> None:
     assert source["metrics"]["net_accel_g"] == 3.0
     assert source["config"]["assist"]["model"] == "constant_accel"
     note = source["note"]
-    assert note.startswith("offload case s1 of silo: 41.3 t less propellant (solved; 10.0%")
-    assert "8.0% of all" in note and "flying 1,000.0 kg" in note and "P_ref = 1,000.0 kg" in note
+    assert note.startswith("offload case s1 of silo: 41.26 t less propellant (solved; 10.04%")
+    assert "7.96% of all" in note and "flying 1,000.0 kg" in note and "P_ref = 1,000.0 kg" in note
     assert "paired pad of offload case s1" in replay.run_source(metrics, cfg, "s1__pad")["note"]
     control = replay.run_source(metrics, cfg, "pad__offload_stage1")["note"]
     assert control.startswith("pad control (stage1)")

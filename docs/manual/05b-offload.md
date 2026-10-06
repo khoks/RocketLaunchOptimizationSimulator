@@ -279,17 +279,25 @@ most four runs per page):
 uv run python -m launchsim replay results/silo_offload_2d/<timestamp> --runs pad silo_cold silo_cold_s1 silo_cold_s1__pad
 ```
 
-The page labels each offload run "(offload)" and describes it from metrics.json: how much
-propellant it carries less (solved or imposed, as a share of the stage-1 and total loads)
-and the payload it flies against the pad's full load at P_ref, or that it is a paired pad
-or a pad control. A caveat on the page says that what these runs measure is propellant
-saved at the same payload and orbit, not a payload change, and points to the summary
-section. That holds for a solved case's recorded run and for a pad control, which fly
-P_ref. It does not hold for a paired pad or a fixed case, which fly their own payload
-capacity, so their payload column is a payload change: the shipped paired pad
-`silo_cold_s1__pad` carries 24,652.4 kg, 1,402.0 kg short of P_ref. The page also rounds
-the offload to one decimal (41.3 t, 10.0% and 8.0% for the headline); the summary gives it
-in full. The site's copies of the shipped pages correct both. `animate` draws the same runs
+The page labels each run of the block by its kind, "(offload)" for a case's recorded run,
+"(paired pad)" and "(pad control)", and describes it from metrics.json: how much
+propellant a case carries less (solved or imposed, with the assumed stage-1 dry mass of a
+penalty row, as a share of the stage-1 or stage-2 and total loads, to two decimals: 41.26 t,
+10.04% and 7.96% for the headline) and the payload it flies against the pad's full load at
+P_ref; for a stage-2 or both-stage solve the figure quoted net of the pad control, a failed
+verification and the flags; for a paired pad the payload capacity it flies and its
+difference from P_ref; for a pad control what it found. A comparison caveat says what the
+runs shown measure: a case's recorded run and a pad control fly P_ref and measure
+propellant saved at the same payload and orbit, not a payload change, while a paired pad
+flies its own payload capacity and measures a payload change against P_ref (a fixed case
+likewise flies its own payload capacity): the shipped paired pad `silo_cold_s1__pad`
+carries 24,652.4 kg, 1,402.0 kg short of P_ref. The drive and structure caveats are built
+from the runs shown: what the prescribed drive's omissions do to their numbers, each pushed
+run's own load and peak felt g, and the assumed stage-1 dry mass a penalty row charges.
+The site's copies of the shipped pages add editorial sentences only (the pre-registered
+reading of the paired pad's shortfall, the bridge to the README-loads vehicle, the +8.1 t
+structure sentence and the size of the shaft-drag bias) and three canvas-label patches of
+the replay template (`site/build.py`). `animate` draws the same runs
 when named and labels them from the same offload record: its legend gives a solved case's
 or pad control's payload as "flies P_ref" with the propellant it carries less, and a paired
 pad's or fixed case's own P\* with its difference from P_ref. The stage-1 pad control,

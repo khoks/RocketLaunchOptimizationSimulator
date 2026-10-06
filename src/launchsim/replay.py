@@ -29,9 +29,23 @@ A selected run is an experiment run (metrics.json ``runs``, compared with the
 baseline), a bound re-run or its paired baseline (``bounds``: compared with the paired
 baseline, configured by resolved_config.yaml ``bound_runs``), a case (``cases``, its
 own settings, compared with nothing) or a run of the offload block (``offload.runs``,
-configured by ``offload_runs``: an offloaded run flying the reference payload, shown
-beside the full-load pad, its saving reported in summary.md); ``run_source`` finds
-which.
+configured by ``offload_runs``: a case's recorded run flying the reference payload,
+shown beside the full-load pad, its saving reported in summary.md; a paired pad, the
+pad with the same offload and no push, flying its own payload capacity; or a pad
+control); ``run_source`` finds which.
+
+The page's text is built from the run data and the metrics, never fixed (SP2 step A1a,
+D-SP2-23, KI-029): the drive caveat says what each omission of the assist model does to
+the numbers of the runs shown (``drive_caveat``), the structure caveat names each pushed
+run's own flown load and peak felt g and, for a penalty row, the assumed stage-1 dry mass
+its record charges (``structure_caveat``), an offload run's label and note say which kind
+it is, what it measures and how it is quoted (a stage-2 or both-stage solve net of the pad
+control, a failed verification read by its sign, a solve that found no offload, the
+flags, a pad control's own result: ``run_label``, ``replay_offload_note``,
+``offload_comparison_caveat``), and a
+directory the local app launched (metrics.json label EXPLORATORY_LABEL) gets
+EXPLORATORY_CAVEAT first. The scene page of SP2 reuses these functions, so the two pages
+cannot word a caveat differently.
 
 The page's template is package data (src/launchsim/templates/replay.html, shipped in
 the wheel by uv_build); its single placeholder REPLAY_DATA_TOKEN is replaced by the
@@ -52,9 +66,14 @@ from typing import Any
 import pandas as pd
 
 from launchsim import __version__, run_data
+from launchsim.compare import CHECK_NA
+from launchsim.config import OFFLOAD_GROSS_MODES
+from launchsim.metrics_planar import KICK_NONE
+from launchsim.offload import NO_OFFLOAD_STATUS
 from launchsim.phases import HOLD_KIND
+from launchsim.search import OK_STATUS, SEARCH_FAILED_STATUS
 from launchsim.summary import UPPER_BOUND_REASONS
-from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, t_to_kg
+from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, t_to_kg, to_percent
 
 
 class ReplayError(run_data.RunDataError):
@@ -88,6 +107,10 @@ REPLAY_TIME_DECIMALS = run_data.TIME_DECIMALS
 YARDSTICK_SHOWN_KG = 0.5
 """|ideal screening - screening yardstick| [kg] above which the page shows the summary's
 yardstick under the ideal screening (they differ when the yardstick basis is P0)."""
+PAYLOAD_DECIMALS = 1
+"""Decimals of every payload and payload difference [kg] the page writes (0.1 kg): the
+reference payload P_ref, a run's payload, a paired pad's or fixed case's difference from
+P_ref, the payload change and the screening estimates."""
 VERTICAL_TRACK_DEG = 90.0
 """Track angle [deg] of a vertical silo (assist.track.angle_deg)."""
 TRACK_ANGLE_TOL_DEG = 1e-6
@@ -98,6 +121,22 @@ DRY_MASS_PARAM = "vehicle.stages.stage1.dry_mass_t"
 """Sensitivity parameter whose +/- cases give dP*/d(stage-1 dry mass)."""
 INSERTED = "inserted"
 """metrics.json status of a run that reached the target orbit."""
+CONSTANT_ACCEL_MODEL = "constant_accel"
+"""Assist model of a prescribed-acceleration push (assist.model), under which the
+release speed and the payload do not depend on the carriage mass or the shaft drag."""
+VENTED_SHAFT = "vented"
+"""assist.shaft of a silo whose air column is not modelled (no shaft drag)."""
+EXPLORATORY_LABEL = "exploratory"
+"""metrics.json ``label`` of a directory launched from the local app's form (SP2,
+D-SP2-12); every other value, and no label, is a recorded experiment. config.py takes
+the value as an ExperimentLabel in step A4."""
+EXPLORATORY_CAVEAT = (
+    "EXPLORATORY app run, not a finding: launched from the local app's form, not from a "
+    "committed experiment file, and not pre-registered."
+)
+"""The first caveat of an exploratory directory's page (``is_exploratory``) and, as
+plots.EXPLORATORY_FOOTNOTE, the first footnote line of its animation: one string for the
+one mark (D-SP2-12, D-SP2-23)."""
 
 ROLE_RUN = run_data.ROLE_RUN
 ROLE_BOUND = run_data.ROLE_BOUND
@@ -194,10 +233,375 @@ def run_source(metrics: dict[str, Any], config: dict[str, Any], name: str) -> di
     """Where run ``name`` lives in metrics.json and resolved_config.yaml: role (ROLE_RUN,
     ROLE_BOUND, ROLE_PAIRED_BASELINE, ROLE_CASE or ROLE_OFFLOAD), its metrics, its
     comparison, the run it is compared with (None: not compared), its run block, its
-    vehicle name (None: the experiment's vehicle) and a note on what it is (for an
-    offload run ``offload_note``). Raises ReplayError for a run folder that metrics.json
-    does not describe (run_data.run_source)."""
-    return run_data.run_source(metrics, config, name, error=ReplayError, wording=REPLAY_WORDING)
+    vehicle name (None: the experiment's vehicle), a note on what it is and, for a run
+    of the offload block, its ``offload_kind`` (run_data.offload_role: OFFLOAD_CASE,
+    OFFLOAD_PAIRED_PAD or OFFLOAD_PAD_CONTROL; None otherwise). An offload run's note is
+    the page's own (``replay_offload_note``: two decimals, a paired pad said to fly its
+    own payload capacity), not run_data.offload_note's. Raises ReplayError for a run
+    folder that metrics.json does not describe (run_data.run_source)."""
+    out = run_data.run_source(metrics, config, name, error=ReplayError, wording=REPLAY_WORDING)
+    out["offload_kind"] = None
+    if out["role"] == ROLE_OFFLOAD:
+        offload = _mapping(metrics.get("offload"))
+        role = run_data.offload_role(offload, name)
+        out["offload_kind"] = None if role is None else role[0]
+        out["note"] = replay_offload_note(offload, name, str(metrics.get("baseline")))
+    return out
+
+
+def _tonnes(kg: float) -> str:
+    """'41.26 t' of a mass [kg], two decimals."""
+    return f"{float(kg_to_t(kg)):.2f} t"
+
+
+def _percent(fraction: float) -> str:
+    """'10.04%' of a fraction, two decimals."""
+    return f"{float(to_percent(fraction)):.2f}%"
+
+
+def offload_stage_word(record: Mapping[str, Any]) -> str | None:
+    """Which stage an offload case's propellant comes from, read from its fractions:
+    'stage-1' (a stage-2 fraction recorded as 0), 'stage-2' (a stage-1 fraction recorded
+    as 0), None when both stages carry some of it or a fraction is missing (results from
+    before the stage-2 fraction was written)."""
+    s1 = _finite(record.get("stage1_fraction"))
+    s2 = _finite(record.get("stage2_fraction"))
+    if s1 is None or s2 is None:
+        return None
+    if s2 == 0.0:
+        return "stage-1"
+    if s1 == 0.0:
+        return "stage-2"
+    return None
+
+
+def offload_shares(record: Mapping[str, Any]) -> str:
+    """The share clause of an offload case's note: '; 10.04% of the stage-1 load, 7.96%
+    of all' for a stage-1 offload; '; 29.68% of the stage-2 load, 6.15% of all' for a
+    stage-2 one (never '0.00% of the stage-1 load'); '; 8.91% of the stage-1 and 8.91% of
+    the stage-2 load, 8.91% of all' when both stages carry some; '' without the
+    fractions."""
+    s1 = _finite(record.get("stage1_fraction"))
+    s2 = _finite(record.get("stage2_fraction"))
+    tot = _finite(record.get("total_fraction"))
+    if tot is None or (s1 is None and s2 is None):
+        return ""
+    if s2 is not None and s2 > 0.0 and (s1 is None or s1 == 0.0):
+        return f"; {_percent(s2)} of the stage-2 load, {_percent(tot)} of all"
+    if s1 is None:
+        return ""
+    if s2 is not None and s2 > 0.0:
+        return (
+            f"; {_percent(s1)} of the stage-1 and {_percent(s2)} of the stage-2 load, "
+            f"{_percent(tot)} of all"
+        )
+    return f"; {_percent(s1)} of the stage-1 load, {_percent(tot)} of all"
+
+
+def offload_how(record: Mapping[str, Any], removed: float | None) -> str:
+    """How an offload case's propellant was taken out: 'solved', 'imposed' (a fixed
+    case), or, for a solve with a stage-2 pre-offload (the frontier case), '40.77 t
+    solved on stage 1 plus 2.00 t imposed on stage 2' (``stage2_preoffload_kg``, else
+    the gross total less the quoted stage-1 figure)."""
+    if record.get("kind") != run_data.OFFLOAD_SOLVED_KIND:
+        return "imposed"
+    imposed = _finite(record.get("stage2_preoffload_kg"))
+    if imposed is None and record.get("mode") in OFFLOAD_GROSS_MODES:
+        quoted = _finite(record.get("quoted_offload_kg"))
+        if quoted is not None and removed is not None:
+            imposed = removed - quoted
+    if imposed is None or imposed <= 0.0 or removed is None:
+        return "solved"
+    solved = _tonnes(removed - imposed)
+    return f"{solved} solved on stage 1 plus {_tonnes(imposed)} imposed on stage 2"
+
+
+def offload_quoted_clause(record: Mapping[str, Any]) -> str:
+    """How a solved stage-2 or both-stage case is quoted (D-SP1-10; summary.md's basis
+    row): '; quoted 31.39 t net of the pad control's 0.51 t (summary.md basis row: a
+    property of the vehicle model, not of the assist)' from ``quoted_offload_kg`` and
+    ``pad_control_offload_kg``; the record's own ``quoted_basis`` when nothing is quoted
+    ('not quoted: ...'); '' for a stage-1 solve (gross, the headline), a fixed case or a
+    record without the keys."""
+    if record.get("kind") != run_data.OFFLOAD_SOLVED_KIND:
+        return ""
+    mode = record.get("mode")
+    if mode is None or mode in OFFLOAD_GROSS_MODES:
+        return ""
+    quoted = _finite(record.get("quoted_offload_kg"))
+    basis = record.get("quoted_basis")
+    if quoted is None:
+        return f"; {basis}" if isinstance(basis, str) and basis else ""
+    control = _finite(record.get("pad_control_offload_kg"))
+    against = "" if control is None else f"'s {_tonnes(control)}"
+    return (
+        f"; quoted {_tonnes(quoted)} net of the pad control{against} (summary.md basis row: "
+        "a property of the vehicle model, not of the assist)"
+    )
+
+
+def has_flags(record: Mapping[str, Any]) -> bool:
+    """True when a case or pad-control record carries flags (a non-empty ``flags`` list)."""
+    flags = record.get("flags")
+    return isinstance(flags, Sequence) and not isinstance(flags, str) and bool(flags)
+
+
+def pad_control_record(offload: Mapping[str, Any], mode: Any) -> dict[str, Any] | None:
+    """The ``pad_controls`` record of metrics.json's ``offload`` block for ``mode``
+    (stage1, stage2 or both), or None when the block has none for it."""
+    for control in offload.get("pad_controls") or []:
+        control = _mapping(control)
+        if control.get("mode") == mode:
+            return control
+    return None
+
+
+def verification_reading(verification: Mapping[str, Any]) -> tuple[str, str, bool]:
+    """What a failed verification says about x*, the gross removal, read from the sign of
+    its P* - P_ref (``delta_kg`` against ``tolerance_kg``; RQ1-fuel-offload-2d
+    'Definition', docs/physics.md 'Independent verification'): (the size, ' (+15.36 kg
+    against 2.6 kg)' or '' without the numbers; the reading; whether it is the lower-bound
+    one). Above P_ref by more than the tolerance the independent search carries more than
+    P_ref at x*, so the solve left gamma* suboptimal and 'the gross removal is a flagged
+    lower bound' (the project's rule; silo_cold_s2's +15.36 kg). Below it by more than the
+    tolerance the independent search carried less than P_ref at x*, which the recorded run
+    (flying P_ref, inserted) contradicts, so nothing is a bound: 'the gross removal is
+    uncertain both ways, not a lower bound (...)'. Otherwise the verification search did
+    not end ok (or recorded no delta): 'the gross removal is unverified (the verification
+    search ended <status>)'."""
+    delta = _finite(verification.get("delta_kg"))
+    tol = _finite(verification.get("tolerance_kg"))
+    size = "" if delta is None or tol is None else f" ({delta:+.2f} kg against {tol:.1f} kg)"
+    if delta is not None and tol is not None and delta > tol:
+        return size, "the gross removal is a flagged lower bound", True
+    if delta is not None and tol is not None and delta < -tol:
+        return (
+            size,
+            "the gross removal is uncertain both ways, not a lower bound (the independent search "
+            "carried less than P_ref at this removal)",
+            False,
+        )
+    status = verification.get("status")
+    ended = "" if status in (None, OK_STATUS) else f" (the verification search ended {status})"
+    return size, f"the gross removal is unverified{ended}", False
+
+
+def offload_verdict_clause(
+    record: Mapping[str, Any], control: Mapping[str, Any] | None = None
+) -> str:
+    """The verdicts of a case's record. The verification verdict is on x*, the gross
+    removal (RQ1-fuel-offload-2d, 'Verification'), and depends on the sign of the
+    verification's P* - P_ref (``verification_reading``): '; verification failed (+15.36 kg
+    against 2.6 kg): the gross removal is a flagged lower bound' when the independent
+    search returned a payload above P_ref; '...: the gross removal is uncertain both ways,
+    not a lower bound (...)' when it returned one below; '...: the gross removal is
+    unverified (...)' when the search did not end ok. ``control`` is the pad control
+    record the case is quoted net of (a stage-2 or both-stage solve; None for a gross
+    figure): when it carries flags the net figure is said to be uncertain both ways (it
+    subtracts a flagged control), after the verification verdict when there is one. Then
+    '; 4 flags (summary.md, Flags)' when the case carries flags; '' for a passed,
+    unverified and unflagged case."""
+    text = ""
+    verification = _mapping(record.get("verification"))
+    failed = verification.get("passed") is False
+    flagged_control = control is not None and has_flags(control)
+    if failed:
+        size, reading, lower = verification_reading(verification)
+        text += f"; verification failed{size}: {reading}"
+        if flagged_control and lower:
+            text += (
+                " and the net figure, which also subtracts a flagged pad control, is uncertain "
+                "both ways"
+            )
+        elif flagged_control:
+            text += ", as is the net figure, which also subtracts a flagged pad control"
+    elif flagged_control:
+        text += "; the net figure subtracts a flagged pad control and is uncertain both ways"
+    if has_flags(record):
+        n = len(record["flags"])
+        text += f"; {n} flag{'' if n == 1 else 's'} (summary.md, Flags)"
+    return text
+
+
+def pad_control_result(record: Mapping[str, Any], with_flags: bool = True) -> str | None:
+    """What a pad control found, from its record: 'none found (status no_offload,
+    consistency pass; its recorded run at x = 0 ends 0.0016 kg short, a resolution
+    effect)' or '0.51 t (status ok)', then (``with_flags``) its verdict clause
+    (``offload_verdict_clause``: the flags); None for a record without ``offload_kg`` or
+    ``status``."""
+    offload = _finite(record.get("offload_kg"))
+    status = record.get("status")
+    if offload is None and status is None:
+        return None
+    none = status == NO_OFFLOAD_STATUS or (status is None and offload == 0.0)
+    text = "none found" if none else ("an unknown amount" if offload is None else _tonnes(offload))
+    verdicts = [] if status is None else [f"status {status}"]
+    verdict = record.get("consistency")
+    if isinstance(verdict, str) and verdict and verdict != CHECK_NA:
+        verdicts.append(f"consistency {verdict}")
+    inside = [", ".join(verdicts)] if verdicts else []
+    m_res = _finite(record.get("m_res_kg"))
+    if record.get("resolution_effect") is True and m_res is not None:
+        inside.append(
+            f"its recorded run at x = 0 ends {abs(m_res):.4f} kg short, a resolution effect"
+        )
+    if inside:
+        text += f" ({'; '.join(inside)})"
+    return text + (offload_verdict_clause(record) if with_flags else "")
+
+
+def payload_reading(delta: float, ref: str, imposed: bool) -> str:
+    """How a recorded payload stands against P_ref, for the page, from ``delta`` =
+    payload - P_ref [kg] (rounded to 0.1 kg) and ``ref``, how the sentence calls the
+    reference ('P_ref = 1,000.0 kg', or 'P_ref' when its value was just given): ' (41.4 kg
+    short of P_ref = 1,000.0 kg)', ' (10.0 kg above P_ref = 1,000.0 kg)' or ' (equal to
+    P_ref = 1,000.0 kg)' for a paired pad; for a fixed case (``imposed``) the sign carries
+    its reading (D-SP2-27): above P_ref the run carries more than the pad, so the imposed
+    offload is not the largest possible; short of it, a payload loss at that offload, not
+    a propellant saving."""
+    if delta == 0.0:
+        return f" (equal to {ref})"
+    if delta > 0.0:
+        why = ": it carries more than the pad, so the imposed offload is not the largest possible"
+        return f" ({delta:,.1f} kg above {ref}{why if imposed else ''})"
+    why = ": a payload loss at this offload, not a propellant saving"
+    return f" ({abs(delta):,.1f} kg short of {ref}{why if imposed else ''})"
+
+
+def penalty_added_kg(record: Mapping[str, Any]) -> float | None:
+    """The assumed stage-1 dry mass a penalty row charges on its run [kg], from the case
+    record: ``stage1_dry_mass_added_kg`` when it is above 0; 0.0 for a record whose
+    ``assumed_penalty`` is true but whose mass is unrecorded; None for a case without a
+    penalty (RQ1-fuel-offload-2d, 'Structural penalty rows and break-even': a parametric
+    assumption added to the assisted run only, not a sized structure)."""
+    added = _finite(record.get("stage1_dry_mass_added_kg"))
+    if added is not None and added > 0.0:
+        return added
+    return 0.0 if record.get("assumed_penalty") is True else None
+
+
+def penalty_mass_text(added_kg: float) -> str:
+    """'+8.1 t of stage-1 dry mass' (the tonnes as the findings write them: +2 t, +8.1 t);
+    'stage-1 dry mass of unrecorded size' for the 0.0 of ``penalty_added_kg``."""
+    if added_kg <= 0.0:
+        return "stage-1 dry mass of unrecorded size"
+    return f"+{float(kg_to_t(added_kg)):g} t of stage-1 dry mass"
+
+
+def penalty_clause(record: Mapping[str, Any]) -> str:
+    """' with an assumed +8.1 t of stage-1 dry mass' for a penalty row's note, after how
+    its propellant was taken out; '' for a case without a penalty."""
+    added = penalty_added_kg(record)
+    return "" if added is None else f" with an assumed {penalty_mass_text(added)}"
+
+
+def solve_outcome(record: Mapping[str, Any]) -> str | None:
+    """How a solved case's solve ended when it found no x*, so the note never reads like
+    a successful solve of 0.00 t: 'the solve found no offload (status no_offload)' (the
+    full load already falls short of P_ref; the recorded run is the one at x = 0), 'the
+    solve failed (status search_failed: edge)' with the ``solve.failure_kind`` when it is
+    recorded, 'the solve did not end ok (status <other>)' for any other status; None for
+    an ok solve, a record without a status, or a fixed case."""
+    if record.get("kind") != run_data.OFFLOAD_SOLVED_KIND:
+        return None
+    status = record.get("status")
+    if status in (None, OK_STATUS):
+        return None
+    if status == NO_OFFLOAD_STATUS:
+        return f"the solve found no offload (status {status})"
+    kind = _mapping(record.get("solve")).get("failure_kind")
+    detail = f"status {status}" + ("" if kind is None else f": {kind}")
+    verb = "failed" if status == SEARCH_FAILED_STATUS else "did not end ok"
+    return f"the solve {verb} ({detail})"
+
+
+def replay_offload_note(offload: Mapping[str, Any], name: str, baseline: str) -> str:
+    """What an offload run is, for the page, from metrics.json's ``offload`` block
+    (run_data.offload_role tells which): an offload case's recorded run (the propellant
+    it carries less, in tonnes, naming the stage when one stage carries it all, how it
+    was taken out (``offload_how``, with the assumed stage-1 dry mass of a penalty row,
+    ``penalty_clause``), its shares of the loads (``offload_shares``) and the payload [kg]
+    it flies against the reference payload; for a fixed case the payload's difference
+    from P_ref with its reading (``payload_reading``, D-SP2-27); for a stage-2 or
+    both-stage solve how it is quoted, net of the pad control (``offload_quoted_clause``);
+    a failed verification, a flagged pad control behind a net figure and the flags
+    (``offload_verdict_clause``); for a solve that found no x* (status no_offload or
+    search_failed) how it ended instead of an amount, with the recorded run at x = 0 when
+    there is one (``solve_outcome``)), a paired pad (the baseline with the case's offload
+    and no push, flying its own payload capacity, the recorded ``payload_kg``, against
+    P_ref) or a pad control with what it found (``pad_control_result``). Tonnes and
+    percentages carry two decimals, as every other page of the project prints them
+    (run_data.offload_note, the animation's wording, keeps one); payloads
+    PAYLOAD_DECIMALS."""
+    p_ref = _finite(offload.get("reference_payload_kg"), PAYLOAD_DECIMALS)
+    ref = f"{p_ref:,.1f} kg" if p_ref is not None else "the reference payload"
+    role = run_data.offload_role(offload, name)
+    if role is None:
+        return "a run of the offload block"
+    kind, record = role
+    if kind == run_data.OFFLOAD_PAD_CONTROL:
+        text = f"pad control ({record.get('mode')}): {baseline}'s own offload at P_ref = {ref}"
+        result = pad_control_result(record)
+        return text if result is None else f"{text}: {result}"
+    removed = _finite(record.get("total_offload_kg"))
+    stage = offload_stage_word(record)
+    if kind == run_data.OFFLOAD_PAIRED_PAD:
+        paired = _mapping(record.get("paired_pad"))
+        own = _mapping(_mapping(offload.get("runs")).get(name))
+        payload = _finite(own.get("payload_kg"), PAYLOAD_DECIMALS)
+        if payload is None:
+            payload = _finite(paired.get("payload_kg"), PAYLOAD_DECIMALS)
+        delta = _finite(paired.get("payload_delta_vs_reference_kg"), PAYLOAD_DECIMALS)
+        if delta is None and payload is not None and p_ref is not None:
+            delta = round(payload - p_ref, PAYLOAD_DECIMALS)
+        same = " ".join(
+            bit
+            for bit in ("" if removed is None else _tonnes(removed), stage or "", "offload")
+            if bit
+        )
+        text = (
+            f"paired pad of offload case {record.get('name')}: {baseline} with the same "
+            f"{same} and no push, flying its own payload capacity"
+        )
+        if payload is not None:
+            text += f", {payload:,.1f} kg"
+        if delta is None:
+            return text + f", not P_ref = {ref}"
+        return text + payload_reading(delta, f"P_ref = {ref}", imposed=False)
+    payload = _finite(record.get("payload_kg"), PAYLOAD_DECIMALS)
+    solved = record.get("kind") == run_data.OFFLOAD_SOLVED_KIND
+    outcome = solve_outcome(record)
+    if outcome is not None:
+        # no x*: no amount, no shares, nothing quoted; the flags still count
+        flies = "" if payload is None else f", its recorded run at x = 0 flying {payload:,.1f} kg"
+        return (
+            f"offload case {name} of {record.get('of')}: {outcome}{flies} against "
+            f"{baseline}'s full load at P_ref = {ref}, the same orbit"
+            f"{offload_verdict_clause(record)}"
+        )
+    what = "stage-2 propellant" if stage == "stage-2" else "propellant"
+    amount = (
+        "an unknown amount of propellant"
+        if removed is None
+        else f"{_tonnes(removed)} less {what} ({offload_how(record, removed)}"
+        f"{penalty_clause(record)}{offload_shares(record)})"
+    )
+    flies = "" if payload is None else f", flying {payload:,.1f} kg"
+    reading = ""
+    if not solved and payload is not None and p_ref is not None:
+        reading = payload_reading(round(payload - p_ref, PAYLOAD_DECIMALS), "P_ref", imposed=True)
+    control = None
+    if (
+        solved
+        and record.get("mode") not in (None, *OFFLOAD_GROSS_MODES)
+        and _finite(record.get("quoted_offload_kg")) is not None
+    ):
+        control = pad_control_record(offload, record.get("mode"))
+    return (
+        f"offload case {name} of {record.get('of')}: {amount}{flies} against "
+        f"{baseline}'s full load at P_ref = {ref}, the same orbit{reading}"
+        f"{offload_quoted_clause(record)}{offload_verdict_clause(record, control)}"
+    )
 
 
 def read_series(run_dir: Path, name: str) -> pd.DataFrame:
@@ -302,6 +706,40 @@ def push_accel_g(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float | Non
     return _finite(assist.get("net_accel_g")) if accel is None else accel
 
 
+def carriage_mass_kg(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float | None:
+    """The carriage mass of a run's push [kg]: the run's ``carriage_mass_kg`` metric
+    (metrics.json), else the assist block's ``carriage_mass_t`` (resolved_config.yaml;
+    results written before the metric existed). None when neither holds a finite
+    number."""
+    mass = _finite(m.get("carriage_mass_kg"))
+    if mass is not None:
+        return mass
+    tonnes = _finite(assist.get("carriage_mass_t"))
+    return None if tonnes is None else float(t_to_kg(tonnes))
+
+
+def is_vented(assist: Mapping[str, Any]) -> bool:
+    """True when a run's shaft is vented (assist.shaft; the only setting the config
+    takes today, so the air column is never modelled). No metric records it."""
+    return assist.get("shaft") == VENTED_SHAFT
+
+
+def kicked(m: Mapping[str, Any]) -> bool:
+    """True when a run's metrics record a pitch kick: ``kick_regime`` other than
+    KICK_NONE, else (results without the key) a finite ``kick_t_s``. A run whose stage 1
+    never lit (a failed ignition) has none."""
+    regime = m.get("kick_regime")
+    if regime is not None:
+        return str(regime) != KICK_NONE
+    return _finite(m.get("kick_t_s")) is not None
+
+
+def is_exploratory(metrics: Mapping[str, Any]) -> bool:
+    """True when metrics.json carries the EXPLORATORY_LABEL (an app run, D-SP2-12); a
+    recorded directory (label null, calibration or guidance_study) is not."""
+    return metrics.get("label") == EXPLORATORY_LABEL
+
+
 def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
     """The ground start of a run: 'pad start' or the assist geometry, drive (the net
     acceleration of ``push_accel_g``), carriage mass and exhaust impingement fraction
@@ -321,7 +759,7 @@ def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
     model = str(assist.get("model"))
     drive = f"{model} drive"
     accel = push_accel_g(assist, m)
-    if model == "constant_accel" and accel is not None:
+    if model == CONSTANT_ACCEL_MODEL and accel is not None:
         drive = f"{accel:g} g net push"
     parts = [where, drive]
     carriage = _finite(assist.get("carriage_mass_t"))
@@ -461,20 +899,148 @@ def calibration_caveat(vehicle: str) -> str:
     )
 
 
-def structure_caveat(runs: Sequence[dict[str, Any]], metrics: dict[str, Any]) -> str | None:
-    """The structural-mass caveat of the assisted runs: the peak felt g of the push and,
-    when sensitivity cases give dP*/d(stage-1 dry mass), the extra stage-1 structure
-    that would cancel each positive gain. Each run uses its own dry-mass cases; a run
-    without them borrows the slope of the first selected assisted run that has them
-    (else any run's) and the text says so. None without an assisted run."""
+def case_record(
+    source: Mapping[str, Any], offload: Mapping[str, Any], name: str
+) -> dict[str, Any] | None:
+    """The ``offload.cases`` record of run ``name`` when it is an offload case's recorded
+    run (``offload_kind`` of run_source is OFFLOAD_CASE; run_data.offload_role finds the
+    record); None for every other run."""
+    if source.get("offload_kind") != run_data.OFFLOAD_CASE:
+        return None
+    role = run_data.offload_role(offload, name)
+    return None if role is None else role[1]
+
+
+def flown_load_bits(
+    run: Mapping[str, Any], source: Mapping[str, Any], offload: Mapping[str, Any]
+) -> list[str]:
+    """The load a pushed run flew, as clauses: the stack mass [t] when the push began (the
+    ``liftoff_mass_kg`` metric, the stack before ignition, less the
+    ``hold_propellant_burned_kg`` of a run lit and held at the track start before the
+    push; for a cold start, or a run lit during the push, the liftoff mass itself) and,
+    for an offload case's recorded run, the propellant it carries less (the case's
+    ``total_offload_kg``, two decimals; nothing for a solve that found no offload); []
+    when neither is recorded."""
+    bits = []
+    mass = _finite(source["metrics"].get("liftoff_mass_kg"))
+    if mass is not None:
+        hold = _finite(source["metrics"].get("hold_propellant_burned_kg"))
+        if hold is not None and hold > 0.0:
+            mass -= hold
+        bits.append(f"{float(kg_to_t(mass)):.1f} t at push start")
+    record = case_record(source, offload, run["key"])
+    removed = None if record is None else _finite(record.get("total_offload_kg"))
+    if removed is not None and removed > 0.0:
+        bits.append(f"{float(kg_to_t(removed)):.2f} t less propellant")
+    return bits
+
+
+def flown_load_text(
+    run: Mapping[str, Any], source: Mapping[str, Any], offload: Mapping[str, Any]
+) -> str:
+    """A pushed run's name with the load it flew in parentheses (``flown_load_bits``):
+    'silo_cold_s1 (531.1 t at push start, 41.26 t less propellant)'; the name alone when
+    nothing is recorded."""
+    bits = flown_load_bits(run, source, offload)
+    return run["key"] + (f" ({', '.join(bits)})" if bits else "")
+
+
+def uncharged_structure_sentence(
+    assisted: Sequence[dict[str, Any]],
+    sources: Mapping[str, Mapping[str, Any]],
+    offload: Mapping[str, Any],
+) -> str:
+    """The sentence of the pushed runs that carry no structural penalty: 'No structural
+    mass is charged for the assist load case: ' then each run's own flown load
+    (``flown_load_text``) and its own peak felt g on the track (runs with the same peak
+    grouped, 'silo_cold_s1 (...) feels up to 4.0 g during the push'; a run without a
+    recorded peak 'rides the push with no recorded peak felt g')."""
+    by_peak: dict[str | None, list[str]] = {}
+    for r in assisted:
+        peak = None if r["felt_g_track"] is None else f"{r['felt_g_track']:.1f} g"
+        by_peak.setdefault(peak, []).append(flown_load_text(r, sources[r["key"]], offload))
+    clauses = []
+    for k, (peak, loads) in enumerate(item for item in by_peak.items() if item[0] is not None):
+        verb = "" if k else (" feels" if len(loads) == 1 else " feel")
+        clauses.append(f"{_names(loads)}{verb} up to {peak}")
+    text = "No structural mass is charged for the assist load case: "
+    if clauses:
+        text += " and ".join(clauses) + " during the push"
+    unknown = by_peak.get(None)
+    if unknown:
+        if clauses:
+            text += "; "
+        text += f"{_names(unknown)} {'rides' if len(unknown) == 1 else 'ride'} the push"
+        text += " with no recorded peak felt g"
+    return text + "."
+
+
+def penalty_structure_sentence(
+    charged: Sequence[dict[str, Any]],
+    penalties: Mapping[str, float],
+    sources: Mapping[str, Mapping[str, Any]],
+    offload: Mapping[str, Any],
+) -> str:
+    """The sentence of the pushed runs that are penalty rows (RQ1-fuel-offload-2d,
+    'Structural penalty rows and break-even'), each with its own flown load and peak felt
+    g: 'An assumed +8.1 t of stage-1 dry mass is charged on silo_cold_s1_dry+8.1t (578.5 t
+    at push start, 1.98 t less propellant, up to 4.0 g during the push): a parametric
+    assumption, not a sized structure; no structural model exists.' Runs with the same
+    penalty are grouped; another penalty follows as 'and an assumed +2 t of stage-1 dry
+    mass on ...'. ``penalties``: ``penalty_added_kg`` per run key."""
+    groups: dict[float, list[str]] = {}
+    for r in charged:
+        bits = flown_load_bits(r, sources[r["key"]], offload)
+        if r["felt_g_track"] is not None:
+            bits.append(f"up to {r['felt_g_track']:.1f} g during the push")
+        item = r["key"] + (f" ({', '.join(bits)})" if bits else "")
+        groups.setdefault(penalties[r["key"]], []).append(item)
+    pieces = [
+        f"an assumed {penalty_mass_text(kg)} {'is charged ' if k == 0 else ''}on {_names(items)}"
+        for k, (kg, items) in enumerate(groups.items())
+    ]
+    text = " and ".join(pieces)
+    closing = (
+        "a parametric assumption, not a sized structure"
+        if len(charged) == 1
+        else "parametric assumptions, not sized structures"
+    )
+    return f"{text[0].upper()}{text[1:]}: {closing}; no structural model exists."
+
+
+def structure_caveat(
+    runs: Sequence[dict[str, Any]],
+    metrics: dict[str, Any],
+    sources: Mapping[str, Mapping[str, Any]],
+) -> str | None:
+    """The structural-mass caveat of the assisted runs, worded from each run's record:
+    for the runs without a structural penalty, that none is charged, with each run's own
+    flown load and peak felt g (``uncharged_structure_sentence``); for a penalty row (an
+    offload case whose record charges an assumed stage-1 dry mass, ``penalty_added_kg``),
+    that this assumed mass is charged on it, an assumption and not a sized structure, and
+    that no structural model exists (``penalty_structure_sentence``); then, when
+    sensitivity cases give dP*/d(stage-1 dry mass), the extra stage-1 structure that
+    would cancel each positive gain. Each run uses its own dry-mass cases; a run without
+    them borrows the slope of the first selected assisted run that has them (else any
+    run's) and the text says so. None without an assisted run."""
     assisted = [r for r in runs if r["assisted"]]
     if not assisted:
         return None
-    peaks = [r["felt_g_track"] for r in assisted if r["felt_g_track"] is not None]
-    text = "No structural mass is charged for the assist load case"
-    if peaks:
-        text += f": the fully fuelled stack feels up to {max(peaks):.1f} g during the push"
-    text += "."
+    offload = _mapping(metrics.get("offload"))
+    penalties: dict[str, float] = {}
+    for r in assisted:
+        record = case_record(sources[r["key"]], offload, r["key"])
+        added = None if record is None else penalty_added_kg(record)
+        if added is not None:
+            penalties[r["key"]] = added
+    free = [r for r in assisted if r["key"] not in penalties]
+    charged = [r for r in assisted if r["key"] in penalties]
+    sentences = []
+    if free:
+        sentences.append(uncharged_structure_sentence(free, sources, offload))
+    if charged:
+        sentences.append(penalty_structure_sentence(charged, penalties, sources, offload))
+    text = " ".join(sentences)
     slopes = {k: v for k, v in dry_mass_slopes(metrics).items() if v[0] < 0.0}
     gains = [r for r in assisted if (r["payload_delta_kg"] or 0.0) > 0.0]
     if not slopes or not gains:
@@ -507,34 +1073,225 @@ def structure_caveat(runs: Sequence[dict[str, Any]], metrics: dict[str, Any]) ->
     return text
 
 
-def drive_caveat(
-    runs: Sequence[dict[str, Any]], sources: Mapping[str, Mapping[str, Any]]
+def _unless_all(names: Sequence[str], assisted: Sequence[str]) -> str:
+    """' (a and b)' naming the runs a clause applies to, '' when it applies to every
+    assisted run."""
+    return "" if list(names) == list(assisted) else f" ({_names(names)})"
+
+
+def paired_baseline_metrics(metrics: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """The ``paired_baseline_metrics`` of the bounds record whose ``run`` is ``name`` (the
+    metrics of the paired baseline a bound re-run is compared with); {} when metrics.json
+    has no such record."""
+    for bound in metrics.get("bounds") or []:
+        bound = _mapping(bound)
+        if bound.get("run") == name:
+            return _mapping(bound.get("paired_baseline_metrics"))
+    return {}
+
+
+def kick_partner(
+    name: str, source: Mapping[str, Any], metrics: Mapping[str, Any]
+) -> tuple[str, bool, float | None]:
+    """(name, paired, peak q-alpha [Pa rad]) of the run a pushed run's kick is judged
+    against: for a bound re-run (ROLE_BOUND) its paired baseline, the run it is compared
+    with (``compared_to``; its metrics from the bounds record, ``paired_baseline_metrics``;
+    ``paired`` True); for every other run the experiment baseline (``paired`` False). The
+    peak q-alpha is None when the partner has none recorded."""
+    baseline = str(metrics.get("baseline"))
+    partner = source.get("compared_to") if source.get("role") == ROLE_BOUND else None
+    if partner is None:
+        base_q = _mapping(_mapping(metrics.get("runs")).get(baseline)).get("peak_q_alpha")
+        return baseline, False, _finite(base_q)
+    return str(partner), True, _finite(paired_baseline_metrics(metrics, name).get("peak_q_alpha"))
+
+
+def kick_clause(
+    assisted: Sequence[str], sources: Mapping[str, Mapping[str, Any]], metrics: dict[str, Any]
 ) -> str | None:
-    """What the assist model leaves out (prescribed push, massless carriage, vented
-    shaft, kick without aerodynamic penalty), each naming its runs unless it applies to
-    every assisted run; None without an assisted run. ``sources``: run_source per run
-    (its metrics give the push's net acceleration, ``push_accel_g``)."""
+    """Whom the free kick favours, read from the metrics: a pushed run whose peak q-alpha
+    (``peak_q_alpha`` [Pa rad]) exceeds its comparison partner's is favoured by the kick
+    the model leaves unpenalised; one whose peak is not above it is not. The partner is
+    the run the page compares it with (``kick_partner``): the experiment baseline, or for
+    a bound re-run its paired baseline, which carries the same override, worded 'its
+    paired baseline pad__aero_bound's'. A run with no kick (``kicked``: a failed
+    ignition), without the metric, or whose partner has no peak q-alpha is left out; None
+    when nothing can be said."""
+    groups: dict[tuple[str, bool], dict[str, Any]] = {}
+    for name in assisted:
+        m = sources[name]["metrics"]
+        q = _finite(m.get("peak_q_alpha"))
+        if q is None or not kicked(m):
+            continue
+        partner, paired, partner_q = kick_partner(name, sources[name], metrics)
+        if partner_q is None:
+            continue
+        group = groups.setdefault((partner, paired), {"q": partner_q, "above": [], "below": []})
+        (group["above"] if q > partner_q else group["below"]).append((name, q))
+    if not groups:
+        return None
+
+    def names_of(items: Sequence[tuple[str, float]]) -> str:
+        """The run names of (name, peak q-alpha) items, joined as a list."""
+        return _names([name for name, _ in items])
+
+    def values(items: Sequence[tuple[str, float]]) -> str:
+        """The peak q-alpha values of (name, peak q-alpha) items, one decimal, as a list."""
+        return _names([f"{q:.1f}" for _, q in items])
+
+    def partner_text(partner: str, paired: bool, items: Sequence[tuple[str, float]]) -> str:
+        """Whose peak the items are judged against: 'the baseline pad's' or 'its (their)
+        paired baseline pad__aero_bound's'."""
+        if not paired:
+            return f"the baseline {partner}'s"
+        return f"{'its' if len(items) == 1 else 'their'} paired baseline {partner}'s"
+
+    pieces = []
+    for (partner, paired), group in groups.items():
+        above, below, partner_q = group["above"], group["below"], group["q"]
+        partner_value = f"{partner_q:.1f} Pa rad"
+        if above:
+            pieces.append(
+                f"favours {names_of(above)}, whose peak q-alpha is above "
+                f"{partner_text(partner, paired, above)} ({values(above)} against {partner_value})"
+            )
+        if below:
+            side = "below" if all(q < partner_q for _, q in below) else "not above"
+            where = (
+                f"it ({values(below)} Pa rad)"
+                if above
+                else f"{partner_text(partner, paired, below)} ({values(below)} against "
+                f"{partner_value})"
+            )
+            pieces.append(
+                f"does not favour {names_of(below)}, whose peak q-alpha is {side} {where}"
+            )
+    return "The free kick " + ", and ".join(pieces) + "."
+
+
+def drive_caveat(
+    runs: Sequence[dict[str, Any]],
+    sources: Mapping[str, Mapping[str, Any]],
+    metrics: dict[str, Any],
+) -> str | None:
+    """What the assist model leaves out (the prescribed push first, with each net
+    acceleration shown and its runs, then the massless carriage, the vented shaft, and,
+    for the runs that kicked, a kick without aerodynamic penalty), each naming its runs
+    unless it applies to every assisted run, then what each omission does to the numbers
+    shown, built from the runs shown. Under a prescribed-acceleration drive ('this drive'
+    when every pushed run shown is prescribed at one acceleration, 'these prescribed
+    drives' for several accelerations, else 'the prescribed drive(s) of <names>') the
+    release speed, the payload (when a prescribed run has one) and the offload (when a
+    prescribed run is an offload run) do not depend on the carriage mass or the shaft
+    drag; there a massless carriage biases the drive energy and peak power low and a
+    vented shaft's missing drag biases the drive energy, peak power and interface force
+    low (RQ3-silo-screening-2d, established for the prescribed drive only: a 22 t
+    carriage raises the drive force and leaves the interface force unchanged). Under any
+    other drive model the same omissions change the release speed itself, so no bias
+    direction is claimed: their size is said to be not established here. Then the kick
+    clause of ``kick_clause``. None without an assisted run, or when nothing applies.
+    ``sources``: run_source per run (its metrics give the push's net acceleration,
+    ``push_accel_g``, the carriage mass, ``carriage_mass_kg``, the kick regime and the
+    peak q-alpha); ``metrics``: the directory's metrics.json (the baseline's and the
+    paired baselines' peak q-alpha)."""
     assisted = [r["key"] for r in runs if r["assisted"]]
     if not assisted:
         return None
+    by_key = {r["key"]: r for r in runs}
+    pushes: dict[float | None, list[str]] = {}
     applies: dict[str, list[str]] = {}
+    prescribed: list[str] = []
+    others: dict[str, list[str]] = {}
+    massless: list[str] = []
+    vented: list[str] = []
+    omitted: dict[str, list[str]] = {}
+    kicking: list[str] = []
     for name in assisted:
         assist = run_assist(sources[name]["config"])
-        accel = push_accel_g(assist, sources[name]["metrics"])
-        if assist.get("model") == "constant_accel" and accel is not None:
-            part = f"the drive is a prescribed {accel:g} g push with no force or power limit"
-            applies.setdefault(part, []).append(name)
-        if _finite(assist.get("carriage_mass_t")) == 0.0:
+        m = sources[name]["metrics"]
+        accel = push_accel_g(assist, m)
+        is_prescribed = assist.get("model") == CONSTANT_ACCEL_MODEL
+        if is_prescribed:
+            prescribed.append(name)
+            pushes.setdefault(accel, []).append(name)
+        else:
+            others.setdefault(str(assist.get("model")), []).append(name)
+        if carriage_mass_kg(assist, m) == 0.0:
             applies.setdefault("the carriage is massless", []).append(name)
-        if assist.get("shaft") == "vented":
+            if is_prescribed:
+                massless.append(name)
+            else:
+                omitted.setdefault(name, []).append("the massless carriage")
+        if is_vented(assist):
             applies.setdefault("the shaft has no air drag", []).append(name)
-    parts = [
-        part if names == assisted else f"{part} ({_names(names)})"
-        for part, names in applies.items()
+            if is_prescribed:
+                vented.append(name)
+            else:
+                omitted.setdefault(name, []).append("the missing shaft drag")
+        if kicked(m):
+            kicking.append(name)
+    if kicking:
+        applies["the pitch kick has no aerodynamic penalty"] = kicking
+    sentences = []
+    parts = []
+    stated = [
+        f"a prescribed {accel:g} g push with no force or power limit" + _unless_all(names, assisted)
+        for accel, names in pushes.items()
+        if accel is not None
     ]
-    parts.append("the pitch kick has no aerodynamic penalty")
-    text = _names(parts)
-    return text[0].upper() + text[1:] + ". Each of these favours the assisted runs."
+    if stated:
+        parts.append("the drive is " + _names(stated))
+    parts += [part + _unless_all(names, assisted) for part, names in applies.items()]
+    if parts:
+        text = _names(parts)
+        sentences.append(text[0].upper() + text[1:] + ".")
+    if prescribed:
+        figures = ["the release speed"]
+        if any(by_key[n]["payload_kg"] is not None for n in prescribed):
+            figures.append("the payload")
+        if any(by_key[n]["role"] == ROLE_OFFLOAD for n in prescribed):
+            figures.append("the offload")
+        one_drive = len(pushes) == 1
+        if prescribed == assisted:
+            drive = "this drive" if one_drive else "these prescribed drives"
+        else:
+            drive = f"the prescribed drive{'' if one_drive else 's'} of {_names(prescribed)}"
+        verb = "does" if len(figures) == 1 else "do"
+        effects = (
+            f"Under {drive} {_names(figures)} {verb} not depend on the carriage mass or the "
+            "shaft drag"
+        )
+        biases = []
+        if massless:
+            biases.append(
+                "the massless carriage biases the drive energy and peak power low"
+                + _unless_all(massless, prescribed)
+            )
+        if vented:
+            biases.append(
+                "the missing shaft drag biases the drive energy, peak power and interface "
+                "force low" + _unless_all(vented, prescribed)
+            )
+        if biases:
+            effects += ": " + ", and ".join(biases)
+        sentences.append(effects + ".")
+    for model, names in others.items():
+        left_out = [n for n in names if n in omitted]
+        if not left_out:
+            continue
+        bits = list(dict.fromkeys(bit for n in left_out for bit in omitted[n]))
+        changed = "the release speed"
+        if any(by_key[n]["payload_kg"] is not None for n in left_out):
+            changed += " and the payload"
+        sentences.append(
+            f"For {_names(left_out)} ({model} drive) {_names(bits)} "
+            f"{'changes' if len(bits) == 1 else 'change'} {changed}; "
+            f"{'its' if len(bits) == 1 else 'their'} size is not established here."
+        )
+    kick = kick_clause(assisted, sources, metrics)
+    if kick is not None:
+        sentences.append(kick)
+    return " ".join(sentences) if sentences else None
 
 
 def model_caveat(
@@ -578,10 +1335,132 @@ def upper_bound_caveat(runs: Sequence[dict[str, Any]]) -> str | None:
     )
 
 
-def comparison_caveats(runs: Sequence[dict[str, Any]], baseline: str) -> list[str]:
+def _plural(names: Sequence[str], one: str, many: str) -> str:
+    """``one`` for a single name, ``many`` otherwise."""
+    return one if len(names) == 1 else many
+
+
+def offload_comparison_caveat(
+    runs: Sequence[dict[str, Any]],
+    baseline: str,
+    sources: Mapping[str, Mapping[str, Any]],
+    metrics: dict[str, Any],
+) -> str | None:
+    """What the selected runs of the offload block measure, by kind
+    (``offload_kind`` of run_source): a solved stage-1 case's recorded run and a pad
+    control fly P_ref and measure propellant saved at the same payload and orbit, not a
+    payload change (the control being what the baseline alone saves without a push, with
+    what it found, ``pad_control_result``); a solved stage-2 or both-stage case flies
+    P_ref and measures propellant the vehicle model does without, quoted net of the pad
+    control as a property of the model's stage-2 sizing and guidance, not the assist's
+    stage-1 headline (D-SP1-10; summary.md's basis row); a fixed case imposes its offload
+    and flies its own payload capacity, a payload change at that offload; a paired pad
+    (the baseline with the case's offload and no push) flies its own payload capacity
+    and measures a payload change against P_ref, not propellant saved. One sentence per
+    kind shown, with the runs named when more than one kind is; None without an offload
+    run."""
+    offload = [r["key"] for r in runs if r["role"] == ROLE_OFFLOAD]
+    if not offload:
+        return None
+    block = _mapping(metrics.get("offload"))
+    p_ref = _finite(block.get("reference_payload_kg"), PAYLOAD_DECIMALS)
+    ref = f"P_ref = {p_ref:,.1f} kg" if p_ref is not None else "P_ref, the reference payload"
+    cases = {str(c.get("run")): c for c in map(_mapping, block.get("cases") or [])}
+    kinds: dict[str, list[str]] = {"at_ref": [], "net": [], "fixed": [], "paired": []}
+    controls: list[str] = []
+    for name in offload:
+        kind = sources[name].get("offload_kind")
+        case = cases.get(name, {})
+        if kind == run_data.OFFLOAD_PAIRED_PAD:
+            kinds["paired"].append(name)
+        elif kind == run_data.OFFLOAD_CASE and case.get("kind") != run_data.OFFLOAD_SOLVED_KIND:
+            kinds["fixed"].append(name)
+        elif (
+            kind == run_data.OFFLOAD_CASE
+            and case.get("mode") is not None
+            and case.get("mode") not in OFFLOAD_GROSS_MODES
+        ):
+            kinds["net"].append(name)
+        else:
+            kinds["at_ref"].append(name)
+            if kind == run_data.OFFLOAD_PAD_CONTROL:
+                controls.append(name)
+    shown = {k: v for k, v in kinds.items() if v}
+
+    def sentence(kind: str, names: Sequence[str], subject: str) -> str:
+        """What the runs of one kind measure, with ``subject`` ('it', 'they' or the names)
+        and the verbs agreeing with their number."""
+        one = len(names) == 1
+        its, s = ("its", "") if one else ("their", "s")
+        if kind == "at_ref":
+            return (
+                f"{subject} {'flies' if one else 'fly'} {ref} and "
+                f"{'measures' if one else 'measure'} propellant saved at the same payload and "
+                "orbit, not a payload change (summary.md, 'Propellant saved at fixed payload', "
+                "with its caveats)"
+            )
+        if kind == "net":
+            return (
+                f"{subject} {'flies' if one else 'fly'} {ref} and "
+                f"{'measures' if one else 'measure'} propellant the vehicle model does "
+                "without, quoted net of the pad control as a property of the model's stage-2 "
+                "sizing and guidance, not the assist's stage-1 headline (summary.md, basis row, "
+                "with its caveats)"
+            )
+        if kind == "fixed":
+            return (
+                f"{subject} {'imposes' if one else 'impose'} {its} offload and "
+                f"{'flies' if one else 'fly'} {its} own payload capacity: {its} figure is that "
+                f"payload against {ref}, a payload change at the imposed offload"
+            )
+        return (
+            f"{subject} {'is' if one else 'are'} the paired pad{s} ({baseline} with the same "
+            f"offload and no push), {'flies' if one else 'fly'} {its} own payload capacity and "
+            f"{'measures' if one else 'measure'} a payload change ({its} payload against {ref}), "
+            "not propellant saved"
+        )
+
+    text = (
+        f"{_names(offload)} {_plural(offload, 'is a run', 'are runs')} of the offload block, "
+        f"not compared with {baseline} here"
+    )
+    if len(shown) == 1:
+        (kind, names), *_ = shown.items()
+        text += ": " + sentence(kind, names, "it" if len(names) == 1 else "they") + "."
+    else:
+        text += ". " + " ".join(f"{sentence(k, v, _names(v))}." for k, v in shown.items())
+    if controls:
+        found: dict[str, str] = {}
+        for name in controls:
+            role = run_data.offload_role(block, name)
+            result = None if role is None else pad_control_result(role[1], with_flags=False)
+            if result is not None:
+                found[name] = result
+        if not found:
+            what = ""
+        elif len(controls) == 1:
+            what = f": {found[controls[0]]}"
+        else:
+            what = ": " + _names(
+                [f"{found[n]} for {n}" if n in found else f"unrecorded for {n}" for n in controls]
+            )
+        text += (
+            f" {_names(controls)} {_plural(controls, 'is', 'are')} {baseline}'s own pad "
+            f"control{_plural(controls, '', 's')} at P_ref, what the pad alone saves without a "
+            f"push (summary.md, 'Pad controls'){what}."
+        )
+    return text
+
+
+def comparison_caveats(
+    runs: Sequence[dict[str, Any]],
+    baseline: str,
+    sources: Mapping[str, Mapping[str, Any]],
+    metrics: dict[str, Any],
+) -> list[str]:
     """What bound re-runs and cases are compared with: a bound re-run with its paired
-    baseline (same override), a paired baseline and a case with nothing; an offload run
-    flies less propellant, its saving reported in summary.md, not on the page."""
+    baseline (same override), a paired baseline and a case with nothing; what each run of
+    the offload block measures (``offload_comparison_caveat``)."""
     out = []
     bounds = [f"{r['key']} with {r['compared_to']}" for r in runs if r["role"] == ROLE_BOUND]
     if bounds:
@@ -604,15 +1483,9 @@ def comparison_caveats(runs: Sequence[dict[str, Any]], baseline: str) -> list[st
                 f"{_names(names)} {what}, not compared with {baseline}: no payload change "
                 "or screening estimate is shown."
             )
-    offload = [r["key"] for r in runs if r["role"] == ROLE_OFFLOAD]
-    if offload:
-        one = len(offload) == 1
-        out.append(
-            f"{_names(offload)} {'is a run' if one else 'are runs'} of the offload block, not "
-            f"compared with {baseline} here: what {'it measures' if one else 'they measure'} "
-            "is propellant saved at the same payload and orbit, not a payload change "
-            "(summary.md, 'Propellant saved at fixed payload', with its caveats)."
-        )
+    offload = offload_comparison_caveat(runs, baseline, sources, metrics)
+    if offload is not None:
+        out.append(offload)
     return out
 
 
@@ -624,18 +1497,20 @@ def caveats(
     vehicle: str,
 ) -> list[str]:
     """The 'read before quoting' list for the selected runs, each item conditional on
-    the runs, their vehicles and the experiment."""
+    the runs, their vehicles and the experiment; EXPLORATORY_CAVEAT first for a directory
+    the local app launched (``is_exploratory``), nothing extra for a recorded one."""
     baseline = str(metrics.get("baseline"))
     vehicles = list(dict.fromkeys(sources[r["key"]]["vehicle"] or vehicle for r in runs))
-    out = [model_caveat(runs, sources, base_cfg), *map(calibration_caveat, vehicles)]
+    out = [EXPLORATORY_CAVEAT] if is_exploratory(metrics) else []
+    out += [model_caveat(runs, sources, base_cfg), *map(calibration_caveat, vehicles)]
     for item in (
-        structure_caveat(runs, metrics),
-        drive_caveat(runs, sources),
+        structure_caveat(runs, metrics, sources),
+        drive_caveat(runs, sources, metrics),
         upper_bound_caveat(runs),
     ):
         if item is not None:
             out.append(item)
-    out += comparison_caveats(runs, baseline)
+    out += comparison_caveats(runs, baseline, sources, metrics)
     yard = [r["key"] for r in runs if r["dashed"]]
     if yard:
         one = len(yard) == 1
@@ -673,7 +1548,8 @@ def closeup_notes(
             text += f" start{'s' if len(names) == 1 else ''} at ground level"
         exit_at = "the silo mouth" if vertical else "the end of the track"
         if v_exit is not None and push is not None:
-            text += f" and leave {exit_at} at {v_exit:.1f} m/s after {push:.1f} s"
+            leave = "leaves" if len(names) == 1 else "leave"
+            text += f" and {leave} {exit_at} at {v_exit:.1f} m/s after {push:.1f} s"
         notes.append(text + ".")
     held = [r for r in runs if r["phase"] and r["phase"][0] == HOLD_KIND]
     on_pad = [r["key"] for r in held if not r["assisted"]]
@@ -691,7 +1567,7 @@ def closeup_notes(
     vented = [
         r["key"]
         for r in runs
-        if r["assisted"] and run_assist(sources[r["key"]]["config"]).get("shaft") == "vented"
+        if r["assisted"] and is_vented(run_assist(sources[r["key"]]["config"]))
     ]
     if vented:
         notes.append(
@@ -742,14 +1618,28 @@ ROLE_LABELS = {
     ROLE_CASE: "case",
     ROLE_OFFLOAD: "offload",
 }
-"""Label suffix of a run by role (an experiment run or a bound re-run has none)."""
+"""Label suffix of a run by role (an experiment run or a bound re-run has none); a run
+of the offload block takes OFFLOAD_LABELS' suffix for its kind instead when the block
+names it."""
+OFFLOAD_LABELS = {
+    run_data.OFFLOAD_CASE: "offload",
+    run_data.OFFLOAD_PAIRED_PAD: "paired pad",
+    run_data.OFFLOAD_PAD_CONTROL: "pad control",
+}
+"""Label suffix of a run of the offload block by kind (run_data.offload_role): an
+offload case's recorded run, the paired pad of a case (the baseline with the same
+offload and no push, flying its own payload capacity) or a pad control."""
 
 
-def run_label(name: str, role: str, baseline: bool) -> str:
-    """The run's chip and table label: 'pad (baseline)', 'alt_185 (case)', 'silo'."""
+def run_label(name: str, role: str, baseline: bool, offload_kind: str | None = None) -> str:
+    """The run's chip and table label: 'pad (baseline)', 'alt_185 (case)', 'silo',
+    'silo_s1 (offload)', 'silo_s1__pad (paired pad)', 'pad__offload_stage1 (pad
+    control)'. ``offload_kind``: the run_source key of a run of the offload block."""
     if baseline:
         return f"{name} (baseline)"
     suffix = ROLE_LABELS.get(role)
+    if role == ROLE_OFFLOAD and offload_kind in OFFLOAD_LABELS:
+        suffix = OFFLOAD_LABELS[offload_kind]
     return name if suffix is None else f"{name} ({suffix})"
 
 
@@ -785,7 +1675,7 @@ def run_record(
     ]
     record: dict[str, Any] = {
         "key": name,
-        "label": run_label(name, source["role"], baseline),
+        "label": run_label(name, source["role"], baseline, source.get("offload_kind")),
         "detail": "; ".join(part for part in detail if part),
         "role": source["role"],
         "compared_to": source["compared_to"],
@@ -798,14 +1688,16 @@ def run_record(
         "inserted": inserted,
         **run_series(frame),
         "events": run_events(run_dir / name / run_data.EVENTS_FILE, offset_s),
-        "payload_kg": _finite(m.get("payload_kg"), 1),
-        "payload_delta_kg": _finite(comp.get("payload_delta_kg"), 1) if compared else None,
+        "payload_kg": _finite(m.get("payload_kg"), PAYLOAD_DECIMALS),
+        "payload_delta_kg": _finite(comp.get("payload_delta_kg"), PAYLOAD_DECIMALS)
+        if compared
+        else None,
         "ideal_screening_kg": _finite(
-            comp.get("ideal_screening_payload_at_release_speed_at_pbase_kg"), 1
+            comp.get("ideal_screening_payload_at_release_speed_at_pbase_kg"), PAYLOAD_DECIMALS
         )
         if compared
         else None,
-        "screening_yardstick_kg": _finite(comp.get("screening_yardstick_kg"), 1)
+        "screening_yardstick_kg": _finite(comp.get("screening_yardstick_kg"), PAYLOAD_DECIMALS)
         if compared
         else None,
         "upper_bound": upper_bound,
@@ -856,7 +1748,10 @@ def subtitle_text(
     sources: Mapping[str, Mapping[str, Any]],
 ) -> str:
     """The page subtitle: experiment, vehicle and orbit (naming runs that fly another
-    vehicle or aim elsewhere), run count, the assisted runs and the baseline."""
+    vehicle or aim elsewhere), run count, the assisted runs and the baseline: compared
+    against, by name, when it is one of the records; said to be absent, without its name,
+    otherwise (design 4.3: the subtitle does not name a baseline that is not on the
+    page)."""
     other_vehicle = [
         r["key"] for r in records if (sources[r["key"]]["vehicle"] or vehicle) != vehicle
     ]
@@ -872,10 +1767,13 @@ def subtitle_text(
     if assisted:
         one = len(assisted) == 1
         text += f"; {_names(assisted)} {'starts' if one else 'start'} with a ground assist"
-    return text + (
+    text += (
         ". Replay the simulated flights side by side, scrub to any moment, and compare "
-        f"what each run carries to orbit against the baseline, {baseline}."
+        "what each run carries to orbit"
     )
+    if any(r["key"] == baseline for r in records):
+        return text + f" against the baseline, {baseline}."
+    return text + " (the baseline is not on this page)."
 
 
 def replay_data(run_dir: Path, runs: Sequence[str] | None) -> dict[str, Any]:

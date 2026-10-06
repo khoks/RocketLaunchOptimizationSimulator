@@ -56,6 +56,7 @@ from launchsim.phases.planar import (
     LTG_BURN,
     VERTICAL_RISE,
 )
+from launchsim.replay import EXPLORATORY_CAVEAT, EXPLORATORY_LABEL
 from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
@@ -1029,10 +1030,22 @@ def calibration_caveat(vehicle_name: str | None) -> str:
     return f"{who} calibrates {gap:+.1f}% {side} on payload{band} ({note})."
 
 
-def animation_caveats(runs: Sequence[AnimationRun], vehicle_name: str | None) -> list[str]:
+EXPLORATORY_FOOTNOTE = EXPLORATORY_CAVEAT
+"""The footnote line prepended for a directory the local app launched (metrics.json
+label replay.EXPLORATORY_LABEL; D-SP2-12): the replay page's EXPLORATORY_CAVEAT, the
+same string (D-SP2-23: one source per caveat; it ends 1,167 px into the 1,261 px of a
+1280 px frame, measured by the test). Step A4 moves the label value to
+config.ExperimentLabel and drops this module's import of replay."""
+
+
+def animation_caveats(
+    runs: Sequence[AnimationRun], vehicle_name: str | None, label: str | None = None
+) -> list[str]:
     """The three footnote lines: the model; its limits and, when a run has an assist
     push, the structural caveat of the push load (the peak felt axial g of the ASSIST
-    rows); the vehicle's calibration and the replay disclaimer."""
+    rows); the vehicle's calibration and the replay disclaimer. ``label``: the
+    directory's metrics.json ``label``; EXPLORATORY_LABEL puts EXPLORATORY_FOOTNOTE
+    first (four lines), any other value or None adds nothing."""
     first = (
         "Planar 2-D model (rotating spherical Earth, ICAO atmosphere, drag); "
         "sweep-optimized guidance, not optimal control."
@@ -1042,7 +1055,10 @@ def animation_caveats(runs: Sequence[AnimationRun], vehicle_name: str | None) ->
     if peaks:
         second += f"; no structural mass for the {max(peaks):.1f} g push load"
     third = calibration_caveat(vehicle_name) + " A model replay, not a design result."
-    return [first, second + ".", third]
+    lines = [first, second + ".", third]
+    if label == EXPLORATORY_LABEL:
+        lines.insert(0, EXPLORATORY_FOOTNOTE)
+    return lines
 
 
 def _readout_top(n_runs: int) -> float:
@@ -1133,7 +1149,7 @@ class _AscentFigure:
         self.fig.text(
             ANIMATION_GRID["left"],
             0.012,
-            _plot_text("\n".join(animation_caveats(runs, vehicle))),
+            _plot_text("\n".join(animation_caveats(runs, vehicle, label=metrics.get("label")))),
             fontsize=FONT_FOOTNOTE_PT,
             color=ANIMATION_FOOTNOTE_COLOR,
             va="bottom",

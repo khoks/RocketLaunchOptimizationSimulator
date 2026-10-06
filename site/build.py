@@ -13,8 +13,8 @@ The site is static. This script:
    The replay pages in ``examples/`` (written by ``launchsim replay``, whose template belongs
    to the simulator) get the site's frame added on the way: a favicon, a top bar back to the
    gallery and the home page, the all-rights-reserved notice and the site's contrast tokens
-   (``site/templates/replay-frame.html``), plus the fixes in ``REPLAY_TEXT_FIXES`` and
-   ``REPLAY_PAGE_FIXES``;
+   (``site/templates/replay-frame.html``), plus the template patches in
+   ``REPLAY_TEXT_FIXES`` and the editorial additions in ``REPLAY_PAGE_FIXES``;
    the files in ``site/examples/`` stay as written. Command code blocks in the manual wrap
    at spaces; console output, the usage synopsis and file trees scroll sideways;
 4. writes the "Last updated" stamp (commit date and hash) between the
@@ -111,33 +111,28 @@ TREEPROCESSOR_PRIORITY = 7  # after inline links exist (20), before toc permalin
 # in <span class="nb"> (site.css: nowrap), as the landing page, deck and gallery do by hand.
 NB_TERM_RE = re.compile(r"((?<![\w-])(?:[1-6]-D(?:OF)?|[Ss]tage-[12]|max-Q|q-alpha)(?![\w-]))")
 NB_SKIP_TAGS = frozenset({"code", "pre", "script", "style"})
-# Wording fixes for the replay pages, applied while they are copied (the files in
-# site/examples/ stay as `launchsim replay` wrote them). The replay template's drive caveat
-# ends "Each of these favours the assisted runs.", which reads, next to the payload numbers,
-# as if the massless carriage and the missing shaft drag raised the payload. Under the
-# prescribed-acceleration drive they do not (README "Silo air", RQ3-silo-screening-2d): they
-# bias the drive energy, peak power and interface force low, while the free kick does favour
-# the silo runs. Drop the entry once src/launchsim/replay.py (drive_caveat) says this itself
-# and the pages are regenerated.
+# Patches for the replay pages, applied while they are copied (the files in site/examples/
+# stay as `launchsim replay` wrote them). Since SP2 step A1a (D-SP2-23, KI-029) the pages'
+# caveat text is fixed at source in src/launchsim/replay.py (the drive caveat built from the
+# runs shown, the structure caveat naming each pushed run's own load, the paired-pad label
+# and note, two-decimal offload figures, the subtitle, "leaves"), so no wording pair remains
+# here. What remains in REPLAY_TEXT_FIXES is three JavaScript patches of the replay template
+# (src/launchsim/templates/replay.html is frozen for SP2, D-SP2-21; its sha256 is pinned by
+# tests/test_caveat_wording.py::test_replay_template_is_frozen_for_sp2), a known issue owned
+# by a later phase: drop each once the template does it itself and the pages are
+# regenerated. REPLAY_STALE_TEXT is the build's tripwire: the sentence the
+# drive caveat ended with before A1a ("Each of these favours the assisted runs.", which read,
+# next to the payload numbers, as if the massless carriage and the missing shaft drag raised
+# the payload); a page that still carries it was written by an older replay and fails the
+# build until it is regenerated.
 REPLAY_STALE_TEXT = "Each of these favours the assisted runs."
+# The gallery index's own tripwire: until A1a its paired-pad entry said the site build
+# corrected the page's caveat, label and subtitle; since A1a `replay` words them itself and the
+# build only adds editorial sentences, so a gallery text that still claims a build-time
+# correction is stale and fails the build.
+GALLERY_INDEX = Path(REPLAY_DIR) / "index.html"
+GALLERY_STALE_TEXT = "corrected when the site is built"
 REPLAY_TEXT_FIXES = (
-    (
-        "The drive is a prescribed 3 g push with no force or power limit, the carriage is "
-        "massless, the shaft has no air drag and the pitch kick has no aerodynamic penalty. "
-        + REPLAY_STALE_TEXT,
-        "The drive is a prescribed 3 g push with no force or power limit, the carriage is "
-        "massless, the shaft has no air drag and the pitch kick has no aerodynamic penalty. "
-        "Under this drive the release speed and the payload do not depend on the carriage "
-        "mass or the shaft drag: the massless carriage biases the drive energy and peak power "
-        "low, and the missing shaft drag biases those and the interface force low (by about "
-        "0.04%, 0.08% and 0.08%). The free kick favours the silo runs, whose q-alpha at the "
-        "kick is above the pad's.",
-    ),
-    # The close-up note's verb after a single run ("silo_cold starts ... and leave").
-    (
-        "starts 100 m below ground and leave the silo mouth",
-        "starts 100 m below ground and leaves the silo mouth",
-    ),
     # The close-up's "silo floor, 100 m down" label hangs below its dashed line and, with the
     # shaft drawn 1.6 depths deep, overprints the time axis's tick labels. Deepen the panel's
     # lower bound until the line sits at least 16 px above the axis (scaling only).
@@ -164,94 +159,109 @@ REPLAY_TEXT_FIXES = (
         "0); lastX = x; }",
     ),
 )
-# Fixes for one replay page each (file name in site/examples/ -> (old, new) pairs), applied
-# after REPLAY_TEXT_FIXES. The page text sits in a JSON block, so the new text is ASCII with
-# no double quotes. src/launchsim/replay.py words every offload run as a solved case:
-# comparison_caveats says the runs measure "propellant saved at the same payload and orbit,
-# not a payload change", true of a case's recorded run and a pad control (both fly P_ref)
-# but not of a paired pad, which flies its own payload capacity; the label says "(offload)"
-# and the subtitle compares with the baseline, which the paired-pad page does not show. It
-# also rounds the headline to 41.3 t, 10.0% and 8.0%, where every other page says 41.26 t,
-# 10.04% and 7.96%. Numbers: docs/findings/RQ1-fuel-offload-2d.md (run 20261003T112934Z).
-# Drop an entry once replay.py words it so and the page is regenerated (the build warns
-# when an entry no longer matches its page).
-REPLAY_OFFLOAD_DRIVE = (
-    "Under this drive the release speed and the payload do not depend on the carriage mass",
-    "Under this drive the release speed, the payload and the offload do not depend on the "
-    "carriage mass",
+# Editorial additions to one replay page each (file name in site/examples/ -> (old, new)
+# pairs), applied after REPLAY_TEXT_FIXES: sentences the gallery adds to a caveat the page
+# already states correctly, keyed on the page's own text so a regenerated page that words the
+# caveat differently is noticed (the build warns when an entry no longer matches its page and
+# its replacement is absent). The page text sits in a JSON block, so the new text is ASCII
+# with no double quotes. Numbers: docs/findings/RQ1-fuel-offload-2d.md (run 20261003T112934Z)
+# and docs/findings/RQ3-silo-screening-2d.md (run 20260930T175743Z).
+# What the source says itself since A1a and is no longer patched here: the offload in the
+# drive caveat's invariants, the two-decimal offload figures, the paired-pad label and note
+# (its stage named), the subtitle of a page without the baseline, and what a paired pad, a
+# pad control and a stage-2 or both-stage solve measure.
+# The drive caveat of all five pages says the missing shaft drag biases the drive energy,
+# peak power and interface force low; the gallery adds the size of that bias, RQ3-2d's own
+# estimate for silo_cold's push (the same 100 m, 3 g, 76.7 m/s push on every silo run of
+# these pages), which no page can compute from its runs. Added to the three pages that
+# compare a payload or an offload with the pad (pad-vs-silo-cold, pad-vs-silo-offload,
+# offload-vs-paired-pad; REPLAY_PAGE_FIXES). Not added to ignition-timing.html (its hot
+# starts have smaller drive figures, so their shares differ) nor to failed-ignition.html
+# (its runs are cold starts of that push, but the page is about the abort coast and gets
+# no editorial addition); the pages' own text carries no percentage (design 4.3).
+REPLAY_SHAFT_BIAS_SOURCE = (
+    "and the missing shaft drag biases the drive energy, peak power and interface force low."
 )
-REPLAY_OFFLOAD_ROUNDING = (
-    "41.3 t less propellant (solved; 10.0% of the stage-1 load, 8.0% of all)",
-    "41.26 t less propellant (solved; 10.04% of the stage-1 load, 7.96% of all)",
+REPLAY_SHAFT_BIAS = (
+    REPLAY_SHAFT_BIAS_SOURCE,
+    "and the missing shaft drag biases the drive energy, peak power and interface force low (by "
+    "about 0.87 MJ, 1.3 MW and 17 kN for this 76.7 m/s exit, 0.04%, 0.08% and 0.08% of "
+    "silo_cold's full-stack figures: docs/findings/RQ3-silo-screening-2d.md's own estimate from "
+    "q = 3.6 kPa at the exit, C_D 0.46 and a drag growing along the shaft, not a measured value).",
 )
-# The structure caveat calls the pushed stack fully fuelled, but on both offload pages the
-# only pushed run, silo_cold_s1, carries 41.26 t less stage-1 propellant; the felt 4.0 g does
-# not depend on the mass under this drive. It also gives no size for the structure that
-# would cancel the offload (findings note, "Structural penalty rows and break-even").
+# The structure caveat names the pushed run's own load; the gallery adds the size of the
+# structure that would cancel the offload (findings note, "Structural penalty rows and
+# break-even"), which no run on the page measures.
+REPLAY_OFFLOAD_STRUCTURE_SOURCE = (
+    "No structural mass is charged for the assist load case: silo_cold_s1 (531.1 t at push "
+    "start, 41.26 t less propellant) feels up to 4.0 g during the push."
+)
 REPLAY_OFFLOAD_STRUCTURE = (
-    "No structural mass is charged for the assist load case: the fully fuelled stack feels up "
-    "to 4.0 g during the push.",
-    "No structural mass is charged for the assist load case: silo_cold_s1, 41.26 t short of a "
-    "full stage-1 load, feels up to 4.0 g during the push. An assumed +8.1 t of stage-1 dry "
-    "mass leaves 1.98 t of the offload, and about 8.5 t (extrapolated) leaves nothing; no "
-    "structural model exists yet (docs/findings/RQ1-fuel-offload-2d.md, 'Structural penalty "
-    "rows and break-even').",
+    REPLAY_OFFLOAD_STRUCTURE_SOURCE,
+    REPLAY_OFFLOAD_STRUCTURE_SOURCE + " An assumed +8.1 t of stage-1 dry mass leaves 1.98 t of "
+    "the offload, and about 8.5 t (extrapolated) leaves nothing; no structural model exists yet "
+    "(docs/findings/RQ1-fuel-offload-2d.md, 'Structural penalty rows and break-even').",
+)
+# The comparison caveat says what the offload run measures; the gallery adds the
+# pre-registered reading of the paired pad and, on the headline page, the bridge to the
+# README-loads vehicle.
+REPLAY_OFFLOAD_CASE_SOURCE = (
+    "silo_cold_s1 is a run of the offload block, not compared with pad here: it flies P_ref = "
+    "26,054.4 kg and measures propellant saved at the same payload and orbit, not a payload "
+    "change (summary.md, 'Propellant saved at fixed payload', with its caveats)."
+)
+REPLAY_PAIRED_PAD_SOURCE = (
+    "silo_cold_s1__pad and silo_cold_s1 are runs of the offload block, not compared with pad "
+    "here. silo_cold_s1 flies P_ref = 26,054.4 kg and measures propellant saved at the same "
+    "payload and orbit, not a payload change (summary.md, 'Propellant saved at fixed payload', "
+    "with its caveats). silo_cold_s1__pad is the paired pad (pad with the same offload and no "
+    "push), flies its own payload capacity and measures a payload change (its payload against "
+    "P_ref = 26,054.4 kg), not propellant saved."
+)
+# The subtitle of the paired-pad page says what each run carries to orbit and that the
+# baseline is absent (unnamed, design 4.3); the gallery adds what the two runs are (the same
+# vehicle, 41.26 t short of a full stage-1 load, flown out of the silo and from the pad with no
+# push) and that the absent baseline is the full-load pad, which the page's generic sentence
+# cannot know.
+REPLAY_PAIRED_SUBTITLE_SOURCE = (
+    "compare what each run carries to orbit (the baseline is not on this page)."
+)
+REPLAY_PAIRED_SUBTITLE = (
+    REPLAY_PAIRED_SUBTITLE_SOURCE,
+    "compare what each run carries to orbit: the same vehicle, 41.26 t short of a full stage-1 "
+    "load, flown out of the silo and from the pad with no push (the full-load baseline, pad, is "
+    "not on this page).",
 )
 REPLAY_PAGE_FIXES: dict[str, tuple[tuple[str, str], ...]] = {
+    "pad-vs-silo-cold.html": (REPLAY_SHAFT_BIAS,),
     "pad-vs-silo-offload.html": (
-        REPLAY_OFFLOAD_DRIVE,
-        REPLAY_OFFLOAD_ROUNDING,
+        REPLAY_SHAFT_BIAS,
         REPLAY_OFFLOAD_STRUCTURE,
         # The headline page has no paired pad, so it states the pre-registered reading (most
         # of the offload is the lighter stack's thrust-to-weight) and the bridge in words.
         (
-            "silo_cold_s1 is a run of the offload block, not compared with pad here: what it "
-            "measures is propellant saved at the same payload and orbit, not a payload change "
-            "(summary.md, 'Propellant saved at fixed payload', with its caveats).",
-            "silo_cold_s1 is a run of the offload block, not compared with pad here: what it "
-            "measures is propellant saved at the same payload and orbit, not a payload change "
-            "(summary.md, 'Propellant saved at fixed payload', with its caveats). Read as "
-            "pre-registered, most of the offload is the lighter stack's thrust-to-weight: the "
-            "pad flown with the same 41.26 t offload and no push falls only 1,402.0 kg short of "
-            "the full-load pad's 26,054.4 kg, 3.4% of the offload (the note reports this "
-            "verdict, and argues that it compares payload kilograms with propellant kilograms); "
-            "a delta-v reading chosen after the run gives the lighter stack 28 to 29% (the "
-            "paired-pad replay draws both runs). On the README-loads vehicle, which calibrates "
-            "inside the band (+8.3%), the same case removes 36.01 t, 9.10% of its stage-1 load "
-            "(docs/findings/RQ1-fuel-offload-2d.md, with its caveats).",
+            REPLAY_OFFLOAD_CASE_SOURCE,
+            REPLAY_OFFLOAD_CASE_SOURCE + " Read as pre-registered, most of the offload is the "
+            "lighter stack's thrust-to-weight: the pad flown with the same 41.26 t offload and "
+            "no push falls only 1,402.0 kg short of the full-load pad's 26,054.4 kg, 3.4% of the "
+            "offload (the note reports this verdict, and argues that it compares payload "
+            "kilograms with propellant kilograms); a delta-v reading chosen after the run gives "
+            "the lighter stack 28 to 29% (the paired-pad replay draws both runs). On the "
+            "README-loads vehicle, which calibrates inside the band (+8.3%), the same case "
+            "removes 36.01 t, 9.10% of its stage-1 load (docs/findings/RQ1-fuel-offload-2d.md, "
+            "with its caveats).",
         ),
     ),
     "offload-vs-paired-pad.html": (
-        REPLAY_OFFLOAD_DRIVE,
-        REPLAY_OFFLOAD_ROUNDING,
+        REPLAY_SHAFT_BIAS,
         REPLAY_OFFLOAD_STRUCTURE,
+        REPLAY_PAIRED_SUBTITLE,
         (
-            "compare what each run carries to orbit against the baseline, pad.",
-            "compare the same vehicle, 41.26 t short of a full stage-1 load, flown out of the "
-            "silo and from the pad with no push (the full-load baseline, pad, is not on this "
-            "page).",
-        ),
-        ('"label":"silo_cold_s1__pad (offload)"', '"label":"silo_cold_s1__pad (paired pad)"'),
-        (
-            "paired pad of offload case silo_cold_s1: pad with the same propellant change and "
-            "no assist;",
-            "paired pad of offload case silo_cold_s1: pad with the same 41.26 t stage-1 offload "
-            "and no assist, flying its own payload capacity, 24,652.4 kg (1,402.0 kg short of "
-            "P_ref = 26,054.4 kg);",
-        ),
-        (
-            "silo_cold_s1__pad and silo_cold_s1 are runs of the offload block, not compared "
-            "with pad here: what they measure is propellant saved at the same payload and "
-            "orbit, not a payload change (summary.md, 'Propellant saved at fixed payload', "
-            "with its caveats).",
-            "silo_cold_s1__pad and silo_cold_s1 are runs of the offload block, not compared "
-            "with pad here. silo_cold_s1 carries the pad's payload, P_ref = 26,054.4 kg, with "
-            "41.26 t less stage-1 propellant: it measures propellant saved at the same payload "
-            "and orbit. silo_cold_s1__pad, its paired pad, is the pad with the same offload and "
-            "no push, flown to its own payload capacity: 24,652.4 kg, 1,402.0 kg short of "
-            "P_ref, a payload change. Read as pre-registered, that shortfall is small against "
-            "the offload (3.4%), so most of the offload is the lighter stack's thrust-to-weight "
-            "(the note reports this verdict, and argues that it compares payload kilograms with "
+            REPLAY_PAIRED_PAD_SOURCE,
+            REPLAY_PAIRED_PAD_SOURCE + " Its payload capacity, 24,652.4 kg, falls 1,402.0 kg "
+            "short of P_ref. Read as pre-registered, that shortfall is small against the offload "
+            "(3.4%), so most of the offload is the lighter stack's thrust-to-weight (the note "
+            "reports this verdict, and argues that it compares payload kilograms with "
             "propellant kilograms); a delta-v reading chosen after the run gives the lighter "
             "stack 28 to 29% (summary.md, 'Propellant saved at fixed payload'; "
             "docs/findings/RQ1-fuel-offload-2d.md, with its caveats).",
@@ -917,8 +927,9 @@ def frame_replay(text: str, parts: dict[str, str], root: str) -> str | None:
 
 def fix_replay_text(text: str, label: str, log: BuildLog) -> str:
     """Apply ``REPLAY_TEXT_FIXES``, then the page's ``REPLAY_PAGE_FIXES``, to one replay page.
-    A page that still carries the stale sentence afterwards (written for another set of runs)
-    is an error, not a silent pass; a page fix that no longer matches its page is a warning."""
+    A page that still carries the stale sentence afterwards (written by a replay from before
+    SP2 step A1a) is an error, not a silent pass; a page addition that no longer matches its
+    page is a warning."""
     for old, new in REPLAY_TEXT_FIXES:
         text = text.replace(old, new)
     for old, new in REPLAY_PAGE_FIXES.get(Path(label).name, ()):
@@ -938,9 +949,23 @@ def fix_replay_text(text: str, label: str, log: BuildLog) -> str:
     return text
 
 
+def check_gallery_index(out: Path, log: BuildLog) -> None:
+    """Fail the build when the gallery index still claims a correction the site build no
+    longer makes (``GALLERY_STALE_TEXT``)."""
+    page = out / GALLERY_INDEX
+    if page.is_file() and GALLERY_STALE_TEXT in page.read_text(encoding="utf-8"):
+        log.errors.append(
+            f"site/{GALLERY_INDEX.as_posix()}: still says {GALLERY_STALE_TEXT!r}; since SP2 step "
+            "A1a the replay pages word their caveats themselves and the build adds editorial "
+            "sentences only (REPLAY_PAGE_FIXES), so reword that entry"
+        )
+
+
 def frame_replays(out: Path, log: BuildLog) -> int:
     """Add the site's frame to every replay page copied into ``out/examples`` and apply the
-    fixes in ``REPLAY_TEXT_FIXES`` and ``REPLAY_PAGE_FIXES``."""
+    template patches of ``REPLAY_TEXT_FIXES`` and the editorial additions of
+    ``REPLAY_PAGE_FIXES``; then check the gallery index beside them
+    (``check_gallery_index``)."""
     parts = read_replay_frame()
     count = 0
     for page in sorted((out / REPLAY_DIR).glob("*.html")):
@@ -954,6 +979,7 @@ def frame_replays(out: Path, log: BuildLog) -> int:
             continue
         page.write_text(fix_replay_text(framed, label, log), encoding="utf-8", newline="\n")
         count += 1
+    check_gallery_index(out, log)
     return count
 
 
