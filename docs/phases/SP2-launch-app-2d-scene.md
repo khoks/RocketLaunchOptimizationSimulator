@@ -1238,7 +1238,7 @@ decision.
 | A1 | run_data; plots and replay switched; KI-002, KI-016, KI-017 | run_data.py, plots.py, replay.py, physics.md, CLAUDE.md | test_run_data.py (27 of survey 06: readers, roles, the four fairing cases, output-path corners, the runs-block digest, import rule) | Reference page, seven more and the five gallery pages byte-identical; existing tests unchanged; no `plots._` call in replay.py | [x] | 9579f89 |
 | A1b | Pillow in the dev extra (KI-018) | pyproject.toml, uv.lock | - | Lock diff is that line only; exact golden tier passes; reference sha256 unchanged | [x] | 78eaefd |
 | A1a | Caveat wording at source (KI-029) | replay.py, plots.py, site/build.py, site/examples/ | per-clause tests (22 t sled, failed run, q-alpha below the baseline, paired pad, an offloaded push) | The gate of the design's section 4.3 (below the table); honesty review; the diff against the reference page recorded | [x] | 41f838a |
-| A2 | display.py, display files, payload, physics.md section | display.py, scene.py, configs/display/ | test_display.py (coast energy, angular momentum and the closed form; the coast reproduces the recorded staging-coast rows; separation state; row selection; transform), test_scene.py (strict JSON, nulls in the shaft, null payload, bound runs and cases, zero-offload pad control, offload caveats, refusals) | Independent comparison of the payload with the CSVs of the reference directory, silo_cold_s1, silo_cold_lag and silo_instant; the load-time checks pass on every run folder of every complete planar directory on disk (56 today), results in the session log; every display number sourced or assumed | [ ] | |
+| A2 | display.py, display files, payload, physics.md section | display.py, scene.py, configs/display/ | test_display.py (coast energy, angular momentum and the closed form; the coast reproduces the recorded staging-coast rows; separation state; row selection; transform), test_scene.py (strict JSON, nulls in the shaft, null payload, bound runs and cases, zero-offload pad control, offload caveats, refusals) | Independent comparison of the payload with the CSVs of the reference directory, silo_cold_s1, silo_cold_lag and silo_instant; the load-time checks pass on every run folder of every complete planar directory on disk (56 today), results in the session log; every display number sourced or assumed | [x] | 58d1ad2 |
 | A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [ ] | |
 | A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [ ] | |
 | | Checkpoint 1: `launchsim scene` is complete | | | | | |
@@ -1693,7 +1693,27 @@ Also from the design's section 8:
   1403 passed, 35 deselected. Commit 41f838a. KI-029 closed; the three canvas-label patches
   stay in site/build.py (KI-031). Noted for A8: README.md "Silo air" calls the shaft-drag
   bias figures measured where RQ3 calls them an estimate (fix with the README edits).
-- Next: step A2 (display.py, the display files, the scene payload, the physics.md section).
+- Step A2 (2026-10-05 to 2026-10-06): display.py (pure), scene.py (payload), configs/display/,
+  the physics.md display-only section. Workflow: implementer; numerics skeptic, compliance
+  auditor and honesty auditor, three passes; three fix rounds (the third for the minors of
+  pass 3). A model usage limit stopped the first gate agent; the workflow was resumed from
+  its run id (cached agents replayed) and the session switched to Opus 5.5. Gate
+  (independent, own readers and interpolation): the payload reproduces every CSV row of
+  pad, silo_cold, silo_hot_ramp_on_track, silo_failed, silo_cold_lag, silo_instant and
+  silo_cold_s1 within the criterion-5 and -6 tolerances; the load-time checks pass on all 56
+  recorded planar run folders (one selection pass each, worst residual 0.48 of half a
+  tolerance); coast drift 4e-13 and agreement with closed-form Kepler 3e-12. Deviation of
+  the gate wording, not of the design: G3 asked the drag-free coast to match the recorded
+  staging coast within 0.01 m/s raw, which a coast without drag cannot do (the recorded drag
+  over the 11 s coast is 0.0282 m/s on pad, 0.0127 m/s on silo_cold); the clause was
+  re-checked as physics.md and the test state it (position within 1 m: 0.2 m; speed within
+  0.01 m/s with the recorded drag integral taken out: under 1e-5 m/s), and one test
+  docstring that stated the raw form was corrected. Display numbers: body diameter 3.66 m
+  from the reference area, fairing 13.1 m by 5.2 m from SpaceX's Falcon 9 page; stage
+  lengths, silo, pad and camera numbers assumed. Fast suite 1447 passed, 35 deselected.
+  Commit 58d1ad2.
+- Next: step A3 (scene part 1: template, page contract, state hook, page writer, `scene`
+  command, single-panel camera, close-up, push to kick and the whole of silo_failed).
 
 ## 12. Deviations from the plan
 
