@@ -2,15 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-8Ayqen7Co/ttdba3tNspeezP2eQnwHqI6E8F8NDXNtI='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MPjJioPWYRgvE/IF+9zYFfaEveEkmRWMrgEJGBXmhvs='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Launch Scene</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDY0IDY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImxhdW5jaC1hc3Npc3Qtc2ltIj48dGl0bGU+bGF1bmNoLWFzc2lzdC1zaW08L3RpdGxlPjxjbGlwUGF0aCBpZD0iZmMiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9jbGlwUGF0aD48Y2xpcFBhdGggaWQ9ImZyIj48cGF0aCBkPSJNMjggMTguNUMyOCAxMiAzMC42IDcuNCAzMiA1LjVDMzMuNCA3LjQgMzYgMTIgMzYgMTguNVY0N0gyOFoiLz48L2NsaXBQYXRoPjxnIGNsaXAtcGF0aD0idXJsKCNmYykiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI0MSIgZmlsbD0iIzJkNWY4ZiIvPjxyZWN0IHk9IjQxIiB3aWR0aD0iNjQiIGhlaWdodD0iMjMiIGZpbGw9IiMxYzIyMjYiLz48cmVjdCB4PSIyNSIgeT0iNDEiIHdpZHRoPSIxNCIgaGVpZ2h0PSIyMyIgZmlsbD0iIzJiMzIzOCIvPjxwYXRoIGQ9Ik0wIDQyLjI1SDI1TTM5IDQyLjI1SDY0IiBzdHJva2U9IiNiMDlhNzgiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHBhdGggZD0iTTE5LjUgNDguNWg1LjVNMzkgNDguNWg1LjUiIHN0cm9rZT0iI2YwOGE0YiIgc3Ryb2tlLW9wYWNpdHk9IjEuMCIgc3Ryb2tlLXdpZHRoPSIzLjYiLz48cGF0aCBkPSJNMTkuNSA1Ni41aDUuNU0zOSA1Ni41aDUuNSIgc3Ryb2tlPSIjZjA4YTRiIiBzdHJva2Utb3BhY2l0eT0iMC41IiBzdHJva2Utd2lkdGg9IjMuNiIvPjxwYXRoIGQ9Ik0yOCAxOC41QzI4IDEyIDMwLjYgNy40IDMyIDUuNUMzMy40IDcuNCAzNiAxMiAzNiAxOC41VjQ3SDI4WiIgZmlsbD0iI2ZiZmJmOCIvPjxyZWN0IHg9IjMzLjYiIHk9IjQiIHdpZHRoPSIzIiBoZWlnaHQ9IjQ0IiBmaWxsPSIjZGZlNGUxIiBjbGlwLXBhdGg9InVybCgjZnIpIi8+PHJlY3QgeD0iMjgiIHk9IjI3IiB3aWR0aD0iOCIgaGVpZ2h0PSIyLjIiIGZpbGw9IiMxYzIyMjYiLz48cGF0aCBkPSJNMCA0MVY1MkExMiAxMiAwIDAgMCAxMiA2NEg1MkExMiAxMiAwIDAgMCA2NCA1MlY0MSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGM1NjVjIiBzdHJva2Utd2lkdGg9IjUiLz48L2c+PC9zdmc+Cg==">
 <style>
-/* Layout: a launch console. Transport strip on top; the launch panel below it (a true-scale
-   cross-section of the site with a close-up of the vehicle at a scale of its own); then the
-   events, telemetry, the caveats and the provenance. Vellum paper by day, slate at night.
+/* Layout: a launch console. Transport strip on top (play, previous and next event, clock, slider,
+   rate, then a run selector per panel); the launch panels below it on one clock and one camera,
+   side by side or one above the other (each a true-scale cross-section of the site with a
+   close-up of the vehicle at a scale of its own); then the events and telemetry per panel, the
+   caveats and the provenance. Vellum paper by day, slate at night.
    Written by launchsim scene (src/launchsim/templates/scene.html); the data block is generated.
    Tokens: the site's set (site/assets/site.css), then the scene's own (--sc-*): every drawn
    shape has a fill and an outline token; tests/test_scene_page.py checks their contrast.
@@ -64,6 +66,8 @@
   --sc-steel-line: #1c2226;
   --sc-rail: #c3cacd;
   --sc-rail-line: #3a434a;
+  --sc-halo: #fbfbf8;
+  --sc-sep: #3d4a52;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -79,6 +83,7 @@
     --sc-tank-empty: #29313a; --sc-tank-line: #37424c; --sc-prop: #7fb0e0; --sc-hatch: #b9c4cc;
     --sc-plume: #f39a55; --sc-plume-line: #ffd9a8; --sc-carriage: #56626b; --sc-carriage-line: #d2d9dd;
     --sc-steel: #58626a; --sc-steel-line: #d2d9dd; --sc-rail: #3f4950; --sc-rail-line: #b7c0c5;
+    --sc-halo: #0b1117; --sc-sep: #c9d3da;
     color-scheme: dark;
   }
 }
@@ -94,6 +99,7 @@
   --sc-tank-empty: #29313a; --sc-tank-line: #37424c; --sc-prop: #7fb0e0; --sc-hatch: #b9c4cc;
   --sc-plume: #f39a55; --sc-plume-line: #ffd9a8; --sc-carriage: #56626b; --sc-carriage-line: #d2d9dd;
   --sc-steel: #58626a; --sc-steel-line: #d2d9dd; --sc-rail: #3f4950; --sc-rail-line: #b7c0c5;
+  --sc-halo: #0b1117; --sc-sep: #c9d3da;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -107,13 +113,19 @@ h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; let
 .sub { color: var(--ink-2); margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
 .banner { margin: 6px 0 0; padding: 6px 10px; border-left: 4px solid var(--caution); background: var(--caution-bg); color: var(--ink); max-width: 95ch; }
 .flag { margin: 0; color: var(--bad); font-weight: 600; }
-.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; min-width: 0; display: grid; gap: 10px; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 
 /* transport */
-.transport { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; }
+.transport { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.btns { display: flex; gap: 6px; }
 .btn { font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase;
   background: var(--ink); color: var(--panel); border: 0; border-radius: 4px; padding: 7px 14px; cursor: pointer; min-width: 84px; }
+.btn.step { min-width: 0; padding-inline: 10px; }
 .btn:focus-visible, select:focus-visible, input:focus-visible, .evt:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.runpicks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.runpick { min-width: 0; white-space: nowrap; }  /* a long run label shrinks its select, never the page */
+.runpick select { min-width: 0; }
+.runpicks .note { flex: 1 1 260px; }
 .clock { font-family: var(--font-data); font-size: 1.35rem; font-variant-numeric: tabular-nums; min-width: 10ch; }
 .clock small { display: block; font-size: 0.7rem; color: var(--ink-3); letter-spacing: 0.04em; }
 .timeline { position: relative; min-width: 0; }
@@ -125,6 +137,12 @@ select { font-family: var(--font-data); font-size: 0.85rem; background: var(--pa
 
 /* the launch panel */
 #scene { width: 100%; height: clamp(420px, calc(100vh - 240px), 760px); display: block; }
+/* two panels side by side: tall enough for the column layout (panelLayout) of the usual pairs: each view at least
+   the close-up's column high (the close-up, the marker note and the scale bar), with the gauges, the ring key and
+   the readout in a band under it, under the header and the note band and over the legend band; so no plate lies
+   over the part of the view the camera frames. A short window scrolls a little (the legend band goes under the
+   fold first); a canvas too short for a pair's band (an impact run's caution plate) keeps the overlay layout. */
+#scene.two { height: clamp(640px, calc(100vh - 160px), 800px); }
 /* a size container, so the canvas's height can follow the canvas's own width (see the band rule below) */
 .scenepanel { padding: 8px; gap: 8px; container-type: inline-size; container-name: scenepanel; }
 .note { font-size: 0.8rem; color: var(--ink-3); margin: 0; max-width: 110ch; }
@@ -132,7 +150,12 @@ select { font-family: var(--font-data); font-size: 0.85rem; background: var(--pa
 /* read by assistive technology only: the run's note is drawn in the canvas's note band */
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* telemetry and events */
+/* telemetry and events: a column per panel */
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px 28px; }
+.col { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.col h3 { margin: 0; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.sw { flex: none; width: 12px; height: 12px; border: 1px solid var(--ink); }
+.sw-0 { background: var(--run-0); } .sw-1 { background: var(--run-1); } .sw-2 { background: var(--run-2); } .sw-3 { background: var(--run-3); }
 .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; }
 .tgrid div { display: grid; }
 .tgrid .k { font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
@@ -160,12 +183,13 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
 @media (max-width: 900px) {
   .transport { grid-template-columns: auto 1fr; }
   .timeline { grid-column: 1 / -1; }
-  .runpick { grid-column: 1 / -1; }
+  .runpick { flex: 1 1 100%; }
   .runpick select { flex: 1 1 auto; min-width: 0; max-width: 100%; }
   #scene { height: clamp(440px, calc(100vh - 300px), 760px); }
 }
 @media (max-width: 640px) {
   .wrap { padding-inline: 16px; }
+  .btns, .clock { grid-column: 1 / -1; }
   h1 { font-size: 1.9rem; }
 }
 /* The band layout: the script puts the close-up, the gauges, the readout and any caution plate in a
@@ -174,6 +198,18 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
    a viewport width also counts the padding and any classic scrollbar, which would split the threshold. */
 @container scenepanel (width < 560px) {
   #scene { height: clamp(900px, 125vh, 1300px); }
+}
+/* Two panels (#scene.two, panelBoxes): side by side from TWO_UP_MIN_PX (900 px) of canvas width, each
+   (width - PANEL_GAP_PX) / 2 wide and so in the band layout below 2 x 560 + 12 = 1132 px; one above
+   the other below 900 px, each as tall as one panel of that width, with the 12 px gap between. */
+@container scenepanel (width < 1132px) {
+  #scene.two { height: clamp(900px, 125vh, 1300px); }
+}
+@container scenepanel (width < 900px) {
+  #scene.two { height: calc(2 * clamp(440px, calc(100vh - 300px), 760px) + 12px); }
+}
+@container scenepanel (width < 560px) {
+  #scene.two { height: calc(2 * clamp(900px, 125vh, 1300px) + 12px); }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
@@ -188,7 +224,11 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
 
   <section class="panel" aria-label="Playback">
     <div class="transport">
-      <button class="btn" id="play" type="button" aria-label="Play">Play</button>
+      <div class="btns">
+        <button class="btn" id="play" type="button" aria-label="Play">Play</button>
+        <button class="btn step" id="prevEvt" type="button" aria-label="Previous event" title="Previous event ([)">&lt; Event</button>
+        <button class="btn step" id="nextEvt" type="button" aria-label="Next event" title="Next event (])">Event &gt;</button>
+      </div>
       <div class="clock" aria-live="off"><span id="clock">T+0.00 s</span><small id="clockSub">after release</small></div>
       <div class="timeline">
         <canvas id="ticks" aria-hidden="true">Event marks over the time slider.</canvas>
@@ -205,7 +245,11 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
           <option value="60">60x</option>
         </select>
       </label>
-      <label class="runpick" for="runSel">Run <select id="runSel"></select></label>
+    </div>
+    <div class="runpicks">
+      <label class="runpick" for="runSel0">Panel 1 <select id="runSel0"></select></label>
+      <label class="runpick" for="runSel1">Panel 2 <select id="runSel1"></select></label>
+      <p class="note">Keys: Space plays or pauses; [ and ] go to the previous and next event; Left and Right step 1 s, with Shift 10 s.</p>
     </div>
   </section>
 
@@ -213,20 +257,20 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     <p class="flag" id="flag" hidden></p>
     <p class="vh" id="runNote" hidden></p>
     <canvas id="scene" role="img" aria-label="Launch scene">The launch scene is drawn on a canvas, which this browser does not show. The telemetry and the event list on this page carry the same recorded values as text.</canvas>
-    <p class="note">The main view is to one true scale (except the position marker that replaces the vehicle once its body is under the pixel threshold, marked on the view, and the shaft rings, never drawn under 2 px): the site, the vehicle, the shaft, carriage and rails, or the pad mount and clamps, drawn from configs/display and the page's drawing constants (drawn, not computed). The close-up has a scale of its own: the stack shown is drawn at one fixed length, so its scale changes at staging and at the fairing drop; it is not the view's scale. Position, speed, the engines' vacuum thrust, attitude while the model defines one, and propellant are replayed from the recorded time series; nothing is integrated in the browser.</p>
+    <p class="note"><span id="sceneNote">Two runs play on one clock (time after release) and one camera: while both runs fly, the views share scale and pan (the same ground line and launch site), and each marks the other panel's vehicle with a hollow ring, named in a key on its view. A panel before its run's first row holds that row; a panel whose run has ended keeps its last view and scale bar under a banner, with no ring.</span> The main view is to one true scale (except the position marker that replaces the vehicle once its body is under the pixel threshold, marked on the view, the markers of the flown path, of max-Q, of the separated bodies and of the other vehicle, and the shaft rings, never drawn under 2 px): the site, the vehicle, the shaft, carriage and rails, or the pad mount and clamps, drawn from configs/display and the page's drawing constants (drawn, not computed); the ground is Earth's curved surface. The flown path is the recorded one; the spent stage and the fairing halves follow display-only drag-free coasts (dashed), not model output; while one of them is within a few pixels of its vehicle, its marker is drawn over the vehicle's with a label on a leader. The max-Q mark is the run's recorded max-Q (its metrics), not a logged event. The close-up has a scale of its own: the stack shown is drawn at one fixed length, so its scale changes at staging and at the fairing drop (eased over a few seconds: before MECO toward the stage-1 engines, so the plume is seen to go out, then up to stage 2 after the separation; before the fairing drop toward the halves, held while they open and until they have left the close-up); it is not the view's scale. The camera frames the part of the view right of the close-up's column, so the close-up never covers the site, the flown path or its marks; when the panels are narrow and the canvas tall enough, the readout and the gauges sit in a band under the view. The gap opening at staging and the fairing halves opening there are drawn, not computed. Position, speed, the engines' vacuum thrust, attitude while the model defines one, and propellant are replayed from the recorded time series; nothing is integrated in the browser.</p>
   </section>
 
   <p class="strip" id="strip"></p>
 
   <section class="panel" aria-label="Events">
     <h2>Events</h2>
-    <ol class="ticker" id="ticker" aria-label="Events of the run shown; select one to jump to it"></ol>
-    <p class="note">Each event at the time of its matched row; events marked synthesised are made from the metrics, not logged by the model (the caveats say how).</p>
+    <div class="cols" id="tickers"></div>
+    <p class="note">Each event at the time of its matched row; select one to jump to it. Events marked synthesised are made from the metrics, not logged by the model (the caveats say how).</p>
   </section>
 
   <section class="panel" aria-label="Telemetry">
     <h2>Telemetry</h2>
-    <div class="tgrid" id="tgrid"></div>
+    <div class="cols" id="tgrids"></div>
     <p class="note">Speed is relative to the Earth. Mass is rebuilt from the two tank series and the stage and fairing flags, as the payload carries them. Engines: the vacuum thrust (thrust_vac_N) over the stage's full vacuum thrust, which sets the plume and the propellant flow; the model's thrust is lower by p_amb A_e near the ground and is 0 N while that exceeds it.</p>
   </section>
 
@@ -260,8 +304,6 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const HASH_MAX_RUNS = 16;     // run names read from #runs
   const QA_MAX_TIMES = 200;     // times read from #qa
   const NUMBER_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
-  const RATE_STEPS = [[12, 1], [45, 5]];  // A3's simple law: [end of the span, s after release; rate]
-  const RATE_LATE = 30;                   // the rate after the last span
   function finiteNumber(text) {
     if (typeof text !== "string" || !NUMBER_RE.test(text)) return null;
     const v = Number(text);
@@ -376,15 +418,158 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   function viewHeight(extentM, minViewHeightM, margin) {
     return Math.sqrt(minViewHeightM * minViewHeightM + (margin * extentM) * (margin * extentM));
   }
-  function cameraView(extentM, camera, view, content) {
+  function cameraView(extentM, camera, view, content, frame) {
+    // The camera law's view height H [m] at extent extentM, over the frame's height (frame: the part of the view
+    // [px] the camera frames, as high as the view; omitted, the whole view), centred on the content box [m] in the
+    // frame: {E, H, W: the whole view's width [m], ppm [px per m], x0, y0: the view's bottom-left corner [m]}.
+    const f = frame || view;
     const H = viewHeight(extentM, camera.min_view_height_m, camera.margin);
-    const ppm = view.h / H, W = view.w / ppm;
+    const ppm = f.h / H, W = view.w / ppm;
     const cx = (content.xMin + content.xMax) / 2, cy = (content.yMin + content.yMax) / 2;
-    return { E: extentM, H: H, W: W, ppm: ppm, x0: cx - W / 2, y0: cy - H / 2 };
+    return { E: extentM, H: H, W: W, ppm: ppm, x0: cx - (f.x - view.x + f.w / 2) / ppm, y0: cy - (view.y + view.h - f.y - f.h / 2) / ppm };
   }
-  function rateLaw(t) {
-    for (let i = 0; i < RATE_STEPS.length; i++) if (t < RATE_STEPS[i][0]) return RATE_STEPS[i][1];
-    return RATE_LATE;
+  function sharedCamera(items, camera, view, frame) {
+    // One camera for every shown panel (design 4.5, review 06 finding 12): items, one per shown run, {E: its
+    // running extent [m] at the time it is drawn, x, y: its screen point [m], floor: its push floor [m], L: its
+    // stack length [m]}. The view height is the camera law's at the largest extent (the larger of the runs' law
+    // values: viewHeight rises with E), centred in the frame (cameraView: the part of the view right of the
+    // close-up's column, A3b review round 3) on the union of what each run's own camera frames (the launch site,
+    // the vehicle and its stack, the floor), so the panels share scale and pan. One item gives that run's own
+    // camera.
+    let E = 0, xMin = 0, xMax = 0, yMin = Infinity, yMax = -Infinity;
+    items.forEach(it => {
+      E = Math.max(E, it.E); xMin = Math.min(xMin, it.x); xMax = Math.max(xMax, it.x);
+      yMin = Math.min(yMin, it.floor, it.y); yMax = Math.max(yMax, Math.max(0, it.y) + it.L);
+    });
+    return cameraView(E, camera, view, { xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax }, frame);
+  }
+  function vehicleMode(bodyDiameterM, ppm, minBodyPx) {
+    // "to_scale" while the vehicle's body is at least minBodyPx wide on the view at ppm [px per m], else "marker"
+    // (D-SP2-35: the rocket to scale while its body is at least 3 px wide, then a position marker).
+    return bodyDiameterM * ppm >= minBodyPx ? "to_scale" : "marker";
+  }
+  // The playback rate under Auto (D-SP2-21 as amended by design review 06 finding 2), a pure function of scene
+  // time and the shown runs' events: RATE_PUSH from the first row to the last stage-1 ramp end; RATE_LIFT through
+  // each run's kick (to its kick end, or KICK_READ_S after its kick start when that comes first: the model's kick
+  // is a step at its start, and the rest of the span is a held tilt; A3b review round 3); then a geometric rise
+  // (the rate's logarithm linear in scene time) to RATE_TOP over RATE_RISE_S, capped by RATE_HOLD from
+  // HOLD_BEFORE_MECO_S before the first MECO to HOLD_AFTER_S2_S after the last stage-2 ignition and within
+  // HOLD_NEAR_S of each fairing drop and each run's end (cutoff, impact or burnout: every run's payload ends with
+  // an `end` event), and by RATE_FAIRING within HOLD_NEAR_S of each fairing drop (the halves open in a few
+  // seconds); capped more softly by RATE_MAXQ within MAXQ_NEAR_S of each run's max-Q, and by the zoom cap:
+  // wherever the shared camera's view height grows, no faster than lets it grow ZOOM_PER_WALL_S-fold per wall
+  // second (never under RATE_LIFT, so the rise starts at 1x). Each cap eases geometrically back up to RATE_TOP at
+  // RATE_EASE_S's slope outside its span, so the rate never steps after the kick. A pure function of scene time,
+  // the shown runs' events and their camera's view height over time.
+  const RATE_PUSH = 0.5, RATE_LIFT = 1, RATE_TOP = 30, RATE_HOLD = 3;
+  const RATE_RISE_S = 30;       // scene seconds of the rise from RATE_LIFT to RATE_TOP
+  const RATE_EASE_S = 15;       // scene seconds over which a cap eases from RATE_HOLD to RATE_TOP
+  const KICK_READ_S = 2;        // RATE_LIFT holds at most this long after a kick start (its step and its plate)
+  const HOLD_BEFORE_MECO_S = 2, HOLD_AFTER_S2_S = 3, HOLD_NEAR_S = 3;
+  const HOLD_EVENTS = ["fairing", "cutoff", "impact", "end"];
+  const RATE_FAIRING = 2;       // the cap within HOLD_NEAR_S of each fairing drop [x]
+  const RATE_MAXQ = 5;          // the softer cap near each run's max-Q [x] ...
+  const MAXQ_NEAR_S = 5;        // ... within this many scene seconds of it
+  const ZOOM_PER_WALL_S = 1.3;  // under Auto the view's height grows by at most this factor per wall second
+  function rateSchedule(list, zoom) {
+    // list: one item per shown run, {start: its first row [s], stages: its stage names (first, second), events:
+    // [{name, stage, t [s]}], maxq: the time of its max-Q [s] (optional)}; zoom (optional): the shared camera's
+    // view height over scene time, [[t [s], H [m]], ...] ascending. Returns {start, rampEnd, kickEnd, holds:
+    // [[from, to] s], caps: [[from, to, rate]]}: the last stage-1 ramp end (else the last release, else the first
+    // row), the end of the slow kick (the latest over the runs of each run's kick end or KICK_READ_S after its
+    // kick start, whichever is first; never before rampEnd), the spans held near RATE_HOLD and the caps (the
+    // fairing drops, max-Q, zoom). An end at the time of a cutoff or impact adds no second hold.
+    let start = Infinity, ramp = -Infinity, release = -Infinity, kick = -Infinity;
+    const meco = [], s2 = [], near = [], caps = [];
+    list.forEach(r => {
+      start = Math.min(start, r.start);
+      const first = r.stages[0], second = r.stages[1];
+      let kickStart = -Infinity, kickStop = -Infinity;
+      r.events.forEach(e => {
+        if (typeof e.t !== "number" || !Number.isFinite(e.t)) return;
+        if (e.name === "ramp_end" && e.stage === first) ramp = Math.max(ramp, e.t);
+        else if (e.name === "release") release = Math.max(release, e.t);
+        else if (e.name === "kick_start") kickStart = Math.max(kickStart, e.t);
+        else if (e.name === "kick_end") kickStop = Math.max(kickStop, e.t);
+        else if (e.name === "propellant" && e.stage === first) meco.push(e.t);
+        else if (e.name === "ignition" && second !== undefined && e.stage === second) s2.push(e.t);
+        else if (HOLD_EVENTS.indexOf(e.name) >= 0 && near.indexOf(e.t) < 0) near.push(e.t);
+        if (e.name === "fairing") caps.push([e.t - HOLD_NEAR_S, e.t + HOLD_NEAR_S, RATE_FAIRING]);
+      });
+      const slow = Number.isFinite(kickStart) ? Math.min(Number.isFinite(kickStop) ? Math.max(kickStop, kickStart) : Infinity, kickStart + KICK_READ_S) : kickStop;
+      kick = Math.max(kick, slow);
+      if (typeof r.maxq === "number" && Number.isFinite(r.maxq)) caps.push([r.maxq - MAXQ_NEAR_S, r.maxq + MAXQ_NEAR_S, RATE_MAXQ]);
+    });
+    if (!Number.isFinite(start)) start = 0;
+    const rampEnd = Number.isFinite(ramp) ? ramp : Number.isFinite(release) ? release : start;
+    const kickEnd = Math.max(rampEnd, Number.isFinite(kick) ? kick : rampEnd);
+    const holds = [];
+    if (meco.length) {
+      const last = s2.length ? Math.max(...s2) : Math.max(...meco);
+      holds.push([Math.min(...meco) - HOLD_BEFORE_MECO_S, last + HOLD_AFTER_S2_S]);
+    }
+    near.forEach(t => holds.push([t - HOLD_NEAR_S, t + HOLD_NEAR_S]));
+    if (Array.isArray(zoom)) {
+      for (let i = 1; i < zoom.length; i++) {
+        const a = zoom[i - 1], b = zoom[i], dt = b[0] - a[0];
+        if (!(dt > 0) || !(a[1] > 0) || !(b[1] > a[1])) continue;
+        const rate = Math.max(RATE_LIFT, Math.log(ZOOM_PER_WALL_S) * dt / Math.log(b[1] / a[1]));
+        if (rate < RATE_TOP) caps.push([a[0], b[0], rate]);
+      }
+    }
+    return { start: start, rampEnd: rampEnd, kickEnd: kickEnd, holds: holds, caps: caps };
+  }
+  function rateLaw(t, sched) {
+    // The Auto rate [scene s per wall s] at scene time t [s] under rateSchedule's sched.
+    if (t < sched.rampEnd) return RATE_PUSH;
+    if (t < sched.kickEnd) return RATE_LIFT;
+    const up = Math.log(RATE_TOP / RATE_LIFT) / RATE_RISE_S, down = Math.log(RATE_TOP / RATE_HOLD) / RATE_EASE_S;
+    const gap = (a, b) => (t < a ? a - t : t > b ? t - b : 0);
+    let l = Math.min(Math.log(RATE_TOP), Math.log(RATE_LIFT) + up * (t - sched.kickEnd));
+    sched.holds.forEach(h => { l = Math.min(l, Math.log(RATE_HOLD) + down * gap(h[0], h[1])); });
+    (sched.caps || []).forEach(c => { l = Math.min(l, Math.log(c[2]) + down * gap(c[0], c[1])); });
+    return Math.min(RATE_TOP, Math.exp(l));
+  }
+  function recordedMaxQ(m) {
+    // {t, v}: a run's recorded max-Q from its payload record m ({t [s after release], q_pa [Pa]}: metrics.json's
+    // max_q_time_s and max_q_pa, the planar metrics' refined peak; not a logged event); null when the run records
+    // none, or either value is not a finite number, or q is not positive.
+    if (!m || typeof m.t !== "number" || !Number.isFinite(m.t) || typeof m.q_pa !== "number" || !Number.isFinite(m.q_pa) || !(m.q_pa > 0)) return null;
+    return { t: m.t, v: m.q_pa };
+  }
+  function eventAlias(name, stage, stages) {
+    // A plain name for a model event, [short, long]: the canvas shows the short one, the event list the long one
+    // with the model's own label beside it; null for an event without one.
+    const k = stages.indexOf(stage), nth = "stage-" + (k >= 0 ? k + 1 : stage);
+    if (name === "propellant") return k === 0 ? ["MECO", "MECO: stage-1 propellant used up"] : [nth + " burnout", nth + " propellant used up"];
+    if (name === "staging") return ["stage separation", "stage separation"];
+    if (name === "ignition") return [nth + " ignition", nth + " ignition"];
+    if (name === "fairing") return ["fairing jettison", "fairing jettison"];
+    if (name === "cutoff") return k === 1 ? ["SECO", "SECO: stage-2 energy cutoff"] : [nth + " cutoff", nth + " energy cutoff"];
+    if (name === "kick_start") return ["pitch kick starts", "pitch kick starts"];
+    if (name === "kick_end") return ["pitch kick ends", "pitch kick ends"];
+    if (name === "push_start") return ["push starts", "push starts"];
+    if (name === "release") return ["release", "release"];
+    if (name === "liftoff") return ["liftoff", "liftoff"];
+    if (name === "ramp_end") return ["full thrust", "full thrust: the engines' startup ramp ends"];
+    if (name === "ignition_failed") return ["ignition failed", "ignition failed"];
+    if (name === "apex") return ["apex", "apex"];
+    if (name === "impact") return ["impact", "impact"];
+    if (name === "end") return ["run ends", "the run's last row"];
+    return null;
+  }
+  function bodyText(b, endT, f) {
+    // The event list's line for a separated body b (a payload body): its drag-free coast from separation and that
+    // coast's impact time, speed and downrange, or that it is still in flight at the run's end (endT [s]) and where
+    // its coast would come down. f: {name, clock, speed, length}, the page's formatting.
+    const head = f.name + ": drag-free coast from " + f.clock(b.t_separation) + " (display only, not model output; no re-entry drag, so not a landing prediction)";
+    const im = b.impact;
+    if (!im) return head + "; its coast does not reach the ground in the time computed";
+    const where = f.speed(im.speed_mps) + " m/s, " + f.length(im.downrange_m) + " downrange";
+    if (b.clipped_at_run_end === true || im.within_run !== true) {
+      return head + "; still in flight at the run's end (" + f.clock(endT) + "); its drag-free impact would be " + f.clock(im.t) + " at " + where;
+    }
+    return head + "; impact " + f.clock(im.t) + " at " + where;
   }
   function niceLength(maxM) {
     if (!(maxM > 0) || !Number.isFinite(maxM)) return 0;
@@ -393,6 +578,164 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   }
   function wrapDeg(d) {
     return ((d + 180) % 360 + 360) % 360 - 180;
+  }
+  function initialPair(names, pair, wanted) {
+    // The runs of the two panels, [left, right] (right null: one full-width panel): the hash's runs when it names
+    // any (the first two), else the payload's default pair (D-SP2-28, scene.default_pair), else the payload's
+    // first run; only names of the payload, never one run twice.
+    const known = n => names.indexOf(n) >= 0;
+    const pick = (Array.isArray(wanted) && wanted.length ? wanted : Array.isArray(pair) ? pair : []).filter(known);
+    const left = pick.length ? pick[0] : names.length ? names[0] : null;
+    const right = pick.length > 1 && pick[1] !== left ? pick[1] : null;
+    return [left, right];
+  }
+  function panelBoxes(box, n, twoUpMin, gap) {
+    // The boxes [px] of n (1 or 2) panels in box: one panel fills it; two sit side by side, each (w - gap) / 2
+    // wide, from twoUpMin of width, else one above the other, each (h - gap) / 2 tall. Both boxes are the same
+    // size, so the panels' views are too.
+    if (n < 2) return [{ x: box.x, y: box.y, w: box.w, h: box.h }];
+    if (box.w >= twoUpMin) {
+      const w = (box.w - gap) / 2;
+      return [{ x: box.x, y: box.y, w: w, h: box.h }, { x: box.x + w + gap, y: box.y, w: w, h: box.h }];
+    }
+    const h = (box.h - gap) / 2;
+    return [{ x: box.x, y: box.y, w: box.w, h: h }, { x: box.x, y: box.y + h + gap, w: box.w, h: h }];
+  }
+  function overlaps(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+  function firstFree(candidates, taken, bounds) {
+    // The first candidate rect [px] that lies inside bounds and overlaps no taken rect; null when none does.
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      const inside = c.x >= bounds.x && c.y >= bounds.y && c.x + c.w <= bounds.x + bounds.w && c.y + c.h <= bounds.y + bounds.h;
+      if (inside && !taken.some(q => overlaps(c, q))) return c;
+    }
+    return null;
+  }
+  function placeLabels(items, taken, bounds, gap) {
+    // A label plate for each item ({x, y: its anchor, r: the anchor's clearance, w, h: the plate} [px]), in
+    // order: right of the anchor and below it, above it, level with it; then left of it in the same three;
+    // then under it and over it, centred; the first that lies inside bounds and overlaps neither a taken rect
+    // nor an earlier plate. null where none fits (the marker stays, unlabelled). Plates never cover what is
+    // taken, so they are never cut.
+    const rects = taken.slice();
+    return items.map(it => {
+      const right = it.x + it.r + gap, left = it.x - it.r - gap - it.w, below = it.y + gap, above = it.y - gap - it.h;
+      const level = it.y - it.h / 2, centre = it.x - it.w / 2, under = it.y + it.r + gap, over = it.y - it.r - gap - it.h;
+      const tries = [[right, below], [right, above], [right, level], [left, below], [left, above], [left, level], [centre, under], [centre, over]]
+        .map(p => ({ x: p[0], y: p[1], w: it.w, h: it.h }));
+      const at = firstFree(tries, rects, bounds);
+      if (at) rects.push(at);
+      return at;
+    });
+  }
+  function neighbourTime(times, t, dir, eps) {
+    // The first of the ascending times after t (dir > 0), or the last before it (dir < 0), by more than eps; null
+    // when there is none.
+    if (dir > 0) {
+      for (let i = 0; i < times.length; i++) if (times[i] > t + eps) return times[i];
+      return null;
+    }
+    for (let i = times.length - 1; i >= 0; i--) if (times[i] < t - eps) return times[i];
+    return null;
+  }
+  // The close-up's separations: drawn, not computed (design 4.9). The spent stage's gap opens linearly to
+  // STAGE_GAP_OF_STACK of the drawn stack over the staging coast (STAGE_COAST_FALLBACK_S when no stage-2 ignition
+  // follows), then grows by STAGE_GAP_ACCEL_PX_S2 x (time since that ignition)^2; the fairing halves turn out to
+  // FAIRING_OPEN_DEG over FAIRING_OPEN_S, slide back at FAIRING_SLIDE_MPS2 and drift apart at FAIRING_LATERAL_MPS.
+  const STAGE_GAP_OF_STACK = 0.4, STAGE_GAP_ACCEL_PX_S2 = 20, STAGE_COAST_FALLBACK_S = 5;
+  const FAIRING_OPEN_S = 1.5, FAIRING_OPEN_DEG = 25, FAIRING_SLIDE_MPS2 = 0.2, FAIRING_LATERAL_MPS = 0.6;
+  function stagingGapPx(tau, coastS, stackPx) {
+    // The drawn gap [px] between stage 2's base and the spent stage's top, tau [s] after staging; coastS [s] is
+    // the staging coast (null: STAGE_COAST_FALLBACK_S), stackPx the drawn stack's length [px]. Continuous.
+    if (!(tau > 0)) return 0;
+    const coast = coastS > 0 ? coastS : STAGE_COAST_FALLBACK_S, open = STAGE_GAP_OF_STACK * stackPx;
+    const after = Math.max(0, tau - coast);
+    return open * Math.min(tau, coast) / coast + STAGE_GAP_ACCEL_PX_S2 * after * after;
+  }
+  function fairingOpen(tau) {
+    // The fairing halves tau [s] after the drop: {angle [rad] each half is turned out about its base edge, slide
+    // [m] back along the axis, lateral [m] out from it}. Continuous; all zero at the drop.
+    const s = Math.min(1, Math.max(0, tau / FAIRING_OPEN_S)), ease = s * s * (3 - 2 * s), u = Math.max(0, tau);
+    return { angle: FAIRING_OPEN_DEG * Math.PI / 180 * ease, slide: 0.5 * FAIRING_SLIDE_MPS2 * u * u, lateral: FAIRING_LATERAL_MPS * u };
+  }
+  function smooth01(x) {
+    // 0 to 1 as x goes from 0 to 1, with zero slope at both ends (smoothstep); clamped outside.
+    const s = Math.min(1, Math.max(0, x));
+    return s * s * (3 - 2 * s);
+  }
+  function blendFrame(a, b, s) {
+    // The close-up's framing s (0 to 1) of the way from a to b ({kc [px per m], up [m]: the point of the drawn
+    // stack, from its base, put at the drawing's centre}): the scale geometrically, the point linearly; a at 0 and b
+    // at 1 exactly, so a framing that eases into the next stack's own meets it with no jump.
+    if (s <= 0) return { kc: a.kc, up: a.up };
+    if (s >= 1) return { kc: b.kc, up: b.up };
+    return { kc: a.kc * Math.pow(b.kc / a.kc, s), up: a.up + (b.up - a.up) * s };
+  }
+  function halvesFrame(preL, postL, hingeM, stackPx, minStackPx, hingeBackPx) {
+    // The close-up's framing while the fairing halves open ({kc [px per m], up [m]}, as blendFrame's): the scale that
+    // draws the stack before the drop (preL [m]) stackPx long or the stack left after it (postL [m]) minStackPx long,
+    // whichever is larger; the halves' hinge (hingeM [m] from the drawn stack's base: stage 2's top) hingeBackPx
+    // behind the drawing's centre, so the halves, which turn out and slide back from it, stay in the drawing.
+    const kc = Math.max(stackPx / preL, minStackPx / postL);
+    return { kc: kc, up: hingeM + hingeBackPx / kc };
+  }
+  function fairingHalves(o, dims, k) {
+    // The two fairing halves (side -1 then +1) at o = fairingOpen(tau), as outline points [px] in the close-up's axis
+    // frame (x along the axis from the drawn stack's base toward the nose, y across it at k [px per m]): each half
+    // [its hinge, the flare's corner, the cylinder's end, the nose curve's control point, the nose on the half's inner
+    // edge, the inner edge's base], turned out by o.angle about its hinge, slid back by o.slide and out by o.lateral.
+    // dims: {u0 [m]: the hinge (stage 2's top) from the drawn base, half [m]: the body's half-width, dy [m]: the
+    // fairing's wall outside the body's, F [m]: the fairing's length, flare, cylinder: its shape, as fractions of
+    // F}. The nose is a quadratic curve through the control point, inside the hull of these points.
+    return [-1, 1].map(side => {
+      const m = -side, c = Math.cos(side * o.angle), s = Math.sin(side * o.angle);
+      const ox = (dims.u0 - o.slide) * k, oy = side * (dims.half + o.lateral) * k, out = -m * dims.dy * k;
+      return [[0, 0], [dims.flare * dims.F * k, out], [dims.cylinder * dims.F * k, out], [dims.F * k, out],
+        [dims.F * k, m * dims.half * k], [0, m * dims.half * k]].map(p => [ox + p[0] * c - p[1] * s, oy + p[0] * s + p[1] * c]);
+    });
+  }
+  function halfReach(q) {
+    // The points a fairing half of fairingHalves reaches: its corners and its nose curve's extremes in x and y (the
+    // curve from q[2] to q[4] with control q[3]), so their box is the half's.
+    const a = q[2], c = q[3], b = q[4], out = [q[0], q[1], a, b, q[5]];
+    [0, 1].forEach(k => {
+      const den = a[k] - 2 * c[k] + b[k], s = den !== 0 ? (a[k] - c[k]) / den : -1, u = 1 - s;
+      if (s > 0 && s < 1) out.push([u * u * a[0] + 2 * u * s * c[0] + s * s * b[0], u * u * a[1] + 2 * u * s * c[1] + s * s * b[1]]);
+    });
+    return out;
+  }
+  function halvesEndTime(fromT, capT, stepS, gone) {
+    // When the close-up stops drawing the fairing halves [s]: the first time, sampled every stepS [s] from fromT (the
+    // least time they are drawn to), at which gone(t) holds (their outline has wholly left the close-up's drawing);
+    // capT (the run's last row or the end of the halves' path, their impact) when it has not held by then, and never
+    // later than capT.
+    if (!(stepS > 0) || !(capT > fromT)) return Math.min(fromT, capT);
+    for (let k = 0; ; k++) {
+      const t = Math.min(capT, fromT + k * stepS);
+      if (t >= capT || gone(t)) return t;
+    }
+  }
+  function segmentDistance(p, a, b) {
+    // The distance [px] from the point p to the segment from a to b (to the point a when they coincide).
+    const dx = b[0] - a[0], dy = b[1] - a[1], len2 = dx * dx + dy * dy;
+    const s = len2 > 0 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+    return Math.hypot(p[0] - a[0] - s * dx, p[1] - a[1] - s * dy);
+  }
+  function nearestOnRect(p, r) {
+    // The point of the rect r ({x, y, w, h} [px]) nearest to p (p itself when it lies inside).
+    return [Math.min(r.x + r.w, Math.max(r.x, p[0])), Math.min(r.y + r.h, Math.max(r.y, p[1]))];
+  }
+  function leaderSpots(p, r, w, h) {
+    // The plates [px] (w x h) a label on a leader from the point p could take, r out along eight directions in
+    // placeLabels' order (right and below, right and above, right, then the same on the left, then below, above),
+    // each touching the leader's end with its nearest corner, or the middle of its nearest side.
+    const d = r / Math.SQRT2;
+    return [[1, 1], [1, -1], [1, 0], [-1, 1], [-1, -1], [-1, 0], [0, 1], [0, -1]].map(u => {
+      const k = u[0] !== 0 && u[1] !== 0 ? d : r, ax = p[0] + u[0] * k, ay = p[1] + u[1] * k;
+      return { x: u[0] > 0 ? ax : u[0] < 0 ? ax - w : ax - w / 2, y: u[1] > 0 ? ay : u[1] < 0 ? ay - h : ay - h / 2, w: w, h: h };
+    });
   }
   // ------------------------------------------------------------------ pure functions: end
 
@@ -416,6 +759,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const CLAMP_OPEN_REACH = 3;           // an open clamp spans from 1 to this many clamp sizes beyond the body's side
   const CLAMP_CLOSED_HEIGHT = 2;        // a closed clamp is this many clamp sizes tall (an open one, one)
   const MARKER_TICK_OF_SIZE = 2.2;      // heading tick of the position marker, in marker sizes
+  const MARKER_CORE_OF_SIZE = 0.6;      // the dot that marks the vehicle again over a separated body drawn on it, in marker sizes
   const EDGE_SLACK_M = 1;               // the ground and clip outlines reach this far past the view's edges [m]
   // lines [px]
   const OUTLINE_PX = 1.25;              // outline width of every drawn shape
@@ -426,8 +770,19 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const MARKER_RING_PX = 1.5;           // the position marker's outline
   const SCALE_BAR_LINE_PX = 2;          // the scale bar
   const MIN_SHAPE_PX = 2;               // smallest drawn ring, so a thin item stays visible
+  const TRACE_PX = 2;                   // the flown path, in the run's colour ...
+  const TRACE_HALO_PX = 4.5;            // ... over a halo (its outline) of this width
+  const TRACE_MIN_STEP_PX = 0.75;       // a path sample this close to the last one kept is skipped
+  const PATH_PX = 1.25;                 // a separated body's dashed path ...
+  const PATH_HALO_PX = 3.5;             // ... over a halo of this width
+  const RING_PX = 2;                    // a hollow marker's stroke (a separated body, the other panel's vehicle) ...
+  const RING_HALO_PX = 4.5;             // ... over a halo of this width
+  const BODY_MARKER_PX = 9;             // a separated body's hollow marker, across (at least 4 px: criterion 16)
+  const OTHER_MARKER_PX = 13;           // the other panel's vehicle: a hollow ring, across
+  const EVENT_MARK_PX = 5;              // an event marker on the trace: a diamond of this half-diagonal
   const DASH_OUTLINE = [4, 3];          // dashed outline: the carriage of an impact run after release, a yardstick run's vehicle
   const DASH_GUIDE = [3, 4];            // the close-up's crosshair
+  const DASH_PATH = [5, 4];             // a separated body's display-only path
   const HATCH_GAP_PX = 4;               // spacing of the hatch of a never-loaded tank band
   // text [px]
   const FONT_CLOCK_PX = 16;             // the header's clock
@@ -439,8 +794,10 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const LINE_SMALL_PX = 14;             // line pitch of 11 px text
   const PLATE_LINE_OF_FONT = 1.35;      // a text plate's line pitch, in font sizes
   const PLATE_PAD_PX = 6;               // padding of a text plate
-  const LABEL_WEIGHT = 600;             // weight of the run label and the exploratory mark
-  // the panel [px]
+  const LABEL_WEIGHT = 600;             // weight of the run label, the exploratory mark and the end banner
+  // the panels [px]
+  const TWO_UP_MIN_PX = 900;            // from this canvas width two panels sit side by side, else one above the other
+  const PANEL_GAP_PX = 12;              // the gap between two panels
   const HEADER_PX = 46;                 // the in-canvas header band: run, clock, phase, last event
   const HEADER_PAD_PX = 8;              // the header's edge inset (the swatch, the clock)
   const SWATCH_PX = 14;                 // the run's colour swatch
@@ -463,9 +820,10 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const SCALE_PLATE_H_PX = 26;          // ... and height
   const GAUGE_W_PX = 12, GAUGE_H_PX = 64;  // the S1 and S2 gauges
   const NARROW_PLATE_OF_VIEW = 0.55;    // a gauge plate wider than this share of the view goes above the scale bar
-  const HUD_MAX_LINES = 6;              // the readout: phase, engines, altitude or depth, speed, felt g, drive force
+  const HUD_MAX_LINES = 7;              // the readout: phase, frozen, engines, altitude or depth, speed, felt g, drive force
   const IMPACT_NOTE_MAX_PX = 360;       // width of the impact caution plate over the view: at most this
   const IMPACT_NOTE_OF_VIEW = 0.42;     // ... and at most this share of the view
+  const BANNER_MAX_PX = 380;            // width of the end banner: at most this
   const CLOSEUP_PAD_PX = 10;            // padding round the close-up's drawing
   const CLOSEUP_TEXT_INSET_PX = 6;      // left inset of the close-up's text
   const CLOSEUP_TITLE_TOP_PX = 4;       // top of its title
@@ -473,16 +831,17 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const CLOSEUP_TITLE_PX = CLOSEUP_TITLE_TOP_PX + CLOSEUP_TITLE_LINES * LINE_SMALL_PX;
   const CLOSEUP_TEXT_PX = 18;           // the readout row under the drawing
   const CLOSEUP_READOUT_TOP_PX = 3;     // top of the readout in its row
+  const CLOSEUP_CAPTION_TOP_PX = 3;     // the separation caption's plate, below the drawing's top
   const GROUND_SAMPLES = 48;            // points of the drawn ground arc on each side of an opening
-  const MARKER_LABEL_DX_PX = 10;        // the marker's label, right of the marker
-  const MARKER_LABEL_DY_PX = 8;         // ... and below it
   const CARRIAGE_LABEL_MIN_PX = 4;      // the carriage's label shows while the carriage is at least this tall
   const LABEL_GAP_PX = 12;              // least gap between the rails and the carriage's label
+  const LABEL_PLATE_GAP_PX = 4;         // gap between a marker and its label plate
   const TICK_PAD_PX = 8;                // the event marks' span, inset from the slider's ends
-  const TICK_MARK_TOP_PX = 12;          // top of an event mark
-  const TICK_MARK_PX = 8;               // length of an event mark
+  const TICK_MARK_TOP_PX = 12;          // top of the event marks
+  const TICK_MARK_PX = 8;               // height of the event marks (shared by the panels' rows)
   const TICK_LABEL_GAP_PX = 8;          // least gap between two event names over the slider
   const TICK_LABEL_EDGE_PX = 20;        // no event name nearer the slider's ends than this
+  const CAPTURE_HUD_PX = 28;            // the clock band over a captured frame
   const CAPTURE_FOOTER_PX = 72;         // the least caveat footer of a captured frame
   const CAPTURE_MIN_PX = 64, CAPTURE_MAX_PX = 4096;  // a captured frame's sides, and the least view in it
   const CAPTURE_DEFAULT_W_PX = 1280, CAPTURE_DEFAULT_H_PX = 720;  // the frame of captureFrame(t) called without a size
@@ -506,11 +865,34 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const FORCE_MN_DECIMALS = 2;          // drive force [MN]
   const POWER_MW_DECIMALS = 0;          // drive power [MW]
   const PX_DECIMALS = 0;                // the close-up's stack length [px]
+  const GAP_DECIMALS = 2;               // the measured staging-coast gap [m]
+  const COAST_DECIMALS = 0;             // the staging coast's length [s]
+  const RATE_DECIMALS = 2;              // the rate shown under the clock [x]
   // the rest
   const AUTOPLAY_DELAY_MS = 900;        // delay before autoplay starts [ms]
   const NOT_LOADED_SHOWN_KG = 0.5;      // a tank short of its full load by more than this is labelled offloaded
   const RATE_CHOICES = [0.25, 0.5, 1, 5, 20, 60];  // must equal the #rate <option> values (but "auto")
   const EVENT_EPS_S = 1e-9;             // an event counts as passed from its own time on
+  const STEP_S = 1, BIG_STEP_S = 10;    // Left and Right step the clock this far, with Shift the second
+  const JUMP_EPS_S = 1e-6;              // previous and next event: a time this close to the clock counts as the clock
+  const STAGING_AFTER_S = 1;            // the close-up draws the spent stage this long after stage-2 ignition (it has left by then)
+  const FAIRING_SHOW_S = 5;             // ... and the fairing halves at least this long after the drop (fairingEnd: then until they have wholly left it)
+  const HALVES_SCAN_S = 0.1;            // when the halves stop being drawn is found by sampling this often [scene s]
+  const CLOSEUP_ZOOM_S = 3;             // the close-up eases to the next framing over this long before staging and the fairing drop [s]
+  const FAIRING_EASE_S = 2;             // ... and to the stack's own scale over this long once the halves have gone [s]
+  const STAGING_PAN_S = 6;              // after staging, the close-up pans from the stage-1 engines to stage 2 over this long [s]
+  const ENGINES_BACK_PX = 50;           // at MECO the stage-1 nozzles sit this far behind the drawing's centre (the plume in view)
+  const CLOSEUP_MIN_STACK_PX = 121;     // the least drawn stack (criterion 16: 120 px, a pixel to spare): stage 2 at MECO, the stack while the halves open
+  const KICK_ARC_GAP_PX = 8;            // the close-up's kick arc runs this far past the nose (inside the drawing)
+  const FAIRING_HINGE_BACK_PX = 28;     // while the halves open, their hinge sits this far behind the drawing's centre (halves in the drawing, clear of its caption)
+  const ZOOM_ASPECT = 0.85;             // the frame aspect the Auto rate's zoom cap assumes: about the two-panel default's (the rate does not follow the window)
+  const ZOOM_SAMPLE_S = 1;              // ... sampling the camera's view height this often [scene s]
+  const WRAP_MEMO_MAX = 256;            // wrapLines' memo: entries kept before it is cleared
+  const WRAP_MEMO = new Map();          // ... the memo itself: wrapLines' results by font, width and text (the bands re-wrap every frame)
+  const LEADER_PX = 16;                 // a separated body drawn on its vehicle: its label sits this far out from its marker, on a leader ...
+  const LEADER_STEPS = 4;               // ... or 2, 3 ... up to this many times as far, where the nearer spots are taken
+  const SPENT_TAG = "spent stage 1: drawn";  // the close-up's tag on the separating spent stage ...
+  const SPENT_TAG_BACK_PX = 40;         // ... beside the stage this far behind its top (or at its middle, if nearer)
   // display units only; the payload is SI
   const KG_PER_T = 1000, M_PER_KM = 1000, N_PER_MN = 1e6, W_PER_MW = 1e6, PA_PER_KPA = 1000;
   const DEG_PER_RAD = 180 / Math.PI;    // the payload's angles are degrees; the drawing turns radians
@@ -521,6 +903,22 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const IMPACT_NOTE = "Carriage and rails after release: drawn, not in the planar model, which has no contact with the carriage, the mouth or the shaft; the impact is logged where the base returns to altitude 0, the model's ground.";
   const IMPACT_TICKER_NOTE = ": the planar model has no contact with the carriage, the mouth or the shaft; logged where the base returns to altitude 0, the model's ground";
   const CLOSEUP_CARRIAGE_LABEL = "carriage: drawn";
+  const MARKER_NOTE = "vehicle: a position marker, not to scale";
+  const FROZEN_LINE = "View frozen at its end";
+  const HELD_TEXT = "panel held at that row";  // the telemetry's 'Shown at' before the run's first row (after the run's pre_label)
+  const MAXQ_TICKER_NOTE = ": the run's recorded max-Q (its metrics: max_q_pa at max_q_time_s); not a logged event";
+  const ON_VEHICLE_TEXT = ": drawn, display only";  // the label of a separated body drawn on its vehicle, after the body's name
+  const FAIRING_CAPTION = "Fairing halves drawn, not computed: in the view both follow one path";
+  const STAGE1_BODY = "spent_stage1", FAIRING_BODY = "fairing_halves";  // scene.STAGE1_BODY, scene.FAIRING_BODY
+  const BODY_TEXT = { spent_stage1: "spent stage 1", fairing_halves: "fairing halves" };
+  // the events marked on the flown path (and every ignition of a later stage)
+  const TRACE_EVENTS = ["propellant", "staging", "fairing", "cutoff", "impact", "apex", "ignition_failed"];
+  // run selector groups: [role, offload kind (null: any), group label], in this order
+  const ROLE_GROUPS = [
+    ["run", null, "Experiment runs"], ["offload", "offload case", "Offload cases"], ["offload", "paired pad", "Paired pads"],
+    ["offload", "pad control", "Pad controls"], ["case", null, "Cases"], ["bound", null, "Bounds"], ["paired_baseline", null, "Paired baselines"]
+  ];
+  const NO_PANEL = "none: one full-width panel";
   const R_E = DATA.constants.R_E_m;
   const CAM = DATA.camera;
 
@@ -533,8 +931,10 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   const colorVar = r => "--run-" + r.color;
   let T_MIN = 0, T_MAX = 1;
   let tNow = 0, playing = false, lastFrame = null;
-  let panelRun = runs[0];
-  let embedded = false;
+  let panelRuns = [runs[0]];
+  let SCHED = rateSchedule([]);
+  let EVENT_TIMES = [];
+  let embedded = false, touched = false;
 
   // ------------------------------------------------------------------ helpers (the seven are replay.html's, verbatim)
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
@@ -581,6 +981,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     tankEmpty: "--sc-tank-empty", tankLine: "--sc-tank-line", prop: "--sc-prop", hatch: "--sc-hatch",
     plume: "--sc-plume", plumeLine: "--sc-plume-line", carriage: "--sc-carriage", carriageLine: "--sc-carriage-line",
     steel: "--sc-steel", steelLine: "--sc-steel-line", rail: "--sc-rail", railLine: "--sc-rail-line",
+    halo: "--sc-halo", sep: "--sc-sep",
     cautionBg: "--caution-bg", bad: "--bad", fontData: "--font-data", fontBody: "--font-body"
   };
   function scenePalette() {
@@ -599,10 +1000,34 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   function lengthText(m, d) { return Math.abs(m) >= KM_FROM_M ? fmt(m / M_PER_KM, KM_DECIMALS) + " km" : fmt(m, d) + " m"; }
   function pct(f, d) { return fmt(100 * f, d) + "%"; }
   function legendText() {
-    return "Drawn, not computed: every shape and size; the clamps, rings, carriage and rails; the plume's length (vacuum-thrust fraction \u00d7 " +
-      pct(PLUME_OF_STACK, LEGEND_PCT_DECIMALS) + " of the drawn stack); the tank levels, drawn as heights.";
+    return "Drawn, not computed: every shape and size; clamps, rings, carriage, rails; plume length (vacuum-thrust fraction \u00d7 " +
+      pct(PLUME_OF_STACK, LEGEND_PCT_DECIMALS) + " of the stack); tank levels as heights. Not model output: separated bodies' dashed drag-free coasts.";
   }
   function enginesText(f) { return "Engines " + pct(f, THRUST_PCT_DECIMALS) + " of full vacuum thrust"; }
+  function lastT(run) { return run.t[run.t.length - 1]; }
+  function endText(run) {
+    // The run's end, from the payload's end record: "Ended T+15.69 s: impact" ("in orbit" for an insertion).
+    const e = run.end, how = e.status === "inserted" ? "in orbit" : String(e.status).replace(/_/g, " ");
+    return "Ended " + clockText(e.t) + ": " + how;
+  }
+  runs.forEach(r => {
+    r.pre_label = "Waiting: first recorded row at " + clockText(r.t[0]);
+    r.end_label = endText(r);
+    r.maxq = recordedMaxQ(r.max_q);  // the run's recorded max-Q (its metrics), or none: a display mark, not a logged event
+  });
+  function maxqText(run) { return "max-Q " + fmt(run.maxq.v / PA_PER_KPA, Q_KPA_DECIMALS) + " kPa"; }
+  function frozenText() { return FROZEN_LINE.charAt(0).toLowerCase() + FROZEN_LINE.slice(1); }
+  function aliasOf(run, e) { return eventAlias(e.name, e.stage, run.tanks.stage_names); }
+  function shortText(run, e) {
+    // An event as the canvas names it: its plain name, else the model's label (marked when synthesised).
+    const a = aliasOf(run, e);
+    return a ? a[0] + (e.synthetic ? SYNTH_MARK : "") : eventText(e);
+  }
+  function longText(run, e) {
+    // An event as the event list names it: its plain name with the model's label in brackets, else the label.
+    const a = aliasOf(run, e);
+    return a ? a[1] + " [" + eventText(e) + "]" : eventText(e);
+  }
 
   // ------------------------------------------------------------------ state at a scene time (no DOM)
   function stepAt(run, field, t) { return run[field][idxAt(t, run.t)]; }
@@ -619,34 +1044,45 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     const prop1 = valAt(run, "prop1_kg", t), prop2 = valAt(run, "prop2_kg", t), m = run.masses;
     const mass = m.payload_kg + m.stage_dry_kg[1] + (fairingOn ? (m.fairing_kg || 0) : 0) + prop2 + (stage === 0 ? m.stage_dry_kg[0] + prop1 : 0);
     const plume = valAt(run, "plume", t);
+    // The model has no state before a run's first row: no drive, felt load, q or Mach then. A row the event rule
+    // has unlit while its vacuum thrust is still up (a cutoff or MECO row: the state just before the engines
+    // stop) has the felt load of the burn, not of the coast that follows, so none is shown.
+    const unlit = !before && !thrustOn && plume > 0;
     return {
       t: t, phase: phaseAt(run, t), alt: valAt(run, "alt_m", t), d: valAt(run, "downrange_m", t), speed: valAt(run, "speed_mps", t),
       pitchDeg: valAt(run, "pitch_deg", t), angleDeg: valAt(run, "screen_angle_deg", t), defined: stepAt(run, "attitude_defined", t),
       plume: plume, thrustOn: thrustOn, plumeDrawn: thrustOn ? Math.max(0, plume) : 0, stage: stage, fairingOn: fairingOn,
       fill1: valAt(run, "fill1", t), fill2: valAt(run, "fill2", t), prop1: prop1, prop2: prop2, mass: mass,
-      q: valAt(run, "q_pa", t), mach: valAt(run, "mach", t), sM: valAt(run, "s_m", t),
-      felt: Array.isArray(run.felt_g) ? valAt(run, "felt_g", t) : null,
-      driveF: valAt(run, "drive_force_N", t), driveP: valAt(run, "drive_power_W", t)
+      q: before ? null : valAt(run, "q_pa", t), mach: before ? null : valAt(run, "mach", t), sM: valAt(run, "s_m", t),
+      felt: before || unlit || !Array.isArray(run.felt_g) ? null : valAt(run, "felt_g", t),
+      driveF: before ? null : valAt(run, "drive_force_N", t), driveP: before ? null : valAt(run, "drive_power_W", t), frozen: false
     };
   }
   function hudLines(st) {
-    // The readout of the panel (drawn in the view or in the band, read back through the state hook).
-    // "Engines": the vacuum thrust over the stage's full vacuum thrust (the plume fraction), not the model's
-    // thrust, which is lower by p_amb A_e near the ground (the telemetry note says so).
-    const lines = [st.phase, st.thrustOn ? enginesText(st.plume) : "Engines off",
+    // The readout of the panel (drawn in the view or in the band, read back through the state hook). The first
+    // line is the phase, which says when the panel holds its first row before its run starts and when its run
+    // has ended; a frozen panel says so on the next line. "Engines": the vacuum thrust over the stage's full
+    // vacuum thrust (the plume fraction), not the model's thrust, which is lower by p_amb A_e near the ground
+    // (the telemetry note says so).
+    const lines = [st.phase];
+    if (st.frozen) lines.push(FROZEN_LINE);
+    lines.push(st.thrustOn ? enginesText(st.plume) : "Engines off",
       st.alt < 0 ? "Depth " + lengthText(-st.alt, LENGTH_DECIMALS) : "Altitude " + lengthText(st.alt, LENGTH_DECIMALS),
-      "Speed " + fmt(st.speed, SPEED_DECIMALS) + " m/s"];
+      "Speed " + fmt(st.speed, SPEED_DECIMALS) + " m/s");
     if (st.felt !== null && Number.isFinite(st.felt)) lines.push("Felt " + fmt(st.felt, FELT_DECIMALS) + " g");
     if (st.driveF !== null && Number.isFinite(st.driveF)) lines.push("Drive " + fmt(st.driveF / N_PER_MN, FORCE_MN_DECIMALS) + " MN");
+    else if (st.q !== null && Number.isFinite(st.q) && st.mach !== null && Number.isFinite(st.mach)) {
+      lines.push("q " + fmt(st.q / PA_PER_KPA, Q_KPA_DECIMALS) + " kPa, Mach " + fmt(st.mach, MACH_DECIMALS));
+    }
     return lines;
   }
   function hudWidth(ctx, pal, run) {
     // The widest readout line the run can show [px], with the plate's padding: every phase name, the run's
-    // labels before its first row and after its end, and the engines line at full thrust (the other lines
-    // are shorter).
+    // labels before its first row and after its end, the frozen line and the engines line at full thrust (the
+    // other lines are shorter).
     ctx.save();
     ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
-    const texts = Object.keys(PHASE_NAME).map(k => PHASE_NAME[k]).concat([run.pre_label, run.end_label, enginesText(1)]);
+    const texts = Object.keys(PHASE_NAME).map(k => PHASE_NAME[k]).concat([run.pre_label, run.end_label, FROZEN_LINE, enginesText(1)]);
     const w = Math.max(...texts.map(s => ctx.measureText(String(s)).width));
     ctx.restore();
     return w + 2 * PLATE_PAD_PX;
@@ -669,6 +1105,19 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   }
   function impactNote(run) { return siloReady(run.assist) && run.end.status === "impact"; }
   function closeupSide() { return (1 + PLUME_OF_STACK) * CAM.closeup_stack_px + 2 * CLOSEUP_PAD_PX; }
+  function closeupPivot(inset) {
+    // The close-up's centre [canvas px]: the middle of its square drawing under the title.
+    return [inset.x + inset.w / 2, inset.y + CLOSEUP_TITLE_PX + closeupSide() / 2];
+  }
+  function closeupDrawing(inset) {
+    // The close-up's drawing [canvas px]: the inset under its title and over its readout row.
+    return { x: inset.x, y: inset.y + CLOSEUP_TITLE_PX, w: inset.w, h: inset.h - CLOSEUP_TITLE_PX - CLOSEUP_TEXT_PX };
+  }
+  function bodyClearPx() {
+    // The least distance [px] between a separated body's marker and its vehicle's position marker at which the two
+    // do not touch: half of each one's drawn size, the body's halo and the vehicle's outline included.
+    return (CAM.marker_size_px + MARKER_RING_PX + BODY_MARKER_PX + RING_HALO_PX) / 2;
+  }
   function plateHeight(n, size) {
     const lh = Math.round(size * PLATE_LINE_OF_FONT);
     return n * lh + 2 * PLATE_PAD_PX - (lh - size);
@@ -693,44 +1142,14 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     ctx.restore();
     return { w: 2 * GAUGE_W_PX + 3 * PLATE_PAD_PX + textW + 2 * PLATE_PAD_PX, h: Math.max(GAUGE_H_PX, lines.length * LINE_TEXT_PX) + 2 * PLATE_PAD_PX };
   }
-  function panelLayout(ctx, pal, run, box) {
-    // The panel's regions [canvas px] for one run and box, the same at every time: the exploratory strip
-    // (an exploratory directory only), the header, the run's note, the body and the legend at the bottom.
-    // The close-up lies over the view's top left ("overlay"); in a column left of the view when the panel
-    // is too short for that ("side"); in a band under the view, with the gauge, readout and caution plates,
-    // when the panel is narrower than NARROW_VIEW_PX ("band"), so no plate lies over the narrow view.
-    ctx.save();
-    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
-    const textW = Math.max(1, box.w - 2 * TEXT_INSET_PX);
-    const note = run.note ? wrapLines(ctx, run.note, textW) : [];
-    const legend = wrapLines(ctx, legendText(), textW);
-    ctx.restore();
-    let y = box.y;
-    const mark = DATA.exploratory_caveat ? { x: box.x, y: y, w: box.w, h: MARK_STRIP_PX } : null;
-    if (mark) y += MARK_STRIP_PX;
-    const header = { x: box.x, y: y, w: box.w, h: HEADER_PX };
-    y += HEADER_PX;
-    const noteBox = { x: box.x, y: y, w: box.w, h: note.length ? note.length * LINE_SMALL_PX + 2 * BAND_PAD_PX : 0 };
-    y += noteBox.h;
-    const legendH = legend.length * LINE_SMALL_PX + 2 * BAND_PAD_PX;
-    const legendBox = { x: box.x, y: Math.max(y, box.y + box.h - legendH), w: box.w, h: legendH };
-    const body = { x: box.x, y: y, w: box.w, h: Math.max(1, legendBox.y - y) };
-    const side = closeupSide(), insetH = side + CLOSEUP_TITLE_PX + CLOSEUP_TEXT_PX;
-    const out = { mark: mark, header: header, noteBox: noteBox, note: note, legendBox: legendBox, legend: legend, body: body, plates: null };
-    if (body.w >= NARROW_VIEW_PX && body.h >= insetH + 2 * VIEW_MARGIN_PX + SCALE_BAR_ROW_PX) {
-      return Object.assign(out, { mode: "overlay", view: body, inset: { x: body.x + VIEW_MARGIN_PX, y: body.y + VIEW_MARGIN_PX, w: side, h: insetH } });
-    }
-    if (body.w >= NARROW_VIEW_PX && body.h >= insetH + 2 * VIEW_MARGIN_PX) {
-      const col = side + 2 * VIEW_MARGIN_PX;
-      return Object.assign(out, {
-        mode: "side", view: { x: body.x + col, y: body.y, w: body.w - col, h: body.h },
-        inset: { x: body.x + VIEW_MARGIN_PX, y: body.y + VIEW_MARGIN_PX, w: side, h: insetH }
-      });
-    }
-    const gauge = gaugeSize(ctx, pal, gaugeLines(run, [1, 1], 1, true));
-    const hudH = plateHeight(HUD_MAX_LINES, FONT_TEXT_PX);
+  function plateRow(ctx, pal, run, body) {
+    // The gauges, the readout and the impact caution plate in a band under the view (the column and band layouts):
+    // the gauges and the readout side by side when the readout's widest line fits beside the gauges, else one above
+    // the other, the caution plate under them. Returns their sizes and the band's height h [px], margins included.
+    const gauge = gaugeSize(ctx, pal, gaugeLines(run, [1, 1], 1, body.w < NARROW_VIEW_PX));
+    const hudW = hudWidth(ctx, pal, run), hudH = plateHeight(HUD_MAX_LINES, FONT_TEXT_PX);
     // the readout goes beside the gauges only when its widest line fits there whole, else under them
-    const together = gauge.w + hudWidth(ctx, pal, run) + 3 * VIEW_MARGIN_PX <= body.w;
+    const together = gauge.w + hudW + 3 * VIEW_MARGIN_PX <= body.w;
     const rowH = together ? Math.max(gauge.h, hudH) : gauge.h + VIEW_MARGIN_PX + hudH;
     let caution = null;
     if (impactNote(run)) {
@@ -740,17 +1159,186 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
       ctx.restore();
       caution = { lines: lines, h: plateHeight(lines.length, FONT_TEXT_PX) };
     }
-    const bandH = insetH + rowH + (caution ? caution.h + VIEW_MARGIN_PX : 0) + 3 * VIEW_MARGIN_PX;
-    const view = { x: body.x, y: body.y, w: body.w, h: Math.max(1, body.h - bandH) };
-    const y0 = view.y + view.h + VIEW_MARGIN_PX, yRow = y0 + insetH + VIEW_MARGIN_PX;
-    const left = body.x + VIEW_MARGIN_PX, right = body.x + body.w - VIEW_MARGIN_PX;
-    out.plates = {
-      gauges: { x: left, y: yRow },
-      hud: together ? { x: right, y: yRow, alignRight: true, maxW: body.w - gauge.w - 3 * VIEW_MARGIN_PX }
-        : { x: left, y: yRow + gauge.h + VIEW_MARGIN_PX, alignRight: false, maxW: body.w - 2 * VIEW_MARGIN_PX },
-      caution: caution ? { x: left, y: yRow + rowH + VIEW_MARGIN_PX, lines: caution.lines } : null
+    return {
+      gauge: gauge, hudW: hudW, together: together, rowH: rowH, caution: caution,
+      h: rowH + (caution ? caution.h + VIEW_MARGIN_PX : 0) + 2 * VIEW_MARGIN_PX
     };
-    return Object.assign(out, { mode: "band", view: view, inset: { x: body.x + Math.max(0, (body.w - side) / 2), y: y0, w: side, h: insetH } });
+  }
+  function rowPlates(row, body, yRow) {
+    // Where plateRow's plates go in body, their row's top at yRow [canvas px].
+    const left = body.x + VIEW_MARGIN_PX, right = body.x + body.w - VIEW_MARGIN_PX;
+    return {
+      gauges: { x: left, y: yRow },
+      hud: row.together ? { x: right, y: yRow, alignRight: true, maxW: body.w - row.gauge.w - 3 * VIEW_MARGIN_PX }
+        : { x: left, y: yRow + row.gauge.h + VIEW_MARGIN_PX, alignRight: false, maxW: body.w - 2 * VIEW_MARGIN_PX },
+      caution: row.caution ? { x: left, y: yRow + row.rowH + VIEW_MARGIN_PX, lines: row.caution.lines } : null
+    };
+  }
+  function closeupOver(lay) {
+    // Whether the close-up lies over the view's top left (the overlay and column layouts).
+    return lay.mode === "overlay" || lay.mode === "column";
+  }
+  function panelLayout(ctx, pal, run, box, share) {
+    // The panel's regions [canvas px] for one run and box, the same at every time: the exploratory strip
+    // (an exploratory directory only), the header, the run's note, the body and the legend at the bottom.
+    // A panel at least NARROW_VIEW_PX wide keeps the close-up in a column at the view's top left, the scale bar, the
+    // marker note and the ring key under it, and the camera frames the rest of the view ("frame": cameraView; A3b
+    // review round 3), so the close-up never covers the site, the flown path or its marks. Where that frame is too
+    // narrow for the gauges and the readout at its right to stay clear of its middle (two panels side by side), they
+    // go in a band under the view when the panel is tall enough ("column"), else over the view's right side
+    // ("overlay", which a wide frame keeps); a panel too short even for the overlay puts the close-up in a column
+    // left of the view ("side"; the legend band, drawn last, covers what of the close-up runs past the body). A panel
+    // narrower than NARROW_VIEW_PX puts the close-up, the gauges, the readout and any caution plate in a band under
+    // the view ("band"), so no plate lies over the narrow view.
+    // share (two panels: sharedLayouts) gives the note and legend bands' line counts, the bands' heights and whether
+    // either panel is crowded, of the two, so both panels' views are the same box and the shared camera puts the
+    // ground line and the launch site at the same place in each.
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+    const textW = Math.max(1, box.w - 2 * TEXT_INSET_PX);
+    const note = run.note ? wrapLines(ctx, run.note, textW) : [];
+    const legend = wrapLines(ctx, legendText(), textW);
+    ctx.restore();
+    const noteN = Math.max(note.length, share ? share.noteLines : 0);
+    const legendN = Math.max(legend.length, share ? share.legendLines : 0);
+    let y = box.y;
+    const mark = DATA.exploratory_caveat ? { x: box.x, y: y, w: box.w, h: MARK_STRIP_PX } : null;
+    if (mark) y += MARK_STRIP_PX;
+    const header = { x: box.x, y: y, w: box.w, h: HEADER_PX };
+    y += HEADER_PX;
+    const noteBox = { x: box.x, y: y, w: box.w, h: noteN ? noteN * LINE_SMALL_PX + 2 * BAND_PAD_PX : 0 };
+    y += noteBox.h;
+    const legendH = legendN * LINE_SMALL_PX + 2 * BAND_PAD_PX;
+    const legendBox = { x: box.x, y: Math.max(y, box.y + box.h - legendH), w: box.w, h: legendH };
+    const body = { x: box.x, y: y, w: box.w, h: Math.max(1, legendBox.y - y) };
+    const side = closeupSide(), insetH = side + CLOSEUP_TITLE_PX + CLOSEUP_TEXT_PX, col = side + 2 * VIEW_MARGIN_PX;
+    const row = plateRow(ctx, pal, run, body);
+    const crowded = (body.w - col) / 2 < Math.max(row.gauge.w, row.hudW) + 2 * VIEW_MARGIN_PX || (share ? share.crowded : false);
+    const out = {
+      mark: mark, header: header, noteBox: noteBox, note: note, legendBox: legendBox, legend: legend, body: body, plates: null,
+      bandH: 0, rowH: row.h, crowded: crowded, together: row.together
+    };
+    const frameOf = v => ({ x: v.x + col, y: v.y, w: Math.max(1, v.w - col), h: v.h });
+    if (body.w >= NARROW_VIEW_PX) {
+      const inset = { x: body.x + VIEW_MARGIN_PX, y: body.y + VIEW_MARGIN_PX, w: side, h: insetH };
+      // under the close-up: the marker note, a plate of small text, over the scale bar's row; and the ring key, unless
+      // the column layout puts it in the band under the gauges (there beside the readout, when the row is the
+      // readout's height: both panels' rows are)
+      const keyInBand = row.together && (share ? share.together : true);
+      const keysH = SCALE_BAR_INSET_PX + SCALE_PLATE_TOP_PX + (keyInBand ? 1 : 2) * (VIEW_MARGIN_PX / 2 + plateHeight(1, FONT_SMALL_PX));
+      const rowH = Math.max(row.h, share ? share.rowH : 0);
+      if (crowded && body.h - rowH >= insetH + 2 * VIEW_MARGIN_PX + keysH) {
+        const view = { x: body.x, y: body.y, w: body.w, h: body.h - rowH };
+        const yRow = view.y + view.h + VIEW_MARGIN_PX;
+        out.plates = Object.assign(rowPlates(row, body, yRow), { key: keyInBand ? { x: body.x + VIEW_MARGIN_PX, y: yRow + row.gauge.h + VIEW_MARGIN_PX / 2 } : null });
+        return Object.assign(out, { mode: "column", bandH: rowH, view: view, frame: frameOf(view), inset: inset });
+      }
+      if (body.h >= insetH + 2 * VIEW_MARGIN_PX + SCALE_BAR_ROW_PX) {
+        return Object.assign(out, { mode: "overlay", view: body, frame: frameOf(body), inset: inset });
+      }
+      const view = { x: body.x + col, y: body.y, w: body.w - col, h: body.h };
+      return Object.assign(out, { mode: "side", view: view, frame: view, inset: inset });
+    }
+    const bandH = Math.max(insetH + VIEW_MARGIN_PX + row.h, share ? share.bandH : 0);
+    const view = { x: body.x, y: body.y, w: body.w, h: Math.max(1, body.h - bandH) };
+    const y0 = view.y + view.h + VIEW_MARGIN_PX;
+    out.plates = rowPlates(row, body, y0 + insetH + VIEW_MARGIN_PX);
+    return Object.assign(out, {
+      mode: "band", bandH: bandH, view: view, frame: view, inset: { x: body.x + Math.max(0, (body.w - side) / 2), y: y0, w: side, h: insetH }
+    });
+  }
+  function sharedLayouts(ctx, pal, prs, boxes) {
+    // The layouts of the shown panels (boxes from panelBoxes, all one size): each laid out once, then again
+    // with the larger note band, plate band and band height of the two and either's crowding, so the views are one
+    // box (sharedCamera).
+    const first = prs.map((run, i) => panelLayout(ctx, pal, run, boxes[i], null));
+    if (prs.length < 2) return first;
+    const share = {
+      noteLines: Math.max(...first.map(l => l.note.length)), legendLines: Math.max(...first.map(l => l.legend.length)),
+      bandH: Math.max(...first.map(l => l.bandH)), rowH: Math.max(...first.map(l => l.rowH)), crowded: first.some(l => l.crowded),
+      together: first.every(l => l.together)
+    };
+    return prs.map((run, i) => panelLayout(ctx, pal, run, boxes[i], share));
+  }
+  function cameraAt(t, prs, view, frame) {
+    // The camera the shown panels share at scene time t (sharedCamera): each run at t, or at its last row once
+    // it has ended (the law's value stays at its run's end), framed in the frame of view (the running extent at
+    // the frame's aspect).
+    const f = frame || view, aspect = f.w / f.h;
+    return sharedCamera(prs.map(r => {
+      const tr = Math.min(t, lastT(r)), xy = screenXY(valAt(r, "alt_m", tr), valAt(r, "downrange_m", tr), R_E);
+      return { E: extentAt(r, tr, aspect), x: xy[0], y: xy[1], floor: floorOf(r), L: geomOf(r).stack_length_m };
+    }), CAM, view, f);
+  }
+  function sceneFrames(ctx, pal, t, prs, boxes) {
+    // Per shown panel at scene time t: the time it is drawn at (t, or its run's last row once t is past it: the
+    // panel freezes at its final state), its layout, the shared camera at that time and the other panel's run,
+    // marked only while this panel's run plays: a frozen camera cannot show where the other vehicle is now, and
+    // the other panel shows it live (ended, or waiting for its first row, as the ring's label and key say); and when
+    // its close-up stops drawing the fairing halves (fairingEnd).
+    const lays = sharedLayouts(ctx, pal, prs, boxes);
+    return prs.map((run, i) => {
+      const end = lastT(run), frozen = t > end + EVENT_EPS_S, ti = frozen ? end : t;
+      const others = frozen ? [] : prs.filter((r, j) => j !== i).map(r => ({
+        run: r, t: Math.min(ti, lastT(r)), ended: ti > lastT(r) + EVENT_EPS_S, waiting: ti < r.t[0]
+      }));
+      return {
+        t: ti, sceneT: t, frozen: frozen, held: t < run.t[0], lay: lays[i], cam: cameraAt(ti, prs, lays[i].view, lays[i].frame), others: others,
+        fairEnd: fairingEnd(run, lays[i])
+      };
+    });
+  }
+  function halvesFraming(run, g) {
+    // The close-up's framing while the fairing halves are drawn (halvesFrame for the stack at the drop: their hinge,
+    // stage 2's top, FAIRING_HINGE_BACK_PX behind the drawing's centre, at the scale that draws the stack left after the
+    // drop CLOSEUP_MIN_STACK_PX long, or the stack before it CAM.closeup_stack_px long, whichever is larger): {kc, up, tF:
+    // the drop [s], u0: the hinge from the drawn base [m]}; null for a run with no fairing drop.
+    const tF = firstEventT(run, "fairing");
+    if (tF === null) return null;
+    const v = g.vehicle, stF = stepAt(run, "stage", tF), pre = stackParts(g, stF, true), post = stackParts(g, stF, false);
+    const below = stF === 0 ? v.stage1_length_m + v.interstage_length_m : 0;  // stage 2's base above the drawn base [m]
+    const frame = halvesFrame(pre.L, post.L, below + v.stage2_length_m, CAM.closeup_stack_px, CLOSEUP_MIN_STACK_PX, FAIRING_HINGE_BACK_PX);
+    return { kc: frame.kc, up: frame.up, tF: tF, u0: below + v.stage2_length_m };
+  }
+  function viewPoints(run, st, view, cam) {
+    // The vehicle in the true-scale view through cam at its state st: {toPx: [m] to [canvas px], xy: its base [m],
+    // base and nose [canvas px] (to scale: the stack's top; else the position marker's heading tick's end), ang
+    // [rad], dir, mode (vehicleMode), ppm, parts (the stack drawn)}.
+    const g = geomOf(run), parts = stackParts(g, st.stage, st.fairingOn), xy = screenXY(st.alt, st.d, R_E);
+    const toPx = (x, y) => [view.x + (x - cam.x0) * cam.ppm, view.y + view.h - (y - cam.y0) * cam.ppm];
+    const base = toPx(xy[0], xy[1]), ang = st.angleDeg / DEG_PER_RAD, dir = [Math.cos(ang), -Math.sin(ang)];
+    const mode = vehicleMode(g.vehicle.body_diameter_m, cam.ppm, CAM.to_scale_min_body_px);
+    const reach = mode === "to_scale" ? parts.L * cam.ppm : CAM.marker_size_px * MARKER_TICK_OF_SIZE;
+    return { toPx: toPx, xy: xy, base: base, nose: [base[0] + reach * dir[0], base[1] + reach * dir[1]], ang: ang, dir: dir, mode: mode, ppm: cam.ppm, parts: parts };
+  }
+  function onVehicle(p, vp, g) {
+    // Whether a separated body's marker at p [canvas px] touches its vehicle as the view draws it (vp: viewPoints):
+    // within bodyClearPx() of the segment from the vehicle's base to its nose (a position marker's heading tick), and
+    // of the drawn body's half-width more when the vehicle is drawn to scale.
+    const extra = vp.mode === "to_scale" ? g.vehicle.body_diameter_m * vp.ppm / 2 : 0;
+    return segmentDistance(p, vp.base, vp.nose) < bodyClearPx() + extra;
+  }
+  function fairingEnd(run, lay) {
+    // When the close-up stops drawing the fairing halves [s] (halvesEndTime): at least FAIRING_SHOW_S after the drop,
+    // then until their outline has wholly left the close-up's drawing (under the halves' framing, at the vehicle's
+    // close-up angle), sampled every HALVES_SCAN_S; never past the run's last row or the end of the fairing's path (its
+    // drag-free impact, or the run's end). The true-scale view shows and labels the fairing throughout (drawView,
+    // drawLeaderLabels). null for a run with no fairing drop. Kept on the run for this layout's close-up.
+    const g = geomOf(run), hf = halvesFraming(run, g);
+    if (hf === null) return null;
+    const key = [lay.inset.x, lay.inset.y, lay.inset.w, lay.inset.h].join();
+    if (run._fairEnd && run._fairEnd.key === key) return run._fairEnd.t;
+    const body = run.bodies.find(b => b.name === FAIRING_BODY) || null;
+    const capT = Math.min(lastT(run), body ? body.path.t[body.path.t.length - 1] : lastT(run));
+    const draw = closeupDrawing(lay.inset), pivot = closeupPivot(lay.inset);
+    const gone = t => {
+      const st = stateValues(run, t), angC = st.angleDeg / DEG_PER_RAD + st.d / R_E, dirC = [Math.cos(angC), -Math.sin(angC)];
+      const baseC = [pivot[0] - hf.up * hf.kc * dirC[0], pivot[1] - hf.up * hf.kc * dirC[1]];
+      return !overlaps(halvesAt(g.vehicle, hf.u0, hf.kc, baseC, dirC, t - hf.tF).bbox, draw);
+    };
+    const t = halvesEndTime(hf.tF + FAIRING_SHOW_S, capT, HALVES_SCAN_S, gone);
+    run._fairEnd = { key: key, t: t };
+    return t;
   }
   function carriageS(run, t) {
     const a = run.assist, s = valAt(run, "s_m", t);
@@ -772,32 +1360,73 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     return last;
   }
   function groupLabels(run, tg) {
-    // The labels of the events at one time, each marked when synthesised (design 4.4).
-    return run.events.filter(e => e.t === tg).map(eventText);
+    // The events at one time as the canvas names them (shortText: the plain name, else the model's label), each
+    // marked when synthesised (design 4.4).
+    return run.events.filter(e => e.t === tg).map(e => shortText(run, e));
   }
-  function layoutAt(run, t, box, ctx, pal) {
-    const lay = panelLayout(ctx, pal, run, box), view = lay.view, inset = lay.inset, g = geomOf(run), st = stateValues(run, t);
-    const parts = stackParts(g, st.stage, st.fairingOn);
-    const E = extentAt(run, t, view.w / view.h);
-    const xy = screenXY(st.alt, st.d, R_E), floor = floorOf(run);
-    const content = { xMin: Math.min(0, xy[0]), xMax: Math.max(0, xy[0]), yMin: Math.min(floor, xy[1]), yMax: Math.max(0, xy[1]) + g.stack_length_m };
-    const cam = cameraView(E, CAM, view, content);
-    const toPx = (x, y) => [view.x + (x - cam.x0) * cam.ppm, view.y + view.h - (y - cam.y0) * cam.ppm];
-    const base = toPx(xy[0], xy[1]);
-    const ang = st.angleDeg / DEG_PER_RAD;
-    const dir = [Math.cos(ang), -Math.sin(ang)];
-    const mode = g.vehicle.body_diameter_m * cam.ppm >= CAM.to_scale_min_body_px ? "to_scale" : "marker";
-    const reach = mode === "to_scale" ? parts.L * cam.ppm : CAM.marker_size_px * MARKER_TICK_OF_SIZE;
-    const nose = [base[0] + reach * dir[0], base[1] + reach * dir[1]];
-    const kc = CAM.closeup_stack_px / parts.L;
-    const angC = ang + st.d / R_E;
+  function lastMark(run, t) {
+    // The latest of the run's event groups and its max-Q mark up to t: {t, text}, or null before the first.
+    const grp = lastGroup(run, t), q = run.maxq && run.maxq.t <= t + EVENT_EPS_S ? run.maxq : null;
+    if (q && (grp === null || q.t > grp.t)) return { t: q.t, text: maxqText(run) };
+    return grp ? { t: grp.t, text: groupLabels(run, grp.t).join(", ") } : null;
+  }
+  function onTrace(run, tg) {
+    // Whether the events at time tg get a marker on the flown path: MECO, staging, a later stage's ignition,
+    // the fairing drop, cutoff, impact, an apex or a failed ignition.
+    const first = run.tanks.stage_names[0];
+    return run.events.some(e => e.t === tg && (TRACE_EVENTS.indexOf(e.name) >= 0 || (e.name === "ignition" && e.stage !== first)));
+  }
+  function ownFrame(parts) {
+    // The close-up's own framing of a drawn stack: CAM.closeup_stack_px long, the point (1 - plume share) / 2 of
+    // its length from the base at the drawing's centre, so the stack and a full plume fit.
+    return { kc: CAM.closeup_stack_px / parts.L, up: parts.L * (1 - PLUME_OF_STACK) / 2 };
+  }
+  function closeupFrame(run, t, st, g, fairEnd) {
+    // The close-up's framing at t ({kc [px per m], up [m from the drawn stack's base, at the drawing's centre], why:
+    // the title's word for it}): the stack's own (ownFrame), except around a separation, where it eases with no jump
+    // (blendFrame, smooth01) so a separation is not a sudden zoom. Staging (MECO at the same time): over
+    // CLOSEUP_ZOOM_S before it, from the whole stack's own framing to the stage-1 engines' (the nozzles
+    // ENGINES_BACK_PX behind the centre, so the plume is in the drawing when it goes out, at the scale that draws
+    // stage 2 CLOSEUP_MIN_STACK_PX long, so the vehicle after staging is never shorter: criterion 16); then over
+    // STAGING_PAN_S after it, up along the separating stages to stage 2's own framing (A3b review round 3). The
+    // fairing drop: to the halves' framing (halvesFraming) over CLOSEUP_ZOOM_S before the drop, held while the halves
+    // are drawn (to fairEnd: fairingEnd, at least FAIRING_SHOW_S after the drop), then back to the stack's own over
+    // FAIRING_EASE_S.
+    const v = g.vehicle, own = ownFrame(stackParts(g, st.stage, st.fairingOn));
+    const tF = firstEventT(run, "fairing"), tS = firstEventT(run, "staging");
+    const hEnd = typeof fairEnd === "number" ? fairEnd : tF === null ? null : tF + FAIRING_SHOW_S;
+    const ease = (from, to, a, b) => blendFrame(from, to, smooth01((t - a) / (b - a)));
+    if (tF !== null && t >= tF - CLOSEUP_ZOOM_S && t < hEnd + FAIRING_EASE_S) {
+      const hf = halvesFraming(run, g), halves = { kc: hf.kc, up: hf.up };
+      if (t < tF) return Object.assign(ease(own, halves, tF - CLOSEUP_ZOOM_S, tF), { why: "zooming in for the fairing" });
+      if (t <= hEnd) return Object.assign(halves, { why: t <= tF + FAIRING_SHOW_S ? "fairing halves opening" : "fairing halves leaving" });
+      return Object.assign(ease(halves, own, hEnd, hEnd + FAIRING_EASE_S), { why: "after the fairing drop" });
+    }
+    if (tS !== null && t >= tS - CLOSEUP_ZOOM_S && t < tS + STAGING_PAN_S) {
+      const s1 = v.stage1_length_m + v.interstage_length_m;  // stage 2's base above stage 1's base [m]
+      const upper = stackParts(g, 1, stepAt(run, "fairing_on", tS)), kcE = CLOSEUP_MIN_STACK_PX / upper.L;
+      const engines = { kc: kcE, up: ENGINES_BACK_PX / kcE };  // on the whole stack: from stage 1's base
+      if (st.stage === 0) return Object.assign(ease(own, engines, tS - CLOSEUP_ZOOM_S, tS), { why: "zooming in for staging" });
+      const why = st.fairingOn ? "after staging" : "after the fairing drop";
+      return Object.assign(ease({ kc: kcE, up: engines.up - s1 }, own, tS, tS + STAGING_PAN_S), { why: why });
+    }
+    const why = !st.fairingOn ? "after the fairing drop" : st.stage > 0 ? "after staging" : "own scale";
+    return Object.assign(own, { why: why });
+  }
+  function layoutAt(run, t, lay, cam, fairEnd) {
+    // The panel's geometry at t: the vehicle in the view through cam (viewPoints) and in the close-up (closeupFrame,
+    // with fairEnd: when the close-up stops drawing the fairing halves, fairingEnd).
+    const view = lay.view, inset = lay.inset, g = geomOf(run), st = stateValues(run, t);
+    const vp = viewPoints(run, st, view, cam);
+    const cf = closeupFrame(run, t, st, g, fairEnd), kc = cf.kc;
+    const angC = vp.ang + st.d / R_E;
     const dirC = [Math.cos(angC), -Math.sin(angC)];
-    const side = closeupSide(), pivot = [inset.x + inset.w / 2, inset.y + CLOSEUP_TITLE_PX + side / 2];
-    const uc = parts.L * (1 - PLUME_OF_STACK) / 2;
-    const baseC = [pivot[0] - uc * kc * dirC[0], pivot[1] - uc * kc * dirC[1]];
+    const pivot = closeupPivot(inset);
+    const baseC = [pivot[0] - cf.up * kc * dirC[0], pivot[1] - cf.up * kc * dirC[1]];
     return {
-      lay: lay, header: lay.header, view: view, inset: inset, g: g, st: st, parts: parts, cam: cam, toPx: toPx, xy: xy,
-      base: base, nose: nose, ground: toPx(0, 0), ang: ang, dir: dir, mode: mode, kc: kc, angC: angC, dirC: dirC, pivot: pivot, baseC: baseC
+      lay: lay, header: lay.header, view: view, inset: inset, g: g, st: st, parts: vp.parts, cam: cam, toPx: vp.toPx, xy: vp.xy,
+      base: vp.base, nose: vp.nose, ground: vp.toPx(0, 0), ang: vp.ang, dir: vp.dir, mode: vp.mode, ppm: vp.ppm, kc: kc, cf: cf,
+      angC: angC, dirC: dirC, pivot: pivot, baseC: baseC, fairEnd: fairEnd
     };
   }
 
@@ -810,6 +1439,16 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   function paint(ctx, fill, line, width) {
     if (fill) { ctx.fillStyle = fill; ctx.fill(); }
     ctx.strokeStyle = line; ctx.lineWidth = width || OUTLINE_PX; ctx.stroke();
+  }
+  function haloStroke(ctx, pal, color, width, haloWidth, dash) {
+    // Stroke the current path in color over a halo of the halo token (the line's outline, so it reads on the
+    // sky, the earth and the shaft alike), dashed when dash is given.
+    ctx.save();
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.strokeStyle = pal.halo; ctx.lineWidth = haloWidth; ctx.stroke();
+    if (dash) { ctx.setLineDash(dash); ctx.lineCap = "butt"; }
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+    ctx.restore();
   }
   function hatchRect(ctx, color, x, y, w, h) {
     if (!(w > 0) || !(h > 0)) return;
@@ -841,7 +1480,16 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     while (s.length > 1 && ctx.measureText(s + "...").width > maxW) s = s.slice(0, -1);
     return s + "...";
   }
-  function wrapLines(ctx, text, maxW) { return wrapWords(s => ctx.measureText(s).width, text, maxW); }
+  function wrapLines(ctx, text, maxW) {
+    const key = ctx.font + "|" + maxW + "|" + text;
+    let lines = WRAP_MEMO.get(key);
+    if (!lines) {
+      if (WRAP_MEMO.size >= WRAP_MEMO_MAX) WRAP_MEMO.clear();
+      lines = wrapWords(s => ctx.measureText(s).width, text, maxW);
+      WRAP_MEMO.set(key, lines);
+    }
+    return lines.slice();
+  }
   function drawTank(ctx, pal, u0, u1, half, k, fill, start) {
     const x = u0 * k, w = (u1 - u0) * k, y = -half * k, h = 2 * half * k;
     if (!(w > 0) || !(h > 0)) return;
@@ -850,6 +1498,17 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     if (s0 < 1) hatchRect(ctx, pal.hatch, x + s0 * w, y, (1 - s0) * w, h);
     ctx.fillStyle = pal.prop; ctx.fillRect(x, y, f * w, h);
     ctx.strokeStyle = pal.tankLine; ctx.lineWidth = HAIRLINE_PX; ctx.strokeRect(x, y, w, h);
+  }
+  function drawFirstStage(ctx, pal, v, k, fill1, start1) {
+    // Stage 1 in the frame of a drawn stack (u along the axis from stage 1's base [m] x k [px per m], the axis on
+    // y = 0): its body, engine section, tank and interstage. Returns the length drawn [m].
+    const D = v.body_diameter_m, half = D / 2, wall = TANK_WALL_OF_BODY * D, end = TANK_END_OF_BODY * D;
+    const s1 = v.stage1_length_m, eng = v.engine_section_length_m, is = v.interstage_length_m;
+    pathPx(ctx, [[0, -half * k], [s1 * k, -half * k], [s1 * k, half * k], [0, half * k]]); paint(ctx, pal.body, pal.bodyLine);
+    pathPx(ctx, [[0, -half * k], [eng * k, -half * k], [eng * k, half * k], [0, half * k]]); paint(ctx, pal.steel, pal.steelLine);
+    drawTank(ctx, pal, eng + end, s1 - end, half - wall, k, fill1, start1);
+    pathPx(ctx, [[s1 * k, -half * k], [(s1 + is) * k, -half * k], [(s1 + is) * k, half * k], [s1 * k, half * k]]); paint(ctx, pal.steel, pal.steelLine);
+    return s1 + is;
   }
   function drawVehicle(ctx, pal, s) {
     // s: {x, y} the base [canvas px], dir the unit axis from base to nose [canvas px, y down], k [px per m],
@@ -871,14 +1530,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
       paint(ctx, pal.plume, pal.plumeLine);
     }
     let u = 0;
-    if (s.parts.first) {
-      const s1 = v.stage1_length_m, eng = v.engine_section_length_m, is = v.interstage_length_m;
-      pathPx(ctx, [[0, -half * k], [s1 * k, -half * k], [s1 * k, half * k], [0, half * k]]); paint(ctx, pal.body, pal.bodyLine);
-      pathPx(ctx, [[0, -half * k], [eng * k, -half * k], [eng * k, half * k], [0, half * k]]); paint(ctx, pal.steel, pal.steelLine);
-      drawTank(ctx, pal, eng + end, s1 - end, half - wall, k, s.fill1, s.start1);
-      pathPx(ctx, [[s1 * k, -half * k], [(s1 + is) * k, -half * k], [(s1 + is) * k, half * k], [s1 * k, half * k]]); paint(ctx, pal.steel, pal.steelLine);
-      u = s1 + is;
-    }
+    if (s.parts.first) u = drawFirstStage(ctx, pal, v, k, s.fill1, s.start1);
     const s2 = v.stage2_length_m;
     pathPx(ctx, [[u * k, -half * k], [(u + s2) * k, -half * k], [(u + s2) * k, half * k], [u * k, half * k]]); paint(ctx, pal.body, pal.bodyLine);
     drawTank(ctx, pal, u + end, u + s2 - end, half - wall, k, s.fill2, s.start2);
@@ -923,7 +1575,20 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     return pts;
   }
   function drawEarth(ctx, pal, L, opening) {
-    const v = L.view, cam = L.cam, x0 = cam.x0 - EDGE_SLACK_M, x1 = cam.x0 + cam.W + EDGE_SLACK_M, yBottom = cam.y0 - EDGE_SLACK_M;
+    // The Earth: the circle of radius R_E through the screen transform. While the view lies within R_E of the
+    // site either side, the ground is the arc groundY samples across it (with the silo's or trench's opening),
+    // filled down past the view's bottom; once the view reaches past that, the whole disk, its limb in view.
+    // Returns the ground line's painter, which returns which of the two was drawn ("arc" or "limb").
+    const cam = L.cam, x0 = cam.x0 - EDGE_SLACK_M, x1 = cam.x0 + cam.W + EDGE_SLACK_M, yBottom = cam.y0 - EDGE_SLACK_M;
+    if (x0 < -R_E || x1 > R_E) {
+      const c = L.toPx(0, -R_E), r = R_E * cam.ppm;
+      ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, Math.PI * 2); ctx.fillStyle = pal.earth; ctx.fill();
+      return () => {
+        ctx.save(); ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, Math.PI * 2);
+        ctx.strokeStyle = pal.groundLine; ctx.lineWidth = GROUND_LINE_PX; ctx.stroke(); ctx.restore();
+        return "limb";
+      };
+    }
     pathPx(ctx, groundArc(L, x0, x1).concat([L.toPx(x1, yBottom), L.toPx(x0, yBottom)]));
     ctx.fillStyle = pal.earth; ctx.fill();
     const segs = opening && opening[1] > x0 && opening[0] < x1 ? [[x0, Math.max(x0, opening[0])], [Math.min(x1, opening[1]), x1]] : [[x0, x1]];
@@ -935,7 +1600,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
         ctx.beginPath(); pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); }); ctx.stroke();
       });
       ctx.restore();
-      return v;
+      return "arc";
     };
   }
   function clipAboveGround(ctx, L, half, depth) {
@@ -1035,14 +1700,133 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
       paint(ctx, pal.steel, pal.steelLine);
     });
   }
+  function screenPath(p) {
+    // The screen points [m] of a series' samples (a run, or a separated body's path {t, alt_m, downrange_m}),
+    // computed once and kept on it.
+    if (!p._sx) {
+      const n = p.t.length;
+      p._sx = new Float64Array(n); p._sy = new Float64Array(n);
+      for (let i = 0; i < n; i++) { const xy = screenXY(p.alt_m[i], p.downrange_m[i], R_E); p._sx[i] = xy[0]; p._sy[i] = xy[1]; }
+    }
+    return p;
+  }
+  function pathTo(ctx, L, p, t, tail) {
+    // Begin a path through p's samples up to scene time t and on to tail [m] (the point at t), skipping a sample
+    // within TRACE_MIN_STEP_PX of the last one kept; returns the number of points.
+    screenPath(p);
+    const i1 = t >= p.t[0] ? idxAt(t, p.t) : -1;
+    let n = 0, lx = 0, ly = 0;
+    ctx.beginPath();
+    const add = (x, y, last) => {
+      const q = L.toPx(x, y);
+      if (n > 0 && !last && Math.abs(q[0] - lx) + Math.abs(q[1] - ly) < TRACE_MIN_STEP_PX) return;
+      if (n === 0) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
+      lx = q[0]; ly = q[1]; n++;
+    };
+    for (let i = 0; i <= i1; i++) add(p._sx[i], p._sy[i], false);
+    add(tail[0], tail[1], true);
+    return n;
+  }
+  function drawTrace(ctx, pal, run, L, t) {
+    // The flown path of the vehicle's base from its first row to t, in the run's colour over a halo.
+    if (t < run.t[0]) return { points: 0, end_px: null };
+    const n = pathTo(ctx, L, run, t, L.xy);
+    haloStroke(ctx, pal, pal[run.key], TRACE_PX, TRACE_HALO_PX, null);
+    return { points: n, end_px: L.toPx(L.xy[0], L.xy[1]) };
+  }
+  function bodyAt(b, t) {
+    // A separated body at scene time t: null before its separation; else {t: the time drawn, xy: its point [m],
+    // stopped}: held at its path's last sample (its impact, or the run's end: the payload clips it there).
+    if (!(t >= b.t_separation)) return null;
+    const P = b.path, tEnd = P.t[P.t.length - 1], tt = Math.min(t, tEnd);
+    return { t: tt, xy: screenXY(valAt(P, "alt_m", tt), valAt(P, "downrange_m", tt), R_E), stopped: t >= tEnd };
+  }
+  function drawBodyPath(ctx, pal, b, L, t) {
+    // A separated body's display-only path up to t, dashed over a halo.
+    const at = bodyAt(b, t);
+    if (!at) return;
+    pathTo(ctx, L, b.path, at.t, at.xy);
+    haloStroke(ctx, pal, pal.sep, PATH_PX, PATH_HALO_PX, DASH_PATH);
+  }
+  function drawBodyMarker(ctx, pal, b, L, t) {
+    // A separated body's hollow marker (a square for the spent stage, a diamond for the fairing halves) over a
+    // halo, BODY_MARKER_PX across; returns where it was painted and its label, or null before its separation.
+    const at = bodyAt(b, t);
+    if (!at) return null;
+    const p = L.toPx(at.xy[0], at.xy[1]), r = BODY_MARKER_PX / 2;
+    ctx.beginPath();
+    if (b.name === FAIRING_BODY) { ctx.moveTo(p[0], p[1] - r); ctx.lineTo(p[0] + r, p[1]); ctx.lineTo(p[0], p[1] + r); ctx.lineTo(p[0] - r, p[1]); ctx.closePath(); }
+    else ctx.rect(p[0] - r, p[1] - r, 2 * r, 2 * r);
+    haloStroke(ctx, pal, pal.sep, RING_PX, RING_HALO_PX, null);
+    const impact = b.impact && b.impact.within_run === true && t >= b.impact.t;
+    const how = impact ? ", impact " + clockText(b.impact.t) : at.stopped ? ", stopped at the run's end" : "";
+    // the short label keeps "display only", and "drag-free" on any time or stop it states (its coast is not a landing
+    // prediction)
+    const tag = b.name === STAGE1_BODY ? "S1" : b.name === FAIRING_BODY ? "fairing" : b.name;
+    const short = tag + " (display only)" + (impact ? ", drag-free impact " + clockText(b.impact.t) : at.stopped ? ", drag-free coast stopped" : "");
+    return {
+      name: b.name, px: p, r: r + RING_PX, size_px: BODY_MARKER_PX + RING_PX, t: at.t, stopped: at.stopped,
+      text: (BODY_TEXT[b.name] || b.name) + ": drag-free coast (display only)" + how, short: short
+    };
+  }
+  function otherWord(o) {
+    // How the other panel's run stands at this panel's time: "ended", "waiting" (before its first row) or "".
+    return o.ended ? "ended" : o.waiting ? "waiting" : "";
+  }
+  function otherText(o) { return o.run.name + " (other panel" + (otherWord(o) ? ", " + otherWord(o) : "") + ")"; }
+  function drawOtherMarker(ctx, pal, o, L) {
+    // The other panel's vehicle at its own state (o.t) through this panel's camera: a hollow ring in its run's
+    // colour over a halo, labelled with its run and whether it has ended or still waits for its first row (the ring
+    // key names it too).
+    const xy = screenXY(valAt(o.run, "alt_m", o.t), valAt(o.run, "downrange_m", o.t), R_E), p = L.toPx(xy[0], xy[1]), r = OTHER_MARKER_PX / 2;
+    ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+    haloStroke(ctx, pal, pal[o.run.key], RING_PX, RING_HALO_PX, null);
+    return {
+      run: o.run.name, px: p, r: r + RING_PX, size_px: OTHER_MARKER_PX + RING_PX,
+      text: otherText(o), short: o.run.name + (otherWord(o) ? " (" + otherWord(o) + ")" : "")
+    };
+  }
+  function diamond(ctx, pal, run, p) {
+    const r = EVENT_MARK_PX;
+    pathPx(ctx, [[p[0], p[1] - r], [p[0] + r, p[1]], [p[0], p[1] + r], [p[0] - r, p[1]]]);
+    paint(ctx, pal[run.key], pal.bodyLine, HAIRLINE_PX);
+  }
+  function drawEventMarks(ctx, pal, run, L, t) {
+    // A diamond on the flown path at each event of onTrace up to t, in the run's colour, outlined, named as the
+    // canvas names its events (groupLabels); then a hollow one at the run's recorded max-Q (recordedMaxQ: the
+    // metrics' value and time; a display mark, not a logged event), named with its q. Returns each mark.
+    const out = [];
+    run.event_groups.forEach(g => {
+      if (g.t === null || g.t > t + EVENT_EPS_S || !onTrace(run, g.t)) return;
+      const xy = screenXY(valAt(run, "alt_m", g.t), valAt(run, "downrange_m", g.t), R_E), p = L.toPx(xy[0], xy[1]);
+      diamond(ctx, pal, run, p);
+      out.push({ t: g.t, px: p, r: EVENT_MARK_PX, text: groupLabels(run, g.t).join(", ") });
+    });
+    const q = run.maxq;
+    if (q && q.t <= t + EVENT_EPS_S) {
+      const xy = screenXY(valAt(run, "alt_m", q.t), valAt(run, "downrange_m", q.t), R_E), p = L.toPx(xy[0], xy[1]), r = EVENT_MARK_PX;
+      pathPx(ctx, [[p[0], p[1] - r], [p[0] + r, p[1]], [p[0], p[1] + r], [p[0] - r, p[1]]]);
+      haloStroke(ctx, pal, pal[run.key], RING_PX, RING_HALO_PX, null);
+      out.push({ t: q.t, px: p, r: r + RING_PX, text: maxqText(run), short: "max-Q", display: true });
+    }
+    return out;
+  }
+  function keysRight(lay) {
+    // Whether the scale bar, the marker note and the ring key go at the view's bottom right: in the band layout,
+    // whose view has no plate at its right and whose bottom left the camera frames (often over the launch site);
+    // elsewhere at its bottom left, under the close-up in the overlay and column layouts.
+    return lay.mode === "band";
+  }
   function drawScaleBar(ctx, box, pal, L) {
-    const len = niceLength(SCALE_BAR_OF_VIEW * box.w / L.cam.ppm), w = len * L.cam.ppm;
-    if (!(w > 0)) return;
+    // The scale bar at the view's bottom left (bottom right: keysRight); in the marker regime a plate above it says
+    // the vehicle is a position marker, not to scale. Returns the rects painted.
+    const len = niceLength(SCALE_BAR_OF_VIEW * box.w / L.cam.ppm), w = len * L.cam.ppm, rects = [];
+    if (!(w > 0)) return rects;
     const label = lengthText(len, SCALE_DECIMALS);
     ctx.save();
     ctx.font = FONT_TEXT_PX + "px " + pal.fontData;
-    const tw = ctx.measureText(label).width, x = box.x + SCALE_BAR_INSET_PX, y = box.y + box.h - SCALE_BAR_INSET_PX;
-    const pw = w + tw + 3 * PLATE_PAD_PX;
+    const tw = ctx.measureText(label).width, pw = w + tw + 3 * PLATE_PAD_PX, right = keysRight(L.lay);
+    const x = right ? box.x + box.w - VIEW_MARGIN_PX - pw + PLATE_PAD_PX : box.x + SCALE_BAR_INSET_PX, y = box.y + box.h - SCALE_BAR_INSET_PX;
     ctx.fillStyle = pal.panel; ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX;
     ctx.fillRect(x - PLATE_PAD_PX, y - SCALE_PLATE_TOP_PX, pw, SCALE_PLATE_H_PX);
     ctx.strokeRect(x - PLATE_PAD_PX + CRISP_PX, y - SCALE_PLATE_TOP_PX + CRISP_PX, pw - HAIRLINE_PX, SCALE_PLATE_H_PX - HAIRLINE_PX);
@@ -1051,14 +1835,30 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     ctx.fillStyle = pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     ctx.fillText(label, x + w + PLATE_PAD_PX, y);
     ctx.restore();
+    rects.push({ x: x - PLATE_PAD_PX, y: y - SCALE_PLATE_TOP_PX, w: pw, h: SCALE_PLATE_H_PX, kind: "scale" });
+    if (L.mode === "marker") {
+      const note = textPlate(ctx, pal, [MARKER_NOTE], right ? x - PLATE_PAD_PX + pw : x - PLATE_PAD_PX, y - SCALE_PLATE_TOP_PX - VIEW_MARGIN_PX / 2,
+        { size: FONT_SMALL_PX, alignBottom: true, alignRight: right });
+      rects.push(Object.assign(note, { kind: "marker note" }));
+    }
+    return rects;
+  }
+  function gaugeRect(ctx, pal, run, L, view, plates) {
+    // Where the gauges go over the view: at its bottom right, beside the scale bar when both fit on one row, else
+    // above it; above every plate at the bottom left (the scale bar, the marker note) when they would overlap.
+    const lines = gaugeLines(run, [L.st.fill1, L.st.fill2], L.st.stage, view.w < NARROW_VIEW_PX), size = gaugeSize(ctx, pal, lines);
+    const x = view.x + view.w - size.w - VIEW_MARGIN_PX, low = view.y + view.h - size.h;
+    const tops = [low - (size.w > NARROW_PLATE_OF_VIEW * view.w ? SCALE_BAR_ROW_PX : VIEW_MARGIN_PX), low - SCALE_BAR_ROW_PX]
+      .concat(plates.map(r => r.y - VIEW_MARGIN_PX / 2 - size.h).sort((p, q) => q - p));
+    const cands = tops.map(y => ({ x: x, y: y, w: size.w, h: size.h }));
+    return firstFree(cands, plates, view) || cands[0];
   }
   function drawGauges(ctx, pal, run, L, view, at) {
-    // The S1 and S2 gauges with their text: at `at` (the band), else at the view's bottom right, beside the
-    // scale bar when both fit on one row, else above it.
+    // The S1 and S2 gauges with their text at `at` (the band's slot, or gaugeRect's over the view). Returns the
+    // plate's rect.
     const lines = gaugeLines(run, [L.st.fill1, L.st.fill2], L.st.stage, view.w < NARROW_VIEW_PX), tanks = run.tanks;
     const size = gaugeSize(ctx, pal, lines), w = size.w, h = size.h;
-    const x = at ? at.x : view.x + view.w - w - VIEW_MARGIN_PX;
-    const y = at ? at.y : view.y + view.h - h - (w > NARROW_PLATE_OF_VIEW * view.w ? SCALE_BAR_ROW_PX : VIEW_MARGIN_PX);
+    const x = at.x, y = at.y;
     ctx.save();
     ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
     ctx.fillStyle = pal.panel; ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX;
@@ -1074,6 +1874,15 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     ctx.fillStyle = pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "top";
     lines.forEach((s, i) => ctx.fillText(s, x + 2 * GAUGE_W_PX + 3 * PLATE_PAD_PX, y + PLATE_PAD_PX + i * LINE_TEXT_PX));
     ctx.restore();
+    return { x: x, y: y, w: w, h: h };
+  }
+  function plateSize(ctx, pal, lines, size) {
+    // The {w, h} [px] textPlate gives these lines at this font size, before it is drawn.
+    ctx.save();
+    ctx.font = size + "px " + pal.fontBody;
+    const w = Math.max(...lines.map(s => ctx.measureText(s).width)) + 2 * PLATE_PAD_PX;
+    ctx.restore();
+    return { w: w, h: plateHeight(lines.length, size) };
   }
   function drawHud(ctx, pal, lines, at) {
     // The readout plate at `at` ({x, y, alignRight, maxW}); each line cut to maxW when one is given.
@@ -1102,6 +1911,8 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     ctx.restore();
   }
   function drawHeader(ctx, box, t, pal, run, L) {
+    // The panel's header: its run, the scene clock t (one clock for both panels), its phase and its last event
+    // at the time the panel is drawn (L.st.t: the run's end once it has ended).
     ctx.save();
     ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h);
     ctx.strokeStyle = pal.rule; ctx.lineWidth = HAIRLINE_PX;
@@ -1119,9 +1930,10 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     ctx.fillStyle = pal.ink2; ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
     const phase = fitText(ctx, L.st.phase, box.w / 2 - HEADER_TEXT_X_PX);
     ctx.fillText(phase, box.x + HEADER_TEXT_X_PX, box.y + HEADER_LINE2_Y_PX);
-    const grp = lastGroup(run, t), room = box.w - HEADER_TEXT_X_PX - ctx.measureText(phase).width - HEADER_GAP_PX - HEADER_PAD_PX;
+    const mk = lastMark(run, L.st.t), room = box.w - HEADER_TEXT_X_PX - ctx.measureText(phase).width - HEADER_GAP_PX - HEADER_PAD_PX;
     ctx.textAlign = "right";
-    const last = grp ? "last event: " + groupLabels(run, grp.t).join(", ") + " at " + clockText(grp.t) : "no event yet";
+    // the time first, so a cut (fitText) drops names, never the time
+    const last = mk ? "last event " + clockText(mk.t) + ": " + mk.text : "no event yet";
     ctx.fillText(fitText(ctx, last, room), box.x + box.w - HEADER_PAD_PX, box.y + HEADER_LINE2_Y_PX);
     ctx.restore();
   }
@@ -1138,9 +1950,14 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     lines.forEach((s, i) => ctx.fillText(s, box.x + TEXT_INSET_PX, box.y + BAND_PAD_PX + i * LINE_SMALL_PX));
     ctx.restore();
   }
-  function drawView(ctx, box, t, pal, run, L) {
-    // The true-scale view; returns the points the vehicle was painted at, the readout's lines and the
-    // carriage label's plate (or null).
+  function markRect(p, r) { return { x: p[0] - r, y: p[1] - r, w: 2 * r, h: 2 * r }; }
+  function drawView(ctx, box, t, pal, run, L, F) {
+    // The true-scale view at the panel's time t through the shared camera: the Earth, the silo or the pad, the
+    // flown path with its event markers, the separated bodies on their dashed paths, the other panel's vehicle
+    // and this panel's vehicle (to scale, else a position marker), a separated body that touches the vehicle
+    // (onVehicle) drawn over it, never under it; then the scale bar and, outside the band layout, the readout and
+    // gauges. Returns the points painted, the readout's lines, the carriage label's plate (or null), the rects the
+    // plates cover and the markers to label (a body over its vehicle flagged onVehicle).
     ctx.save();
     ctx.beginPath(); ctx.rect(box.x, box.y, box.w, box.h); ctx.clip();
     ctx.fillStyle = pal.sky; ctx.fillRect(box.x, box.y, box.w, box.h);
@@ -1150,52 +1967,243 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     let carriage = null;
     if (silo) carriage = drawSilo(ctx, t, pal, run, L);
     else if (!a) drawPadBelow(ctx, pal, L);
-    groundLine();
+    run.bodies.forEach(b => drawBodyPath(ctx, pal, b, L, t));
+    const trace = drawTrace(ctx, pal, run, L, t);  // over the bodies' paths, which start on it
+    const earth = groundLine();
     const carriageAt = carriage ? carriage() : null;
+    const marks = drawEventMarks(ctx, pal, run, L, t);
+    const on = run.bodies.map(b => { const at = bodyAt(b, t); return at !== null && onVehicle(L.toPx(at.xy[0], at.xy[1]), L, g); });
+    const under = run.bodies.map((b, i) => (on[i] ? null : drawBodyMarker(ctx, pal, b, L, t)));
+    const others = F.others.map(o => drawOtherMarker(ctx, pal, o, L));
     if (!a) { ctx.save(); clipAboveGround(ctx, L, trench, g.pad.mount_height_m); }
     const painted = L.mode === "to_scale" ? drawVehicle(ctx, pal, vehicleSpec(run, L, L.base, L.dir, L.cam.ppm)) : drawMarker(ctx, pal, pal[run.key], run, L);
     if (!a) ctx.restore();
-    if (!a) drawClamps(ctx, t, pal, L, run);
-    if (L.mode === "marker") {
-      // right of the marker, or left of it when the label would cross the view's right edge
-      const text = ["position marker (not to scale)"];
-      ctx.save();
-      ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
-      const right = L.base[0] + MARKER_LABEL_DX_PX + ctx.measureText(text[0]).width + 2 * PLATE_PAD_PX <= box.x + box.w;
-      ctx.restore();
-      textPlate(ctx, pal, text, L.base[0] + (right ? MARKER_LABEL_DX_PX : -MARKER_LABEL_DX_PX), L.base[1] + MARKER_LABEL_DY_PX, { size: FONT_SMALL_PX, alignRight: !right });
+    // a body that touches the vehicle is drawn over it, so the vehicle never hides it; over a position marker, the
+    // vehicle's place is then marked again by a small dot in its colour, so neither hides the other
+    const bodies = run.bodies.map((b, i) => (on[i] ? Object.assign(drawBodyMarker(ctx, pal, b, L, t), { onVehicle: true }) : under[i])).filter(b => b !== null);
+    if (L.mode === "marker" && on.some(x => x)) {
+      ctx.beginPath(); ctx.arc(L.base[0], L.base[1], MARKER_CORE_OF_SIZE * CAM.marker_size_px / 2, 0, Math.PI * 2);
+      paint(ctx, pal[run.key], pal.bodyLine, HAIRLINE_PX);
     }
+    if (!a) drawClamps(ctx, t, pal, L, run);
     const carriageLabel = carriageAt && t >= 0 ? drawCarriageLabel(ctx, pal, L, carriageAt, box) : null;
     ctx.restore();
-    drawScaleBar(ctx, box, pal, L);
+    // opaque plates (kept apart from the markers, so a marker under one can be told from one beside it)
+    const plates = drawScaleBar(ctx, box, pal, L);
+    if (carriageLabel) plates.push(Object.assign({ kind: "carriage label" }, carriageLabel));
+    if (closeupOver(L.lay)) plates.push(Object.assign({ kind: "close-up" }, L.inset));  // drawn over the view after it
+    const reach = L.mode === "to_scale" ? g.vehicle.body_diameter_m * L.cam.ppm / 2 : CAM.marker_size_px / 2 + MARKER_RING_PX;
+    const vehicleRect = { x: Math.min(painted.base[0], painted.nose[0]) - reach, y: Math.min(painted.base[1], painted.nose[1]) - reach,
+      w: Math.abs(painted.nose[0] - painted.base[0]) + 2 * reach, h: Math.abs(painted.nose[1] - painted.base[1]) + 2 * reach };
+    const markers = [vehicleRect].concat(marks.concat(bodies, others).map(m => markRect(m.px, m.r)));
+    // what a plate over the view must not cover: this panel's vehicle first, the separated bodies, the other panel's
+    // vehicle, the launch site and the marks on the flown path
+    const keep = [vehicleRect].concat(bodies.concat(others).map(m => markRect(m.px, m.r)), [markRect(L.ground, EVENT_MARK_PX)], marks.map(m => markRect(m.px, m.r)));
     const hud = hudLines(L.st);
-    if (L.lay.mode !== "band") {
-      let top = box.y + VIEW_MARGIN_PX;
-      if (impactNote(run) && t >= 0) {
-        ctx.save();
-        ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
-        const lines = wrapLines(ctx, IMPACT_NOTE, Math.min(IMPACT_NOTE_MAX_PX, box.w * IMPACT_NOTE_OF_VIEW));
-        ctx.restore();
-        const r = textPlate(ctx, pal, lines, box.x + box.w - VIEW_MARGIN_PX, top, { alignRight: true, fill: pal.cautionBg, line: pal.caution, ink: pal.ink });
-        top = r.y + r.h + VIEW_MARGIN_PX;
-      }
-      drawHud(ctx, pal, hud, { x: box.x + box.w - VIEW_MARGIN_PX, y: top, alignRight: true });
-      drawGauges(ctx, pal, run, L, box, null);
+    let hudRect = null, gauge = null;
+    if (!L.lay.plates) {  // else they go in the band under the view (drawPanel)
+      gauge = gaugeRect(ctx, pal, run, L, box, plates);
+      plates.push(Object.assign(drawGauges(ctx, pal, run, L, box, gauge), { kind: "gauges" }));
+      hudRect = drawReadout(ctx, pal, run, L, box, hud, t, plates, keep, gauge);
     }
-    return { main: painted, hud: hud, carriageLabel: carriageLabel };
+    const ringKey = F.others.length ? drawRingKey(ctx, pal, F.others[0], box, L, plates, keep, gauge) : null;
+    return {
+      main: painted, hud: hud, hudRect: hudRect, ringKey: ringKey, carriageLabel: carriageLabel, plates: plates, taken: plates.concat(markers),
+      marks: marks, bodies: bodies, others: others, trace: trace, earth: earth
+    };
+  }
+  function drawRingKey(ctx, pal, o, box, L, plates, keep, gauge) {
+    // The key to the hollow ring, drawn whenever the ring is (a label plate beside the ring may find no room; this
+    // never is dropped): the ring in the other run's colour and its name, in the column layout's band under the
+    // gauges (lay.plates.key: outside the view, so not one of its plates); else in the first free slot of: the bottom
+    // left above the scale bar and marker note; the top left (in the overlay and column layouts under the close-up);
+    // the bottom right above the gauges. The first slot when none is free. Its text says whether the other run has
+    // ended or still waits for its first row (otherText). Pushes its rect onto plates; returns it.
+    const text = otherText(o);
+    const sz = plateSize(ctx, pal, [text], FONT_SMALL_PX), glyph = OTHER_MARKER_PX + RING_HALO_PX, w = sz.w + glyph, h = Math.max(sz.h, glyph);
+    const left = box.x + VIEW_MARGIN_PX, right = box.x + box.w - VIEW_MARGIN_PX;
+    const lowLeft = Math.min(box.y + box.h, ...plates.filter(p => p.kind === "scale" || p.kind === "marker note").map(p => p.y));
+    const slots = [
+      { x: keysRight(L.lay) ? right - w : left, y: lowLeft - VIEW_MARGIN_PX / 2 - h },
+      { x: left, y: closeupOver(L.lay) ? L.inset.y + L.inset.h + VIEW_MARGIN_PX : box.y + VIEW_MARGIN_PX },
+      { x: right - w, y: (gauge ? gauge.y : box.y + box.h) - VIEW_MARGIN_PX / 2 - h }
+    ].map(s => ({ x: s.x, y: s.y, w: w, h: h }));
+    const band = L.lay.plates && L.lay.plates.key;  // the column layout's slot under the gauges, outside the view
+    const at = band ? { x: band.x, y: band.y, w: w, h: h } : firstFree(slots, plates.concat(keep), box) || firstFree(slots, plates, box) || slots[0];
+    ctx.save();
+    ctx.fillStyle = pal.panel; ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX;
+    ctx.fillRect(at.x, at.y, w, h); ctx.strokeRect(at.x + CRISP_PX, at.y + CRISP_PX, w - HAIRLINE_PX, h - HAIRLINE_PX);
+    ctx.beginPath(); ctx.arc(at.x + glyph / 2 + PLATE_PAD_PX / 2, at.y + h / 2, OTHER_MARKER_PX / 2, 0, Math.PI * 2);
+    ctx.restore();
+    haloStroke(ctx, pal, pal[o.run.key], RING_PX, RING_HALO_PX, null);
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.fillStyle = pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(text, at.x + glyph + PLATE_PAD_PX / 2, at.y + h / 2);
+    ctx.restore();
+    const rect = { x: at.x, y: at.y, w: w, h: h, kind: "ring key", text: text };
+    if (!band) plates.push(rect);
+    return rect;
+  }
+  function drawReadout(ctx, pal, run, L, box, hud, t, plates, keep, gauge) {
+    // The readout over the view, under the impact caution plate when the run has one (one column): in the first
+    // corner where it covers no plate and none of keep (this panel's vehicle, the separated bodies, the other
+    // panel's vehicle, the launch site, the marks on the flown path), tried in order: the top right; the top left (in
+    // the overlay layout directly under the close-up); the bottom right, directly above the gauges. Else the first
+    // corner clear of the plates and this panel's vehicle, else of the plates; else the top right. A corner is
+    // tested with the largest readout the run can show (hudWidth, HUD_MAX_LINES), so the plate changes corner
+    // only as the markers move, not as its own lines change. Pushes the plates drawn onto plates; returns the
+    // readout's rect and its corner.
+    let caution = null;
+    if (impactNote(run) && t >= 0) {
+      ctx.save();
+      ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+      const lines = wrapLines(ctx, IMPACT_NOTE, Math.min(IMPACT_NOTE_MAX_PX, box.w * IMPACT_NOTE_OF_VIEW));
+      ctx.restore();
+      caution = Object.assign({ lines: lines }, plateSize(ctx, pal, lines, FONT_TEXT_PX));
+    }
+    const hs = plateSize(ctx, pal, hud, FONT_TEXT_PX);
+    const w = Math.max(hs.w, hudWidth(ctx, pal, run), caution ? caution.w : 0);
+    const h = Math.max(hs.h, plateHeight(HUD_MAX_LINES, FONT_TEXT_PX)) + (caution ? caution.h + VIEW_MARGIN_PX : 0);
+    const right = box.x + box.w - VIEW_MARGIN_PX, left = box.x + VIEW_MARGIN_PX;
+    const lowLeft = Math.min(box.y + box.h, ...plates.filter(p => p.kind === "scale" || p.kind === "marker note").map(p => p.y));
+    const corners = [
+      { name: "top right", x: right - w, y: box.y + VIEW_MARGIN_PX, alignRight: true, low: false },
+      { name: "top left", x: left, y: closeupOver(L.lay) ? L.inset.y + L.inset.h + VIEW_MARGIN_PX : box.y + VIEW_MARGIN_PX, alignRight: false, low: false },
+      { name: "bottom right", x: right - w, y: gauge.y - VIEW_MARGIN_PX - h, alignRight: true, low: true },
+      { name: "bottom left", x: left, y: lowLeft - VIEW_MARGIN_PX / 2 - h, alignRight: false, low: true }
+    ];
+    const rects = corners.map(c => ({ x: c.x, y: c.y, w: w, h: h }));
+    // clear of everything kept; else of this panel's vehicle (keep[0]) at least; else of the plates; else the top right
+    const at = firstFree(rects, plates.concat(keep), box) || firstFree(rects, plates.concat(keep.slice(0, 1)), box) || firstFree(rects, plates, box);
+    const c = corners[at ? rects.indexOf(at) : 0];
+    const edge = c.alignRight ? c.x + w : c.x;
+    // the column drawn is its own size: at a bottom corner it sits on what is under it, elsewhere at the corner's top
+    let top = c.low ? c.y + h - (hs.h + (caution ? caution.h + VIEW_MARGIN_PX : 0)) : c.y;
+    if (caution) {
+      plates.push(Object.assign(textPlate(ctx, pal, caution.lines, edge, top, { alignRight: c.alignRight, fill: pal.cautionBg, line: pal.caution, ink: pal.ink }), { kind: "caution" }));
+      top += caution.h + VIEW_MARGIN_PX;
+    }
+    const r = Object.assign(drawHud(ctx, pal, hud, { x: edge, y: top, alignRight: c.alignRight }), { kind: "readout" });
+    plates.push(r);
+    return Object.assign({ corner: c.name }, r);
+  }
+  function stagingAt(run, t) {
+    // The close-up's staging drawing at t: {tau [s] since staging, coast [s] to the next stage's ignition (null
+    // when none follows), body (the spent stage's payload record, or null)}, while the spent stage can still be
+    // in the drawing; else null.
+    const tS = firstEventT(run, "staging");
+    if (tS === null || t < tS) return null;
+    const second = run.tanks.stage_names[1];
+    const ign = run.events.find(e => e.name === "ignition" && e.stage === second && e.t !== null && e.t >= tS);
+    const coast = ign ? ign.t - tS : null;
+    const tau = t - tS;
+    if (tau > (coast === null ? STAGE_COAST_FALLBACK_S : coast) + STAGING_AFTER_S) return null;
+    return { tau: tau, coast: coast, body: run.bodies.find(b => b.name === STAGE1_BODY) || null };
+  }
+  function fairingAt(run, t, fairEnd) {
+    // The close-up's fairing drawing at t: {tau [s] since the drop} from the drop to fairEnd (fairingEnd), else null.
+    const tF = firstEventT(run, "fairing");
+    return tF !== null && typeof fairEnd === "number" && t >= tF && t <= fairEnd ? { tau: t - tF } : null;
+  }
+  function stagingCaption(stg) {
+    // What the close-up says while it draws the staging gap: the gap is a drawing; the measured gap between the
+    // spent stage's drag-free coast and the recorded path over the staging coast (payload staging_coast_gap_m).
+    const gap = stg.body ? stg.body.staging_coast_gap_m : null;
+    if (typeof gap !== "number" || stg.coast === null) return "Gap drawn, not computed";
+    return "Gap drawn, not computed: the stages stay within " + fmt(gap, GAP_DECIMALS) + " m during the " + fmt(stg.coast, COAST_DECIMALS) + " s coast";
+  }
+  function drawSpentStage(ctx, pal, L, run, stg) {
+    // The spent stage in the close-up: at the close-up's scale, held at its own screen angle at separation
+    // (levelled with the local horizontal as the close-up is), its top stagingGapPx below stage 2's base;
+    // drawn, not computed. Returns the gap [px] and where a tag on it would go: {x, y} [canvas px], the left
+    // middle of a line of text beside the stage's middle, on the side below its axis.
+    const v = L.g.vehicle, k = L.kc;
+    const angS = (stg.body ? stg.body.screen_angle_deg / DEG_PER_RAD : L.ang) + L.st.d / R_E, dirS = [Math.cos(angS), -Math.sin(angS)];
+    const gap = stagingGapPx(stg.tau, stg.coast, CAM.closeup_stack_px), len = (v.stage1_length_m + v.interstage_length_m) * k;
+    const x = L.baseC[0] - (gap + len) * dirS[0], y = L.baseC[1] - (gap + len) * dirS[1];
+    const tS = firstEventT(run, "staging");
+    ctx.save();
+    ctx.translate(x, y); ctx.transform(dirS[0], dirS[1], -dirS[1], dirS[0], 0, 0);
+    ctx.lineJoin = "round";
+    drawFirstStage(ctx, pal, v, k, valAt(run, "fill1", tS), run.tanks.start_fill[0]);
+    ctx.restore();
+    // the tag beside the stage near its top (the part the close-up keeps longest as the stage drops away)
+    const off = v.body_diameter_m / 2 * k + CLOSEUP_TEXT_INSET_PX, n = [-dirS[1], dirS[0]], along = Math.max(len / 2, len - SPENT_TAG_BACK_PX);
+    return { gap: gap, tag: { x: x + along * dirS[0] + off * n[0], y: y + along * dirS[1] + off * n[1] } };
+  }
+  function halvesAt(v, u0, k, baseC, dirC, tau) {
+    // The fairing halves in the close-up tau [s] after the drop (fairingOpen, fairingHalves): {o: how far they have
+    // opened, halves: each half's outline [canvas px] through the close-up's axis (its drawn base baseC, its direction
+    // dirC, k [px per m]; u0 [m]: their hinge, stage 2's top, from the drawn base), bbox: the box [canvas px] they fill
+    // (halfReach: corners and the nose curves' extremes)}.
+    const D = v.body_diameter_m, Df = Math.max(D, v.fairing_diameter_m), o = fairingOpen(tau);
+    const dims = { u0: u0, half: D / 2, dy: Df / 2 - D / 2, F: v.fairing_length_m, flare: FAIRING_FLARE, cylinder: FAIRING_CYLINDER };
+    const toCanvas = p => [baseC[0] + p[0] * dirC[0] - p[1] * dirC[1], baseC[1] + p[0] * dirC[1] + p[1] * dirC[0]];
+    const halves = fairingHalves(o, dims, k).map(pts => pts.map(toCanvas));
+    const all = halfReach(halves[0]).concat(halfReach(halves[1])), xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    return { o: o, halves: halves, bbox: { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 } };
+  }
+  function drawFairingHalves(ctx, pal, L, fr) {
+    // The fairing halves in the close-up, fr.tau after the drop: each half of the fairing's outline, turned out
+    // about its base edge, slid back and drifted out (halvesAt); drawn, not computed, and cut at the drawing's edge as
+    // they leave it. Returns the angle [deg], how far along the axis from the vehicle's base the halves reach [px] and
+    // the box [canvas px] the halves' outlines fill.
+    const v = L.g.vehicle, k = L.kc, F = v.fairing_length_m;
+    const u0 = (L.st.stage === 0 ? v.stage1_length_m + v.interstage_length_m : 0) + v.stage2_length_m;
+    const h = halvesAt(v, u0, k, L.baseC, L.dirC, fr.tau);
+    ctx.save();
+    ctx.lineJoin = "round";
+    h.halves.forEach(q => {
+      ctx.beginPath();
+      ctx.moveTo(q[0][0], q[0][1]); ctx.lineTo(q[1][0], q[1][1]); ctx.lineTo(q[2][0], q[2][1]);
+      ctx.quadraticCurveTo(q[3][0], q[3][1], q[4][0], q[4][1]);
+      ctx.lineTo(q[5][0], q[5][1]); ctx.closePath();
+      paint(ctx, pal.body, pal.bodyLine);
+    });
+    ctx.restore();
+    return { deg: h.o.angle * DEG_PER_RAD, tipPx: (u0 - h.o.slide + F * Math.cos(h.o.angle)) * k, bbox: h.bbox };
+  }
+  function closeupScaleText(L) {
+    // The close-up title's second line: its scale (how many metres CAM.closeup_stack_px stand for: the drawn
+    // stack's length, whatever is left of it, outside a separation's easing; closeupFrame) and why it is that.
+    const m = CAM.closeup_stack_px / L.kc, own = L.cf.why === "own scale";
+    return L.cf.why + ": " + fmt(m, LENGTH_DECIMALS) + " m" + (own ? " stack" : "") + " = " + fmt(CAM.closeup_stack_px, PX_DECIMALS) + " px";
+  }
+  function kickAt(run, t) {
+    // The kick drawing at t: from kick start to kick end, the angle [deg] between the local vertical and the axis
+    // as the model's pitch gives it; null outside the kick or where the model defines no pitch.
+    const a = firstEventT(run, "kick_start"), b = firstEventT(run, "kick_end");
+    if (a === null || b === null || t < a || t > b) return null;
+    const p = valAt(run, "pitch_deg", t);
+    return p === null || !stepAt(run, "attitude_defined", t) ? null : { offDeg: 90 - p };
+  }
+  function drawKickArc(ctx, pal, run, L, kick, draw) {
+    // During the kick: an arc about the drawing's centre from the dashed local vertical to the axis, just past the
+    // nose, in the run's colour over a halo, and a plate naming the angle beside it on the side away from the
+    // axis (the model's step, as recorded; nothing new is drawn). Returns the plate's text.
+    const up = -Math.PI / 2, axis = Math.atan2(L.dirC[1], L.dirC[0]);
+    const nose = (L.parts.L - L.cf.up) * L.kc, r = Math.min(nose + KICK_ARC_GAP_PX, Math.min(draw.w, draw.h) / 2 - KICK_ARC_GAP_PX / 2);
+    ctx.beginPath(); ctx.arc(L.pivot[0], L.pivot[1], r, up, axis, axis < up);
+    haloStroke(ctx, pal, pal[run.key], RING_PX, RING_HALO_PX, null);
+    const lines = ["pitch kick:", fmt(kick.offDeg, ANGLE_DECIMALS) + "\u00b0 off vertical"];
+    const sz = plateSize(ctx, pal, lines, FONT_SMALL_PX), right = L.dirC[0] >= 0;
+    const x = right ? L.pivot[0] - 2 * CLOSEUP_TEXT_INSET_PX - sz.w : L.pivot[0] + 2 * CLOSEUP_TEXT_INSET_PX, y = L.pivot[1] - r;
+    if (x >= draw.x && x + sz.w <= draw.x + draw.w && y >= draw.y) textPlate(ctx, pal, lines, x, y, { size: FONT_SMALL_PX });
+    return lines.join(" ");
   }
   function drawCloseup(ctx, box, t, pal, run, L) {
     // The close-up at a scale of its own (the stack shown is CAM.closeup_stack_px long, so the scale changes
-    // at staging and at the fairing drop); returns the points the vehicle was painted at.
+    // at staging and at the fairing drop); returns the points the vehicle was painted at and what it drew of
+    // the separations.
     ctx.save();
     ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h);
     ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX; ctx.strokeRect(box.x + CRISP_PX, box.y + CRISP_PX, box.w - HAIRLINE_PX, box.h - HAIRLINE_PX);
     ctx.fillStyle = pal.ink2; ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.textAlign = "left"; ctx.textBaseline = "top";
-    const scale = fmt(L.parts.L, LENGTH_DECIMALS) + " m" + (L.st.stage > 0 ? " = " : " stack = ") + fmt(CAM.closeup_stack_px, PX_DECIMALS) + " px";
-    // the whole stack (stage 1 to the fairing) is this length; less once staged or the fairing is off
-    const title = ["Close-up: drawn, not computed", (L.parts.L < L.g.stack_length_m ? "rescaled with the stack: " : "own scale: ") + scale];
-    title.forEach((s, i) => ctx.fillText(fitText(ctx, s, box.w - 2 * CLOSEUP_TEXT_INSET_PX), box.x + CLOSEUP_TEXT_INSET_PX, box.y + CLOSEUP_TITLE_TOP_PX + i * LINE_SMALL_PX));
-    const draw = { x: box.x, y: box.y + CLOSEUP_TITLE_PX, w: box.w, h: box.h - CLOSEUP_TITLE_PX - CLOSEUP_TEXT_PX };
+    // the title as drawn (fitText: cut to the box, ending in ...), which the state hook reports
+    const title = ["Close-up: shapes drawn, not computed", closeupScaleText(L)].map(s => fitText(ctx, s, box.w - 2 * CLOSEUP_TEXT_INSET_PX));
+    title.forEach((s, i) => ctx.fillText(s, box.x + CLOSEUP_TEXT_INSET_PX, box.y + CLOSEUP_TITLE_TOP_PX + i * LINE_SMALL_PX));
+    const draw = closeupDrawing(box);
     ctx.beginPath(); ctx.rect(draw.x, draw.y, draw.w, draw.h); ctx.clip();
     ctx.strokeStyle = pal.ink3; ctx.setLineDash(DASH_GUIDE); ctx.lineWidth = HAIRLINE_PX;
     ctx.beginPath(); ctx.moveTo(draw.x, L.pivot[1]); ctx.lineTo(draw.x + draw.w, L.pivot[1]);
@@ -1232,8 +2240,49 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
         }
       }
     }
+    const stg = stagingAt(run, t), fr = fairingAt(run, t, L.fairEnd), kickNow = kickAt(run, t);
+    const spent = stg ? drawSpentStage(ctx, pal, L, run, stg) : null, gapPx = spent ? spent.gap : null;
     const painted = drawVehicle(ctx, pal, vehicleSpec(run, L, L.baseC, L.dirC, L.kc));
+    const halves = fr ? drawFairingHalves(ctx, pal, L, fr) : null;
+    const kickText = kickNow ? drawKickArc(ctx, pal, run, L, kickNow, draw) : null;
+    const caption = stg ? stagingCaption(stg) : fr ? FAIRING_CAPTION : null;
+    let captionRect = null, spentTag = null;
+    if (caption) {
+      // the staging caption at the drawing's top (the spent stage leaves at the bottom left); the fairing's at its
+      // bottom (the halves turn out towards the top)
+      ctx.save();
+      ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+      const lines = wrapLines(ctx, caption, Math.max(1, draw.w - 2 * CLOSEUP_TEXT_INSET_PX - 2 * PLATE_PAD_PX));
+      ctx.restore();
+      const sz = plateSize(ctx, pal, lines, FONT_SMALL_PX), y = stg ? draw.y + CLOSEUP_CAPTION_TOP_PX : draw.y + draw.h - CLOSEUP_CAPTION_TOP_PX - sz.h;
+      captionRect = { x: draw.x + CLOSEUP_TEXT_INSET_PX, y: y, w: sz.w, h: sz.h, lines: lines };
+    }
+    if (spent) {
+      // a tag on the separating spent stage beside its middle, only whole inside the drawing and clear of the caption
+      ctx.save();
+      ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+      const tw = ctx.measureText(SPENT_TAG).width, half = FONT_SMALL_PX / 2 + CLOSEUP_LABEL_CLEAR_PX;
+      const tag = { x: spent.tag.x, y: spent.tag.y - half, w: tw + CLOSEUP_LABEL_CLEAR_PX, h: 2 * half };
+      const inside = tag.x >= draw.x && tag.y >= draw.y && tag.x + tag.w <= draw.x + draw.w && tag.y + tag.h <= draw.y + draw.h;
+      if (inside && !(captionRect && overlaps(tag, captionRect))) {
+        ctx.fillStyle = pal.ink2; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(SPENT_TAG, spent.tag.x, spent.tag.y);
+        spentTag = tag;
+      }
+      ctx.restore();
+    }
+    if (captionRect) textPlate(ctx, pal, captionRect.lines, captionRect.x, captionRect.y, { size: FONT_SMALL_PX });
     painted.carriageLabel = carriageLabel;
+    painted.title = title;
+    painted.caption = caption;
+    painted.gapPx = gapPx;
+    painted.fairingDeg = halves ? halves.deg : null;
+    painted.halvesTipPx = halves ? halves.tipPx : null;
+    painted.halvesBox = halves ? halves.bbox : null;
+    painted.captionRect = captionRect ? { x: captionRect.x, y: captionRect.y, w: captionRect.w, h: captionRect.h } : null;
+    painted.drawing = draw;
+    painted.spentTag = spentTag;
+    painted.kick = kickText;
     ctx.restore();
     ctx.save();
     ctx.fillStyle = pal.ink; ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.textAlign = "left"; ctx.textBaseline = "top";
@@ -1243,23 +2292,135 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     ctx.restore();
     return painted;
   }
-  function drawPanel(ctx, box, t, pal, run) {
-    // One panel at scene time t: returns its layout, the points painted and the readout's lines.
-    const L = layoutAt(run, t, box, ctx, pal), lay = L.lay;
-    ctx.save(); ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h); ctx.restore();
-    const view = drawView(ctx, L.view, t, pal, run, L);
-    const closeup = drawCloseup(ctx, L.inset, t, pal, run, L);
-    if (lay.mode === "band") {
-      const p = lay.plates;
-      drawGauges(ctx, pal, run, L, L.view, p.gauges);
-      drawHud(ctx, pal, view.hud, p.hud);
-      if (p.caution && t >= 0) textPlate(ctx, pal, p.caution.lines, p.caution.x, p.caution.y, { fill: pal.cautionBg, line: pal.caution, ink: pal.ink });
+  function drawBanner(ctx, pal, view, run, taken) {
+    // A frozen panel's banner: its run's end (endText) and that the view is frozen, centred at the top of view (the
+    // camera's frame), else under whatever plate it would cover, else in the middle; a caution plate unless the run
+    // reached orbit.
+    const text = endText(run) + "; " + frozenText();
+    ctx.save();
+    ctx.font = LABEL_WEIGHT + " " + FONT_TEXT_PX + "px " + pal.fontBody;
+    const lines = wrapLines(ctx, text, Math.max(1, Math.min(BANNER_MAX_PX, view.w - 2 * VIEW_MARGIN_PX) - 2 * PLATE_PAD_PX));
+    const w = Math.max(...lines.map(s => ctx.measureText(s).width)) + 2 * PLATE_PAD_PX;
+    ctx.restore();
+    const h = plateHeight(lines.length, FONT_TEXT_PX), x = view.x + (view.w - w) / 2;
+    const tops = [view.y + VIEW_MARGIN_PX].concat(taken.map(r => r.y + r.h + VIEW_MARGIN_PX).sort((p, q) => p - q), [view.y + (view.h - h) / 2]);
+    const inner = { x: view.x, y: view.y, w: view.w, h: view.h };
+    const at = firstFree(tops.map(y => ({ x: x, y: y, w: w, h: h })), taken, inner) || { x: x, y: view.y + (view.h - h) / 2, w: w, h: h };
+    const caution = run.end.status !== "inserted";
+    const rect = textPlate(ctx, pal, lines, at.x, at.y, { weight: LABEL_WEIGHT, fill: caution ? pal.cautionBg : pal.panel, line: caution ? pal.caution : pal.ink3, ink: pal.ink });
+    taken.push(rect);
+    return { text: text, rect: rect };
+  }
+  function drawLabels(ctx, pal, view, items, taken) {
+    // A label plate for each marker (placeLabels: beside it, inside the view, over no plate, marker or other
+    // label); a marker whose full text finds no place is tried again with its short text (its run's name, "S1 (display
+    // only)", "fairing (display only)", "max-Q") once every full text is placed. Returns each plate's rect (null where
+    // none fits) and text.
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+    const h = plateHeight(1, FONT_SMALL_PX);
+    const req = (it, s) => ({ x: it.px[0], y: it.px[1], r: it.r, w: ctx.measureText(s).width + 2 * PLATE_PAD_PX, h: h });
+    const inner = { x: view.x + VIEW_MARGIN_PX / 2, y: view.y + VIEW_MARGIN_PX / 2, w: view.w - VIEW_MARGIN_PX, h: view.h - VIEW_MARGIN_PX };
+    const at = placeLabels(items.map(it => req(it, it.text)), taken, inner, LABEL_PLATE_GAP_PX), texts = items.map(it => it.text);
+    const rest = [];
+    items.forEach((it, i) => { if (at[i] === null && it.short) rest.push(i); });
+    if (rest.length) {
+      const again = placeLabels(rest.map(i => req(items[i], items[i].short)), taken.concat(at.filter(r => r !== null)), inner, LABEL_PLATE_GAP_PX);
+      rest.forEach((i, k) => { if (again[k]) { at[i] = again[k]; texts[i] = items[i].short; } });
     }
+    ctx.restore();
+    at.forEach((r, i) => { if (r) textPlate(ctx, pal, [texts[i]], r.x, r.y, { size: FONT_SMALL_PX }); });
+    return { plates: at, texts: texts };
+  }
+  function onVehicleText(b) { return (BODY_TEXT[b.name] || b.name) + ON_VEHICLE_TEXT; }
+  function drawLeaderLabels(ctx, pal, view, items, taken, relax, textOf) {
+    // Labels on leaders: each item's label (textOf(item)) out from its marker, joined to it by a leader, at the first of
+    // the spots in eight directions (leaderSpots) LEADER_PX past the marker's edge (then 2, 3 ... LEADER_STEPS times as
+    // far) that lies inside the view, clear of taken and the earlier labels.
+    // With relax (the opaque plates: a separated body drawn over its vehicle, never left unlabelled), else at the first
+    // such spot clear of relax and the earlier labels, else anywhere inside the view, else at the view's top left;
+    // without it, an item with no spot gets no label (null). Returns the items, their plates and texts.
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+    const h = plateHeight(1, FONT_SMALL_PX), rects = [], texts = [];
+    const inner = { x: view.x + VIEW_MARGIN_PX / 2, y: view.y + VIEW_MARGIN_PX / 2, w: view.w - VIEW_MARGIN_PX, h: view.h - VIEW_MARGIN_PX };
+    const spot = (it, w, avoid) => {
+      for (let k = 1; k <= LEADER_STEPS; k++) {
+        const at = firstFree(leaderSpots(it.px, it.r + k * LEADER_PX, w, h), avoid, inner);
+        if (at) return at;
+      }
+      return null;
+    };
+    items.forEach(it => {
+      const text = textOf(it), w = ctx.measureText(text).width + 2 * PLATE_PAD_PX, placed = rects.filter(r => r !== null);
+      const at = spot(it, w, taken.concat(placed)) ||
+        (relax ? spot(it, w, relax.concat(placed)) || spot(it, w, []) || { x: inner.x, y: inner.y, w: w, h: h } : null);
+      rects.push(at); texts.push(text);
+    });
+    ctx.restore();
+    rects.forEach((r, i) => {
+      if (!r) return;
+      // the leader: from the marker's edge to the nearest point of the plate, over a halo
+      const p = items[i].px, q = nearestOnRect(p, r), d = Math.hypot(q[0] - p[0], q[1] - p[1]), s = d > items[i].r ? items[i].r / d : 0;
+      ctx.beginPath(); ctx.moveTo(p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s); ctx.lineTo(q[0], q[1]);
+      haloStroke(ctx, pal, pal.ink3, HAIRLINE_PX, PATH_HALO_PX, null);
+      textPlate(ctx, pal, [texts[i]], r.x, r.y, { size: FONT_SMALL_PX });
+    });
+    return { items: items, plates: rects, texts: texts };
+  }
+  function inRect(p, r) { return p[0] >= r.x && p[0] <= r.x + r.w && p[1] >= r.y && p[1] <= r.y + r.h; }
+  function drawPanel(ctx, box, t, pal, run, F) {
+    // One panel at its time t (F.t: the scene time, or its run's last row once the run has ended and the panel
+    // is frozen) through the camera the shown panels share (F.cam): returns its layout, the points painted, the
+    // readout's lines, the view's markers, the banner and the label plates.
+    const L = layoutAt(run, t, F.lay, F.cam, F.fairEnd), lay = L.lay;
+    L.st.frozen = F.frozen;
+    ctx.save(); ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h); ctx.restore();
+    const view = drawView(ctx, L.view, t, pal, run, L, F);
+    const closeup = drawCloseup(ctx, L.inset, t, pal, run, L);
+    const taken = view.taken, band = [];
+    if (lay.plates) {  // the column and band layouts: the gauges, the readout and the caution plate under the view
+      const p = lay.plates;
+      band.push(Object.assign(drawGauges(ctx, pal, run, L, L.view, p.gauges), { kind: "gauges" }));
+      band.push(Object.assign(drawHud(ctx, pal, view.hud, p.hud), { kind: "readout" }));
+      if (p.caution && t >= 0) band.push(Object.assign(textPlate(ctx, pal, p.caution.lines, p.caution.x, p.caution.y, { fill: pal.cautionBg, line: pal.caution, ink: pal.ink }), { kind: "caution" }));
+    }
+    const banner = F.frozen ? drawBanner(ctx, pal, lay.frame, run, taken) : null;
+    // labels by priority: a separated body drawn over its vehicle (always, on a leader: drawLeaderLabels), the other
+    // separated bodies (the fairing halves first while the close-up draws them), the other panel's vehicle, then the
+    // events, the latest first; none for a marker under an opaque plate (the close-up, the readout, the gauges, the
+    // scale bar, the banner), whose plate would point at nothing to be seen. A separated body whose label finds no
+    // place beside its marker gets its short label on a leader, where one fits, before the other markers' labels.
+    const covers = view.plates.concat(banner ? [banner.rect] : []);
+    const shown = it => !covers.some(r => inRect(it.px, r));
+    const all = fairingAt(run, t, L.fairEnd) ? view.bodies.slice().sort((p, q) => (q.name === FAIRING_BODY) - (p.name === FAIRING_BODY)) : view.bodies;
+    const lead = drawLeaderLabels(ctx, pal, L.view, all.filter(b => b.onVehicle === true).filter(shown), taken, covers, onVehicleText);
+    const bodies = all.filter(b => b.onVehicle !== true).filter(shown), rest = view.others.concat(view.marks.slice().reverse()).filter(shown);
+    const placedB = drawLabels(ctx, pal, L.view, bodies, taken.concat(lead.plates));
+    const used = () => taken.concat(lead.plates, placedB.plates.filter(r => r !== null));
+    const late = bodies.filter((it, k) => placedB.plates[k] === null);
+    if (late.length) {
+      const more = drawLeaderLabels(ctx, pal, L.view, late, used(), null, it => it.short);
+      late.forEach((it, j) => { const k = bodies.indexOf(it); if (more.plates[j]) { placedB.plates[k] = more.plates[j]; placedB.texts[k] = more.texts[j]; } });
+    }
+    const placedR = drawLabels(ctx, pal, L.view, rest, used());
+    const items = bodies.concat(rest);
+    const labels = { items: lead.items.concat(items), plates: lead.plates.concat(placedB.plates, placedR.plates), texts: lead.texts.concat(placedB.texts, placedR.texts) };
     if (lay.mark) drawMark(ctx, lay.mark, pal);
-    drawHeader(ctx, lay.header, t, pal, run, L);
+    drawHeader(ctx, lay.header, F.sceneT, pal, run, L);
     drawTextBand(ctx, lay.noteBox, pal, lay.note, false);
     drawTextBand(ctx, lay.legendBox, pal, lay.legend, true);
-    return { L: L, painted: { main: view.main, closeup: closeup, carriageLabel: view.carriageLabel }, hud: view.hud };
+    return {
+      L: L, F: F, painted: { main: view.main, closeup: closeup, carriageLabel: view.carriageLabel }, hud: view.hud, view: view,
+      banner: banner, labels: labels, band: band
+    };
+  }
+  function drawScene(ctx, box, t, pal, prs) {
+    // The shown panels at scene time t in box (panelBoxes), on one clock and one camera; returns each panel's
+    // drawPanel result.
+    const boxes = panelBoxes(box, prs.length, TWO_UP_MIN_PX, PANEL_GAP_PX);
+    const frames = sceneFrames(ctx, pal, t, prs, boxes);
+    return frames.map((F, i) => drawPanel(ctx, boxes[i], F.t, pal, prs[i], F));
   }
   function footerLines() {
     const git = DATA.git, state = git.dirty === true ? "dirty" : git.dirty === false ? "clean" : "state unknown" + (git.error ? " (" + git.error + ")" : "");
@@ -1269,101 +2430,208 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     lines.push("Data: " + DATA.source + ", experiment " + DATA.experiment + ", " + DATA.timestamp + ", git " + git.hash + " (" + state + ").");
     return lines;
   }
-  function footerWrapped(ctx, pal, w) {
-    // The caveat footer's lines wrapped to a frame w px wide, every one kept.
+  function frameFooterLines(prs) {
+    // A captured frame's caveat footer (it travels without the page's caveat list; D-SP2-36, A3b review round 3):
+    // the page's footer, then the payload's frame caveat (the model, the vehicle's calibration, where every caveat
+    // is) and what structural mass each shown pushed run's record charges for the push.
+    const lines = footerLines();
+    if (DATA.frame_caveat) lines.push(DATA.frame_caveat);
+    const pushed = prs.filter(r => r.structure_note).map(r => r.name + ": " + r.structure_note + ".");
+    if (pushed.length) lines.push(pushed.join(" "));
+    return lines;
+  }
+  function footerWrapped(ctx, pal, w, prs) {
+    // A captured frame's caveat footer (frameFooterLines) wrapped to a frame w px wide, every line kept.
     ctx.save();
     ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
     const out = [];
-    footerLines().forEach(text => wrapLines(ctx, text, Math.max(1, w - 2 * TEXT_INSET_PX)).forEach(s => out.push(s)));
+    frameFooterLines(prs).forEach(text => wrapLines(ctx, text, Math.max(1, w - 2 * TEXT_INSET_PX)).forEach(s => out.push(s)));
     ctx.restore();
     return out;
   }
-  function drawTicks(ctx, box, t, pal, run) {
-    // The event marks over the time slider; the slider spans the run's own first and last rows. A name is
-    // printed where it fits clear of the last one, marked when the event is synthesised.
-    const t0 = run.t[0], span = Math.max(run.t[run.t.length - 1] - t0, EVENT_EPS_S);
-    const sx = te => box.x + TICK_PAD_PX + (te - t0) / span * (box.w - 2 * TICK_PAD_PX);
-    ctx.font = FONT_TICK_PX + "px " + pal.fontBody; ctx.textBaseline = "top"; ctx.textAlign = "center";
-    let lastRight = -Infinity;
-    run.event_groups.forEach(g => {
+  function drawCaptureHud(ctx, box, t, pal, prs) {
+    // The in-canvas clock band of a captured frame: the scene clock, then each panel's run and phase (its end
+    // once it has ended).
+    ctx.save();
+    ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeStyle = pal.rule; ctx.lineWidth = HAIRLINE_PX;
+    ctx.beginPath(); ctx.moveTo(box.x, box.y + box.h - CRISP_PX); ctx.lineTo(box.x + box.w, box.y + box.h - CRISP_PX); ctx.stroke();
+    ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillStyle = pal.ink;
+    ctx.font = FONT_CLOCK_PX + "px " + pal.fontData;
+    const clock = clockText(t) + " after release";
+    let x = box.x + TEXT_INSET_PX;
+    const y = box.y + box.h / 2;
+    ctx.fillText(clock, x, y);
+    x += ctx.measureText(clock).width + HEADER_GAP_PX;
+    ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+    const room = (box.x + box.w - x) / Math.max(1, prs.length);
+    prs.forEach((run, i) => {
+      const x0 = x + i * room;
+      ctx.fillStyle = pal[run.key]; ctx.fillRect(x0, y - SWATCH_PX / 2, SWATCH_PX, SWATCH_PX);
+      ctx.strokeStyle = pal.bodyLine; ctx.strokeRect(x0 + CRISP_PX, y - SWATCH_PX / 2 + CRISP_PX, SWATCH_PX - HAIRLINE_PX, SWATCH_PX - HAIRLINE_PX);
+      ctx.fillStyle = pal.ink;
+      const text = run.name + ": " + phaseAt(run, Math.min(t, lastT(run)));
+      ctx.fillText(fitText(ctx, text, room - SWATCH_PX - 2 * HEADER_PAD_PX), x0 + SWATCH_PX + HEADER_PAD_PX, y);
+    });
+    ctx.restore();
+  }
+  function drawTicks(ctx, box, t, pal, prs, tMin, tMax) {
+    // The event marks over the time slider, which spans the shown runs' first to last rows: a row of marks per
+    // panel, in its run's colour once passed. A name is printed where it fits clear of the last one, marked
+    // when the event is synthesised.
+    const span = Math.max(tMax - tMin, EVENT_EPS_S), rowH = TICK_MARK_PX / Math.max(1, prs.length);
+    const sx = te => box.x + TICK_PAD_PX + (te - tMin) / span * (box.w - 2 * TICK_PAD_PX);
+    const names = [];
+    prs.forEach((run, k) => run.event_groups.forEach(g => {
       if (g.t === null) return;
       const x = sx(g.t);
-      ctx.fillStyle = g.t <= t + EVENT_EPS_S ? pal.ink : pal.ink3; ctx.fillRect(x - HAIRLINE_PX / 2, box.y + TICK_MARK_TOP_PX, HAIRLINE_PX, TICK_MARK_PX);
+      ctx.fillStyle = g.t <= t + EVENT_EPS_S ? pal[run.key] : pal.ink3;
+      ctx.fillRect(x - HAIRLINE_PX / 2, box.y + TICK_MARK_TOP_PX + k * rowH, HAIRLINE_PX, rowH);
       const first = run.events.find(e => e.t === g.t);
-      if (!first) return;
-      const name = first.name + (first.synthetic ? SYNTH_MARK : ""), half = ctx.measureText(name).width / 2;
-      if (x - half > lastRight + TICK_LABEL_GAP_PX && x - half > box.x + TICK_LABEL_EDGE_PX && x + half < box.x + box.w - TICK_LABEL_EDGE_PX) {
-        ctx.fillText(name, x, box.y); lastRight = x + half;
+      if (first) names.push({ x: x, name: first.name + (first.synthetic ? SYNTH_MARK : "") });
+    }));
+    names.sort((p, q) => p.x - q.x);
+    ctx.font = FONT_TICK_PX + "px " + pal.fontBody; ctx.textBaseline = "top"; ctx.textAlign = "center"; ctx.fillStyle = pal.ink2;
+    let lastRight = -Infinity;
+    names.forEach(n => {
+      const half = ctx.measureText(n.name).width / 2;
+      if (n.x - half > lastRight + TICK_LABEL_GAP_PX && n.x - half > box.x + TICK_LABEL_EDGE_PX && n.x + half < box.x + box.w - TICK_LABEL_EDGE_PX) {
+        ctx.fillText(n.name, n.x, box.y); lastRight = n.x + half;
       }
     });
   }
 
   // ------------------------------------------------------------------ the page
   const TELEMETRY = [
-    ["alt", "Altitude"], ["speed", "Speed"], ["d", "Downrange"], ["pitch", "Attitude"], ["mass", "Mass (rebuilt)"],
+    ["state", "Shown at"], ["alt", "Altitude"], ["speed", "Speed"], ["d", "Downrange"], ["pitch", "Attitude"], ["mass", "Mass (rebuilt)"],
     ["thrust", "Engines (vacuum thrust)"], ["q", "q"], ["mach", "Mach"], ["drive", "Drive force"], ["power", "Drive power"],
     ["s1", "S1 tank"], ["s2", "S2 tank"], ["stage", "Stage"]
   ];
-  const cells = {};
+  let cells = [];
+  function panelTime(run, t) { return Math.min(t, lastT(run)); }
+  function columnHead(run) {
+    // A column's heading: the run's colour swatch (by class: no style value from data) and its label.
+    const h = document.createElement("h3"), sw = document.createElement("span"), name = document.createElement("span");
+    sw.className = "sw sw-" + run.color; sw.setAttribute("aria-hidden", "true");
+    name.textContent = run.label + (run.yardstick === true ? YARDSTICK_MARK : "");
+    h.append(sw, name);
+    return h;
+  }
   function buildTelemetry() {
-    const grid = document.getElementById("tgrid");
-    grid.replaceChildren();
-    const items = TELEMETRY.slice();
-    if (Array.isArray(panelRun.felt_g)) items.push(["felt", "Felt g"]);
-    items.forEach(item => {
-      const div = document.createElement("div"), k = document.createElement("span"), v = document.createElement("span");
-      k.className = "k"; k.textContent = item[1]; v.className = "v"; v.textContent = DASH;
-      div.append(k, v); grid.appendChild(div); cells[item[0]] = v;
+    const host = document.getElementById("tgrids");
+    host.replaceChildren();
+    cells = panelRuns.map(run => {
+      const col = document.createElement("div"), grid = document.createElement("div"), own = {};
+      col.className = "col"; grid.className = "tgrid";
+      const items = TELEMETRY.slice();
+      if (Array.isArray(run.felt_g)) items.push(["felt", "Felt g"]);
+      items.forEach(item => {
+        const div = document.createElement("div"), k = document.createElement("span"), v = document.createElement("span");
+        k.className = "k"; k.textContent = item[1]; v.className = "v"; v.textContent = DASH;
+        div.append(k, v); grid.appendChild(div); own[item[0]] = v;
+      });
+      col.append(columnHead(run), grid); host.appendChild(col);
+      return own;
     });
   }
   function updateTelemetry() {
-    const st = stateValues(panelRun, tNow), set = (k, s) => { if (cells[k]) cells[k].textContent = s; };
-    set("alt", lengthText(st.alt, LENGTH_DECIMALS)); set("speed", fmt(st.speed, SPEED_DECIMALS) + " m/s"); set("d", lengthText(st.d, LENGTH_DECIMALS));
-    set("pitch", st.defined ? "pitch " + fmt(wrapDeg(st.pitchDeg), ANGLE_DECIMALS) + "\u00b0" : "held (drawn)");
-    set("mass", fmt(st.mass / KG_PER_T, MASS_T_DECIMALS) + " t");
-    set("thrust", st.thrustOn ? pct(st.plume, THRUST_PCT_DECIMALS) + " of full" : "off");
-    set("q", orDash(st.q, q => fmt(q / PA_PER_KPA, Q_KPA_DECIMALS) + " kPa")); set("mach", orDash(st.mach, m => fmt(m, MACH_DECIMALS)));
-    set("drive", orDash(st.driveF, f => fmt(f / N_PER_MN, FORCE_MN_DECIMALS) + " MN")); set("power", orDash(st.driveP, p => fmt(p / W_PER_MW, POWER_MW_DECIMALS) + " MW"));
-    set("s1", orDash(st.fill1, f => pct(f, FILL_PCT_DECIMALS))); set("s2", orDash(st.fill2, f => pct(f, FILL_PCT_DECIMALS)));
-    set("stage", panelRun.tanks.stage_names[st.stage] + (st.fairingOn ? ", fairing on" : ""));
-    if (cells.felt) set("felt", orDash(st.felt, g => fmt(g, FELT_DECIMALS) + " g"));
+    panelRuns.forEach((run, i) => {
+      const st = stateValues(run, panelTime(run, tNow)), own = cells[i] || {}, set = (k, s) => { if (own[k]) own[k].textContent = s; };
+      // when the values are not the clock's, as the canvas says it: the panel held at the first row before the run
+      // starts, its view frozen at the last row after the run ends
+      set("state", tNow < run.t[0] ? run.pre_label + "; " + HELD_TEXT + " (first row's values)" :
+        tNow > lastT(run) + EVENT_EPS_S ? run.end_label + "; " + frozenText() + " (values at its end)" : clockText(tNow));
+      set("alt", lengthText(st.alt, LENGTH_DECIMALS)); set("speed", fmt(st.speed, SPEED_DECIMALS) + " m/s"); set("d", lengthText(st.d, LENGTH_DECIMALS));
+      set("pitch", st.defined ? "pitch " + fmt(wrapDeg(st.pitchDeg), ANGLE_DECIMALS) + "\u00b0" : "held (drawn)");
+      set("mass", fmt(st.mass / KG_PER_T, MASS_T_DECIMALS) + " t");
+      set("thrust", st.thrustOn ? pct(st.plume, THRUST_PCT_DECIMALS) + " of full" : "off");
+      set("q", orDash(st.q, q => fmt(q / PA_PER_KPA, Q_KPA_DECIMALS) + " kPa")); set("mach", orDash(st.mach, m => fmt(m, MACH_DECIMALS)));
+      set("drive", orDash(st.driveF, f => fmt(f / N_PER_MN, FORCE_MN_DECIMALS) + " MN")); set("power", orDash(st.driveP, p => fmt(p / W_PER_MW, POWER_MW_DECIMALS) + " MW"));
+      set("s1", orDash(st.fill1, f => pct(f, FILL_PCT_DECIMALS))); set("s2", orDash(st.fill2, f => pct(f, FILL_PCT_DECIMALS)));
+      set("stage", run.tanks.stage_names[st.stage] + (st.fairingOn ? ", fairing on" : ""));
+      if (own.felt) set("felt", orDash(st.felt, g => fmt(g, FELT_DECIMALS) + " g"));
+    });
   }
   let tickerItems = [];
+  function jumpTo(t) {
+    touched = true;
+    tNow = Math.min(T_MAX, Math.max(T_MIN, snapTime(t, TIME_DECIMALS)));
+    draw();
+  }
+  function tickerEntry(text, t, title) {
+    // One entry of an event list: a button with its time and text that jumps the clock to t.
+    const li = document.createElement("li"), b = document.createElement("button"), time = document.createElement("span"), label = document.createElement("span");
+    b.type = "button"; b.className = "evt";
+    time.className = "et"; time.textContent = clockText(t);
+    label.textContent = text;
+    if (title) b.title = title;
+    b.append(time, label);
+    b.addEventListener("click", () => jumpTo(t));
+    li.appendChild(b);
+    return li;
+  }
   function buildTicker() {
-    const ol = document.getElementById("ticker");
-    ol.replaceChildren();
-    // on a silo run that ends in impact the impact event says the model has no contact (D-SP2-20)
-    const noContact = impactNote(panelRun);
-    tickerItems = panelRun.events.filter(e => e.t !== null).map(e => {
-      const li = document.createElement("li"), b = document.createElement("button"), time = document.createElement("span"), label = document.createElement("span");
-      b.type = "button"; b.className = "evt";
-      time.className = "et"; time.textContent = clockText(e.t);
-      label.textContent = eventText(e) + (noContact && e.name === "impact" ? IMPACT_TICKER_NOTE : "");
-      if (e.synthetic && e.synthetic_from) b.title = e.synthetic_from;
-      b.append(time, label);
-      b.addEventListener("click", () => { tNow = Math.min(T_MAX, Math.max(T_MIN, e.t)); draw(); });
-      li.appendChild(b); ol.appendChild(li);
-      return { li: li, t: e.t };
+    // One list per panel; each entry jumps the clock to its event, named by its plain name with the model's label in
+    // brackets (longText). On a silo run that ends in impact the impact event says the model has no contact
+    // (D-SP2-20). The run's max-Q mark is listed in time order as what it is (not a logged event); under the list,
+    // each separated body with its drag-free coast's impact time, speed and downrange (bodyText; design 4.9),
+    // jumping to that impact when it falls inside the run, else to the separation.
+    const host = document.getElementById("tickers");
+    host.replaceChildren();
+    tickerItems = [];
+    panelRuns.forEach(run => {
+      const col = document.createElement("div"), ol = document.createElement("ol");
+      col.className = "col"; ol.className = "ticker";
+      ol.setAttribute("aria-label", "Events of " + run.label + "; select one to jump to it");
+      const noContact = impactNote(run);
+      const entries = run.events.filter(e => e.t !== null).map(e => ({
+        t: e.t, text: longText(run, e) + (noContact && e.name === "impact" ? IMPACT_TICKER_NOTE : ""), title: e.synthetic ? e.synthetic_from : null
+      }));
+      if (run.maxq) {
+        const k = entries.findIndex(x => x.t > run.maxq.t);
+        entries.splice(k < 0 ? entries.length : k, 0, { t: run.maxq.t, text: maxqText(run) + MAXQ_TICKER_NOTE, title: null });
+      }
+      entries.forEach(x => {
+        const li = tickerEntry(x.text, x.t, x.title);
+        ol.appendChild(li);
+        tickerItems.push({ li: li, t: x.t, run: run });
+      });
+      col.append(columnHead(run), ol);
+      if (run.bodies.length) {
+        const head = document.createElement("p"), ul = document.createElement("ul");
+        head.className = "note"; head.textContent = "Separated bodies (display only; select one to jump to its impact or separation):";
+        ul.className = "ticker";
+        ul.setAttribute("aria-label", "Separated bodies of " + run.label);
+        const f = { clock: clockText, speed: v => fmt(v, SPEED_DECIMALS), length: m => lengthText(m, LENGTH_DECIMALS) };
+        run.bodies.forEach(b => {
+          const inside = b.impact && b.impact.within_run === true && b.clipped_at_run_end !== true;
+          ul.appendChild(tickerEntry(bodyText(b, lastT(run), Object.assign({ name: BODY_TEXT[b.name] || b.name }, f)), inside ? b.impact.t : b.t_separation, b.note));
+        });
+        col.append(head, ul);
+      }
+      host.appendChild(col);
     });
   }
   function updateTicker() {
-    const grp = lastGroup(panelRun, tNow);
     tickerItems.forEach(it => {
-      it.li.classList.toggle("past", it.t <= tNow + EVENT_EPS_S);
-      it.li.classList.toggle("current", grp !== null && it.t === grp.t);
+      const tp = panelTime(it.run, tNow), mk = lastMark(it.run, tp);
+      it.li.classList.toggle("past", it.t <= tp + EVENT_EPS_S);
+      it.li.classList.toggle("current", mk !== null && it.t === mk.t);
     });
   }
+  function rateText(r) { return fmt(r, RATE_DECIMALS) + "x"; }
   function draw() {
     const pal = scenePalette();
     const cv = document.getElementById("scene");
     const { ctx, w, h } = setupCanvas(cv);
-    drawPanel(ctx, { x: 0, y: 0, w: w, h: h }, tNow, pal, panelRun);
+    drawScene(ctx, { x: 0, y: 0, w: w, h: h }, tNow, pal, panelRuns);
     const ticks = setupCanvas(document.getElementById("ticks"));
-    drawTicks(ticks.ctx, { x: 0, y: 0, w: ticks.w, h: ticks.h }, tNow, pal, panelRun);
+    drawTicks(ticks.ctx, { x: 0, y: 0, w: ticks.w, h: ticks.h }, tNow, pal, panelRuns, T_MIN, T_MAX);
     updateTelemetry();
     updateTicker();
     document.getElementById("clock").textContent = clockText(tNow);
-    document.getElementById("clockSub").textContent = playing ? "playing at " + currentRate() + "x" : "paused";
+    const auto = document.getElementById("rate").value === "auto";
+    document.getElementById("clockSub").textContent = "after release, " + (playing ? "playing at " + rateText(currentRate()) + (auto ? " (auto)" : "") : "paused");
     document.getElementById("scrub").value = tNow.toFixed(SCRUB_DECIMALS);
   }
 
@@ -1371,7 +2639,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
   function rateAt(t) {
     const sel = document.getElementById("rate").value;
     if (sel !== "auto") { const v = Number(sel); return RATE_CHOICES.indexOf(v) >= 0 ? v : 1; }
-    return rateLaw(t);
+    return rateLaw(t, SCHED);
   }
   function currentRate() { return rateAt(tNow); }
   function tick(ts) {
@@ -1392,92 +2660,190 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     if (p) { if (tNow >= T_MAX - 0.05) tNow = T_MIN; lastFrame = null; requestAnimationFrame(tick); }
     draw();
   }
+  function jumpEvent(dir) {
+    // The previous (dir < 0) or next (dir > 0) event of the shown runs, by the clock.
+    const to = neighbourTime(EVENT_TIMES, tNow, dir, JUMP_EPS_S);
+    if (to !== null) jumpTo(to);
+  }
+  function stepClock(ds) { jumpTo(tNow + ds); }
 
   // ------------------------------------------------------------------ the state hook
   function sceneBox() {
     const cv = document.getElementById("scene");
     return { x: 0, y: 0, w: cv.clientWidth, h: cv.clientHeight };
   }
-  function panelState(run, t, box) {
-    // The values drawn at t and the points painted: the panel is drawn on a canvas of the box's size, so
-    // every painted point is the one the drawing produced.
-    const cv = document.createElement("canvas");
-    cv.width = Math.max(1, Math.round(box.w)); cv.height = Math.max(1, Math.round(box.h));
-    const P = drawPanel(cv.getContext("2d"), box, t, scenePalette(), run), L = P.L, st = L.st, pm = P.painted;
+  function panelState(P, run, sceneT) {
+    // One panel's values drawn at its time and the points it painted (drawScene on a canvas of the scene's size,
+    // so every painted point is the one the drawing produced).
+    const L = P.L, F = P.F, st = L.st, pm = P.painted, v = P.view, t = F.t;
+    const labelled = item => { const k = P.labels.items.indexOf(item); return k >= 0 && P.labels.plates[k] !== null; };
+    const labelText = item => { const k = P.labels.items.indexOf(item); return k >= 0 && P.labels.plates[k] !== null ? P.labels.texts[k] : null; };
+    const labelRect = item => { const k = P.labels.items.indexOf(item); return k >= 0 ? P.labels.plates[k] : null; };
     return {
-      run: run.name, t: t, phase: st.phase, alt_m: st.alt, downrange_m: st.d, speed_mps: st.speed,
+      run: run.name, t: t, scene_t: sceneT, frozen: F.frozen, held_first_row: F.held, banner: P.banner ? P.banner.text : null,
+      phase: st.phase, alt_m: st.alt, downrange_m: st.d, speed_mps: st.speed,
       pitch_deg: st.pitchDeg, drawn_angle_deg: st.angleDeg, closeup_angle_deg: L.angC * DEG_PER_RAD, attitude_defined: st.defined,
       plume: st.plume, plume_drawn: st.plumeDrawn, thrust_on: st.thrustOn, stage: st.stage, stage_name: run.tanks.stage_names[st.stage],
       fairing_on: st.fairingOn, fill1: st.fill1, fill2: st.fill2, prop1_kg: st.prop1, prop2_kg: st.prop2, mass_kg: st.mass,
       felt_g: st.felt, drive_force_N: st.driveF,
       carriage_s_m: siloReady(run.assist) ? carriageS(run, t) : null,
-      events_shown: eventsShown(run, t), rate: rateAt(t), hud: P.hud, layout: L.lay.mode,
+      events_shown: eventsShown(run, t), rate: rateAt(sceneT), rate_auto: rateLaw(sceneT, SCHED), hud: P.hud, layout: L.lay.mode,
+      header_last: lastMark(run, t),
       painted: {
         base_px: pm.main.base, nose_px: pm.main.nose, ground_px: L.ground, px_per_m: L.cam.ppm, mode: L.mode, stack_length_m: L.parts.L,
         closeup_base_px: pm.closeup.base, closeup_nose_px: pm.closeup.nose,
         closeup_len_px: Math.hypot(pm.closeup.nose[0] - pm.closeup.base[0], pm.closeup.nose[1] - pm.closeup.base[1]),
+        closeup_px_per_m: L.kc, closeup_framing: L.cf.why, closeup_halves_tip_px: pm.closeup.halvesTipPx, closeup_kick: pm.closeup.kick,
+        closeup_title: pm.closeup.title, closeup_caption: pm.closeup.caption, staging_gap_px: pm.closeup.gapPx, fairing_open_deg: pm.closeup.fairingDeg,
+        closeup_halves_bbox_px: pm.closeup.halvesBox, closeup_caption_rect: pm.closeup.captionRect, closeup_drawing: pm.closeup.drawing,
+        closeup_spent_tag: pm.closeup.spentTag,
         carriage_label: pm.carriageLabel, closeup_carriage_label: pm.closeup.carriageLabel,
-        camera: { x0_m: L.cam.x0, y0_m: L.cam.y0, view_height_m: L.cam.H, view_width_m: L.cam.W, extent_m: L.cam.E, view: L.view }
+        camera: { x0_m: L.cam.x0, y0_m: L.cam.y0, view_height_m: L.cam.H, view_width_m: L.cam.W, extent_m: L.cam.E, view: L.view, frame: L.lay.frame },
+        hud_rect: v.hudRect, plate_rects: v.plates, band_rects: P.band, closeup_rect: closeupOver(L.lay) ? L.inset : null, ring_key: v.ringKey ? v.ringKey.text : null,
+        earth: v.earth, trace_points: v.trace.points, trace_end_px: v.trace.end_px,
+        event_marks: v.marks.map(m => ({ t: m.t, px: m.px, text: m.text, display: m.display === true, labelled: labelled(m), label: labelText(m) })),
+        bodies: v.bodies.map(b => ({
+          name: b.name, px: b.px, size_px: b.size_px, t: b.t, stopped: b.stopped, text: b.text, on_vehicle: b.onVehicle === true, labelled: labelled(b), label: labelText(b),
+          label_rect: labelRect(b)
+        })),
+        closeup_fairing_end_s: L.fairEnd,
+        others: v.others.map(o => ({ run: o.run, px: o.px, size_px: o.size_px, text: o.text, labelled: labelled(o), label: labelText(o) })),
+        legend: L.lay.legend
       }
     };
+  }
+  function panelStates(t, box) {
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(box.w)); cv.height = Math.max(1, Math.round(box.h));
+    const out = drawScene(cv.getContext("2d"), box, t, scenePalette(), panelRuns);
+    return out.map((P, i) => panelState(P, panelRuns[i], t));
   }
   function stateAt(t) {
     const tt = Number(t);
     if (!Number.isFinite(tt)) throw new TypeError("stateAt needs a finite time in seconds after release");
-    return [panelState(panelRun, snapTime(tt, TIME_DECIMALS), sceneBox())];
+    return panelStates(snapTime(tt, TIME_DECIMALS), sceneBox());
   }
   function captureFrame(t, width, height) {
-    // A PNG of the panel at t with the caveat footer under it; captureFrame(t) (design 4.5) is a frame of
-    // CAPTURE_DEFAULT_W_PX x CAPTURE_DEFAULT_H_PX, and a width and a height may be given.
+    // A PNG of the shown panels at t, the clock band over them and the caveat footer under them, drawn by the
+    // page's own functions; captureFrame(t) (design 4.5) is a frame of CAPTURE_DEFAULT_W_PX x
+    // CAPTURE_DEFAULT_H_PX, and an even width and height may be given (a video frame's sides are even).
     return new Promise((resolve, reject) => {
       const tt = Number(t);
       const W = Math.round(Number(width === undefined ? CAPTURE_DEFAULT_W_PX : width));
       const H = Math.round(Number(height === undefined ? CAPTURE_DEFAULT_H_PX : height));
-      if (!Number.isFinite(tt) || !(W >= CAPTURE_MIN_PX && W <= CAPTURE_MAX_PX) || !(H >= CAPTURE_MIN_PX + CAPTURE_FOOTER_PX && H <= CAPTURE_MAX_PX)) {
-        reject(new RangeError("captureFrame needs a finite time, a width of " + CAPTURE_MIN_PX + " to " + CAPTURE_MAX_PX +
-          " px and a height of " + (CAPTURE_MIN_PX + CAPTURE_FOOTER_PX) + " to " + CAPTURE_MAX_PX + " px"));
+      const minH = CAPTURE_MIN_PX + CAPTURE_FOOTER_PX + CAPTURE_HUD_PX;
+      if (!Number.isFinite(tt) || !(W >= CAPTURE_MIN_PX && W <= CAPTURE_MAX_PX) || !(H >= minH && H <= CAPTURE_MAX_PX) || W % 2 !== 0 || H % 2 !== 0) {
+        reject(new RangeError("captureFrame needs a finite time and even sides: a width of " + CAPTURE_MIN_PX + " to " + CAPTURE_MAX_PX +
+          " px and a height of " + minH + " to " + CAPTURE_MAX_PX + " px"));
         return;
       }
       const cv = document.createElement("canvas");
       cv.width = W; cv.height = H;
       const ctx = cv.getContext("2d"), pal = scenePalette();
-      const lines = footerWrapped(ctx, pal, W);
+      const lines = footerWrapped(ctx, pal, W, panelRuns);
       const footerH = Math.max(CAPTURE_FOOTER_PX, lines.length * LINE_SMALL_PX + 2 * BAND_PAD_PX);
-      const box = { x: 0, y: 0, w: W, h: H - footerH };
-      const lay = box.h >= CAPTURE_MIN_PX ? panelLayout(ctx, pal, panelRun, box) : null;
-      if (!lay || lay.view.w < CAPTURE_MIN_PX || lay.view.h < CAPTURE_MIN_PX || lay.inset.y + lay.inset.h > lay.legendBox.y) {
+      const box = { x: 0, y: CAPTURE_HUD_PX, w: W, h: H - footerH - CAPTURE_HUD_PX };
+      const lays = box.h >= CAPTURE_MIN_PX ? sharedLayouts(ctx, pal, panelRuns, panelBoxes(box, panelRuns.length, TWO_UP_MIN_PX, PANEL_GAP_PX)) : null;
+      if (!lays || lays.some(lay => lay.view.w < CAPTURE_MIN_PX || lay.view.h < CAPTURE_MIN_PX || lay.inset.y + lay.inset.h > lay.legendBox.y)) {
         reject(new RangeError("captureFrame: in a frame of " + W + " x " + H + " px the caveat footer takes " + footerH +
-          " px and the panel's text, view and close-up do not fit in the rest; ask for a taller frame"));
+          " px and the panels' text, views and close-ups do not fit in the rest; ask for a taller frame"));
         return;
       }
-      drawPanel(ctx, box, snapTime(tt, TIME_DECIMALS), pal, panelRun);
-      drawTextBand(ctx, { x: 0, y: box.h, w: W, h: footerH }, pal, lines, true);
+      const ts = snapTime(tt, TIME_DECIMALS);
+      ctx.fillStyle = pal.panel; ctx.fillRect(0, 0, W, H);
+      drawCaptureHud(ctx, { x: 0, y: 0, w: W, h: CAPTURE_HUD_PX }, ts, pal, panelRuns);
+      drawScene(ctx, box, ts, pal, panelRuns);
+      drawTextBand(ctx, { x: 0, y: H - footerH, w: W, h: footerH }, pal, lines, true);
       cv.toBlob(blob => { if (blob) resolve(blob); else reject(new Error("the browser returned no PNG")); }, "image/png");
     });
   }
 
   // ------------------------------------------------------------------ wiring
-  function setRun(index) {
-    panelRun = runs[index] || runs[0];
-    T_MIN = panelRun.t[0]; T_MAX = panelRun.t[panelRun.t.length - 1];
+  function roleGroup(r) {
+    const hit = ROLE_GROUPS.find(g => g[0] === r.role && (g[1] === null || g[1] === r.offload_kind));
+    return hit ? hit[2] : String(r.role);
+  }
+  function runOption(r, i) {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = (r.label.indexOf(r.name) === 0 ? r.label : r.label + " [" + r.name + "]") + (r.yardstick === true ? YARDSTICK_MARK : "");
+    if (r.note) o.title = r.note;
+    return o;
+  }
+  function fillSelect(sel, withNone) {
+    // Every run of the payload, grouped by role in ROLE_GROUPS' order (yardsticks marked); the second panel's
+    // selector also offers no second panel.
+    sel.replaceChildren();
+    if (withNone) { const o = document.createElement("option"); o.value = ""; o.textContent = NO_PANEL; sel.appendChild(o); }
+    const order = ROLE_GROUPS.map(g => g[2]), groups = {}, names = [];
+    runs.forEach((r, i) => {
+      const name = roleGroup(r);
+      if (!groups[name]) { groups[name] = []; names.push(name); }
+      groups[name].push(runOption(r, i));
+    });
+    const rank = n => (order.indexOf(n) < 0 ? order.length : order.indexOf(n));
+    names.sort((p, q) => rank(p) - rank(q)).forEach(name => {
+      const og = document.createElement("optgroup");
+      og.label = name;
+      groups[name].forEach(o => og.appendChild(o));
+      sel.appendChild(og);
+    });
+  }
+  function zoomSamples(prs) {
+    // The shown runs' camera view height [m] over scene time, every ZOOM_SAMPLE_S from the first row to the last:
+    // the camera law (viewHeight) at the larger running extent of the runs (each at its last row once it has
+    // ended), at the nominal aspect ZOOM_ASPECT, so the Auto rate's zoom cap does not follow the window.
+    const t0 = Math.min(...prs.map(r => r.t[0])), t1 = Math.max(...prs.map(lastT));
+    const ext = prs.map(r => runningExtent(r.alt_m, r.downrange_m, floorOf(r), geomOf(r).stack_length_m, ZOOM_ASPECT));
+    const out = [];
+    for (let k = 0; ; k++) {
+      const t = Math.min(t1, t0 + k * ZOOM_SAMPLE_S);
+      let E = 0;
+      prs.forEach((r, i) => { E = Math.max(E, ext[i][idxAt(Math.min(t, lastT(r)), r.t)]); });
+      out.push([t, viewHeight(E, CAM.min_view_height_m, CAM.margin)]);
+      if (t >= t1) break;
+    }
+    return out;
+  }
+  const SCENE_NOTE_TWO = "Two runs play on one clock (time after release) and one camera: while both runs fly, the views share scale and pan (the same ground line and launch site), and each marks the other panel's vehicle with a hollow ring, named in a key on its view. A panel before its run's first row holds that row; a panel whose run has ended keeps its last view and scale bar under a banner, with no ring.";
+  const SCENE_NOTE_ONE = "One run plays on its own clock (time after release) and camera; a panel before its run's first row holds that row, and once the run has ended it stays at its end under a banner.";
+  function setPanels(left, right) {
+    // Show runs[left] in the first panel and runs[right] (null: none) in the second, never one run in both; the
+    // clock, the slider, the rate schedule, the event list, the telemetry, the flags and the note under the canvas
+    // follow the runs shown.
+    const a = runs[left] || runs[0], b = right === null || right === undefined || runs[right] === a ? null : runs[right] || null;
+    panelRuns = b ? [a, b] : [a];
+    document.getElementById("sceneNote").textContent = b ? SCENE_NOTE_TWO : SCENE_NOTE_ONE;
+    T_MIN = Math.min(...panelRuns.map(r => r.t[0])); T_MAX = Math.max(...panelRuns.map(lastT));
     const scrub = document.getElementById("scrub");
     const k = Math.pow(10, SCRUB_DECIMALS);
     scrub.min = (Math.floor(T_MIN * k) / k).toFixed(SCRUB_DECIMALS); scrub.max = (Math.ceil(T_MAX * k) / k).toFixed(SCRUB_DECIMALS);
     tNow = Math.min(T_MAX, Math.max(T_MIN, tNow));
-    document.getElementById("runSel").value = String(runs.indexOf(panelRun));
-    document.getElementById("scene").setAttribute("aria-label", "Launch scene of " + panelRun.label +
-      ": a true-scale cross-section of the site with a close-up of the vehicle at a scale of its own; the telemetry below gives the values as text");
-    const failed = panelRun.checks && panelRun.checks.failed ? panelRun.checks.failed : [];
-    const flagged = Array.isArray(panelRun.flags) ? panelRun.flags : [];
+    document.getElementById("runSel0").value = String(runs.indexOf(a));
+    document.getElementById("runSel1").value = b ? String(runs.indexOf(b)) : "";
+    const cv = document.getElementById("scene");
+    cv.classList.toggle("two", panelRuns.length > 1);
+    cv.setAttribute("aria-label", "Launch scene of " + panelRuns.map(r => r.label).join(" beside ") +
+      ": a true-scale cross-section of the site per run, on one clock and one camera, each with a close-up of the vehicle at a scale of its own; the telemetry below gives the values as text");
     const parts = [];
-    if (failed.length) parts.push("Load-time check failed for this run: " + failed.join("; ") + ".");
-    if (flagged.length) parts.push("Flagged: " + flagged.join("; ") + ".");
+    panelRuns.forEach(r => {
+      const failed = r.checks && r.checks.failed ? r.checks.failed : [];
+      const flagged = Array.isArray(r.flags) ? r.flags : [];
+      if (failed.length) parts.push(r.name + ": load-time check failed for this run: " + failed.join("; ") + ".");
+      if (flagged.length) parts.push(r.name + ": " + "Flagged: " + flagged.join("; ") + ".");
+    });
     const flag = document.getElementById("flag");
     flag.hidden = parts.length === 0;
     flag.textContent = parts.join(" ");
     const note = document.getElementById("runNote");
-    note.hidden = !panelRun.note;
-    note.textContent = panelRun.note || "";
+    const notes = panelRuns.filter(r => r.note).map(r => r.name + ": " + r.note);
+    note.hidden = notes.length === 0;
+    note.textContent = notes.join(" ");
+    SCHED = rateSchedule(panelRuns.map(r => ({ start: r.t[0], stages: r.tanks.stage_names, events: r.events, maxq: r.maxq ? r.maxq.t : null })), zoomSamples(panelRuns));
+    const times = [];
+    panelRuns.forEach(r => r.event_groups.forEach(g => { if (g.t !== null && times.indexOf(g.t) < 0) times.push(g.t); }));
+    panelRuns.forEach(r => { if (r.maxq && times.indexOf(r.maxq.t) < 0) times.push(r.maxq.t); });
+    EVENT_TIMES = times.sort((p, q) => p - q);
     buildTelemetry();
     buildTicker();
   }
@@ -1490,6 +2856,18 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     if (!embedded || window.parent === window) return;
     try { window.parent.postMessage({ type: "launchsim-scene-height", height: Math.ceil(document.documentElement.scrollHeight) }, "/"); } catch (e) { /* no parent to tell */ }
   }
+  function startWhenVisible() {
+    // Autoplay starts only while the page is visible; a hidden page starts when it is first shown, unless a
+    // control was used meanwhile.
+    if (touched) return;
+    if (!document.hidden) { setPlaying(true); return; }
+    const once = () => {
+      if (document.hidden) return;
+      document.removeEventListener("visibilitychange", once);
+      if (!touched) setPlaying(true);
+    };
+    document.addEventListener("visibilitychange", once);
+  }
   function init() {
     const names = runs.map(r => r.name);
     const hash = parseHash(window.location.hash, {
@@ -1500,25 +2878,35 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     if (hash.theme === "dark") root.setAttribute("data-theme", "dark");
     if (hash.embed) { embedded = true; root.setAttribute("data-embed", "1"); }
 
-    const sel = document.getElementById("runSel"), groups = {};
-    runs.forEach((r, i) => {
-      if (!groups[r.role]) { groups[r.role] = document.createElement("optgroup"); groups[r.role].label = r.role; sel.appendChild(groups[r.role]); }
-      const o = document.createElement("option");
-      o.value = String(i);
-      o.textContent = (r.label.indexOf(r.name) === 0 ? r.label : r.label + " [" + r.name + "]") + (r.yardstick === true ? YARDSTICK_MARK : "");
-      groups[r.role].appendChild(o);
-    });
-    sel.addEventListener("change", () => { setRun(Number(sel.value)); draw(); });
-    setRun(hash.runs.length ? names.indexOf(hash.runs[0]) : 0);
+    const sel0 = document.getElementById("runSel0"), sel1 = document.getElementById("runSel1");
+    fillSelect(sel0, false);
+    fillSelect(sel1, true);
+    const chosen = () => { touched = true; setPanels(Number(sel0.value), sel1.value === "" ? null : Number(sel1.value)); draw(); };
+    sel0.addEventListener("change", chosen);
+    sel1.addEventListener("change", chosen);
+    const pair = initialPair(names, DATA.default_pair, hash.runs);
+    setPanels(names.indexOf(pair[0]), pair[1] === null ? null : names.indexOf(pair[1]));
     tNow = hash.t === null ? T_MIN : Math.min(T_MAX, Math.max(T_MIN, snapTime(hash.t, TIME_DECIMALS)));
 
     const scrub = document.getElementById("scrub");
-    scrub.addEventListener("input", () => { tNow = Math.min(T_MAX, Math.max(T_MIN, snapTime(Number(scrub.value), TIME_DECIMALS))); draw(); });
-    document.getElementById("play").addEventListener("click", () => setPlaying(!playing));
+    scrub.addEventListener("input", () => { touched = true; tNow = Math.min(T_MAX, Math.max(T_MIN, snapTime(Number(scrub.value), TIME_DECIMALS))); draw(); });
+    document.getElementById("play").addEventListener("click", () => { touched = true; setPlaying(!playing); });
+    document.getElementById("prevEvt").addEventListener("click", () => jumpEvent(-1));
+    document.getElementById("nextEvt").addEventListener("click", () => jumpEvent(1));
     document.getElementById("rate").addEventListener("change", draw);
     document.addEventListener("keydown", e => {
-      if (e.target && ["INPUT", "SELECT", "BUTTON"].includes(e.target.tagName) && e.key === " ") return;
-      if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+      const tag = e.target && e.target.tagName ? e.target.tagName : "";
+      const inControl = ["INPUT", "SELECT", "TEXTAREA"].includes(tag);
+      if (e.key === " ") {
+        if (inControl || tag === "BUTTON") return;
+        e.preventDefault(); touched = true; setPlaying(!playing);
+        return;
+      }
+      if (inControl || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === "[") { e.preventDefault(); jumpEvent(-1); }
+      else if (e.key === "]") { e.preventDefault(); jumpEvent(1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); stepClock(-(e.shiftKey ? BIG_STEP_S : STEP_S)); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); stepClock(e.shiftKey ? BIG_STEP_S : STEP_S); }
     });
     document.addEventListener("visibilitychange", () => { if (document.hidden && playing) setPlaying(false); });
 
@@ -1541,7 +2929,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     foot.replaceChildren();
     footerLines().forEach(s => { const p = document.createElement("p"); p.textContent = s; foot.appendChild(p); });
 
-    const redraw = () => { draw(); postHeight(); };
+    const redraw = () => { WRAP_MEMO.clear(); draw(); postHeight(); };  // a resize or a font load can change a wrap
     new ResizeObserver(redraw).observe(document.querySelector(".wrap"));
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
     new MutationObserver(() => draw()).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
@@ -1553,7 +2941,7 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
     }
     postHeight();
     const autoplay = !reduceMotion && (hash.autoplay || (!hash.embed && hash.t === null && hash.qa === null));
-    if (autoplay) setTimeout(() => setPlaying(true), AUTOPLAY_DELAY_MS);
+    if (autoplay) setTimeout(startWhenVisible, AUTOPLAY_DELAY_MS);
   }
   init();
 })();

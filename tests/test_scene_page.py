@@ -18,12 +18,30 @@ of the script; ``parseHash`` on crafted input, the transform and camera function
 against display.screen_xy, running_extent_m and view_height_m, the carriage label's
 placement and the caveat split, under node; the output rule of ``write_scene_page``
 (default path, refusals) and the ``scene`` command.
+
+Step A3b (two panels, the flight after the kick, the rate law): the Auto rate under node on
+the events of a pad and a cold silo start shaped as the recorded runs (each regime, no step
+above 1% between samples 0.01 s apart but the named one, the 3x holds, criterion 16's
+windows) and on a failed ignition; the payload's default pair, the page's choice of panels
+and the one-run layout, the panel boxes against the CSS's container rules, and the camera
+the panels share (one run gives A3's camera); the drawn separations, the label placement
+and the event steps; the controls, captureFrame's composite and the hook's per-panel
+states; the new shape and line pairs in the contrast table. Review round 3: the camera
+frames the part of the view right of the close-up's column (the site and the vehicle
+inside that frame), the marker regime's switch, the fairing halves inside the close-up's
+drawing and clear of its caption, the shorter 1x span after a kick, the fairing cap, the
+plain event names, the honest labels (drag-free, waiting, ended, the values shown) and a
+captured frame's caveat footer. Fix round 4: the fairing seen from its drop until clear of
+the vehicle (the close-up's halves drawn until they have wholly left it; in the view a
+separated body on its vehicle drawn over it with a label on a leader), the
+recorded max-Q, the short labels' 'display only', the telemetry's held and frozen states.
 """
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import itertools
 import json
 import math
 import re
@@ -163,7 +181,35 @@ SHAPE_PAIRS = (
     ("--caution", "--panel"),  # ... in the band, and the exploratory strip's border
     ("--focus", "--panel"),  # the keyboard focus ring
     ("--focus", "--bg"),  # the keyboard focus ring
+    # step A3b
+    ("--run-0", "--sc-halo"),  # the flown path, over its halo (its outline) ...
+    ("--run-1", "--sc-halo"),  # ... in each run colour; also the other panel's hollow ring
+    ("--run-2", "--sc-halo"),
+    ("--run-3", "--sc-halo"),
+    ("--sc-sep", "--sc-halo"),  # a separated body's hollow marker and dashed path, over its halo
+    # an event marker on the flown path is a diamond in the run colour outlined in --sc-body-line,
+    # as the position marker is: the outline is checked against the halo of the flown path it
+    # sits on, as well as against the sky and the earth above
+    ("--sc-body-line", "--sc-halo"),  # an event diamond and the position marker over the halo
+    ("--run-0", "--panel"),  # the slider's event marks per panel, and the column swatches
+    ("--run-1", "--panel"),
+    ("--run-2", "--panel"),
+    ("--run-3", "--panel"),
+    ("--ink", "--panel"),  # the swatches' outline
+    ("--ink-3", "--panel"),  # an event mark not yet passed
+    ("--ink-3", "--sc-halo"),  # a label plate's border where it crosses a halo
+    ("--caution", "--sc-earth"),  # a frozen panel's banner over the earth
+    ("--caution", "--sc-shaft"),
 )
+LINE_HALOS = {
+    "--run-0": "--sc-halo",
+    "--run-1": "--sc-halo",
+    "--run-2": "--sc-halo",
+    "--run-3": "--sc-halo",
+    "--sc-sep": "--sc-halo",
+}
+"""Step A3b: every drawn line or hollow marker (the flown path, the other panel's ring, a
+separated body's marker and path) and the halo drawn under it as its outline."""
 TEXT_PAIRS = (
     ("--ink", "--panel"),  # page text, canvas header, plates, the readout
     ("--ink-2", "--panel"),  # the header's second line, the note, legend and caveat bands
@@ -175,6 +221,10 @@ TEXT_PAIRS = (
     ("--ink", "--caution-bg"),  # caveat text, the impact note, the exploratory banner and strip
     ("--ink-2", "--caution-bg"),  # the line over the recorded offload caveats
     ("--bad", "--panel"),  # a failed load-time check, the offload flags
+    # step A3b's text is on these same pairs: label plates on the view, the banner of a run in
+    # orbit and the column heads are --ink on --panel; the banner of a run that did not reach
+    # orbit --ink on --caution-bg; event names over the slider and the close-up's captions
+    # --ink-2 and --ink on --panel
 )
 
 
@@ -436,8 +486,13 @@ def test_every_shape_has_an_outline_and_every_pair_meets_its_contrast(template: 
     SHAPE_PAIRS reaches 3:1 and every text pair of TEXT_PAIRS 4.5:1 (WCAG 2.x)."""
     light, dark, _ = _blocks(template)
     themes = {"light": light, "dark": {**light, **dark}}
-    for fill, outline in SHAPE_OUTLINES.items():
+    for fill, outline in {**SHAPE_OUTLINES, **LINE_HALOS}.items():
         assert fill in light and outline in light and fill in dark and outline in dark
+    for line, halo in LINE_HALOS.items():
+        assert (line, halo) in SHAPE_PAIRS, line
+    script = _script(template)
+    assert 'halo: "--sc-halo", sep: "--sc-sep",' in script
+    assert script.count("haloStroke(ctx, pal, ") >= 4  # path, body path, body marker, other ring
     low = []
     for theme, tokens in themes.items():
         for pairs, need in ((SHAPE_PAIRS, SHAPE_CONTRAST), (TEXT_PAIRS, TEXT_CONTRAST)):
@@ -487,7 +542,6 @@ out.extent = runningExtent(input.alt, input.dr, input.floor, input.L, input.aspe
 out.height = out.extent.map(e => viewHeight(e, input.hMin, input.margin));
 out.camera = cameraView(out.extent[3], { min_view_height_m: input.hMin, margin: input.margin },
   { x: 0, y: 0, w: 800, h: 400 }, { xMin: -10, xMax: 30, yMin: -100, yMax: 370 });
-out.rate = input.rateTimes.map(rateLaw);
 out.nice = input.niceIn.map(niceLength);
 out.wrap = input.wrapIn.map(wrapDeg);
 out.qa_no_limits = [parseHash("#qa=1,2").qa, parseHash("#qa=1,2", { tMin: -1 }).qa];
@@ -571,8 +625,9 @@ def test_parse_hash_transform_and_camera_under_node(
     malformed escapes) and clamps t and every qa time to the data (none kept without
     finite limits); snapTime leaves a time too large to scale as it is; screenXY,
     runningExtent and viewHeight equal display.screen_xy, running_extent_m and
-    view_height_m; cameraView frames the content in the middle of the view; the A3 rate
-    law and the helpers; sideLabel puts the carriage label inside the view and outside
+    view_height_m; cameraView frames the content in the middle of the view; the helpers
+    (step A3b's rate law has a test of its own); sideLabel puts the carriage label inside
+    the view and outside
     the rails (at the 1280 px and 375 px pages' geometry, near an edge) or nowhere, never
     cut; splitCaveats keeps every payload caveat in exactly one of its two lists."""
     scene_cfg = scene.load_scene_config(DISPLAY_DIR)
@@ -600,7 +655,6 @@ def test_parse_hash_transform_and_camera_under_node(
         "aspect": 2.3,
         "hMin": h_min,
         "margin": margin,
-        "rateTimes": [-3.0, 11.99, 12.0, 44.9, 45.0, 500.0],
         "niceIn": [0.0, 0.7, 1.0, 1.9, 2.0, 4.99, 5.0, 99.0, 180.0, 12345.0],
         "wrapIn": [0.0, 90.0, 180.0, 190.0, -190.0, 450.0, 269.9],
         "side": [
@@ -662,7 +716,6 @@ def test_parse_hash_transform_and_camera_under_node(
     assert cam["W"] == pytest.approx(800.0 / cam["ppm"], rel=1e-12)
     assert cam["x0"] + cam["W"] / 2 == pytest.approx(10.0)
     assert cam["y0"] + cam["H"] / 2 == pytest.approx(135.0)
-    assert out["rate"] == [1, 1, 5, 5, 30, 30]
     assert out["nice"] == pytest.approx([0, 0.5, 1, 1, 2, 2, 5, 50, 100, 10000])
     assert out["wrap"] == pytest.approx([0.0, 90.0, -180.0, -170.0, 170.0, 90.0, -90.1])
     assert out["qa_no_limits"] == [[], []]
@@ -739,9 +792,11 @@ def test_snap_time_puts_an_event_time_on_the_later_row(template: str, tmp_path: 
     assert out["grid"] == [12.493729, 151.328438, 0]
     script = _script(template)
     for use in (
-        "panelState(panelRun, snapTime(tt, TIME_DECIMALS), sceneBox())",  # stateAt (and #qa)
-        "drawPanel(ctx, box, snapTime(tt, TIME_DECIMALS), pal, panelRun)",  # captureFrame
+        "panelStates(snapTime(tt, TIME_DECIMALS), sceneBox())",  # stateAt (and #qa)
+        "const ts = snapTime(tt, TIME_DECIMALS);",  # captureFrame ...
+        "drawScene(ctx, box, ts, pal, panelRuns);",  # ... draws at the snapped time
         "snapTime(hash.t, TIME_DECIMALS)",  # #t
+        "tNow = Math.min(T_MAX, Math.max(T_MIN, snapTime(t, TIME_DECIMALS)));",  # keys, ticker
     ):
         assert use in script, use
     assert "const TIME_DECIMALS = DATA.tolerances.time_decimals;" in script
@@ -909,7 +964,8 @@ def test_the_drawing_reports_what_it_painted(template: str) -> None:
     assert "if (s.dashed) ctx.setLineDash(DASH_OUTLINE);" in vehicle
     assert "dashed: run.yardstick === true" in script
     state = _function_source(template, "panelState")[0]
-    assert "drawPanel(" in state and "closeup_nose_px: pm.closeup.nose" in state
+    states = _function_source(template, "panelStates")[0]
+    assert "drawScene(" in states and "closeup_nose_px: pm.closeup.nose" in state
     assert "base_px: pm.main.base, nose_px: pm.main.nose" in state and "hud: P.hud" in state
     hud = _function_source(template, "hudLines")[0]
     for text in ("enginesText(st.plume)", '"Engines off"', '"Depth "', '"Altitude "', '"Speed "'):
@@ -919,9 +975,11 @@ def test_the_drawing_reports_what_it_painted(template: str) -> None:
     assert '"Engines "' in engines and '" of full vacuum thrust"' in engines
     assert '["thrust", "Engines (vacuum thrust)"]' in script
     assert "p_amb A_e" in template  # the telemetry note says what the engines figure is not
-    assert "hudWidth(ctx, pal, run)" in _function_source(template, "panelLayout")[0]
-    assert "drawHud(ctx, pal, hud," in _function_source(template, "drawView")[0]
-    assert "drawHud(ctx, pal, view.hud, p.hud);" in _function_source(template, "drawPanel")[0]
+    assert "hudWidth(ctx, pal, run)" in _function_source(template, "plateRow")[0]
+    assert "plateRow(ctx, pal, run, body)" in _function_source(template, "panelLayout")[0]
+    assert "drawReadout(ctx, pal, run, L, box, hud," in _function_source(template, "drawView")[0]
+    assert "drawHud(ctx, pal, hud," in _function_source(template, "drawReadout")[0]
+    assert "drawHud(ctx, pal, view.hud, p.hud)" in _function_source(template, "drawPanel")[0]
     label = _function_source(template, "drawCarriageLabel")[0]
     assert (
         "sideLabel(" in label
@@ -929,7 +987,8 @@ def test_the_drawing_reports_what_it_painted(template: str) -> None:
     )
     assert "carriage_label: pm.carriageLabel" in state
     assert re.search(r'<p class="vh" id="runNote" hidden>', template)
-    assert "note.textContent = panelRun.note" in script
+    assert 'note.textContent = notes.join(" ");' in script  # every shown run's note
+    assert 'const notes = panelRuns.filter(r => r.note).map(r => r.name + ": " + r.note);' in script
     assert "drawTextBand(ctx, lay.noteBox, pal, lay.note, false);" in script
     assert '"Flagged: " + flagged.join("; ")' in script
 
@@ -966,26 +1025,64 @@ def test_what_the_page_says_matches_what_it_draws(template: str) -> None:
     rescaled whenever the stack shown is shorter than the whole stack (staging, the fairing
     drop); the pad's clamps open at liftoff; the hold is named without claiming a ramp; an
     impact run's ticker says the model has no contact; the run selector marks yardsticks;
-    the page claims no spent-stage or fairing path (A3 draws none) and no impact 'at the
-    mouth level' (the model's ground is altitude 0)."""
+    the separated bodies' labels say their coasts are drawn (step A3b draws them); no impact
+    'at the mouth level' (the model's ground is altitude 0)."""
     script = _script(template)
     closeup = _function_source(template, "drawCloseup")[0]
     assert "ly - half >= draw.y && ly + half <= draw.y + draw.h" in closeup
     assert "lx + lw + CLOSEUP_LABEL_CLEAR_PX <= draw.x + draw.w" in closeup
     assert "closeup_carriage_label: pm.closeup.carriageLabel" in script
-    assert '(L.parts.L < L.g.stack_length_m ? "rescaled with the stack: " : "own scale: ")' in (
-        closeup
-    )
+    # step A3b: the title's second line says which change made the stack shorter
+    assert "closeupScaleText(L)" in closeup
+    scale = _function_source(template, "closeupScaleText")[0]
+    assert "L.cf.why" in scale and "CAM.closeup_stack_px / L.kc" in scale
+    frame = _function_source(template, "closeupFrame")[0]
+    for why in (
+        '"after the fairing drop"',
+        '"after staging"',
+        '"own scale"',
+        '"zooming in for staging"',
+        '"zooming in for the fairing"',
+        '"fairing halves opening"',
+        '"fairing halves leaving"',
+    ):
+        assert why in frame, why
     assert "scale changes at staging and at the fairing drop" in template
+    # A3b review round 3: the title is drawn as fitted (cut to the box, ending in ...) and the
+    # hook reports what is drawn; no reason is long enough to cut the scale it states (the QA
+    # record's dense #qa states count none ending in ...)
+    assert (
+        "closeupScaleText(L)].map(s => fitText(ctx, s, box.w - 2 * CLOSEUP_TEXT_INSET_PX));"
+        in closeup
+    )
+    assert "ctx.fillText(s, box.x + CLOSEUP_TEXT_INSET_PX" in closeup
+    assert "painted.title = title;" in closeup
+    assert "zooming in for the fairing drop" not in script
     clamps = _function_source(template, "drawClamps")[0]
     assert 'firstEventT(run, "liftoff")' in clamps and "open = t >= 0" not in clamps
     assert "drawClamps(ctx, t, pal, L, run);" in script
     assert 'HOLD: "Held down", ' in script and "engines ramping" not in script
     ticker = _function_source(template, "buildTicker")[0]
-    assert "impactNote(panelRun)" in ticker and "IMPACT_TICKER_NOTE" in ticker
+    assert "impactNote(run)" in ticker and "IMPACT_TICKER_NOTE" in ticker
     assert "no contact with the carriage, the mouth or the shaft" in script
-    assert '(r.yardstick === true ? YARDSTICK_MARK : "")' in _function_source(template, "init")[0]
-    assert "fairing paths" not in template and "drag-free" not in template
+    assert (
+        '(r.yardstick === true ? YARDSTICK_MARK : "")' in _function_source(template, "runOption")[0]
+    )
+    # step A3b draws the separated bodies: every label says the coast is drag-free and display-only
+    body = _function_source(template, "drawBodyMarker")[0]
+    assert '": drag-free coast (display only)"' in body
+    # the short label too: it keeps "display only" (A3b fix round 4), and "drag-free" wherever it
+    # states an impact time or a stop (A3b review round 3)
+    (short,) = re.findall(r"const short = (.*);", body)
+    pieces = re.findall(r'"([^"]*)"', short)
+    assert short.startswith('tag + " (display only)" + '), short
+    stated = [piece for piece in pieces if "impact" in piece or "stopped" in piece]
+    assert len(stated) == 2 and all("drag-free" in piece for piece in stated), pieces
+    assert "drawn coast" not in script
+    assert '"Close-up: shapes drawn, not computed"' in script
+    assert "Not model output: separated bodies' dashed drag-free coasts." in script
+    assert "spent stage 1" in script and "fairing halves" in script
+    assert "fairing paths" not in template
     assert "mouth level" not in template
     assert "returns to altitude 0, the model's ground" in script
 
@@ -1006,3 +1103,1143 @@ def test_recorded_offload_caveats_are_listed_apart_and_named(template: str) -> N
     assert head and "metrics.json offload.caveats" in head.group(1)
     assert "word for word" in head.group(1)
     assert '<ul id="offloadCaveats" hidden></ul>' in template
+
+
+# ------------------------------------------------------------------ step A3b: two panels, the rate
+
+
+def _run_pure(template: str, harness: str, case: dict[str, Any], tmp_path: Path) -> Any:
+    """The page's pure block plus a harness, run under node on ``case`` (JSON); its output."""
+    data_file = tmp_path / "case.json"
+    data_file.write_text(json.dumps(case), encoding="utf-8")
+    js = tmp_path / "a3b.js"
+    js.write_text(_pure_block(template) + harness, encoding="utf-8")
+    assert NODE is not None
+    proc = subprocess.run(
+        [NODE, str(js), str(data_file)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def _event(name: str, stage: str, t: float) -> dict[str, Any]:
+    return {"name": name, "stage": stage, "t": t}
+
+
+PAD_LIKE = {
+    # a pad as the recorded pad of results/silo_screening_2d logs it (times after release)
+    "start": -2.0,
+    "stages": ["stage1", "stage2"],
+    "events": [
+        _event("ignition", "stage1", -2.0),
+        _event("release", "stage1", 0.0),
+        _event("liftoff", "stage1", 0.0),
+        _event("ramp_end", "stage1", 0.0),
+        _event("kick_start", "stage1", 12.493729),
+        _event("kick_end", "stage1", 17.774014),
+        _event("propellant", "stage1", 151.328438),
+        _event("staging", "stage2", 151.328438),
+        _event("ignition", "stage2", 162.328438),
+        _event("fairing", "stage2", 196.807531),
+        _event("cutoff", "stage2", 536.300685),
+        _event("end", "stage2", 536.300685),
+    ],
+}
+SILO_LIKE = {
+    # a cold silo start as silo_cold_s1 of results/silo_offload_2d logs it
+    "start": -2.607318,
+    "stages": ["stage1", "stage2"],
+    "events": [
+        _event("push_start", "stage1", -2.607318),
+        _event("release", "stage1", 0.0),
+        _event("ignition", "stage1", 0.5),
+        _event("kick_start", "stage1", 0.5),
+        _event("ramp_end", "stage1", 2.5),
+        _event("kick_end", "stage1", 7.948339),
+        _event("propellant", "stage1", 138.531493),
+        _event("staging", "stage2", 138.531493),
+        _event("ignition", "stage2", 149.531493),
+        _event("fairing", "stage2", 184.250483),
+        _event("cutoff", "stage2", 523.503743),
+        _event("end", "stage2", 523.503743),
+    ],
+}
+PAD_CONTROL_LIKE = {
+    # a pad control that ends by stage-2 depletion short of orbit (pad__offload_stage1 of
+    # results/silo_offload_2d): propellant and end on stage 2, no cutoff
+    "start": -2.0,
+    "stages": ["stage1", "stage2"],
+    "events": [
+        *PAD_LIKE["events"][:9],
+        _event("fairing", "stage2", 196.807531),
+        _event("propellant", "stage2", 536.300687),
+        _event("end", "stage2", 536.300687),
+    ],
+}
+FAILED_LIKE = {
+    # a failed ignition that falls back (silo_failed)
+    "start": -2.607318,
+    "stages": ["stage1", "stage2"],
+    "events": [
+        _event("push_start", "stage1", -2.607318),
+        _event("release", "stage1", 0.0),
+        _event("ignition_failed", "stage1", 0.0),
+        _event("apex", "stage1", 7.842648),
+        _event("impact", "stage1", 15.689059),
+        _event("end", "stage1", 15.689059),
+        {"name": "unknown_time", "stage": "stage1", "t": None},
+    ],
+}
+RATE_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+const dt = 0.01;
+input.cases.forEach(c => {
+  const sched = rateSchedule(c.runs, c.zoom || null);
+  const t1 = Math.max(...c.ends);
+  const samples = [];
+  for (let k = 0; ; k++) {
+    const t = c.start + k * dt;
+    if (t > t1) break;
+    samples.push([t, rateLaw(t, sched)]);
+  }
+  const wall = (a, b) => {
+    let w = 0;
+    const n = Math.ceil((b - a) / 0.001), h = (b - a) / n;
+    for (let i = 0; i < n; i++) w += h / rateLaw(a + (i + 0.5) * h, sched);
+    return w;
+  };
+  out[c.name] = {
+    sched: sched, samples: samples, at: c.at.map(t => rateLaw(t, sched)),
+    windows: c.windows.map(e => wall(e - 2, e + 3)), total: wall(c.start, t1)
+  };
+});
+out.empty = rateSchedule([]);
+process.stdout.write(JSON.stringify(out));
+"""
+ZOOM_GROWTH_PER_S = 0.05
+"""The synthetic zoom case: ln H grows this much per scene second from 20 s to 120 s."""
+ZOOM_SAMPLES = [
+    [
+        float(t),
+        1000.0
+        * math.exp(ZOOM_GROWTH_PER_S * min(max(t - 20, 0), 100))
+        * 2.0 ** min(max(t - 300, 0), 5),
+    ]
+    for t in range(-2, 537)
+]
+RATE_STEP_TOL = 0.01
+"""The largest relative change of the Auto rate between samples 0.01 s apart outside the
+named step at the last stage-1 ramp end (0.5x to 1x): the rate rises and eases with no step."""
+WATCH_WALL_S = 1.5
+"""Exit criterion 16: staging, stage-2 ignition and the fairing drop each stay on screen at
+least this many wall seconds under the default rate ([event - 2 s, event + 3 s])."""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_rate_law_under_node(template: str, tmp_path: Path) -> None:
+    """The Auto rate (D-SP2-21 as amended; design review 06 finding 2) on the events of a
+    pad and a cold silo start shaped as the recorded runs: 0.5x from the first row to the
+    last stage-1 ramp end, 1x through each run's kick (to its kick end, or 2 s after its
+    kick start when that comes first: review round 3), a geometric rise (ln rate linear in
+    scene time) to 30x, held at 3x from 2 s before the first MECO to 3 s after the last
+    stage-2 ignition and within 3 s of each fairing drop and cutoff, and at 2x within 3 s
+    of each fairing drop; never a step above 1% between samples 0.01 s apart except the
+    named one at the ramp end; staging and stage-2 ignition play [e - 2 s, e + 3 s] in
+    5/3 wall seconds and each fairing drop in 2.5 (criterion 16: at least 1.5). A failed
+    ignition alone has no ramp or kick end (the release stands for
+    both) and is held near its impact; an event with no time is ignored. The page uses the
+    law for Auto only, from the shown runs, and the hook reports it."""
+    ends_pair = [536.300685, 523.503743]
+    case = {
+        "cases": [
+            {
+                "name": "pair",
+                "runs": [PAD_LIKE, SILO_LIKE],
+                "start": -2.607318,
+                "ends": ends_pair,
+                "at": [
+                    -2.6,
+                    0.0,
+                    2.499,
+                    2.5,
+                    10.0,
+                    14.4937,
+                    14.493729,
+                    17.774,
+                    25.0,
+                    44.493729,
+                    60.0,
+                    100.0,
+                    136.531493,
+                    150.0,
+                    165.328438,
+                    181.250483,
+                    184.25,
+                    187.250483,
+                    196.807531,
+                    300.0,
+                    520.503743,
+                    523.503743,
+                    536.300685,
+                ],
+                "windows": [151.328438, 162.328438, 196.807531, 138.531493, 149.531493, 184.250483],
+            },
+            {
+                # a run that ends by depletion is held at its end (no cutoff, no impact)
+                "name": "depletion",
+                "runs": [SILO_LIKE, PAD_CONTROL_LIKE],
+                "start": -2.607318,
+                "ends": [523.503743, 536.300687],
+                "at": [536.300687 - 3, 536.300687],
+                "windows": [],
+            },
+            {
+                # the softer cap at each run's max-Q
+                "name": "maxq",
+                "runs": [{**PAD_LIKE, "maxq": 65.75}, {**SILO_LIKE, "maxq": 52.992682}],
+                "start": -2.607318,
+                "ends": ends_pair,
+                "at": [65.75, 52.992682, 55.0, 75.0, 100.0],
+                "windows": [],
+            },
+            {
+                # the zoom cap: the view height grows 5% per scene second from 20 s to 120 s, and
+                # doubles every second from 300 s to 305 s (the cap is floored at 1x)
+                "name": "zoom",
+                "runs": [PAD_LIKE],
+                "start": -2.0,
+                "ends": [536.300685],
+                "zoom": ZOOM_SAMPLES,
+                "at": [70.0, 302.5, 17.774014, 400.0],
+                "windows": [],
+            },
+            {
+                "name": "failed",
+                "runs": [FAILED_LIKE],
+                "start": -2.607318,
+                "ends": [15.689059],
+                "at": [-1.0, 0.0, 5.0, 12.689059, 15.689059],
+                "windows": [],
+            },
+        ]
+    }
+    out = _run_pure(template, RATE_HARNESS, case, tmp_path)
+    pair = out["pair"]
+    sched = pair["sched"]
+    # the pad's kick is a step at its start (12.493729 s): 1x until 2 s after it, not to its
+    # kick end (17.774014 s); the silo's kick ends (7.95 s) after its start + 2 s (2.5 s)
+    assert sched["rampEnd"] == pytest.approx(2.5) and sched["kickEnd"] == pytest.approx(14.493729)
+    holds = sorted(tuple(h) for h in sched["holds"])
+    assert holds == pytest.approx(
+        sorted(
+            [
+                (138.531493 - 2, 162.328438 + 3),  # first MECO - 2 to last stage-2 ignition + 3
+                (184.250483 - 3, 184.250483 + 3),
+                (196.807531 - 3, 196.807531 + 3),
+                (523.503743 - 3, 523.503743 + 3),
+                (536.300685 - 3, 536.300685 + 3),
+            ]
+        )
+    )
+    at = dict(zip(case["cases"][0]["at"], pair["at"], strict=True))
+    assert at[-2.6] == 0.5 and at[0.0] == 0.5 and at[2.499] == 0.5  # the push and the ramp
+    assert at[2.5] == 1 and at[10.0] == 1 and at[14.4937] == 1  # through the kicks
+    assert at[14.493729] == pytest.approx(1.0)  # the rise starts at 1x: no step
+    assert 1 < at[17.774] < 2  # the pad's held tilt after its kick step plays a little faster
+    assert 1 < at[25.0] < 30 and at[44.493729] == pytest.approx(30.0)  # 30 s rise, geometric
+    assert at[60.0] == pytest.approx(30.0) and at[100.0] == pytest.approx(30.0)
+    for t in (136.531493, 150.0, 165.328438, 520.503743, 523.503743, 536.300685):
+        assert at[t] == pytest.approx(3.0), t  # held at 3x
+    for t in (181.250483, 184.25, 187.250483, 196.807531):
+        assert at[t] == pytest.approx(2.0), t  # the fairing drops at 2x
+    assert 3 < at[300.0] <= 30
+    # geometric: ln rate is linear in time on the rise (equal ratios over equal steps)
+    rise = [r for t, r in pair["samples"] if 15.0 <= t <= 40.0]
+    ratios = [b / a for a, b in itertools.pairwise(rise)]
+    assert max(ratios) == pytest.approx(min(ratios), rel=1e-9)
+    # no step but the named one, anywhere
+    steps = [
+        (t0, abs(r1 / r0 - 1))
+        for (t0, r0), (_, r1) in itertools.pairwise(pair["samples"])
+        if not (t0 < sched["rampEnd"] <= t0 + 0.0101)
+    ]
+    worst = max(steps, key=lambda s: s[1])
+    assert worst[1] < RATE_STEP_TOL, worst
+    assert all(0.5 <= r <= 30.0 + 1e-9 for _, r in pair["samples"])
+    fairings = (196.807531, 184.250483)
+    for e, wall_s in zip(case["cases"][0]["windows"], pair["windows"], strict=True):
+        assert wall_s >= WATCH_WALL_S, (e, wall_s)
+        assert wall_s == pytest.approx(5.0 / (2.0 if e in fairings else 3.0), rel=1e-3), e
+    fairing_caps = sorted(c for c in sched["caps"] if c[2] == 2)
+    assert [x for c in fairing_caps for x in c] == pytest.approx(
+        [181.250483, 187.250483, 2, 193.807531, 199.807531, 2]
+    )
+    failed = out["failed"]
+    assert failed["sched"]["rampEnd"] == 0.0 and failed["sched"]["kickEnd"] == 0.0
+    assert failed["sched"]["holds"] == [pytest.approx([12.689059, 18.689059])]
+    # no kick: the rise starts at the release
+    assert failed["at"][0] == 0.5 and failed["at"][1] == pytest.approx(1.0)
+    assert 1 < failed["at"][2] < 3 and failed["at"][3] == pytest.approx(3.0)
+    assert failed["at"][4] == pytest.approx(3.0)
+    assert out["empty"] == {"start": 0, "rampEnd": 0, "kickEnd": 0, "holds": [], "caps": []}
+    # a run that ends by depletion short of orbit is held at its end like a cutoff (review 06
+    # finding 2: the run's end), and an end at a cutoff or impact adds no second hold
+    depletion = out["depletion"]
+    assert depletion["at"] == pytest.approx([3.0, 3.0])
+    assert sorted(tuple(h) for h in depletion["sched"]["holds"])[-1] == pytest.approx(
+        (536.300687 - 3, 536.300687 + 3)
+    )
+    assert len(pair["sched"]["holds"]) == 5 and len(failed["sched"]["holds"]) == 1
+    # max-Q: at most RATE_MAXQ within 5 s of each, easing back with no step
+    maxq = out["maxq"]
+    assert maxq["at"][0] == pytest.approx(5.0) and maxq["at"][1] == pytest.approx(5.0)
+    assert maxq["at"][2] <= 5.0 + 1e-9 and 5.0 < maxq["at"][3] < 30.0
+    assert maxq["at"][4] == pytest.approx(30.0)
+    caps = sorted(c[:2] for c in maxq["sched"]["caps"] if c[2] == 5)
+    assert [x for c in caps for x in c] == pytest.approx(
+        [52.992682 - 5, 52.992682 + 5, 65.75 - 5, 65.75 + 5]
+    )
+    # the zoom cap: the view height grows at most 1.3-fold per wall second where it binds, and
+    # never slows the playback under 1x
+    zoom = out["zoom"]
+    assert zoom["at"][0] == pytest.approx(math.log(1.3) / ZOOM_GROWTH_PER_S, rel=1e-9)
+    assert zoom["at"][1] == pytest.approx(1.0) and zoom["at"][2] <= 1.5
+    assert zoom["at"][3] == pytest.approx(30.0)
+    for t, r in zoom["samples"]:
+        if 20.0 < t < 120.0:
+            assert r * ZOOM_GROWTH_PER_S <= math.log(1.3) + 1e-9, t
+    for name in ("depletion", "maxq", "zoom"):
+        sched_n = out[name]["sched"]
+        worst_n = max(
+            abs(r1 / r0 - 1)
+            for (t0, r0), (_, r1) in itertools.pairwise(out[name]["samples"])
+            if not (t0 < sched_n["rampEnd"] <= t0 + 0.0101)
+        )
+        assert worst_n < RATE_STEP_TOL, name
+
+    script = _script(template)
+    rate_at = _function_source(template, "rateAt")[0]
+    assert "return rateLaw(t, SCHED);" in rate_at and 'if (sel !== "auto")' in rate_at
+    assert (
+        "SCHED = rateSchedule(panelRuns.map(r => "
+        "({ start: r.t[0], stages: r.tanks.stage_names, events: r.events, "
+        "maxq: r.maxq ? r.maxq.t : null })), zoomSamples(panelRuns));"
+    ) in script
+    assert "rate: rateAt(sceneT), rate_auto: rateLaw(sceneT, SCHED)" in script
+    options = re.findall(r'<option value="([^"]+)"', template)
+    (choices,) = re.findall(r"const RATE_CHOICES = \[([^\]]*)\];", script)
+    assert options == ["auto", *(c.strip() for c in choices.split(","))]
+    assert options == ["auto", "0.25", "0.5", "1", "5", "20", "60"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_default_pair_one_run_layout_and_shared_camera_under_node(
+    template: str, run_dir: Path, payload: dict[str, Any], tmp_path: Path
+) -> None:
+    """Two panels on one clock and one camera (design 4.5; review 06 findings 4 and 12).
+    The payload carries D-SP2-28's pair for the runs it holds (scene.default_pair: the
+    baseline left, the assisted variant right, whatever the selection's order; one run when
+    it holds one), and the page opens on it unless #runs names runs; a one-run payload (or
+    pair) gives one full-width panel. Two panels sit side by side from 900 px of canvas
+    width, else one above the other, in boxes of one size, matching the CSS's container
+    rules. The camera is shared: its view height is the camera law's at the larger extent
+    (display.view_height_m), centred on the union of what each run's own camera frames, so
+    one run gives A3's camera unchanged; a panel whose run has ended is drawn at its last
+    row with the shared camera of that time. Review round 3: the camera frames the part of
+    the view right of the close-up's column (the content box centred there, the law's view
+    height over the frame's height, so the launch site and the vehicle lie in the frame and
+    never under the close-up); the rocket is drawn to scale while its body is at least the
+    configured 3 px wide (vehicleMode), which the camera crosses where the law's view height
+    reaches the frame's height times the body width over 3 px."""
+    assert payload["default_pair"] == ["pad", "silo_failed"]
+    flipped = scene.scene_payload(run_dir, ["silo_failed", "pad"], display_dir=DISPLAY_DIR)
+    assert [r["key"] for r in flipped["runs"]] == ["silo_failed", "pad"]
+    assert flipped["default_pair"] == ["pad", "silo_failed"]
+    alone = scene.scene_payload(run_dir, ["silo_failed"], display_dir=DISPLAY_DIR)
+    assert alone["default_pair"] == ["silo_failed"]
+    # an explicit selection the rule finds fewer than two in is filled from it in order
+    assert scene.opening_pair({"baseline": "pad"}, {}, ["x", "y"]) == ["x", "y"]
+    assert scene.opening_pair({"baseline": "pad"}, {}, ["x"]) == ["x"]
+    assert scene.opening_pair({"baseline": "pad"}, {}, ["x", "pad", "y"]) == ["pad", "x"]
+
+    names = ["pad", "silo_cold", "silo_hot", "silo_failed"]
+    scene_cfg = scene.load_scene_config(DISPLAY_DIR)
+    h_min = scene_cfg.camera.min_view_height_m.value
+    margin = scene_cfg.camera.margin.value
+    a = {"E": 260.0, "x": 0.0, "y": -100.0, "floor": -100.0, "L": 70.0}
+    b = {"E": 1200.0, "x": 25.0, "y": 900.0, "floor": 0.0, "L": 70.0}
+    harness = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+out.pairs = input.pairs.map(p => initialPair(p[0], p[1], p[2]));
+out.boxes = input.boxes.map(b => panelBoxes(b[0], b[1], 900, 12));
+const cam = { min_view_height_m: input.hMin, margin: input.margin };
+const view = { x: 0, y: 0, w: 600, h: 430 }, a = input.a;
+out.one = sharedCamera([a], cam, view);
+out.oneA3 = cameraView(a.E, cam, view, { xMin: Math.min(0, a.x), xMax: Math.max(0, a.x),
+  yMin: Math.min(a.floor, a.y), yMax: Math.max(0, a.y) + a.L });
+out.ab = sharedCamera([input.a, input.b], cam, view);
+out.ba = sharedCamera([input.b, input.a], cam, view);
+const frame = { x: 256, y: 0, w: 344, h: 430 };
+out.framed = input.frames.map(f => sharedCamera(f, cam, view, frame));
+out.inFrame = input.frames.map((f, k) => {
+  const c = out.framed[k];
+  const px = (x, y) => [view.x + (x - c.x0) * c.ppm, view.y + view.h - (y - c.y0) * c.ppm];
+  const tops = f.map(it => px(it.x, Math.max(0, it.y) + it.L));
+  return [px(0, 0)].concat(f.map(it => px(it.x, it.y)), tops);
+});
+out.modes = [vehicleMode(3.66, 3 / 3.66, 3), vehicleMode(3.66, 2.999 / 3.66, 3),
+  vehicleMode(3.66, 0.4, 3)];
+const box0 = { xMin: 0, xMax: 0, yMin: 0, yMax: 0 };
+const eOf = h => Math.sqrt(Math.max(0, h * h - cam.min_view_height_m ** 2)) / cam.margin;
+const hAt = h => cameraView(eOf(h), cam, view, box0, frame);
+out.cross = [hAt(frame.h * 3.66 / 3 * 0.999), hAt(frame.h * 3.66 / 3 * 1.001)]
+  .map(c => vehicleMode(3.66, c.ppm, 3));
+process.stdout.write(JSON.stringify(out));
+"""
+    case = {
+        "pairs": [
+            [names, ["pad", "silo_cold"], []],
+            [names, ["pad", "silo_cold"], ["silo_failed", "pad"]],
+            [names, ["pad", "silo_cold"], ["silo_failed"]],
+            [["pad"], ["pad"], []],  # a one-run payload: one panel
+            [names, ["pad"], []],  # D-SP2-28 found no right-hand run: one panel
+            [names, [], []],
+            [names, None, []],
+            [names, ["gone", "silo_cold"], []],
+            [names, ["pad", "pad"], []],
+        ],
+        "boxes": [
+            [{"x": 0, "y": 0, "w": 1222, "h": 560}, 1],
+            [{"x": 0, "y": 0, "w": 1222, "h": 560}, 2],
+            [{"x": 0, "y": 0, "w": 900, "h": 900}, 2],
+            [{"x": 0, "y": 0, "w": 899.5, "h": 1012}, 2],
+        ],
+        "hMin": h_min,
+        "margin": margin,
+        "a": a,
+        "b": b,
+        # what each run's own camera frames, in the frame right of the close-up's column: the
+        # vertical rise, the gravity turn and orbit (the screen x and y of each run's base [m])
+        "frames": [
+            [{"E": 300.0, "x": 0.0, "y": 200.0, "floor": -100.0, "L": 70.0}],
+            [
+                {"E": 9.0e4, "x": 6.0e4, "y": 4.0e4, "floor": 0.0, "L": 70.0},
+                {"E": 7.0e4, "x": 3.0e4, "y": 3.0e4, "floor": -100.0, "L": 70.0},
+            ],
+            [{"E": 2.0e6, "x": 1.66e6, "y": -2.1e4, "floor": 0.0, "L": 70.0}],
+        ],
+    }
+    out = _run_pure(template, harness, case, tmp_path)
+    assert out["pairs"] == [
+        ["pad", "silo_cold"],
+        ["silo_failed", "pad"],
+        ["silo_failed", None],
+        ["pad", None],
+        ["pad", None],
+        ["pad", None],
+        ["pad", None],
+        ["silo_cold", None],
+        ["pad", None],
+    ]
+    one, side, edge, stacked = out["boxes"]
+    assert one == [{"x": 0, "y": 0, "w": 1222, "h": 560}]
+    assert side == [
+        {"x": 0, "y": 0, "w": 605, "h": 560},
+        {"x": 617, "y": 0, "w": 605, "h": 560},
+    ]
+    assert edge[1]["y"] == 0 and edge[1]["x"] == pytest.approx(456.0)  # from 900 px: side by side
+    assert stacked == [
+        {"x": 0, "y": 0, "w": 899.5, "h": 500},
+        {"x": 0, "y": 512, "w": 899.5, "h": 500},
+    ]
+    assert out["one"] == pytest.approx(out["oneA3"], rel=1e-12)  # one run: A3's camera
+    assert out["ab"] == pytest.approx(out["ba"], rel=1e-12)  # one camera for both panels
+    shared = out["ab"]
+    assert shared["H"] == pytest.approx(float(display.view_height_m(1200.0, h_min, margin)))
+    assert shared["ppm"] == pytest.approx(430.0 / shared["H"])
+    assert shared["x0"] + shared["W"] / 2 == pytest.approx(12.5)  # centred on 0 .. 25 m
+    assert shared["y0"] + shared["H"] / 2 == pytest.approx((-100.0 + 970.0) / 2)
+    # the frame: the law's view height over the frame's height, the content centred in it, so
+    # the site, each vehicle and its nose lie right of the close-up's column (x >= 256 px)
+    for framed, points, items in zip(out["framed"], out["inFrame"], case["frames"], strict=True):
+        e = max(it["E"] for it in items)
+        assert framed["H"] == pytest.approx(float(display.view_height_m(e, h_min, margin)))
+        assert framed["ppm"] == pytest.approx(430.0 / framed["H"])
+        for x, y in points:
+            assert 256.0 <= x <= 600.0 and 0.0 <= y <= 430.0, (x, y)
+    assert out["modes"] == ["to_scale", "marker", "marker"]
+    assert out["cross"] == ["to_scale", "marker"]  # crossing where H = frame.h x D / 3 px
+
+    script = _script(template)
+    assert "const pair = initialPair(names, DATA.default_pair, hash.runs);" in script
+    assert (
+        "const f = frame || view, aspect = f.w / f.h;" in _function_source(template, "cameraAt")[0]
+    )
+    assert 'cv.classList.toggle("two", panelRuns.length > 1);' in script
+    frames = _function_source(template, "sceneFrames")[0]
+    assert "frozen = t > end + EVENT_EPS_S, ti = frozen ? end : t;" in frames
+    assert "cam: cameraAt(ti, prs, lays[i].view, lays[i].frame)" in frames
+    assert (
+        "const mode = vehicleMode(g.vehicle.body_diameter_m, cam.ppm, CAM.to_scale_min_body_px);"
+        in _function_source(template, "viewPoints")[0]
+    )
+    assert "const vp = viewPoints(run, st, view, cam);" in _function_source(template, "layoutAt")[0]
+    layout = _function_source(template, "panelLayout")[0]
+    assert "frameOf = v => ({ x: v.x + col, y: v.y, w: Math.max(1, v.w - col), h: v.h })" in layout
+    for mode in ('mode: "column"', 'mode: "overlay"', 'mode: "side"', 'mode: "band"'):
+        assert mode in layout, mode
+    camera_at = _function_source(template, "cameraAt")[0]
+    assert "const tr = Math.min(t, lastT(r))" in camera_at and "sharedCamera(prs.map(" in camera_at
+    shared_lay = _function_source(template, "sharedLayouts")[0]
+    assert "noteLines: Math.max(" in shared_lay and "bandH: Math.max(" in shared_lay
+    (two_up,) = re.findall(r"const TWO_UP_MIN_PX = (\d+);", script)
+    (gap,) = re.findall(r"const PANEL_GAP_PX = (\d+);", script)
+    (narrow,) = re.findall(r"const NARROW_VIEW_PX = (\d+);", script)
+    style = template[: template.index("</style>")]
+    rules = re.findall(
+        r"@container scenepanel \(width < (\d+)px\) \{\s*#scene\.two \{ height: ([^;]*);", style
+    )
+    assert [int(w) for w, _ in rules] == [2 * int(narrow) + int(gap), int(two_up), int(narrow)]
+    assert rules[0][1] == "clamp(900px, 125vh, 1300px)"  # side by side, each panel a band layout
+    assert rules[1][1].startswith("calc(2 * ") and rules[1][1].endswith(f" + {gap}px)")  # stacked
+    assert rules[2][1] == f"calc(2 * clamp(900px, 125vh, 1300px) + {gap}px)"
+
+
+SEPARATION_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+out.gap = input.gapAt.map(t => stagingGapPx(t, 11, 160));
+out.gapNull = stagingGapPx(5, null, 160);
+let worstGap = 0;
+for (let t = 0; t < 13; t += 0.01) {
+  const step = Math.abs(stagingGapPx(t + 0.01, 11, 160) - stagingGapPx(t, 11, 160));
+  worstGap = Math.max(worstGap, step);
+}
+out.worstGap = worstGap;
+out.open = input.openAt.map(fairingOpen);
+let worstOpen = 0;
+for (let t = 0; t < 4; t += 0.01) {
+  worstOpen = Math.max(worstOpen, Math.abs(fairingOpen(t + 0.01).angle - fairingOpen(t).angle));
+}
+out.worstOpen = worstOpen;
+out.labels = input.labels.map(c => placeLabels(c.items, c.taken, c.bounds, 4));
+out.free = firstFree(input.free.c, input.free.taken, input.free.bounds);
+const four = [0, 0.5, 2.5, 7.9], two = [0, 0.5];
+out.next = [neighbourTime(four, 0.5, 1, 1e-6), neighbourTime(four, 0.5, -1, 1e-6),
+  neighbourTime(two, 0.5, 1, 1e-6), neighbourTime(two, 0.4999995, 1, 1e-6),
+  neighbourTime(two, 0.49, 1, 1e-6), neighbourTime([], 1, -1, 1e-6)];
+// the fairing halves in the close-up's drawing (side x side px, the axis at its centre) while
+// they are drawn: their least margin to its edges and to the top of its caption plate
+const h = input.halves, v = h.v, side = h.side, capTop = side - h.capGap - h.capH;
+const preL = v.stage2_length_m + v.fairing_length_m;
+const postL = v.stage2_length_m + h.stub * v.fairing_length_m;
+const fr = halvesFrame(preL, postL, v.stage2_length_m, h.stack, h.minStack, h.hinge);
+const D = v.body_diameter_m, Df = Math.max(D, v.fairing_diameter_m);
+const dims = { u0: v.stage2_length_m, half: D / 2, dy: Df / 2 - D / 2, F: v.fairing_length_m,
+  flare: h.flare, cylinder: h.cyl };
+const halves = { edge: Infinity, caption: Infinity, n: 0 };
+for (let deg = h.axes[0]; deg <= h.axes[1] + 1e-9; deg += 0.25) {
+  const a = deg * Math.PI / 180, dir = [Math.cos(a), -Math.sin(a)];
+  for (let tau = 0; tau <= h.show + 1e-9; tau += 0.05) {
+    fairingHalves(fairingOpen(tau), dims, fr.kc).forEach(q => halfReach(q).forEach(p => {
+      const u = p[0] - fr.up * fr.kc;
+      const x = side / 2 + u * dir[0] - p[1] * dir[1], y = side / 2 + u * dir[1] + p[1] * dir[0];
+      halves.edge = Math.min(halves.edge, x, y, side - x, side - y);
+      halves.caption = Math.min(halves.caption, capTop - y);
+      halves.n++;
+    }));
+  }
+}
+out.halves = halves;
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def _page_number(script: str, name: str) -> float:
+    (value,) = re.findall(rf"const {name} = ([0-9.]+);", script)
+    return float(value)
+
+
+def _halves_case(template: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The close-up's fairing-halves drawing as the page sizes it, for the fixture's vehicle:
+    the drawing's side (closeupSide), the caption plate (two lines of 11 px text, its bottom
+    CLOSEUP_CAPTION_TOP_PX over the drawing's), the halves' framing constants and the axes."""
+    script = _script(template)
+    stack = float(payload["camera"]["closeup_stack_px"])
+    plume = float(payload["drawing"]["plume_of_stack"])
+    pad = _page_number(script, "CLOSEUP_PAD_PX")
+    font = _page_number(script, "FONT_SMALL_PX")
+    line = round(font * _page_number(script, "PLATE_LINE_OF_FONT"))
+    cap_h = 2 * line + 2 * _page_number(script, "PLATE_PAD_PX") - (line - font)
+    return {
+        "v": payload["display"]["vehicle"],
+        "side": (1 + plume) * stack + 2 * pad,
+        "capH": cap_h,
+        "capGap": _page_number(script, "CLOSEUP_CAPTION_TOP_PX"),
+        "stack": stack,
+        "minStack": _page_number(script, "CLOSEUP_MIN_STACK_PX"),
+        "hinge": _page_number(script, "FAIRING_HINGE_BACK_PX"),
+        "stub": _page_number(script, "PAYLOAD_STUB_OF_FAIRING"),
+        "flare": _page_number(script, "FAIRING_FLARE"),
+        "cyl": _page_number(script, "FAIRING_CYLINDER"),
+        "show": _page_number(script, "FAIRING_SHOW_S"),
+        "axes": list(HALVES_AXES_DEG),
+    }
+
+
+def _inside(r: dict[str, float], b: dict[str, float]) -> bool:
+    return (
+        r["x"] >= b["x"]
+        and r["y"] >= b["y"]
+        and r["x"] + r["w"] <= b["x"] + b["w"]
+        and (r["y"] + r["h"] <= b["y"] + b["h"])
+    )
+
+
+def _hit(p: dict[str, float], q: dict[str, float]) -> bool:
+    return (
+        p["x"] < q["x"] + q["w"]
+        and q["x"] < p["x"] + p["w"]
+        and p["y"] < q["y"] + q["h"]
+        and (q["y"] < p["y"] + p["h"])
+    )
+
+
+HALVES_AXES_DEG = (22.0, 33.0)
+"""Close-up axes [deg above the local horizontal] the fairing halves are checked over: the
+recorded fairing drops of results/silo_offload_2d and silo_screening_2d draw them at 28.4 to
+29.0 deg (A3b QA, round 3), and a few degrees either side."""
+HALVES_CLEAR_PX = 0.75
+"""The least margin [px] of the halves to the drawing's edges and to the caption plate: over
+half the 1.25 px outline."""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_separations_labels_and_event_steps_under_node(
+    template: str, payload: dict[str, Any], tmp_path: Path
+) -> None:
+    """The close-up's drawn separations (design 4.9: drawn, not computed): the staging gap
+    opens linearly over the coast to 0.4 of the drawn stack, then grows with the square of
+    the time since stage-2 ignition, continuously (no jump over 1 px in 0.01 s); the
+    fairing halves turn out to 25 deg over 1.5 s, slide back and drift apart, continuously.
+    The halves stay wholly inside the close-up's drawing and clear of its caption plate for the
+    first FAIRING_SHOW_S after the drop (after it they may slide out across its edge: fix round 4
+    draws them on until they have wholly left it), at the
+    close-up axes of the recorded fairing drops and a few degrees round them (review round 3:
+    their hinge behind the drawing's centre, a slower slide). At MECO the
+    close-up frames the stage-1 engines at the scale that draws stage 2 at least 121 px long,
+    then pans to stage 2 after the separation; the spent stage carries a tag.
+    Label plates lie inside the view and over no plate, marker or other label, or are left
+    out; previous and next event step by the clock. The page names the drawings so: the
+    close-up's captions, the bodies' labels and the markers' sizes (criterion 16: at least
+    4 px across)."""
+    case = {
+        "gapAt": [-1.0, 0.0, 5.5, 11.0, 13.0],
+        "openAt": [0.0, 0.75, 1.5, 2.0, 4.0],
+        "labels": [
+            {
+                # a marker by the view's right edge, with a plate to its lower left
+                "items": [
+                    {"x": 590.0, "y": 200.0, "r": 6.0, "w": 150.0, "h": 19.0},
+                    {"x": 588.0, "y": 204.0, "r": 6.0, "w": 120.0, "h": 19.0},
+                    {"x": 300.0, "y": 100.0, "r": 6.0, "w": 140.0, "h": 19.0},
+                ],
+                "taken": [{"x": 400.0, "y": 205.0, "w": 120.0, "h": 60.0}],
+                "bounds": {"x": 5.0, "y": 5.0, "w": 595.0, "h": 420.0},
+            },
+            {
+                # no room anywhere
+                "items": [{"x": 50.0, "y": 50.0, "r": 6.0, "w": 150.0, "h": 19.0}],
+                "taken": [{"x": 0.0, "y": 0.0, "w": 100.0, "h": 100.0}],
+                "bounds": {"x": 0.0, "y": 0.0, "w": 100.0, "h": 100.0},
+            },
+        ],
+        "free": {
+            "c": [{"x": 0, "y": 0, "w": 10, "h": 10}, {"x": 20, "y": 0, "w": 10, "h": 10}],
+            "taken": [{"x": 5, "y": 5, "w": 2, "h": 2}],
+            "bounds": {"x": 0, "y": 0, "w": 40, "h": 40},
+        },
+        "halves": _halves_case(template, payload),
+    }
+    out = _run_pure(template, SEPARATION_HARNESS, case, tmp_path)
+    assert out["gap"] == pytest.approx([0.0, 0.0, 32.0, 64.0, 64.0 + 20.0 * 4.0])
+    assert out["gapNull"] == pytest.approx(64.0)  # no stage-2 ignition: open over 5 s
+    assert out["worstGap"] < 1.0
+    angles = [o["angle"] for o in out["open"]]
+    assert angles == pytest.approx(
+        [0.0, math.radians(12.5), math.radians(25.0), math.radians(25.0), math.radians(25.0)]
+    )
+    assert out["open"][0] == {"angle": 0, "slide": 0, "lateral": 0}
+    assert out["open"][3]["slide"] == pytest.approx(0.4) and out["open"][3][
+        "lateral"
+    ] == pytest.approx(1.2)
+    assert out["worstOpen"] < math.radians(1.0)
+    for spec, plates in zip(case["labels"], out["labels"], strict=True):
+        placed = [p for p in plates if p is not None]
+        for p in placed:
+            assert _inside(p, spec["bounds"])
+            assert not any(_hit(p, q) for q in spec["taken"])
+        assert not any(_hit(p, q) for p, q in itertools.combinations(placed, 2))
+    first = out["labels"][0]
+    assert first[0]["x"] + first[0]["w"] <= 590.0 - 6.0  # left of a marker at the edge
+    assert first[2] == {"x": 310.0, "y": 104.0, "w": 140.0, "h": 19.0}  # right and below
+    assert out["labels"][1] == [None]
+    assert out["free"] == {"x": 20, "y": 0, "w": 10, "h": 10}
+    assert out["next"] == [2.5, 0.0, None, None, 0.5, None]  # within 1e-6 s counts as the clock
+    halves = out["halves"]
+    assert halves["n"] > 1000 and halves["edge"] >= HALVES_CLEAR_PX, halves
+    assert halves["caption"] >= HALVES_CLEAR_PX, halves
+
+    script = _script(template)
+    frame = _function_source(template, "closeupFrame")[0]
+    assert "kcE = CLOSEUP_MIN_STACK_PX / upper.L" in frame  # stage 2 >= 121 px from staging on
+    assert "const engines = { kc: kcE, up: ENGINES_BACK_PX / kcE };" in frame
+    assert "ease({ kc: kcE, up: engines.up - s1 }, own, tS, tS + STAGING_PAN_S)" in frame
+    assert "const hf = halvesFraming(run, g), halves = { kc: hf.kc, up: hf.up };" in frame
+    assert (
+        "halvesFrame(pre.L, post.L, below + v.stage2_length_m,"
+        in (_function_source(template, "halvesFraming")[0])
+    )
+    assert 'const SPENT_TAG = "spent stage 1: drawn";' in script
+    assert "const BODY_MARKER_PX = 9;" in script and "const OTHER_MARKER_PX = 13;" in script
+    assert "size_px: BODY_MARKER_PX + RING_PX" in script  # 11 px across (criterion 16: >= 4)
+    caption = _function_source(template, "stagingCaption")[0]
+    assert '"Gap drawn, not computed: the stages stay within "' in caption
+    assert "stg.body.staging_coast_gap_m" in caption
+    assert 'const FAIRING_CAPTION = "Fairing halves drawn, not computed: ' in script
+    assert "both follow one path" in script
+    banner = _function_source(template, "drawBanner")[0]
+    assert "endText(run)" in banner
+    assert _function_source(template, "endText")[0].count('"Ended "') == 1
+
+
+def test_controls_capture_and_hook_of_two_panels(template: str) -> None:
+    """Previous and next event buttons and the keys [ and ], Left and Right (1 s, 10 s with
+    Shift), none of them taken from a form control; every ticker entry jumps to its event;
+    the tab's visibility pauses playback from a listener outside the pinned tick, and
+    autoplay starts only while the page is visible; captureFrame draws both panels under an
+    in-canvas clock band with each panel's phase, at even sides only (a video frame's); the
+    hook returns one state per panel, with the rate, the frozen and held flags, the banner
+    and what the view painted (the flown path, the event markers, the separated bodies, the
+    other panel's vehicle)."""
+    script = _script(template)
+    assert 'id="prevEvt"' in template and 'id="nextEvt"' in template
+    assert 'id="runSel0"' in template and 'id="runSel1"' in template
+    for use in (
+        'if (e.key === "[") { e.preventDefault(); jumpEvent(-1); }',
+        'else if (e.key === "]") { e.preventDefault(); jumpEvent(1); }',
+        "stepClock(-(e.shiftKey ? BIG_STEP_S : STEP_S))",
+        "stepClock(e.shiftKey ? BIG_STEP_S : STEP_S)",
+        "const STEP_S = 1, BIG_STEP_S = 10;",
+        'const inControl = ["INPUT", "SELECT", "TEXTAREA"].includes(tag);',
+        'b.addEventListener("click", () => jumpTo(t));',
+        'document.addEventListener("visibilitychange", () => '
+        "{ if (document.hidden && playing) setPlaying(false); });",
+        "if (autoplay) setTimeout(startWhenVisible, AUTOPLAY_DELAY_MS);",
+    ):
+        assert use in script, use
+    assert "visibilitychange" not in _function_source(template, "tick")[0]
+    start = _function_source(template, "startWhenVisible")[0]
+    assert "if (!document.hidden) { setPlaying(true); return; }" in start
+    capture = _function_source(template, "captureFrame")[0]
+    assert "W % 2 !== 0 || H % 2 !== 0" in capture
+    assert (
+        "drawCaptureHud(ctx, { x: 0, y: 0, w: W, h: CAPTURE_HUD_PX }, ts, pal, panelRuns);"
+        in capture
+    )
+    assert (
+        "sharedLayouts(ctx, pal, panelRuns, "
+        "panelBoxes(box, panelRuns.length, TWO_UP_MIN_PX, PANEL_GAP_PX))"
+    ) in capture
+    hud = _function_source(template, "drawCaptureHud")[0]
+    assert "phaseAt(run, Math.min(t, lastT(run)))" in hud and "clockText(t)" in hud
+    state = _function_source(template, "panelState")[0]
+    for key in (
+        "frozen: F.frozen",
+        "held_first_row: F.held",
+        "banner:",
+        "trace_points:",
+        "event_marks:",
+        "bodies:",
+        "others:",
+        "staging_gap_px:",
+        "fairing_open_deg:",
+        "closeup_title:",
+        "earth:",
+    ):
+        assert key in state, key
+    assert "return out.map((P, i) => panelState(P, panelRuns[i], t));" in script
+    # the two selectors never show one run in both panels
+    assert "runs[right] === a ? null" in _function_source(template, "setPanels")[0]
+    # the pre-first-row and end labels the readout shows
+    assert 'r.pre_label = "Waiting: first recorded row at " + clockText(r.t[0]);' in script
+    assert "r.end_label = endText(r);" in script
+    assert "if (st.frozen) lines.push(FROZEN_LINE);" in _function_source(template, "hudLines")[0]
+
+
+def test_run_selector_groups_follow_run_data(template: str) -> None:
+    """The selectors group the runs by role (design 4.5) with run_data's own role and offload
+    kind strings, so a rename there fails here rather than scattering the runs."""
+    script = _script(template)
+    block = script[script.index("const ROLE_GROUPS") :]
+    block = block[: block.index("];")]
+    entries = re.findall(r'\["(\w+)", (null|"[^"]+"), "[^"]+"\]', block)
+    assert {role for role, _ in entries} == {
+        run_data.ROLE_RUN,
+        run_data.ROLE_OFFLOAD,
+        run_data.ROLE_CASE,
+        run_data.ROLE_BOUND,
+        run_data.ROLE_PAIRED_BASELINE,
+    }
+    assert {kind.strip('"') for _, kind in entries if kind != "null"} == {
+        run_data.OFFLOAD_CASE,
+        run_data.OFFLOAD_PAIRED_PAD,
+        run_data.OFFLOAD_PAD_CONTROL,
+    }
+    assert "const hit = ROLE_GROUPS.find(" in _function_source(template, "roleGroup")[0]
+
+
+DISPLAY_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const f = { clock: t => "T+" + t.toFixed(2) + " s", speed: v => v.toFixed(1),
+  length: m => (m / 1000).toFixed(1) + " km" };
+const out = {};
+out.bodies = input.bodies.map(b => bodyText(b, input.end, Object.assign({ name: b.name }, f)));
+out.alias = input.alias.map(a => eventAlias(a[0], a[1], ["stage1", "stage2"]));
+out.maxq = [recordedMaxQ({ t: 53.498991, q_pa: 38438.5 }), recordedMaxQ(null),
+  recordedMaxQ({ t: 1, q_pa: 0 }), recordedMaxQ({ t: null, q_pa: 5 }),
+  recordedMaxQ({ t: 1, q_pa: "5" })];
+out.blend = [0, 0.5, 1].map(x => blendFrame({ kc: 1, up: 10 }, { kc: 4, up: 20 }, x));
+out.smooth = [-1, 0, 0.5, 1, 2].map(smooth01);
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_bodies_list_aliases_and_max_q_under_node(
+    template: str, payload: dict[str, Any], tmp_path: Path
+) -> None:
+    """Design 4.9: each separated body is listed with its drag-free coast's own impact time,
+    speed and downrange (or as still in flight at the run's end, with where its coast would
+    come down), saying it is display-only and no landing prediction; every body of the
+    fixture's payload gets its speed and downrange. The canvas names the milestones in plain
+    words (the event list keeps the model's label beside them; a synthesised event stays marked
+    on the canvas, design 4.4); max-Q is the run's recorded one (the payload's max_q, from its
+    metrics; A3b fix round 4), none when the run records none or a value is not a finite
+    number; the close-up's framing eases with no jump at either end."""
+    bodies = [dict(b) for r in payload["runs"] for b in r["bodies"]]
+    assert bodies, "the fixture's pad has separated bodies"
+    with_impact = next(b for b in bodies if b["impact"] is not None)
+    clipped = dict(with_impact, clipped_at_run_end=True, name="clipped")
+    clipped["impact"] = dict(with_impact["impact"], within_run=False)
+    no_impact = dict(with_impact, impact=None, name="no_impact")
+    case = {
+        "bodies": [*bodies, clipped, no_impact],
+        "end": 523.5,
+        "alias": [
+            ["propellant", "stage1"],
+            ["propellant", "stage2"],
+            ["staging", "stage2"],
+            ["ignition", "stage2"],
+            ["ignition", "stage1"],
+            ["fairing", "stage2"],
+            ["cutoff", "stage2"],
+            ["kick_start", "stage1"],
+            ["release", "stage1"],
+            ["push_start", "stage1"],
+            ["liftoff", "stage1"],
+            ["ramp_end", "stage1"],
+            ["ignition_failed", "stage1"],
+            ["apex", "stage1"],
+            ["impact", "stage1"],
+            ["end", "stage2"],
+            ["unknown_event", "stage1"],
+        ],
+    }
+    out = _run_pure(template, DISPLAY_HARNESS, case, tmp_path)
+    for b, text in zip(bodies, out["bodies"][: len(bodies)], strict=True):
+        assert "drag-free coast from T+" in text and "not a landing prediction" in text
+        assert "display only, not model output" in text
+        if b["impact"] is not None:
+            assert f"{b['impact']['speed_mps']:.1f} m/s" in text
+            assert f"{b['impact']['downrange_m'] / 1000:.1f} km downrange" in text
+    clipped_text, none_text = out["bodies"][-2], out["bodies"][-1]
+    assert "still in flight at the run's end (T+523.50 s)" in clipped_text
+    assert "its drag-free impact would be" in clipped_text
+    assert "does not reach the ground" in none_text
+    short = [a[0] if a else None for a in out["alias"]]
+    assert short == [
+        "MECO",
+        "stage-2 burnout",
+        "stage separation",
+        "stage-2 ignition",
+        "stage-1 ignition",
+        "fairing jettison",
+        "SECO",
+        "pitch kick starts",
+        "release",
+        "push starts",
+        "liftoff",
+        "full thrust",
+        "ignition failed",
+        "apex",
+        "impact",
+        "run ends",
+        None,
+    ]
+    # no raw model key on the canvas (review round 3): every alias is plain words
+    assert all("_" not in a[0] for a in out["alias"] if a)
+    assert out["alias"][6][1] == "SECO: stage-2 energy cutoff"  # the end banner says "in orbit"
+    assert out["maxq"] == [{"t": 53.498991, "v": 38438.5}, None, None, None, None]
+    assert out["blend"][0] == {"kc": 1, "up": 10} and out["blend"][2] == {"kc": 4, "up": 20}
+    assert out["blend"][1] == pytest.approx({"kc": 2.0, "up": 15.0})
+    assert out["smooth"] == pytest.approx([0.0, 0.0, 0.5, 1.0, 1.0])
+
+    script = _script(template)
+    ticker = _function_source(template, "buildTicker")[0]
+    assert "bodyText(b, lastT(run)," in ticker and "longText(run, e)" in ticker
+    assert "MAXQ_TICKER_NOTE" in ticker and "not a logged event" in script
+    assert 'a[1] + " [" + eventText(e) + "]"' in _function_source(template, "longText")[0]
+    assert "r.maxq = recordedMaxQ(r.max_q);" in script and "largestRow" not in script
+    marks = _function_source(template, "drawEventMarks")[0]
+    assert "display: true" in marks and "maxqText(run)" in marks
+    assert (
+        "listed under the event list with each body's own computed impact"
+        in (scene.DISPLAY_ONLY[2])
+    )
+
+
+def test_review_round_2_fixes_in_the_source(template: str) -> None:
+    """A3b review round 1: the readout goes to a free corner (never over this panel's
+    vehicle, the separated bodies or the other vehicle when a corner is free), the gauges
+    over no other plate; a marker under an opaque plate gets no label; a frozen panel marks
+    no other vehicle, and a key on the view always names the ring's run; labels fall back to a
+    short text;
+    the header puts the time first; the readout drops what the model has no state for
+    before a run's first row and the burn's felt load on an unlit cutoff row, and shows q
+    and Mach once there is no drive; the note under the canvas and the clock's line follow
+    the runs shown."""
+    script = _script(template)
+    readout = _function_source(template, "drawReadout")[0]
+    assert "firstFree(rects, plates.concat(keep), box)" in readout
+    assert "L.inset.y + L.inset.h + VIEW_MARGIN_PX" in readout
+    assert "gauge.y - VIEW_MARGIN_PX - h" in readout
+    assert "firstFree(cands, plates, view)" in _function_source(template, "gaugeRect")[0]
+    panel = _function_source(template, "drawPanel")[0]
+    assert "const shown = it => !covers.some(r => inRect(it.px, r));" in panel
+    assert (
+        panel.count(".filter(shown)") == 3
+    )  # the bodies on their vehicles, the other bodies, the rest
+    assert "(q.name === FAIRING_BODY) - (p.name === FAIRING_BODY)" in panel
+    frames = _function_source(template, "sceneFrames")[0]
+    assert "const others = frozen ? [] : prs.filter(" in frames
+    key = _function_source(template, "drawRingKey")[0]
+    assert "const text = otherText(o);" in key and "|| slots[0];" in key  # never dropped
+    assert 'o.run.name + " (other panel"' in _function_source(template, "otherText")[0]
+    assert "F.others.length ? drawRingKey(" in _function_source(template, "drawView")[0]
+    assert "items[i].short" in _function_source(template, "drawLabels")[0]
+    header = _function_source(template, "drawHeader")[0]
+    assert '"last event " + clockText(mk.t) + ": " + mk.text' in header
+    values = _function_source(template, "stateValues")[0]
+    assert "const unlit = !before && !thrustOn && plume > 0;" in values
+    assert "felt: before || unlit || " in values and "driveF: before ? null :" in values
+    assert "q: before ? null :" in values and "mach: before ? null :" in values
+    assert '"q " + fmt(st.q / PA_PER_KPA' in _function_source(template, "hudLines")[0]
+    assert '<span id="sceneNote">' in template
+    note = 'getElementById("sceneNote").textContent = b ? SCENE_NOTE_TWO : SCENE_NOTE_ONE;'
+    assert note in script
+    # the note's static copy (read without script) is the two-panel note the script writes
+    static = re.search(r'<span id="sceneNote">(.*?)</span>', template, re.S)
+    (two,) = re.findall(r'const SCENE_NOTE_TWO = "([^"]*)";', script)
+    assert static is not None and static.group(1) == two
+    assert '"after release, " + (playing ?' in _function_source(template, "draw")[0]
+    assert "const STAGING_AFTER_S = 1;" in script and "const FAIRING_SHOW_S = 5;" in script
+    hook = _function_source(template, "panelState")[0]
+    for key in (
+        "hud_rect:",
+        "plate_rects:",
+        "band_rects:",
+        "closeup_px_per_m:",
+        "closeup_halves_tip_px:",
+        "closeup_halves_bbox_px:",
+        "closeup_caption_rect:",
+        "closeup_spent_tag:",
+        "frame: L.lay.frame",
+        "ring_key:",
+    ):
+        assert key in hook, key
+
+
+def test_review_round_3_fixes_in_the_source(template: str) -> None:
+    """A3b review round 3: the telemetry says when its values are not the clock's (before
+    the run's first row, after its end); the other panel's ring and its key say when that
+    run still waits for its first row, as they say when it has ended; a captured frame's
+    footer carries the payload's frame caveat and each shown pushed run's structure note; the
+    wrap memo's size is a page constant; a separated body's short label keeps 'drag-free'."""
+    script = _script(template)
+    assert '["state", "Shown at"], ["alt", "Altitude"]' in script
+    tel = _function_source(template, "updateTelemetry")[0]
+    # A3b fix round 4: as the canvas says it, held at the first row, frozen at the end
+    assert 'run.pre_label + "; " + HELD_TEXT + " (first row\'s values)"' in tel
+    assert 'run.end_label + "; " + frozenText() + " (values at its end)"' in tel
+    assert "clockText(tNow)" in tel
+    assert "waiting: ti < r.t[0]" in _function_source(template, "sceneFrames")[0]
+    word = _function_source(template, "otherWord")[0]
+    assert 'o.ended ? "ended" : o.waiting ? "waiting" : ""' in word
+    marker = _function_source(template, "drawOtherMarker")[0]
+    assert "text: otherText(o)" in marker and "otherWord(o)" in marker
+    footer = _function_source(template, "frameFooterLines")[0]
+    assert "const lines = footerLines();" in footer
+    assert "if (DATA.frame_caveat) lines.push(DATA.frame_caveat);" in footer
+    assert "r.structure_note" in footer
+    assert "frameFooterLines(prs).forEach(" in _function_source(template, "footerWrapped")[0]
+    assert "footerWrapped(ctx, pal, W, panelRuns)" in _function_source(template, "captureFrame")[0]
+    constants = script[
+        script.index(
+            "// ------------------------------------------------------------------ page constants"
+        ) :
+    ]
+    constants = constants[
+        : constants.index(
+            "// ------------------------------------------------------------------ helpers"
+        )
+    ]
+    assert "const WRAP_MEMO_MAX = 256;" in constants
+    assert script.count("const WRAP_MEMO_MAX") == 1
+
+
+FAIRING_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+// when the close-up stops drawing the halves: the first sampled time they have left it, capped
+out.ends = input.ends.map(c => halvesEndTime(c[1], c[2], 0.1, t => t >= c[0]));
+out.calls = 0;
+halvesEndTime(189.25, 523.5, 0.1, t => { out.calls++; return t >= 202.2; });
+out.seg = input.seg.map(c => segmentDistance(c[0], c[1], c[2]));
+out.near = input.near.map(c => nearestOnRect(c[0], c[1]));
+out.spots = leaderSpots([100, 100], 20, 50, 10);
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_fairing_seen_from_the_drop_until_clear_under_node(template: str, tmp_path: Path) -> None:
+    """A3b fix round 4 (gate G5: at T+190 nothing showed silo_cold_s1's fairing): the close-up
+    draws the halves from the drop, at least FAIRING_SHOW_S, until they have wholly left its
+    drawing (sampled), never past the run's end or the halves' impact (halvesEndTime,
+    fairingEnd); in the view a separated body that touches its vehicle is drawn over it, the
+    vehicle marked again by a dot, with a short label on a leader that is never left out
+    (drawLeaderLabels), so the view shows and labels the fairing throughout; a body whose label
+    finds no place beside it gets its short label on a leader where one fits, before the other
+    markers' labels; the leader's spots lie in eight directions at growing distances."""
+    case = {
+        "ends": [
+            # [the time the halves have left the drawing, the least time, the cap]
+            [20.0, 5.0, 100.0],  # gone after the least time: then
+            [3.0, 5.0, 100.0],  # gone before the least time: the least time
+            [200.0, 5.0, 100.0],  # not gone before the cap: the cap
+            [3.0, 120.0, 100.0],  # the least time past the cap: the cap
+        ],
+        "seg": [
+            [[5, 5], [0, 0], [10, 0]],
+            [[-3, 4], [0, 0], [10, 0]],
+            [[13, 4], [0, 0], [10, 0]],
+            [[3, 4], [0, 0], [0, 0]],
+        ],
+        "near": [
+            [[0, 0], {"x": 10, "y": 5, "w": 4, "h": 4}],
+            [[11, 6], {"x": 10, "y": 5, "w": 4, "h": 4}],
+        ],
+    }
+    out = _run_pure(template, FAIRING_HARNESS, case, tmp_path)
+    assert out["ends"] == pytest.approx([20.0, 5.0, 100.0, 100.0], abs=1e-9)
+    assert out["calls"] == 131  # 189.25 to 202.25 every 0.1 s: stops once they have left
+    assert out["seg"] == pytest.approx([5.0, 5.0, 5.0, 5.0])
+    assert out["near"] == [[10, 5], [11, 6]]
+    spots = out["spots"]
+    assert len(spots) == 8 and spots[0] == {
+        "x": 100 + 20 / math.sqrt(2),
+        "y": 100 + 20 / math.sqrt(2),
+        "w": 50,
+        "h": 10,
+    }
+    for s in spots:  # each touches the leader's end, 20 px from the anchor, with its nearest point
+        qx = min(s["x"] + s["w"], max(s["x"], 100.0))
+        qy = min(s["y"] + s["h"], max(s["y"], 100.0))
+        assert math.hypot(qx - 100.0, qy - 100.0) == pytest.approx(20.0)
+
+    script = _script(template)
+    constants = script[
+        script.index(
+            "// ------------------------------------------------------------------ page constants"
+        ) : script.index(
+            "// ------------------------------------------------------------------ helpers"
+        )
+    ]
+    for name in ("HALVES_SCAN_S", "LEADER_PX", "LEADER_STEPS", "MARKER_CORE_OF_SIZE", "WRAP_MEMO"):
+        assert re.search(rf"^  const {name} = .*// ", constants, re.M), name
+    # no page constant is defined among the drawing functions (review: WRAP_MEMO moved up)
+    drawing = script[
+        script.index(
+            "// ------------------------------------------------------------------ drawing:"
+        ) : script.index(
+            "// ------------------------------------------------------------------ the page"
+        )
+    ]
+    assert not re.search(r"^  const [A-Z][A-Z0-9_]* =", drawing, re.M)
+    end = _function_source(template, "fairingEnd")[0]
+    assert "halvesEndTime(hf.tF + FAIRING_SHOW_S, capT, HALVES_SCAN_S, gone)" in end
+    assert "cameraAt" not in end and "onVehicle" not in end  # the view's separation is not a term
+    assert "!overlaps(halvesAt(" in end and "closeupDrawing(lay.inset)" in end
+    assert "body.path.t[body.path.t.length - 1]" in end and "lastT(run)" in end
+    assert "fairEnd: fairingEnd(run, lays[i])" in _function_source(template, "sceneFrames")[0]
+    assert "t <= fairEnd" in _function_source(template, "fairingAt")[0]
+    frame = _function_source(template, "closeupFrame")[0]
+    assert (
+        "t < hEnd + FAIRING_EASE_S" in frame
+        and "ease(halves, own, hEnd, hEnd + FAIRING_EASE_S)" in frame
+    )
+    clear = _function_source(template, "bodyClearPx")[0]
+    assert "(CAM.marker_size_px + MARKER_RING_PX + BODY_MARKER_PX + RING_HALO_PX) / 2" in clear
+    view = _function_source(template, "drawView")[0]
+    # a body on its vehicle is drawn after the vehicle, then the vehicle's dot over both
+    assert (
+        view.index("const painted =")
+        < view.index("{ onVehicle: true }")
+        < view.index("MARKER_CORE_OF_SIZE")
+    )
+    assert "(on[i] ? null : drawBodyMarker(" in view
+    panel = _function_source(template, "drawPanel")[0]
+    assert "taken, covers, onVehicleText)" in panel  # never left out (relaxed to the opaque plates)
+    assert "drawLeaderLabels(ctx, pal, L.view, late, used(), null, it => it.short)" in panel
+    assert panel.index("placedB = drawLabels(") < panel.index("placedR = drawLabels(")
+    leader = _function_source(template, "drawLeaderLabels")[0]
+    assert "firstFree(leaderSpots(it.px, it.r + k * LEADER_PX, w, h), avoid, inner)" in leader
+    assert "{ x: inner.x, y: inner.y, w: w, h: h }" in leader  # the last resort: never null
+    assert "haloStroke(ctx, pal, pal.ink3, HAIRLINE_PX, PATH_HALO_PX, null)" in leader
+    assert 'const ON_VEHICLE_TEXT = ": drawn, display only";' in script
+    hook = _function_source(template, "panelState")[0]
+    assert "on_vehicle: b.onVehicle === true" in hook and "closeup_fairing_end_s: L.fairEnd" in hook
+    # the leader and the vehicle's dot use pairs the contrast table declares; the event
+    # diamond's outline against the trace halo too (review: declared and at least 3:1)
+    for pair in (
+        ("--ink-3", "--sc-halo"),
+        ("--sc-body-line", "--sc-halo"),
+        ("--run-0", "--sc-halo"),
+    ):
+        assert pair in SHAPE_PAIRS, pair
+    light, dark, _ = _blocks(template)
+    for tokens in (light, {**light, **dark}):
+        assert _contrast(tokens["--sc-body-line"], tokens["--sc-halo"]) >= SHAPE_CONTRAST

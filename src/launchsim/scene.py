@@ -8,11 +8,14 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
 
 - per run, the recorded series on the scene's time grid, a SELECTION of the run's own
   CSV rows and never a resample (D-SP2-16, display.select_rows): time after release to
-  TIME_DECIMALS, altitude, Earth-fixed downrange, Earth-relative speed, the unwrapped
+  TIME_DECIMALS (the event rows and the row of the series' peak q always among them),
+  altitude, Earth-fixed downrange, Earth-relative speed, the unwrapped
   pitch and the drawn (held) angle, the plume fraction (``thrust_vac_N`` over the stage's
   full vacuum thrust from the run's own vehicle block), the step series (stage index,
   phase, fairing on, thrust on), the track series over the push (null outside it), q and
-  Mach (null inside the vented shaft), the felt axial acceleration (``felt_axial_g`` as
+  Mach (null inside the vented shaft), the run's recorded max-Q (``max_q``: metrics.json's
+  ``max_q_pa`` and ``max_q_time_s``, the planar metrics' refined peak, already after
+  release; None when the record has none), the felt axial acceleration (``felt_axial_g`` as
   recorded, in g), the two tank series (display.tank_levels, 0.1 kg) and their fills
   against the full-load tanks of the fill-reference block;
 - the events with the mass before and after each drop (run_data.with_drop_masses),
@@ -33,7 +36,9 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   dry mass, a fixed case's P* - P_ref reading, a net-of-pad-control quotation, a failed
   verification and the flags), its offload flags one by one (``offload_flags``) and the
   load-time check verdicts (display.tank_checks plus the rebuilt-mass check and the row
-  selection's convergence, ``selection_check``);
+  selection's convergence, ``selection_check``) and, for a pushed run, what structural
+  mass its record charges for the push (``structure_note``: a captured frame's footer
+  carries it);
 - at the top level: the directory's identity and git record as metrics.json holds it
   (``hash``; ``dirty`` true, false, or null when git status itself failed and the state
   is unknown, never read as clean; ``error``, git's reason), its label, the vehicle, the
@@ -44,11 +49,16 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   scene's model caveats are a superset of the replay page's, plus the directory's
   ``offload.caveats`` word for word when an offload run is shown), the exploratory mark
   (replay.EXPLORATORY_CAVEAT for an exploratory directory, else None: the one string the
-  page's banner, strip, footer and in-canvas tag use) and the provenance footer.
+  page's banner, strip, footer and in-canvas tag use), the provenance footer and the
+  caveat line every captured frame carries (``frame_caveat``: the model, each vehicle's
+  calibration, where the full list is).
 
 With no run selection the payload shows D-SP2-28's default pair (``default_pair``): the
 baseline on the left; on the right the first solved stage-1 offload case, else the first
-assisted variant that is not a yardstick, else the baseline alone.
+assisted variant that is not a yardstick, else the baseline alone. Whatever the selection,
+the payload's ``default_pair`` (``opening_pair``) is that rule applied to the runs it holds,
+filled to two from them in selection order when the rule finds fewer, the panels the page
+opens with (step A3b; a ``#runs`` hash overrides it).
 
 A run with an empty time series (a failed search writes none) is left out with a
 one-line reason under ``excluded``; a 1-D directory, a sweep directory or sweep point, a
@@ -239,6 +249,15 @@ FOOTER_TEXT = (
 )
 """The provenance footer of every scene page (design 4.4)."""
 
+FRAME_MODEL_TEXT = (
+    "Model, not a forecast: a planar 2-D point mass; guidance is sweep-optimized, not "
+    "optimal control, and the engines never throttle."
+)
+"""The model clause of ``frame_caveat`` (replay.model_caveat's limits, in brief)."""
+
+FRAME_MORE_TEXT = "Every caveat: the scene page's 'Read before quoting' list."
+"""The last clause of ``frame_caveat``: where the full list is."""
+
 DISPLAY_ONLY: tuple[str, ...] = (
     "Every shape and length: the model has a reference area and a point mass; the "
     "vehicle's shape and the widths and sizes of the shaft, rings, carriage, rails, mount "
@@ -256,8 +275,9 @@ DISPLAY_ONLY: tuple[str, ...] = (
     "hold, on the track); the instant steps at the kick and at stage-2 ignition are the "
     "model's and are shown as recorded.",
     "The spent stage and the fairing halves: a drag-free two-body coast from the recorded "
-    "separation state, shown with each body's own computed impact time, speed and "
-    "downrange; the model has no spent stage. Each spent stage shown carries its own "
+    "separation state, listed under the event list with each body's own computed impact "
+    "time, speed and downrange, drag-free (no re-entry drag, so not a landing "
+    "prediction); the model has no spent stage. Each spent stage shown carries its own "
     "measured gap from the vehicle's recorded staging-coast rows (staging_coast_gap_m: the "
     "largest screen distance, the coast evaluated at the row times). Measured on 2026-10-05 "
     "over the 55 run folders with a staging coast in the six complete planar directories "
@@ -1011,6 +1031,13 @@ def run_payload(
     event_rows = [
         i for mt in matches if mt.index is not None for i in range(mt.index, mt.index + mt.count)
     ]
+    q_all = frame["q_pa"].to_numpy(dtype=float)
+    if np.isfinite(q_all).any():
+        # the time series' peak q row is kept, so the drawn path passes through the recorded
+        # peak row beside the page's max-Q mark (the run's metrics max-Q, ``max_q``)
+        event_rows.append(int(np.nanargmax(q_all)))
+    max_q_pa = _metric(m, "max_q_pa")
+    max_q_t = _metric(m, "max_q_time_s")
     prop1, prop2 = levels.prop_kg
     fields = [
         display.SelectionField("alt_m", rows.alt_m, display.ALT_TOL_MIN_M, display.ALT_TOL_REL),
@@ -1104,6 +1131,9 @@ def run_payload(
         "note": note,
         "offload_note": offload_note,
         "flags": flags,
+        "structure_note": structure_note(
+            source, run_data.as_mapping(metrics.get("offload")), name, assisted
+        ),
         "yardstick": replay.is_yardstick(dict(m)),
         "compared_to": source["compared_to"],
         "baseline": name == baseline,
@@ -1129,6 +1159,11 @@ def run_payload(
         "fairing_on": [bool(v) for v in levels.fairing_on[sel]],
         "thrust_on": [bool(v) for v in levels.thrust_on[sel]],
         "q_pa": _series(frame["q_pa"].to_numpy(dtype=float)[sel], Q_DECIMALS),
+        "max_q": (
+            None
+            if max_q_pa is None or max_q_t is None
+            else {"t": _round(max_q_t, TIME_DECIMALS), "q_pa": _round(max_q_pa, Q_DECIMALS)}
+        ),
         "mach": _series(frame["mach"].to_numpy(dtype=float)[sel], MACH_DECIMALS),
         "felt_g": _series(frame["felt_axial_g"].to_numpy(dtype=float)[sel], G_DECIMALS),
         "track": track,
@@ -1247,6 +1282,49 @@ def default_pair(
     return names or list(available[:1])
 
 
+def frame_caveat(vehicles: Sequence[str]) -> str:
+    """The caveat line every captured frame of the scene carries under its provenance
+    footer (a video frame travels without the page's caveat list; D-SP2-36): the model in
+    brief (FRAME_MODEL_TEXT), each vehicle's calibration as the replay page words it
+    (replay.calibration_caveat: its gap, inside or outside the gate, the findings note)
+    and where the full list is (FRAME_MORE_TEXT). ``vehicles``: the vehicle names of the
+    runs the payload holds, each once in order. Pure."""
+    calibration = [replay.calibration_caveat(v) for v in dict.fromkeys(vehicles)]
+    return " ".join([FRAME_MODEL_TEXT, *calibration, FRAME_MORE_TEXT])
+
+
+def structure_note(
+    source: Mapping[str, Any], offload: Mapping[str, Any], name: str, assisted: bool
+) -> str | None:
+    """What structural mass the record of run ``name`` charges for the push, for a
+    captured frame's footer: None for a run with no push; for a penalty row (an offload
+    case whose record charges an assumed stage-1 dry mass, replay.penalty_added_kg) that
+    assumed mass, 'an assumption, not a sized structure'; else that none is charged
+    (replay.structure_caveat's wording, per run). Pure."""
+    if not assisted:
+        return None
+    record = replay.case_record(source, offload, name)
+    added = None if record is None else replay.penalty_added_kg(record)
+    if added is None:
+        return "no structural mass is charged for the push"
+    return (
+        f"an assumed {replay.penalty_mass_text(added)} is charged for the push: an "
+        "assumption, not a sized structure"
+    )
+
+
+def opening_pair(
+    metrics: Mapping[str, Any], config: Mapping[str, Any], kept: Sequence[str]
+) -> list[str]:
+    """The two panels a scene page opens with (its ``default_pair``), from the runs the
+    payload holds (``kept``, in selection order): D-SP2-28's rule (``default_pair``) on
+    them, filled to two from ``kept`` in order when the rule finds fewer (a selection
+    without the baseline, or with no assisted variant), so an explicit selection of two
+    or more runs always opens two panels; one run when ``kept`` holds one. Pure."""
+    pair = default_pair(metrics, config, kept)
+    return pair + [n for n in kept if n not in pair][: max(0, 2 - len(pair))]
+
+
 def scene_payload(
     run_dir: Path, runs: Sequence[str] | None, *, display_dir: Path
 ) -> dict[str, Any]:
@@ -1328,6 +1406,7 @@ def scene_payload(
         ),
         "model": str(metrics.get("model")),
         "baseline": baseline,
+        "default_pair": opening_pair(metrics, config, kept),
         "vehicle": vehicle_name,
         "display": geometry.as_dict(),
         "constants": {"R_E_m": R_EARTH_M, "omega_p_rads": omega_p, "site": site},
@@ -1356,6 +1435,7 @@ def scene_payload(
         "caveats": caveats + offload_caveats,
         "offload_caveats": offload_caveats,
         "footer": FOOTER_TEXT,
+        "frame_caveat": frame_caveat([r["vehicle"] for r in records]),
         "excluded": excluded,
         "runs": records,
     }
@@ -1443,6 +1523,8 @@ __all__ = [
     "EMPTY_SERIES_WORDING",
     "FAILED_MARKER",
     "FOOTER_TEXT",
+    "FRAME_MODEL_TEXT",
+    "FRAME_MORE_TEXT",
     "G_DECIMALS",
     "PLUME_OF_STACK",
     "SCENE_COLUMNS",
@@ -1467,11 +1549,13 @@ __all__ = [
     "default_scene_path",
     "display_geometry_for",
     "event_label",
+    "frame_caveat",
     "git_record",
     "load_display_configs",
     "load_scene_config",
     "load_template",
     "offload_flags",
+    "opening_pair",
     "ramp_start",
     "render_page",
     "run_payload",
@@ -1481,6 +1565,7 @@ __all__ = [
     "scene_run_label",
     "selection_check",
     "site_omega_p",
+    "structure_note",
     "synthetic_events",
     "write_scene_page",
 ]

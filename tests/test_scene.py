@@ -32,7 +32,10 @@ vehicle and the generic fallback (for an unlisted vehicle too); the caveat list 
 superset of replay.caveats for the same selection; every load-time check passing on every
 real run, the row selection's convergence among them (a selection that did not converge
 is a failing item); an unknown git state carried as unknown; D-SP2-28's default pair
-when no run is named; schema defaults labelled 'default'; the import guard that keeps
+when no run is named; each run's peak q row kept and its max-Q taken from its metrics
+record (none when the record has none); the captured frames' caveat line and each pushed
+run's structure note; schema
+defaults labelled 'default'; the import guard that keeps
 display and scene out of the run path, scene reading through run_data only and display
 loading no I/O module.
 """
@@ -1275,6 +1278,57 @@ def test_default_pair_follows_d_sp2_28(real_dir: Path, derived_dir: Path) -> Non
     assert scene.default_pair({"baseline": "pad"}, {}, ["x", "y"]) == ["x"]
 
 
+def test_peak_q_row_kept_and_frame_caveats(
+    real_dir: Path, real_payload: dict[str, Any], derived_dir: Path
+) -> None:
+    """A3b review round 3. Each run's payload keeps its time series' peak q row at its own
+    release-relative time, so the drawn path passes through it beside the page's max-Q mark
+    (since fix round 4 the run's metrics max-Q, ``max_q``). The payload carries the caveat
+    line every captured frame shows under its footer (the model in brief, each vehicle's
+    calibration as the replay page words it, where every caveat is) and, per pushed run, what
+    structural mass its record charges for the push: none, or a penalty row's assumed stage-1
+    dry mass."""
+    for r in real_payload["runs"]:
+        frame = run_data.read_series_frame(
+            real_dir, r["key"], scene.SCENE_COLUMNS, error=scene.SceneError
+        )
+        q = frame["q_pa"].to_numpy(dtype=float)
+        if not np.isfinite(q).any():
+            continue
+        i = int(np.nanargmax(q))
+        t_peak = float(scene.run_rows(frame).t_rel_s[i])
+        shown = [-math.inf if v is None else v for v in r["q_pa"]]
+        k = int(np.argmax(shown))
+        assert shown[k] == pytest.approx(q[i], abs=0.51 * 10.0**-scene.Q_DECIMALS), r["key"]
+        assert r["t"][k] == pytest.approx(t_peak, abs=0.51 * 10.0**-scene.TIME_DECIMALS), r["key"]
+    caveat = real_payload["frame_caveat"]
+    assert caveat.startswith(scene.FRAME_MODEL_TEXT) and caveat.endswith(scene.FRAME_MORE_TEXT)
+    assert "not a forecast" in caveat
+    for vehicle in {r["vehicle"] for r in real_payload["runs"]}:
+        assert replay.calibration_caveat(vehicle) in caveat, vehicle
+    notes = {r["key"]: r["structure_note"] for r in real_payload["runs"]}
+    assert notes["pad"] is None and notes["readme_loads"] is None
+    assert notes["silo_cold"] == "no structural mass is charged for the push"
+    # the fixture's offload runs fly from the pad (no push): no note; a pushed penalty row's
+    # record (the derived block's, read as a pushed run's) names its assumed dry mass
+    derived = scene.scene_payload(
+        derived_dir, ["pad", "light_s1", "light_s1_dry+8.1t"], display_dir=DISPLAY_DIR
+    )
+    assert all(r["structure_note"] is None for r in derived["runs"] if not r["assisted"])
+    offload = json.loads((derived_dir / run_data.METRICS_FILE).read_text(encoding="utf-8"))[
+        "offload"
+    ]
+    case = {"offload_kind": run_data.OFFLOAD_CASE}
+    assert scene.structure_note(case, offload, "light_s1_dry+8.1t", True) == (
+        f"an assumed +{PENALTY_T:g} t of stage-1 dry mass is charged for the push: an "
+        "assumption, not a sized structure"
+    )
+    assert scene.structure_note(case, offload, "light_s1", True) == (
+        "no structural mass is charged for the push"
+    )
+    assert scene.structure_note(case, offload, "light_s1", False) is None
+
+
 # ------------------------------------------------------------------ import guard
 
 
@@ -1343,3 +1397,24 @@ def test_run_path_modules_never_import_display_or_scene() -> None:
     after_display, after_sim = done.stdout.strip().splitlines()[-2:]
     assert json.loads(after_display) == [] and json.loads(after_sim) == []
     assert np.__name__ == "numpy"  # the module under test uses numpy arrays throughout
+
+
+def test_max_q_is_the_run_metrics_record(real_dir: Path, real_payload: dict[str, Any]) -> None:
+    """A3b fix round 4: each run's ``max_q`` is its metrics record's max_q_pa at max_q_time_s
+    (the planar metrics' refined peak, already a time after release), rounded to the
+    payload's decimals, not the largest q among the payload's rows; a record without max-Q
+    gives None, so the page shows none."""
+    metrics = run_data.read_json(real_dir / run_data.METRICS_FILE)
+    config = run_data.read_yaml(real_dir / run_data.CONFIG_FILE)
+    for r in real_payload["runs"]:
+        m = run_data.run_source(metrics, config, r["key"])["metrics"]
+        assert r["max_q"] == {
+            "t": round(float(m["max_q_time_s"]), scene.TIME_DECIMALS),
+            "q_pa": round(float(m["max_q_pa"]), scene.Q_DECIMALS),
+        }, r["key"]
+    bare = copy.deepcopy(metrics)
+    for key in ("max_q_pa", "max_q_time_s"):
+        bare["runs"]["pad"].pop(key, None)
+    frame = run_data.read_series_frame(real_dir, "pad", scene.SCENE_COLUMNS, error=scene.SceneError)
+    record = scene.run_payload(real_dir, "pad", frame, bare, config, str(metrics["baseline"]))
+    assert record["max_q"] is None
