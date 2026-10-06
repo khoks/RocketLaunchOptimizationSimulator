@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-06 (SP2 in progress: steps A1 to A3b done, checkpoint 1 reached; next A4).
+Last updated: 2026-10-06 (SP2 in progress: steps A1 to A4 done; next A4b).
 
 ## Program
 
@@ -253,6 +253,7 @@ SP2 planning (2026-10-05; Q1 to Q7 answered by the user in step A0, the design a
 - **D-SP2-36** 2026-10-05 The results panel and every caveat are built from the directory shown. SP1's headline, where shown, carries the six caveat groups of the findings note and lives in one constant that a test checks against docs/findings/RQ1-fuel-offload-2d.md. A launch equal to a committed case says "a reproduction, not new evidence". Reason: fixed sentences are false for some presets (the 22 t sled, the penalty rows, the 200 m shaft) (design, approved with the plan).
 - **D-SP2-37** 2026-10-05 Commits: app summaries are results and go in their own commit (`SP2 step <k>: app summaries`), never in a tracker or bookkeeping commit. Reviewers and gates launch into a scratch results root; only the demo launches, made from a clean tree after the last code commit, go to results/app/. Gallery, deck and manual material comes only from the two recorded directories. Reason: protocol sections 4 and 7; a review launch would otherwise be a permanent public file from a dirty tree. Amends docs/process/SESSION_PROTOCOL.md (section 4, "App runs") (design, approved with the plan).
 - **D-SP2-38** 2026-10-05 SP2 has 17 exit criteria (docs/phases/SP2-launch-app-2d-scene.md, section 8), with their changes against the brief's 14 listed there. Reason: three of the brief's tolerances were unmeasurable or vacuous on recorded data (design, approved with the plan).
+- **D-SP2-39** 2026-10-06 (SP2 step A4): D-SP2-31's neutral run names gain a third, `pad_variant`, for a pad launch whose ignition or startup equals no committed variant (naming it `silo` would be wrong: it has no push). Extends D-SP2-31; recorded by the A4 compliance review (design, recorded with the step).
 
 Notes on the SP2 planning group:
 
@@ -347,6 +348,7 @@ Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the 
 - **KI-033** [low, open, owner later] An offload case on a variant with `assist: {model: none}` resolves. The config refuses a case only when its `of` is the baseline or an unknown name (config.py 2046-2053), so the rule that an offload applies to an assisted launch (the pad's own offload is the pad control) is not enforced for a second pad given as a variant. The app's form does not offer it: a pad-only launch disables the offload. Evidence: docs/phases/inputs/2026-10-05-SP2-survey/03-config-and-form.md (section 9, item 2).
 - **KI-034** [low, open, owner later] A step startup at release records thrust 0 on its first flight row. In results/silo_screening_2d/20260930T175743Z/silo_instant/timeseries.csv both rows at t_rel 0 (ASSIST and KICK) have `thrust_vac_N` = 0; the next row, at +0.0427 s, has 8,226,900 N, with `m_kg` already 115.13 kg lower (full flow from the ignition instant). The metric `t_ign_rel_release_s_stage1` is 1.78e-15 s, so the row is sampled a rounding step before ignition (vehicle.py 104: dt < 0 gives 0). The same in silo_bridge_2d_readme. pad_instant (first row 1.0) and stage-2 ignition (0, then 1) are as expected. Consequences for a reader: linear interpolation between the two rows draws a 43 ms thrust ramp the model does not have, and a check that rebuilds mass by integrating thrust must leave out that first interval (57.6 kg). Evidence: docs/phases/inputs/2026-10-05-SP2-review/01-numerics.md, finding 5.
 - **KI-035** [low, open, owner SP2 (the next step allowed to edit tests/test_scene.py), else standing] Fast-tier tests can exceed CLAUDE.md's 5 s mark when the machine is loaded: in SP2 step A3's runs tests/test_golden_1d.py took 5.84 s, tests/test_search.py 5.57 s, and tests/test_scene.py::test_run_path_modules_never_import_display_or_scene was reported over 5 s by one reviewer (2.8-2.9 s alone). Split the import check into a cheaper fast part and a slow part, or mark it slow, when a step may edit that file; the timings of the other two depend on load.
+- **KI-036** [low, open, owner the phase that next edits replay.py] `replay.py` (around line 1820) writes `bool(git.get("dirty"))` into the page, so a directory whose git state is unknown (dirty None, for example an exploratory app run started outside a repository) reads as clean on the replay page; the scene page and the app's banner show it as unknown. Found by the SP2 step A4 honesty review.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 

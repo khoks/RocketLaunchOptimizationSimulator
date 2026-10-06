@@ -1242,7 +1242,7 @@ decision.
 | A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [x] | 3f8b807 |
 | A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [x] | a864a57 |
 | | Checkpoint 1: `launchsim scene` is complete | | | | | |
-| A4 | appform and `run_launch` | appform.py, app.py, config.py, summary.py | each preset resolves to the committed variant; every refusal one line and nothing written; key-by-key equality with `run_experiment`; faked-seam offload launch with a fresh and a cached pad; counting test; banner and both git states; one slow real launch with a stage-1 solve | Fast and slow suites; honesty review of the banner | [ ] | |
+| A4 | appform and `run_launch` | appform.py, app.py, config.py, summary.py | each preset resolves to the committed variant; every refusal one line and nothing written; key-by-key equality with `run_experiment`; faked-seam offload launch with a fresh and a cached pad; counting test; banner and both git states; one slow real launch with a stage-1 solve | Fast and slow suites; honesty review of the banner | [x] | 6f22046 |
 | A4b | Server | app.py, cli.py | raw-socket guard table (the survey's 38 cases plus Sec-Fetch-Site, path decoding, body limits, two simultaneous launches); header table; injection test; leak test; Ctrl+Break subprocess test | Only 127.0.0.1 bound and a second server fails; no client path opened; an interrupted job leaves FAILED.txt; security review | [ ] | |
 | A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [ ] | |
 | | Checkpoint 2: the request is met | | | | | |
@@ -1747,8 +1747,20 @@ Also from the design's section 8:
   (for captureFrame) goes beyond A3b's brief and is reviewed in A6v. Default playback of
   pad beside silo_cold_s1: 75 wall s. Fast suite 1479 passed, 35 deselected. Commit a864a57.
 - Checkpoint 1 reached: `launchsim scene` writes a complete two-panel scene page.
-- Next: step A4 (appform and run_launch: request parser, presets, experiment builder, the
-  composition with the cached pad, provenance, label and banner; no HTTP).
+- Step A4 (2026-10-06): appform.py (pure) and app.py's run_launch (no HTTP), the label
+  exploratory and its summary banner. Workflow: implementer; numerics, compliance and
+  honesty reviewers, three passes; three fix rounds. Gate (independent): pass on G1-G6 and
+  S1-S5. Criterion 3 measured: the silo_cold_s1 preset launched through run_launch at the
+  shipped budget gives the pad payload 26,054.396 kg, silo_cold 27,553.227 kg and the
+  offload 41,262.908 kg of results/silo_offload_2d/20261003T112934Z with every difference
+  0.000 kg, and its time series and events are byte-identical to the recorded ones (85 s
+  wall: pad 12.5 s, variant 14.9 s, comparison and offload 56.6 s). The instant yardstick
+  presets (silo_instant, pad_instant) reproduce their recorded payloads exactly, so they
+  stay (design 4.7). Deviation: a third neutral run name, pad_variant, for a pad launch
+  whose ignition or startup equals no committed variant (D-SP2-39). Fast suite 1527
+  passed, 36 deselected (exact golden tier); the slow app test 49 s. KI-036 logged (replay
+  shows an unknown git state as clean). Commit 6f22046.
+- Next: step A4b (the server: guard, routes, job thread, run browser, stop handling).
 
 ## 12. Deviations from the plan
 
