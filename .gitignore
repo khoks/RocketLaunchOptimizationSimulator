@@ -13,10 +13,13 @@ results/**
 !results/*/*/
 !results/*/*/summary.md
 
-# default outputs of `launchsim animate` and `launchsim replay` (written to the current directory)
+# default outputs of `launchsim animate`, `launchsim replay` and `launchsim scene` (written to the
+# current directory), and the scene video of the app
 *_animation.mp4
 *_animation.gif
 *_replay.html
+*_scene.html
+*_scene.mp4
 
 # the GitHub Pages site, built by site/build.py (deployed by .github/workflows/pages.yml)
 _site/

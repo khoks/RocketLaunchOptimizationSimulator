@@ -1,0 +1,1562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-8Ayqen7Co/ttdba3tNspeezP2eQnwHqI6E8F8NDXNtI='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Launch Scene</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDY0IDY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImxhdW5jaC1hc3Npc3Qtc2ltIj48dGl0bGU+bGF1bmNoLWFzc2lzdC1zaW08L3RpdGxlPjxjbGlwUGF0aCBpZD0iZmMiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9jbGlwUGF0aD48Y2xpcFBhdGggaWQ9ImZyIj48cGF0aCBkPSJNMjggMTguNUMyOCAxMiAzMC42IDcuNCAzMiA1LjVDMzMuNCA3LjQgMzYgMTIgMzYgMTguNVY0N0gyOFoiLz48L2NsaXBQYXRoPjxnIGNsaXAtcGF0aD0idXJsKCNmYykiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI0MSIgZmlsbD0iIzJkNWY4ZiIvPjxyZWN0IHk9IjQxIiB3aWR0aD0iNjQiIGhlaWdodD0iMjMiIGZpbGw9IiMxYzIyMjYiLz48cmVjdCB4PSIyNSIgeT0iNDEiIHdpZHRoPSIxNCIgaGVpZ2h0PSIyMyIgZmlsbD0iIzJiMzIzOCIvPjxwYXRoIGQ9Ik0wIDQyLjI1SDI1TTM5IDQyLjI1SDY0IiBzdHJva2U9IiNiMDlhNzgiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHBhdGggZD0iTTE5LjUgNDguNWg1LjVNMzkgNDguNWg1LjUiIHN0cm9rZT0iI2YwOGE0YiIgc3Ryb2tlLW9wYWNpdHk9IjEuMCIgc3Ryb2tlLXdpZHRoPSIzLjYiLz48cGF0aCBkPSJNMTkuNSA1Ni41aDUuNU0zOSA1Ni41aDUuNSIgc3Ryb2tlPSIjZjA4YTRiIiBzdHJva2Utb3BhY2l0eT0iMC41IiBzdHJva2Utd2lkdGg9IjMuNiIvPjxwYXRoIGQ9Ik0yOCAxOC41QzI4IDEyIDMwLjYgNy40IDMyIDUuNUMzMy40IDcuNCAzNiAxMiAzNiAxOC41VjQ3SDI4WiIgZmlsbD0iI2ZiZmJmOCIvPjxyZWN0IHg9IjMzLjYiIHk9IjQiIHdpZHRoPSIzIiBoZWlnaHQ9IjQ0IiBmaWxsPSIjZGZlNGUxIiBjbGlwLXBhdGg9InVybCgjZnIpIi8+PHJlY3QgeD0iMjgiIHk9IjI3IiB3aWR0aD0iOCIgaGVpZ2h0PSIyLjIiIGZpbGw9IiMxYzIyMjYiLz48cGF0aCBkPSJNMCA0MVY1MkExMiAxMiAwIDAgMCAxMiA2NEg1MkExMiAxMiAwIDAgMCA2NCA1MlY0MSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGM1NjVjIiBzdHJva2Utd2lkdGg9IjUiLz48L2c+PC9zdmc+Cg==">
+<style>
+/* Layout: a launch console. Transport strip on top; the launch panel below it (a true-scale
+   cross-section of the site with a close-up of the vehicle at a scale of its own); then the
+   events, telemetry, the caveats and the provenance. Vellum paper by day, slate at night.
+   Written by launchsim scene (src/launchsim/templates/scene.html); the data block is generated.
+   Tokens: the site's set (site/assets/site.css), then the scene's own (--sc-*): every drawn
+   shape has a fill and an outline token; tests/test_scene_page.py checks their contrast.
+   The Content-Security-Policy above allows the one inline script by its sha256; the same test
+   prints the new value whenever the script changes. site/build.py must not insert elements
+   into, or patch the script of, a scene page: frame it from an outer page with an iframe; the
+   meta CSP blocks same-origin images and links, and the script-src hash pins the script. */
+:root {
+  --bg: #f1f2ee;
+  --panel: #fbfbf8;
+  --ink: #1c2226;
+  --ink-2: #4c565c;
+  --ink-3: #626c71;
+  --rule: #d6d9d1;
+  --grid: #e3e5de;
+  --ground: #8a7a62;
+  --shaft: #d9d2c4;
+  --run-0: #2d5f8f;
+  --run-1: #c2521a;
+  --run-2: #177d6f;
+  --run-3: #7a4c8e;
+  --good: #177d6f;
+  --bad: #b3261e;
+  --caution: #845a00;
+  --caution-bg: #f6ecd2;
+  --focus: #2d5f8f;
+  --link: #2d5f8f;
+  --code-bg: #eceee8;
+  --accent-ink: #a8440f;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  --sc-sky: #e3ebf1;
+  --sc-earth: #cdc3ae;
+  --sc-ground: #5f523d;
+  --sc-shaft: #ece6da;
+  --sc-shaft-line: #4f4535;
+  --sc-ring: #e58a54;
+  --sc-ring-line: #8a3510;
+  --sc-body: #fbfbf8;
+  --sc-body-line: #1c2226;
+  --sc-tank-empty: #dde3e0;
+  --sc-tank-line: #1c2226;
+  --sc-prop: #2d5f8f;
+  --sc-hatch: #3d4a52;
+  --sc-plume: #f6b26b;
+  --sc-plume-line: #923b0d;
+  --sc-carriage: #a4aeb5;
+  --sc-carriage-line: #2b3238;
+  --sc-steel: #8d979d;
+  --sc-steel-line: #1c2226;
+  --sc-rail: #c3cacd;
+  --sc-rail-line: #3a434a;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+    --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+    --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+    --good: #4cc2ae; --bad: #f2867c;
+    --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+    --accent-ink: #f08a4b;
+    --sc-sky: #0f1a24; --sc-earth: #2b2720; --sc-ground: #c4ad89; --sc-shaft: #16140f; --sc-shaft-line: #b5a383;
+    --sc-ring: #c2521a; --sc-ring-line: #ffc49e; --sc-body: #dfe4e1; --sc-body-line: #eef1ee;
+    --sc-tank-empty: #29313a; --sc-tank-line: #37424c; --sc-prop: #7fb0e0; --sc-hatch: #b9c4cc;
+    --sc-plume: #f39a55; --sc-plume-line: #ffd9a8; --sc-carriage: #56626b; --sc-carriage-line: #d2d9dd;
+    --sc-steel: #58626a; --sc-steel-line: #d2d9dd; --sc-rail: #3f4950; --sc-rail-line: #b7c0c5;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+  --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+  --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+  --good: #4cc2ae; --bad: #f2867c;
+  --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+  --accent-ink: #f08a4b;
+  --sc-sky: #0f1a24; --sc-earth: #2b2720; --sc-ground: #c4ad89; --sc-shaft: #16140f; --sc-shaft-line: #b5a383;
+  --sc-ring: #c2521a; --sc-ring-line: #ffc49e; --sc-body: #dfe4e1; --sc-body-line: #eef1ee;
+  --sc-tank-empty: #29313a; --sc-tank-line: #37424c; --sc-prop: #7fb0e0; --sc-hatch: #b9c4cc;
+  --sc-plume: #f39a55; --sc-plume-line: #ffd9a8; --sc-carriage: #56626b; --sc-carriage-line: #d2d9dd;
+  --sc-steel: #58626a; --sc-steel-line: #d2d9dd; --sc-rail: #3f4950; --sc-rail-line: #b7c0c5;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 12px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+header { display: grid; gap: 2px; }
+.titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.7rem; letter-spacing: 0.02em; margin: 0; line-height: 1.1; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0; color: var(--ink-2); }
+.sub { color: var(--ink-2); margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.banner { margin: 6px 0 0; padding: 6px 10px; border-left: 4px solid var(--caution); background: var(--caution-bg); color: var(--ink); max-width: 95ch; }
+.flag { margin: 0; color: var(--bad); font-weight: 600; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; min-width: 0; display: grid; gap: 10px; }
+
+/* transport */
+.transport { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; }
+.btn { font-family: var(--font-display); font-weight: 600; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--ink); color: var(--panel); border: 0; border-radius: 4px; padding: 7px 14px; cursor: pointer; min-width: 84px; }
+.btn:focus-visible, select:focus-visible, input:focus-visible, .evt:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.clock { font-family: var(--font-data); font-size: 1.35rem; font-variant-numeric: tabular-nums; min-width: 10ch; }
+.clock small { display: block; font-size: 0.7rem; color: var(--ink-3); letter-spacing: 0.04em; }
+.timeline { position: relative; min-width: 0; }
+.timeline canvas { width: 100%; height: 22px; display: block; }
+.timeline input[type=range] { width: 100%; margin: 0; accent-color: var(--ink); }
+.rate, .runpick { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); }
+.runpick select { max-width: 36ch; text-overflow: ellipsis; }  /* a long label must not squeeze the timeline */
+select { font-family: var(--font-data); font-size: 0.85rem; background: var(--panel); color: var(--ink); border: 1px solid var(--ink-3); border-radius: 4px; padding: 4px 6px; max-width: 100%; }
+
+/* the launch panel */
+#scene { width: 100%; height: clamp(420px, calc(100vh - 240px), 760px); display: block; }
+/* a size container, so the canvas's height can follow the canvas's own width (see the band rule below) */
+.scenepanel { padding: 8px; gap: 8px; container-type: inline-size; container-name: scenepanel; }
+.note { font-size: 0.8rem; color: var(--ink-3); margin: 0; max-width: 110ch; }
+.strip { display: none; font-size: 0.8rem; color: var(--ink-2); margin: 0; border-left: 4px solid var(--caution); padding-left: 8px; }
+/* read by assistive technology only: the run's note is drawn in the canvas's note band */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* telemetry and events */
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; }
+.tgrid div { display: grid; }
+.tgrid .k { font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.tgrid .v { font-family: var(--font-data); font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+.ticker { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+/* a pill on one line; a long event (an impact run's no-contact note) wraps into a rounded box, left-aligned */
+.evt { font-family: var(--font-body); font-size: 0.8rem; background: var(--panel); color: var(--ink-2); border: 1px solid var(--rule); border-radius: 14px; padding: 2px 10px; cursor: pointer; text-align: left; }
+.evt .et { font-family: var(--font-data); margin-right: 6px; color: var(--ink-3); }
+.ticker li.past .evt { color: var(--ink); border-color: var(--ink-3); }
+.ticker li.current .evt { border-color: var(--ink); font-weight: 600; }
+.caveats { background: var(--caution-bg); border: 1px solid var(--rule); border-left: 4px solid var(--caution); border-radius: 6px; padding: 12px 16px; display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.caveats h2 { color: var(--caution); }
+.caveats ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; max-width: 110ch; }
+.caveats .note { color: var(--ink-2); margin-top: 4px; }  /* the line over the recorded offload caveats */
+.foot { color: var(--ink-3); font-size: 0.8rem; font-family: var(--font-data); overflow-wrap: anywhere; display: grid; gap: 4px; }
+.foot p { margin: 0; }
+
+/* embed mode (#embed=1): the app frames the page; it keeps the transport, the panel, the
+   telemetry and a caveat strip (the provenance footer, wrapped: never cut), and shows the
+   caveats and provenance itself */
+html[data-embed="1"] header, html[data-embed="1"] .caveats, html[data-embed="1"] .foot { display: none; }
+html[data-embed="1"] .strip { display: block; }
+html[data-embed="1"] .wrap { padding-block: 8px; }
+
+@media (max-width: 900px) {
+  .transport { grid-template-columns: auto 1fr; }
+  .timeline { grid-column: 1 / -1; }
+  .runpick { grid-column: 1 / -1; }
+  .runpick select { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+  #scene { height: clamp(440px, calc(100vh - 300px), 760px); }
+}
+@media (max-width: 640px) {
+  .wrap { padding-inline: 16px; }
+  h1 { font-size: 1.9rem; }
+}
+/* The band layout: the script puts the close-up, the gauges, the readout and any caution plate in a
+   band under the view when the canvas is narrower than NARROW_VIEW_PX (560 px, panelLayout), so the
+   canvas is tall from that same width. A container query on the canvas's own width, not a media query:
+   a viewport width also counts the padding and any classic scrollbar, which would split the threshold. */
+@container scenepanel (width < 560px) {
+  #scene { height: clamp(900px, 125vh, 1300px); }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="titles"><h1>Launch Scene</h1><p class="sub" id="subtitle"></p></div>
+    <p class="banner" id="banner" hidden></p>
+    <p class="note" id="excluded" hidden></p>
+  </header>
+
+  <section class="panel" aria-label="Playback">
+    <div class="transport">
+      <button class="btn" id="play" type="button" aria-label="Play">Play</button>
+      <div class="clock" aria-live="off"><span id="clock">T+0.00 s</span><small id="clockSub">after release</small></div>
+      <div class="timeline">
+        <canvas id="ticks" aria-hidden="true">Event marks over the time slider.</canvas>
+        <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Time after release, seconds">
+      </div>
+      <label class="rate" for="rate">Speed
+        <select id="rate">
+          <option value="auto" selected>Auto</option>
+          <option value="0.25">0.25x</option>
+          <option value="0.5">0.5x</option>
+          <option value="1">1x</option>
+          <option value="5">5x</option>
+          <option value="20">20x</option>
+          <option value="60">60x</option>
+        </select>
+      </label>
+      <label class="runpick" for="runSel">Run <select id="runSel"></select></label>
+    </div>
+  </section>
+
+  <section class="panel scenepanel" aria-label="Launch scene">
+    <p class="flag" id="flag" hidden></p>
+    <p class="vh" id="runNote" hidden></p>
+    <canvas id="scene" role="img" aria-label="Launch scene">The launch scene is drawn on a canvas, which this browser does not show. The telemetry and the event list on this page carry the same recorded values as text.</canvas>
+    <p class="note">The main view is to one true scale (except the position marker that replaces the vehicle once its body is under the pixel threshold, marked on the view, and the shaft rings, never drawn under 2 px): the site, the vehicle, the shaft, carriage and rails, or the pad mount and clamps, drawn from configs/display and the page's drawing constants (drawn, not computed). The close-up has a scale of its own: the stack shown is drawn at one fixed length, so its scale changes at staging and at the fairing drop; it is not the view's scale. Position, speed, the engines' vacuum thrust, attitude while the model defines one, and propellant are replayed from the recorded time series; nothing is integrated in the browser.</p>
+  </section>
+
+  <p class="strip" id="strip"></p>
+
+  <section class="panel" aria-label="Events">
+    <h2>Events</h2>
+    <ol class="ticker" id="ticker" aria-label="Events of the run shown; select one to jump to it"></ol>
+    <p class="note">Each event at the time of its matched row; events marked synthesised are made from the metrics, not logged by the model (the caveats say how).</p>
+  </section>
+
+  <section class="panel" aria-label="Telemetry">
+    <h2>Telemetry</h2>
+    <div class="tgrid" id="tgrid"></div>
+    <p class="note">Speed is relative to the Earth. Mass is rebuilt from the two tank series and the stage and fairing flags, as the payload carries them. Engines: the vacuum thrust (thrust_vac_N) over the stage's full vacuum thrust, which sets the plume and the propellant flow; the model's thrust is lower by p_amb A_e near the ground and is 0 N while that exceeds it.</p>
+  </section>
+
+  <section class="caveats" aria-label="Read before quoting">
+    <h2>Read before quoting</h2>
+    <ul id="caveats"></ul>
+    <p class="note" id="offloadHead" hidden>Recorded with this directory's offload block (metrics.json offload.caveats), word for word: written once for the whole block; the items above are built for the runs shown.</p>
+    <ul id="offloadCaveats" hidden></ul>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script type="application/json" id="scene-data">__SCENE_DATA__</script>
+<script type="application/json" id="qa-state"></script>
+<script>
+(function () {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("scene-data").textContent);
+  const PHASE_NAME = {
+    HOLD: "Held down", ASSIST: "Assist push", COAST_PRE_IGN: "Coasting before ignition",
+    VERTICAL_RISE: "Vertical rise", KICK: "Pitch kick", GRAVITY_TURN: "Gravity turn",
+    COAST_STAGING: "Staging coast", LTG_BURN: "Stage 2, linear-tangent steering", COAST: "Coast"
+  };
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ------------------------------------------------------------------ pure functions: begin
+  // Read nothing from the page or the payload; tests/test_scene_page.py runs this block under node.
+  const HASH_KEYS = ["t", "theme", "runs", "embed", "autoplay", "qa"];
+  const HASH_MAX_PARTS = 32;    // key=value pairs read from the hash; the rest are ignored
+  const HASH_MAX_RUNS = 16;     // run names read from #runs
+  const QA_MAX_TIMES = 200;     // times read from #qa
+  const NUMBER_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+  const RATE_STEPS = [[12, 1], [45, 5]];  // A3's simple law: [end of the span, s after release; rate]
+  const RATE_LATE = 30;                   // the rate after the last span
+  function finiteNumber(text) {
+    if (typeof text !== "string" || !NUMBER_RE.test(text)) return null;
+    const v = Number(text);
+    return Number.isFinite(v) ? v : null;
+  }
+  function decodePart(text) {
+    try { return decodeURIComponent(text); } catch (e) { return null; }
+  }
+  function parseHash(text, limits) {
+    // Total: anything it cannot use (a value, a key, the limits themselves) is ignored, never thrown on.
+    const out = { t: null, theme: null, runs: [], embed: false, autoplay: false, qa: null };
+    if (typeof text !== "string") return out;
+    const lim = limits && typeof limits === "object" ? limits : {};
+    const names = Array.isArray(lim.names) ? lim.names : [];
+    const body = text.charAt(0) === "#" ? text.slice(1) : text;
+    const seen = [];
+    body.split("&", HASH_MAX_PARTS).forEach(part => {
+      const eq = part.indexOf("=");
+      const key = decodePart(eq < 0 ? part : part.slice(0, eq));
+      const value = decodePart(eq < 0 ? "" : part.slice(eq + 1));
+      if (key === null || value === null || HASH_KEYS.indexOf(key) < 0 || seen.indexOf(key) >= 0) return;
+      seen.push(key);
+      if (key === "t") {
+        const v = finiteNumber(value);
+        if (v !== null && Number.isFinite(lim.tMin) && Number.isFinite(lim.tMax)) out.t = Math.min(lim.tMax, Math.max(lim.tMin, v));
+      } else if (key === "theme") {
+        if (value === "light" || value === "dark") out.theme = value;
+      } else if (key === "runs") {
+        value.split(",", HASH_MAX_RUNS).forEach(name => { if (names.indexOf(name) >= 0 && out.runs.indexOf(name) < 0) out.runs.push(name); });
+      } else if (key === "embed") {
+        out.embed = value === "1";
+      } else if (key === "autoplay") {
+        out.autoplay = value === "1";
+      } else if (key === "qa") {
+        // each time clamped to the data as t is; none kept without finite limits
+        const times = [];
+        value.split(",", QA_MAX_TIMES).forEach(item => {
+          const v = finiteNumber(item.trim());
+          if (v !== null && Number.isFinite(lim.tMin) && Number.isFinite(lim.tMax)) times.push(Math.min(lim.tMax, Math.max(lim.tMin, v)));
+        });
+        out.qa = times;
+      }
+    });
+    return out;
+  }
+  function snapTime(t, decimals) {
+    // t [s] on the payload's clock: rounded to the decimals of every sample and event time, so a time
+    // read from events.csv or timeseries.csv selects the payload's own row (the later of the two rows
+    // at an event time) instead of interpolating toward the row before them. A time too large to scale
+    // (t x 10^decimals not finite) has no such decimals and is returned as it is.
+    const k = Math.pow(10, decimals), v = Math.round(t * k) / k;
+    return Number.isFinite(v) ? v : t;
+  }
+  function wrapWords(measure, text, maxW) {
+    // The text in lines no wider than maxW [px] as measure(s) [px] gives them, broken between words; a word
+    // wider than maxW gets a line of its own. Every word kept.
+    const out = [];
+    let line = "";
+    String(text).split(/\s+/).forEach(word => {
+      const next = line ? line + " " + word : word;
+      if (line && measure(next) > maxW) { out.push(line); line = word; } else line = next;
+    });
+    if (line) out.push(line);
+    return out;
+  }
+  function sideLabel(measure, text, walls, span, gap, pad) {
+    // A label plate beside a pair of walls (walls: [left, right] x [px]) inside span ([left, right] x [px]):
+    // one line right of the right wall when it fits, else left of the left wall, else wrapped right of the
+    // right wall, else wrapped left of the left wall (the right side first each time, so the plate does not
+    // hop sides as the walls move by a pixel); null when even wrapped it fits on neither side, so the plate
+    // is never cut by the span's edge. measure(s) is a text width [px]; gap is the least gap from a wall and
+    // pad a plate's padding [px]. Returns {side, x: the plate's edge next to the wall (a "left" plate ends
+    // there), lines, w: the plate's width [px]}.
+    const width = s => measure(s) + 2 * pad;
+    const sides = [
+      { side: "right", x: walls[1] + gap, room: span[1] - (walls[1] + gap) },
+      { side: "left", x: walls[0] - gap, room: walls[0] - gap - span[0] }
+    ];
+    const tries = [];
+    sides.forEach(at => tries.push({ at: at, lines: [String(text)] }));
+    sides.forEach(at => tries.push({ at: at, lines: wrapWords(measure, text, at.room - 2 * pad) }));
+    for (let i = 0; i < tries.length; i++) {
+      const w = Math.max(...tries[i].lines.map(width)), at = tries[i].at;
+      if (w <= at.room) return { side: at.side, x: at.x, lines: tries[i].lines, w: w };
+    }
+    return null;
+  }
+  function splitCaveats(caveats, recorded) {
+    // The payload's caveats as two lists: those built for the runs shown (payload order, each once) and the
+    // directory's recorded offload caveats (word for word, each once); together they hold every caveat.
+    const rec = [], own = [];
+    recorded.forEach(c => { if (rec.indexOf(c) < 0) rec.push(c); });
+    caveats.forEach(c => { if (rec.indexOf(c) < 0 && own.indexOf(c) < 0) own.push(c); });
+    return { own: own, recorded: rec };
+  }
+  function screenXY(altM, downrangeM, rE) {
+    const phi = downrangeM / rE, radius = rE + altM;
+    return [radius * Math.sin(phi), radius * Math.cos(phi) - rE];
+  }
+  function groundY(x, rE) {
+    return Math.abs(x) < rE ? -x * x / (Math.sqrt(rE * rE - x * x) + rE) : -rE;
+  }
+  function extentOf(altM, downrangeM, floorM, bodyLengthM, aspect) {
+    return Math.hypot(Math.max(altM, 0) - floorM + bodyLengthM, Math.abs(downrangeM) / aspect);
+  }
+  function runningExtent(alt, downrange, floorM, bodyLengthM, aspect) {
+    const out = new Array(alt.length);
+    let top = -Infinity;
+    for (let i = 0; i < alt.length; i++) { top = Math.max(top, extentOf(alt[i], downrange[i], floorM, bodyLengthM, aspect)); out[i] = top; }
+    return out;
+  }
+  function viewHeight(extentM, minViewHeightM, margin) {
+    return Math.sqrt(minViewHeightM * minViewHeightM + (margin * extentM) * (margin * extentM));
+  }
+  function cameraView(extentM, camera, view, content) {
+    const H = viewHeight(extentM, camera.min_view_height_m, camera.margin);
+    const ppm = view.h / H, W = view.w / ppm;
+    const cx = (content.xMin + content.xMax) / 2, cy = (content.yMin + content.yMax) / 2;
+    return { E: extentM, H: H, W: W, ppm: ppm, x0: cx - W / 2, y0: cy - H / 2 };
+  }
+  function rateLaw(t) {
+    for (let i = 0; i < RATE_STEPS.length; i++) if (t < RATE_STEPS[i][0]) return RATE_STEPS[i][1];
+    return RATE_LATE;
+  }
+  function niceLength(maxM) {
+    if (!(maxM > 0) || !Number.isFinite(maxM)) return 0;
+    const p = Math.pow(10, Math.floor(Math.log10(maxM))), m = maxM / p;
+    return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * p;
+  }
+  function wrapDeg(d) {
+    return ((d + 180) % 360 + 360) % 360 - 180;
+  }
+  // ------------------------------------------------------------------ pure functions: end
+
+  // ------------------------------------------------------------------ page constants (drawing choices, not model values)
+  const RUN_COLORS = 4;                 // --run-0 to --run-3
+  const TIME_DECIMALS = DATA.tolerances.time_decimals;  // the payload's clock [decimals of a second]: every query time snaps to it
+  const ALT_TOL_M = DATA.tolerances.alt_min_m;          // the altitude tolerance floor [m]: the close-up's carriage counts as under the base within it
+  const PLUME_OF_STACK = DATA.drawing.plume_of_stack;   // full-thrust plume length, a fraction of the drawn stack (scene.PLUME_OF_STACK)
+  // shapes, in body diameters D or as fractions of a part's length: drawn, not computed
+  const PLUME_ROOT_OF_BODY = 0.42;      // the plume's half-width at the nozzle exit, in D
+  const PLUME_BELLY_OF_BODY = 0.62;     // the plume's half-width at its widest, in D
+  const PLUME_BELLY_AT = 0.3;           // where the plume is widest, as a fraction of its length from the exit
+  const PAYLOAD_STUB_OF_FAIRING = 0.25; // the cap drawn once the fairing is off, as a fraction of the fairing length
+  const STUB_HALF_OF_BODY = 0.4;        // the payload stub's half-width at its base, in D
+  const TANK_WALL_OF_BODY = 0.14;       // wall margin of a drawn tank, in D
+  const TANK_END_OF_BODY = 0.12;        // end margin of a drawn tank, in D
+  const FAIRING_FLARE = 0.06;           // fairing shape: flare end, cylinder end, as fractions of its length
+  const FAIRING_CYLINDER = 0.55;
+  const RING_DEPTH_OF_SIZE = 2.5;       // a drawn ring reaches this many ring sizes into the shaft wall
+  const TRENCH_OF_BODY = 1.4;           // width of the pad's drawn flame trench, in D
+  const CLAMP_OPEN_REACH = 3;           // an open clamp spans from 1 to this many clamp sizes beyond the body's side
+  const CLAMP_CLOSED_HEIGHT = 2;        // a closed clamp is this many clamp sizes tall (an open one, one)
+  const MARKER_TICK_OF_SIZE = 2.2;      // heading tick of the position marker, in marker sizes
+  const EDGE_SLACK_M = 1;               // the ground and clip outlines reach this far past the view's edges [m]
+  // lines [px]
+  const OUTLINE_PX = 1.25;              // outline width of every drawn shape
+  const HAIRLINE_PX = 1;                // plate borders, tanks, gauges, rings, rails, leaders, guides, event marks
+  const CRISP_PX = 0.5;                 // half a pixel: a hairline drawn on pixel centres
+  const GROUND_LINE_PX = 2;             // the drawn ground line
+  const MARKER_LINE_PX = 2;             // the position marker's heading tick
+  const MARKER_RING_PX = 1.5;           // the position marker's outline
+  const SCALE_BAR_LINE_PX = 2;          // the scale bar
+  const MIN_SHAPE_PX = 2;               // smallest drawn ring, so a thin item stays visible
+  const DASH_OUTLINE = [4, 3];          // dashed outline: the carriage of an impact run after release, a yardstick run's vehicle
+  const DASH_GUIDE = [3, 4];            // the close-up's crosshair
+  const HATCH_GAP_PX = 4;               // spacing of the hatch of a never-loaded tank band
+  // text [px]
+  const FONT_CLOCK_PX = 16;             // the header's clock
+  const FONT_LABEL_PX = 14;             // the run label
+  const FONT_TEXT_PX = 12;              // plates, gauges, the scale bar, the second header line
+  const FONT_SMALL_PX = 11;             // the close-up's text, the note, legend and caveat bands, small labels
+  const FONT_TICK_PX = 10;              // event names over the time slider
+  const LINE_TEXT_PX = 16;              // line pitch of 12 px text in the gauges
+  const LINE_SMALL_PX = 14;             // line pitch of 11 px text
+  const PLATE_LINE_OF_FONT = 1.35;      // a text plate's line pitch, in font sizes
+  const PLATE_PAD_PX = 6;               // padding of a text plate
+  const LABEL_WEIGHT = 600;             // weight of the run label and the exploratory mark
+  // the panel [px]
+  const HEADER_PX = 46;                 // the in-canvas header band: run, clock, phase, last event
+  const HEADER_PAD_PX = 8;              // the header's edge inset (the swatch, the clock)
+  const SWATCH_PX = 14;                 // the run's colour swatch
+  const HEADER_TEXT_X_PX = 30;          // where the run label and the phase start
+  const HEADER_LINE1_Y_PX = 6;          // top of the run label
+  const HEADER_CLOCK_Y_PX = 5;          // top of the clock
+  const HEADER_LINE2_Y_PX = 26;         // top of the phase and the last event
+  const HEADER_GAP_PX = 14;             // least gap between two texts on one header line
+  const WIDE_HEADER_PX = 640;           // below this panel width the header's clock drops "after release"
+  const MARK_STRIP_PX = 20;             // the exploratory strip above the header
+  const BAND_PAD_PX = 6;                // top and bottom padding of the note and legend bands and the capture footer
+  const TEXT_INSET_PX = 8;              // left and right inset of the bands' text
+  const VIEW_MARGIN_PX = 10;            // gap between the view's edge and anything placed in it
+  const NARROW_VIEW_PX = 560;           // below this panel width the close-up and the plates get a band under the view
+  const SCALE_BAR_ROW_PX = 46;          // height kept clear for the scale bar's row
+  const SCALE_BAR_OF_VIEW = 0.2;        // the scale bar is the largest 1-2-5 length under this share of the view
+  const SCALE_BAR_INSET_PX = 14;        // the scale bar's start and baseline, from the view's left and bottom edges
+  const SCALE_BAR_TICK_PX = 12;         // height of its end ticks
+  const SCALE_PLATE_TOP_PX = 20;        // its plate: top above the baseline
+  const SCALE_PLATE_H_PX = 26;          // ... and height
+  const GAUGE_W_PX = 12, GAUGE_H_PX = 64;  // the S1 and S2 gauges
+  const NARROW_PLATE_OF_VIEW = 0.55;    // a gauge plate wider than this share of the view goes above the scale bar
+  const HUD_MAX_LINES = 6;              // the readout: phase, engines, altitude or depth, speed, felt g, drive force
+  const IMPACT_NOTE_MAX_PX = 360;       // width of the impact caution plate over the view: at most this
+  const IMPACT_NOTE_OF_VIEW = 0.42;     // ... and at most this share of the view
+  const CLOSEUP_PAD_PX = 10;            // padding round the close-up's drawing
+  const CLOSEUP_TEXT_INSET_PX = 6;      // left inset of the close-up's text
+  const CLOSEUP_TITLE_TOP_PX = 4;       // top of its title
+  const CLOSEUP_TITLE_LINES = 2;        // the title: what it is, then its scale
+  const CLOSEUP_TITLE_PX = CLOSEUP_TITLE_TOP_PX + CLOSEUP_TITLE_LINES * LINE_SMALL_PX;
+  const CLOSEUP_TEXT_PX = 18;           // the readout row under the drawing
+  const CLOSEUP_READOUT_TOP_PX = 3;     // top of the readout in its row
+  const GROUND_SAMPLES = 48;            // points of the drawn ground arc on each side of an opening
+  const MARKER_LABEL_DX_PX = 10;        // the marker's label, right of the marker
+  const MARKER_LABEL_DY_PX = 8;         // ... and below it
+  const CARRIAGE_LABEL_MIN_PX = 4;      // the carriage's label shows while the carriage is at least this tall
+  const LABEL_GAP_PX = 12;              // least gap between the rails and the carriage's label
+  const TICK_PAD_PX = 8;                // the event marks' span, inset from the slider's ends
+  const TICK_MARK_TOP_PX = 12;          // top of an event mark
+  const TICK_MARK_PX = 8;               // length of an event mark
+  const TICK_LABEL_GAP_PX = 8;          // least gap between two event names over the slider
+  const TICK_LABEL_EDGE_PX = 20;        // no event name nearer the slider's ends than this
+  const CAPTURE_FOOTER_PX = 72;         // the least caveat footer of a captured frame
+  const CAPTURE_MIN_PX = 64, CAPTURE_MAX_PX = 4096;  // a captured frame's sides, and the least view in it
+  const CAPTURE_DEFAULT_W_PX = 1280, CAPTURE_DEFAULT_H_PX = 720;  // the frame of captureFrame(t) called without a size
+  const CLOSEUP_LABEL_CLEAR_PX = 1;     // a close-up label is drawn only when its box, grown by this, lies inside the drawing
+  // readout decimals: how the page prints the payload's values (the payload's own decimals are scene.py's)
+  const CLOCK_DECIMALS = 2;             // the clocks [s]
+  const SCRUB_DECIMALS = 2;             // the time slider's step, 10^-SCRUB_DECIMALS s (its step attribute)
+  const LENGTH_DECIMALS = 1;            // altitude, depth, downrange and the close-up's stack [m]
+  const KM_DECIMALS = 2;                // ... the same lengths once shown in km
+  const SCALE_DECIMALS = 0;             // the scale bar's 1-2-5 length
+  const SPEED_DECIMALS = 1;             // speed [m/s]
+  const THRUST_PCT_DECIMALS = 1;        // the engines' share of full vacuum thrust [%]
+  const LEGEND_PCT_DECIMALS = 0;        // the plume's length in the legend [% of the drawn stack]
+  const FILL_PCT_DECIMALS = 2;          // tank fills and start fills [%]
+  const ANGLE_DECIMALS = 2;             // pitch and the held angle [deg]
+  const MASS_T_DECIMALS = 3;            // the rebuilt mass [t]
+  const LOAD_T_DECIMALS = 2;            // propellant not loaded [t]
+  const FELT_DECIMALS = 2;              // felt axial acceleration [g]
+  const MACH_DECIMALS = 3;              // Mach number
+  const Q_KPA_DECIMALS = 2;             // dynamic pressure [kPa]
+  const FORCE_MN_DECIMALS = 2;          // drive force [MN]
+  const POWER_MW_DECIMALS = 0;          // drive power [MW]
+  const PX_DECIMALS = 0;                // the close-up's stack length [px]
+  // the rest
+  const AUTOPLAY_DELAY_MS = 900;        // delay before autoplay starts [ms]
+  const NOT_LOADED_SHOWN_KG = 0.5;      // a tank short of its full load by more than this is labelled offloaded
+  const RATE_CHOICES = [0.25, 0.5, 1, 5, 20, 60];  // must equal the #rate <option> values (but "auto")
+  const EVENT_EPS_S = 1e-9;             // an event counts as passed from its own time on
+  // display units only; the payload is SI
+  const KG_PER_T = 1000, M_PER_KM = 1000, N_PER_MN = 1e6, W_PER_MW = 1e6, PA_PER_KPA = 1000;
+  const DEG_PER_RAD = 180 / Math.PI;    // the payload's angles are degrees; the drawing turns radians
+  const KM_FROM_M = 10000;              // lengths at or above this are shown in km
+  const CARRIAGE_LABEL = "carriage after release: drawn, not computed";
+  const SYNTH_MARK = " (synthesised)";
+  const YARDSTICK_MARK = " (yardstick)";
+  const IMPACT_NOTE = "Carriage and rails after release: drawn, not in the planar model, which has no contact with the carriage, the mouth or the shaft; the impact is logged where the base returns to altitude 0, the model's ground.";
+  const IMPACT_TICKER_NOTE = ": the planar model has no contact with the carriage, the mouth or the shaft; logged where the base returns to altitude 0, the model's ground";
+  const CLOSEUP_CARRIAGE_LABEL = "carriage: drawn";
+  const R_E = DATA.constants.R_E_m;
+  const CAM = DATA.camera;
+
+  const runs = DATA.runs.map((r, i) => Object.assign({}, r, {
+    name: r.key, key: "run-" + i, color: i % RUN_COLORS,
+    pre_label: "Before the first recorded row", end_label: r.end.label,
+    s_m: r.track.s_m, drive_force_N: r.track.drive_force_N, drive_power_W: r.track.drive_power_W,
+    interface_force_N: r.track.interface_force_N
+  }));
+  const colorVar = r => "--run-" + r.color;
+  let T_MIN = 0, T_MAX = 1;
+  let tNow = 0, playing = false, lastFrame = null;
+  let panelRun = runs[0];
+  let embedded = false;
+
+  // ------------------------------------------------------------------ helpers (the seven are replay.html's, verbatim)
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  let PAL = {};
+  function readPalette() {
+    PAL = { ink: css("--ink"), ink2: css("--ink-2"), ink3: css("--ink-3"), rule: css("--rule"), grid: css("--grid"),
+      ground: css("--ground"), shaft: css("--shaft"), panel: css("--panel"), caution: css("--caution") };
+    runs.forEach(r => { PAL[r.key] = css(colorVar(r)); });
+  }
+  function idxAt(t, arr) {
+    if (t <= arr[0]) return 0;
+    if (t >= arr[arr.length - 1]) return arr.length - 1;
+    let lo = 0, hi = arr.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (arr[mid] <= t) lo = mid; else hi = mid; }
+    return lo;
+  }
+  function valAt(run, field, t) {
+    const T = run.t, Y = run[field];
+    if (t <= T[0]) return Y[0];
+    if (t >= T[T.length - 1]) return Y[Y.length - 1];
+    const i = idxAt(t, T), f = (t - T[i]) / (T[i + 1] - T[i]);
+    if (Y[i] === null || Y[i + 1] === null) return null;
+    return Y[i] + f * (Y[i + 1] - Y[i]);
+  }
+  function phaseAt(run, t) {
+    if (t < run.t[0]) return run.pre_label;
+    if (t >= run.t[run.t.length - 1]) return run.end_label;
+    const p = run.phase[idxAt(t, run.t)];
+    return PHASE_NAME[p] || p;
+  }
+  function setupCanvas(cv) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  const SCENE_TOKENS = {
+    sky: "--sc-sky", earth: "--sc-earth", groundLine: "--sc-ground", shaftFill: "--sc-shaft", shaftLine: "--sc-shaft-line",
+    ring: "--sc-ring", ringLine: "--sc-ring-line", body: "--sc-body", bodyLine: "--sc-body-line",
+    tankEmpty: "--sc-tank-empty", tankLine: "--sc-tank-line", prop: "--sc-prop", hatch: "--sc-hatch",
+    plume: "--sc-plume", plumeLine: "--sc-plume-line", carriage: "--sc-carriage", carriageLine: "--sc-carriage-line",
+    steel: "--sc-steel", steelLine: "--sc-steel-line", rail: "--sc-rail", railLine: "--sc-rail-line",
+    cautionBg: "--caution-bg", bad: "--bad", fontData: "--font-data", fontBody: "--font-body"
+  };
+  function scenePalette() {
+    readPalette();
+    const pal = Object.assign({}, PAL);
+    Object.keys(SCENE_TOKENS).forEach(k => { pal[k] = css(SCENE_TOKENS[k]); });
+    return pal;
+  }
+
+  // ------------------------------------------------------------------ formatting
+  // Round first so a value that rounds to zero prints "0", never "-0".
+  const fmt = (v, d) => (Number(v.toFixed(d)) || 0).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const DASH = "\u2014";
+  const orDash = (v, f) => (v === null || v === undefined || !Number.isFinite(v) ? DASH : f(v));
+  function clockText(t) { return (t < 0 ? "T\u2212" : "T+") + fmt(Math.abs(t), CLOCK_DECIMALS) + " s"; }
+  function lengthText(m, d) { return Math.abs(m) >= KM_FROM_M ? fmt(m / M_PER_KM, KM_DECIMALS) + " km" : fmt(m, d) + " m"; }
+  function pct(f, d) { return fmt(100 * f, d) + "%"; }
+  function legendText() {
+    return "Drawn, not computed: every shape and size; the clamps, rings, carriage and rails; the plume's length (vacuum-thrust fraction \u00d7 " +
+      pct(PLUME_OF_STACK, LEGEND_PCT_DECIMALS) + " of the drawn stack); the tank levels, drawn as heights.";
+  }
+  function enginesText(f) { return "Engines " + pct(f, THRUST_PCT_DECIMALS) + " of full vacuum thrust"; }
+
+  // ------------------------------------------------------------------ state at a scene time (no DOM)
+  function stepAt(run, field, t) { return run[field][idxAt(t, run.t)]; }
+  function geomOf(run) { return run.geometry || DATA.display; }
+  function floorOf(run) {
+    const f = run.assist ? run.assist.track_start_altitude_m : null;
+    return typeof f === "number" && f < 0 ? f : 0;
+  }
+  function stateValues(run, t) {
+    // Before a run's first row nothing is lit (the event rule): the step series would otherwise take the
+    // first row's values, and a pad's first row is its ignition.
+    const before = t < run.t[0];
+    const stage = stepAt(run, "stage", t), fairingOn = stepAt(run, "fairing_on", t), thrustOn = before ? false : stepAt(run, "thrust_on", t);
+    const prop1 = valAt(run, "prop1_kg", t), prop2 = valAt(run, "prop2_kg", t), m = run.masses;
+    const mass = m.payload_kg + m.stage_dry_kg[1] + (fairingOn ? (m.fairing_kg || 0) : 0) + prop2 + (stage === 0 ? m.stage_dry_kg[0] + prop1 : 0);
+    const plume = valAt(run, "plume", t);
+    return {
+      t: t, phase: phaseAt(run, t), alt: valAt(run, "alt_m", t), d: valAt(run, "downrange_m", t), speed: valAt(run, "speed_mps", t),
+      pitchDeg: valAt(run, "pitch_deg", t), angleDeg: valAt(run, "screen_angle_deg", t), defined: stepAt(run, "attitude_defined", t),
+      plume: plume, thrustOn: thrustOn, plumeDrawn: thrustOn ? Math.max(0, plume) : 0, stage: stage, fairingOn: fairingOn,
+      fill1: valAt(run, "fill1", t), fill2: valAt(run, "fill2", t), prop1: prop1, prop2: prop2, mass: mass,
+      q: valAt(run, "q_pa", t), mach: valAt(run, "mach", t), sM: valAt(run, "s_m", t),
+      felt: Array.isArray(run.felt_g) ? valAt(run, "felt_g", t) : null,
+      driveF: valAt(run, "drive_force_N", t), driveP: valAt(run, "drive_power_W", t)
+    };
+  }
+  function hudLines(st) {
+    // The readout of the panel (drawn in the view or in the band, read back through the state hook).
+    // "Engines": the vacuum thrust over the stage's full vacuum thrust (the plume fraction), not the model's
+    // thrust, which is lower by p_amb A_e near the ground (the telemetry note says so).
+    const lines = [st.phase, st.thrustOn ? enginesText(st.plume) : "Engines off",
+      st.alt < 0 ? "Depth " + lengthText(-st.alt, LENGTH_DECIMALS) : "Altitude " + lengthText(st.alt, LENGTH_DECIMALS),
+      "Speed " + fmt(st.speed, SPEED_DECIMALS) + " m/s"];
+    if (st.felt !== null && Number.isFinite(st.felt)) lines.push("Felt " + fmt(st.felt, FELT_DECIMALS) + " g");
+    if (st.driveF !== null && Number.isFinite(st.driveF)) lines.push("Drive " + fmt(st.driveF / N_PER_MN, FORCE_MN_DECIMALS) + " MN");
+    return lines;
+  }
+  function hudWidth(ctx, pal, run) {
+    // The widest readout line the run can show [px], with the plate's padding: every phase name, the run's
+    // labels before its first row and after its end, and the engines line at full thrust (the other lines
+    // are shorter).
+    ctx.save();
+    ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+    const texts = Object.keys(PHASE_NAME).map(k => PHASE_NAME[k]).concat([run.pre_label, run.end_label, enginesText(1)]);
+    const w = Math.max(...texts.map(s => ctx.measureText(String(s)).width));
+    ctx.restore();
+    return w + 2 * PLATE_PAD_PX;
+  }
+  function stackParts(g, stage, fairingOn) {
+    const v = g.vehicle, top = fairingOn ? v.fairing_length_m : PAYLOAD_STUB_OF_FAIRING * v.fairing_length_m;
+    if (stage === 0) return { first: true, L: v.stage1_length_m + v.interstage_length_m + v.stage2_length_m + top, top: top };
+    return { first: false, L: v.stage2_length_m + top, top: top };
+  }
+  function extentAt(run, t, aspect) {
+    const g = geomOf(run), floor = floorOf(run);
+    if (!run._ext || run._ext.aspect !== aspect) {
+      run._ext = { aspect: aspect, arr: runningExtent(run.alt_m, run.downrange_m, floor, g.stack_length_m, aspect) };
+    }
+    const here = extentOf(valAt(run, "alt_m", t), valAt(run, "downrange_m", t), floor, g.stack_length_m, aspect);
+    return Math.max(run._ext.arr[idxAt(t, run.t)], here);
+  }
+  function siloReady(a) {
+    return a && [a.stroke_m, a.track_angle_deg, a.track_start_altitude_m].every(x => typeof x === "number" && Number.isFinite(x));
+  }
+  function impactNote(run) { return siloReady(run.assist) && run.end.status === "impact"; }
+  function closeupSide() { return (1 + PLUME_OF_STACK) * CAM.closeup_stack_px + 2 * CLOSEUP_PAD_PX; }
+  function plateHeight(n, size) {
+    const lh = Math.round(size * PLATE_LINE_OF_FONT);
+    return n * lh + 2 * PLATE_PAD_PX - (lh - size);
+  }
+  function gaugeLines(run, fills, stage, narrow) {
+    const tanks = run.tanks, lines = [];
+    fills.forEach((f, k) => {
+      const staged = k === 0 && stage > 0;
+      lines.push("S" + (k + 1) + " " + (f === null ? DASH : pct(f, FILL_PCT_DECIMALS)) + (staged ? " (staged)" : ""));
+    });
+    tanks.not_loaded_kg.forEach((kg, k) => {
+      if (!(kg > NOT_LOADED_SHOWN_KG)) return;
+      const head = "S" + (k + 1) + " " + pct(tanks.start_fill[k], FILL_PCT_DECIMALS) + " at start,", tail = fmt(kg / KG_PER_T, LOAD_T_DECIMALS) + " t not loaded";
+      if (narrow) lines.push(head, tail); else lines.push(head + " " + tail);
+    });
+    return lines;
+  }
+  function gaugeSize(ctx, pal, lines) {
+    ctx.save();
+    ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+    const textW = Math.max(...lines.map(s => ctx.measureText(s).width));
+    ctx.restore();
+    return { w: 2 * GAUGE_W_PX + 3 * PLATE_PAD_PX + textW + 2 * PLATE_PAD_PX, h: Math.max(GAUGE_H_PX, lines.length * LINE_TEXT_PX) + 2 * PLATE_PAD_PX };
+  }
+  function panelLayout(ctx, pal, run, box) {
+    // The panel's regions [canvas px] for one run and box, the same at every time: the exploratory strip
+    // (an exploratory directory only), the header, the run's note, the body and the legend at the bottom.
+    // The close-up lies over the view's top left ("overlay"); in a column left of the view when the panel
+    // is too short for that ("side"); in a band under the view, with the gauge, readout and caution plates,
+    // when the panel is narrower than NARROW_VIEW_PX ("band"), so no plate lies over the narrow view.
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+    const textW = Math.max(1, box.w - 2 * TEXT_INSET_PX);
+    const note = run.note ? wrapLines(ctx, run.note, textW) : [];
+    const legend = wrapLines(ctx, legendText(), textW);
+    ctx.restore();
+    let y = box.y;
+    const mark = DATA.exploratory_caveat ? { x: box.x, y: y, w: box.w, h: MARK_STRIP_PX } : null;
+    if (mark) y += MARK_STRIP_PX;
+    const header = { x: box.x, y: y, w: box.w, h: HEADER_PX };
+    y += HEADER_PX;
+    const noteBox = { x: box.x, y: y, w: box.w, h: note.length ? note.length * LINE_SMALL_PX + 2 * BAND_PAD_PX : 0 };
+    y += noteBox.h;
+    const legendH = legend.length * LINE_SMALL_PX + 2 * BAND_PAD_PX;
+    const legendBox = { x: box.x, y: Math.max(y, box.y + box.h - legendH), w: box.w, h: legendH };
+    const body = { x: box.x, y: y, w: box.w, h: Math.max(1, legendBox.y - y) };
+    const side = closeupSide(), insetH = side + CLOSEUP_TITLE_PX + CLOSEUP_TEXT_PX;
+    const out = { mark: mark, header: header, noteBox: noteBox, note: note, legendBox: legendBox, legend: legend, body: body, plates: null };
+    if (body.w >= NARROW_VIEW_PX && body.h >= insetH + 2 * VIEW_MARGIN_PX + SCALE_BAR_ROW_PX) {
+      return Object.assign(out, { mode: "overlay", view: body, inset: { x: body.x + VIEW_MARGIN_PX, y: body.y + VIEW_MARGIN_PX, w: side, h: insetH } });
+    }
+    if (body.w >= NARROW_VIEW_PX && body.h >= insetH + 2 * VIEW_MARGIN_PX) {
+      const col = side + 2 * VIEW_MARGIN_PX;
+      return Object.assign(out, {
+        mode: "side", view: { x: body.x + col, y: body.y, w: body.w - col, h: body.h },
+        inset: { x: body.x + VIEW_MARGIN_PX, y: body.y + VIEW_MARGIN_PX, w: side, h: insetH }
+      });
+    }
+    const gauge = gaugeSize(ctx, pal, gaugeLines(run, [1, 1], 1, true));
+    const hudH = plateHeight(HUD_MAX_LINES, FONT_TEXT_PX);
+    // the readout goes beside the gauges only when its widest line fits there whole, else under them
+    const together = gauge.w + hudWidth(ctx, pal, run) + 3 * VIEW_MARGIN_PX <= body.w;
+    const rowH = together ? Math.max(gauge.h, hudH) : gauge.h + VIEW_MARGIN_PX + hudH;
+    let caution = null;
+    if (impactNote(run)) {
+      ctx.save();
+      ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+      const lines = wrapLines(ctx, IMPACT_NOTE, Math.max(1, body.w - 2 * VIEW_MARGIN_PX - 2 * PLATE_PAD_PX));
+      ctx.restore();
+      caution = { lines: lines, h: plateHeight(lines.length, FONT_TEXT_PX) };
+    }
+    const bandH = insetH + rowH + (caution ? caution.h + VIEW_MARGIN_PX : 0) + 3 * VIEW_MARGIN_PX;
+    const view = { x: body.x, y: body.y, w: body.w, h: Math.max(1, body.h - bandH) };
+    const y0 = view.y + view.h + VIEW_MARGIN_PX, yRow = y0 + insetH + VIEW_MARGIN_PX;
+    const left = body.x + VIEW_MARGIN_PX, right = body.x + body.w - VIEW_MARGIN_PX;
+    out.plates = {
+      gauges: { x: left, y: yRow },
+      hud: together ? { x: right, y: yRow, alignRight: true, maxW: body.w - gauge.w - 3 * VIEW_MARGIN_PX }
+        : { x: left, y: yRow + gauge.h + VIEW_MARGIN_PX, alignRight: false, maxW: body.w - 2 * VIEW_MARGIN_PX },
+      caution: caution ? { x: left, y: yRow + rowH + VIEW_MARGIN_PX, lines: caution.lines } : null
+    };
+    return Object.assign(out, { mode: "band", view: view, inset: { x: body.x + Math.max(0, (body.w - side) / 2), y: y0, w: side, h: insetH } });
+  }
+  function carriageS(run, t) {
+    const a = run.assist, s = valAt(run, "s_m", t);
+    if (t < 0) return s === null ? 0 : s;
+    const v = a.exit_speed_mps, dist = a.braking_distance_m;
+    if (!(v > 0) || !(dist > 0)) return a.stroke_m;
+    const ab = v * v / (2 * dist), tStop = v / ab;  // the payload's braking: v^2 / (2 x braking distance)
+    return a.stroke_m + (t < tStop ? v * t - 0.5 * ab * t * t : dist);
+  }
+  function firstEventT(run, name) {
+    const e = run.events.find(ev => ev.name === name && ev.t !== null);
+    return e ? e.t : null;
+  }
+  function eventText(e) { return e.label + (e.synthetic ? SYNTH_MARK : ""); }
+  function eventsShown(run, t) { return run.events.filter(e => e.t !== null && e.t <= t + EVENT_EPS_S).map(eventText); }
+  function lastGroup(run, t) {
+    let last = null;
+    run.event_groups.forEach(g => { if (g.t !== null && g.t <= t + EVENT_EPS_S) last = g; });
+    return last;
+  }
+  function groupLabels(run, tg) {
+    // The labels of the events at one time, each marked when synthesised (design 4.4).
+    return run.events.filter(e => e.t === tg).map(eventText);
+  }
+  function layoutAt(run, t, box, ctx, pal) {
+    const lay = panelLayout(ctx, pal, run, box), view = lay.view, inset = lay.inset, g = geomOf(run), st = stateValues(run, t);
+    const parts = stackParts(g, st.stage, st.fairingOn);
+    const E = extentAt(run, t, view.w / view.h);
+    const xy = screenXY(st.alt, st.d, R_E), floor = floorOf(run);
+    const content = { xMin: Math.min(0, xy[0]), xMax: Math.max(0, xy[0]), yMin: Math.min(floor, xy[1]), yMax: Math.max(0, xy[1]) + g.stack_length_m };
+    const cam = cameraView(E, CAM, view, content);
+    const toPx = (x, y) => [view.x + (x - cam.x0) * cam.ppm, view.y + view.h - (y - cam.y0) * cam.ppm];
+    const base = toPx(xy[0], xy[1]);
+    const ang = st.angleDeg / DEG_PER_RAD;
+    const dir = [Math.cos(ang), -Math.sin(ang)];
+    const mode = g.vehicle.body_diameter_m * cam.ppm >= CAM.to_scale_min_body_px ? "to_scale" : "marker";
+    const reach = mode === "to_scale" ? parts.L * cam.ppm : CAM.marker_size_px * MARKER_TICK_OF_SIZE;
+    const nose = [base[0] + reach * dir[0], base[1] + reach * dir[1]];
+    const kc = CAM.closeup_stack_px / parts.L;
+    const angC = ang + st.d / R_E;
+    const dirC = [Math.cos(angC), -Math.sin(angC)];
+    const side = closeupSide(), pivot = [inset.x + inset.w / 2, inset.y + CLOSEUP_TITLE_PX + side / 2];
+    const uc = parts.L * (1 - PLUME_OF_STACK) / 2;
+    const baseC = [pivot[0] - uc * kc * dirC[0], pivot[1] - uc * kc * dirC[1]];
+    return {
+      lay: lay, header: lay.header, view: view, inset: inset, g: g, st: st, parts: parts, cam: cam, toPx: toPx, xy: xy,
+      base: base, nose: nose, ground: toPx(0, 0), ang: ang, dir: dir, mode: mode, kc: kc, angC: angC, dirC: dirC, pivot: pivot, baseC: baseC
+    };
+  }
+
+  // ------------------------------------------------------------------ drawing: (ctx, box, sceneTime, palette, ...), no DOM
+  function pathPx(ctx, pts) {
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
+    ctx.closePath();
+  }
+  function paint(ctx, fill, line, width) {
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.strokeStyle = line; ctx.lineWidth = width || OUTLINE_PX; ctx.stroke();
+  }
+  function hatchRect(ctx, color, x, y, w, h) {
+    if (!(w > 0) || !(h > 0)) return;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    ctx.strokeStyle = color; ctx.lineWidth = HAIRLINE_PX;
+    ctx.beginPath();
+    for (let s = -h; s < w + h; s += HATCH_GAP_PX) { ctx.moveTo(x + s, y + h); ctx.lineTo(x + s + h, y); }
+    ctx.stroke();
+    ctx.restore();
+  }
+  function textPlate(ctx, pal, lines, x, y, opts) {
+    const o = opts || {}, size = o.size || FONT_TEXT_PX, lh = Math.round(size * PLATE_LINE_OF_FONT);
+    ctx.save();
+    ctx.font = (o.weight ? o.weight + " " : "") + size + "px " + pal.fontBody;
+    const w = Math.max(...lines.map(s => ctx.measureText(s).width)) + 2 * PLATE_PAD_PX, h = plateHeight(lines.length, size);
+    const left = o.alignRight ? x - w : x, top = o.alignBottom ? y - h : y;
+    ctx.fillStyle = o.fill || pal.panel; ctx.strokeStyle = o.line || pal.ink3; ctx.lineWidth = HAIRLINE_PX;
+    ctx.fillRect(left, top, w, h); ctx.strokeRect(left + CRISP_PX, top + CRISP_PX, w - HAIRLINE_PX, h - HAIRLINE_PX);
+    ctx.fillStyle = o.ink || pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    lines.forEach((s, i) => ctx.fillText(s, left + PLATE_PAD_PX, top + PLATE_PAD_PX + i * lh));
+    ctx.restore();
+    return { x: left, y: top, w: w, h: h };
+  }
+  function fitText(ctx, text, maxW) {
+    // The text cut to fit maxW [px] in the context's font, ending in "..." when cut.
+    let s = String(text);
+    if (ctx.measureText(s).width <= maxW) return s;
+    while (s.length > 1 && ctx.measureText(s + "...").width > maxW) s = s.slice(0, -1);
+    return s + "...";
+  }
+  function wrapLines(ctx, text, maxW) { return wrapWords(s => ctx.measureText(s).width, text, maxW); }
+  function drawTank(ctx, pal, u0, u1, half, k, fill, start) {
+    const x = u0 * k, w = (u1 - u0) * k, y = -half * k, h = 2 * half * k;
+    if (!(w > 0) || !(h > 0)) return;
+    const f = Math.min(1, Math.max(0, fill === null ? 0 : fill)), s0 = Math.min(1, Math.max(0, start));
+    ctx.fillStyle = pal.tankEmpty; ctx.fillRect(x, y, w, h);
+    if (s0 < 1) hatchRect(ctx, pal.hatch, x + s0 * w, y, (1 - s0) * w, h);
+    ctx.fillStyle = pal.prop; ctx.fillRect(x, y, f * w, h);
+    ctx.strokeStyle = pal.tankLine; ctx.lineWidth = HAIRLINE_PX; ctx.strokeRect(x, y, w, h);
+  }
+  function drawVehicle(ctx, pal, s) {
+    // s: {x, y} the base [canvas px], dir the unit axis from base to nose [canvas px, y down], k [px per m],
+    // g (display geometry), parts (stackParts), fill1, fill2, start1, start2, plumeM [m], dashed (a yardstick).
+    // Returns where the base and the nose were painted [canvas px of the box], read back through the very
+    // transform the drawing used, so the state hook reports the painted axis.
+    const v = s.g.vehicle, k = s.k, D = v.body_diameter_m, half = D / 2, Df = Math.max(D, v.fairing_diameter_m);
+    const wall = TANK_WALL_OF_BODY * D, end = TANK_END_OF_BODY * D;
+    ctx.save();
+    const outer = ctx.getTransform();
+    ctx.translate(s.x, s.y); ctx.transform(s.dir[0], s.dir[1], -s.dir[1], s.dir[0], 0, 0);
+    const local = ctx.getTransform(), back = outer.inverse();
+    const painted = u => { const p = back.transformPoint(local.transformPoint(new DOMPoint(u, 0))); return [p.x, p.y]; };
+    ctx.lineJoin = "round";
+    if (s.dashed) ctx.setLineDash(DASH_OUTLINE);
+    if (s.plumeM > 0) {
+      const Lp = s.plumeM * k, w0 = PLUME_ROOT_OF_BODY * D * k, w1 = PLUME_BELLY_OF_BODY * D * k;
+      pathPx(ctx, [[0, -w0], [-PLUME_BELLY_AT * Lp, -w1], [-Lp, 0], [-PLUME_BELLY_AT * Lp, w1], [0, w0]]);
+      paint(ctx, pal.plume, pal.plumeLine);
+    }
+    let u = 0;
+    if (s.parts.first) {
+      const s1 = v.stage1_length_m, eng = v.engine_section_length_m, is = v.interstage_length_m;
+      pathPx(ctx, [[0, -half * k], [s1 * k, -half * k], [s1 * k, half * k], [0, half * k]]); paint(ctx, pal.body, pal.bodyLine);
+      pathPx(ctx, [[0, -half * k], [eng * k, -half * k], [eng * k, half * k], [0, half * k]]); paint(ctx, pal.steel, pal.steelLine);
+      drawTank(ctx, pal, eng + end, s1 - end, half - wall, k, s.fill1, s.start1);
+      pathPx(ctx, [[s1 * k, -half * k], [(s1 + is) * k, -half * k], [(s1 + is) * k, half * k], [s1 * k, half * k]]); paint(ctx, pal.steel, pal.steelLine);
+      u = s1 + is;
+    }
+    const s2 = v.stage2_length_m;
+    pathPx(ctx, [[u * k, -half * k], [(u + s2) * k, -half * k], [(u + s2) * k, half * k], [u * k, half * k]]); paint(ctx, pal.body, pal.bodyLine);
+    drawTank(ctx, pal, u + end, u + s2 - end, half - wall, k, s.fill2, s.start2);
+    u += s2;
+    const F = s.parts.top;
+    if (s.fairingOn) {
+      ctx.beginPath();
+      ctx.moveTo(u * k, -half * k); ctx.lineTo((u + FAIRING_FLARE * F) * k, -Df / 2 * k); ctx.lineTo((u + FAIRING_CYLINDER * F) * k, -Df / 2 * k);
+      ctx.quadraticCurveTo((u + F) * k, -Df / 2 * k, (u + F) * k, 0);
+      ctx.quadraticCurveTo((u + F) * k, Df / 2 * k, (u + FAIRING_CYLINDER * F) * k, Df / 2 * k);
+      ctx.lineTo((u + FAIRING_FLARE * F) * k, Df / 2 * k); ctx.lineTo(u * k, half * k); ctx.closePath();
+      paint(ctx, pal.body, pal.bodyLine);
+    } else {
+      pathPx(ctx, [[u * k, -STUB_HALF_OF_BODY * D * k], [(u + F) * k, 0], [u * k, STUB_HALF_OF_BODY * D * k]]); paint(ctx, pal.body, pal.bodyLine);
+    }
+    const out = { base: painted(0), nose: painted(s.parts.L * k) };
+    ctx.restore();
+    return out;
+  }
+  function vehicleSpec(run, L, at, dir, k) {
+    const st = L.st, tanks = run.tanks;
+    return {
+      x: at[0], y: at[1], dir: dir, k: k, g: L.g, parts: L.parts, fairingOn: st.fairingOn, fill1: st.fill1, fill2: st.fill2,
+      start1: tanks.start_fill[0], start2: tanks.start_fill[1], plumeM: st.plumeDrawn * PLUME_OF_STACK * L.parts.L, dashed: run.yardstick === true
+    };
+  }
+  function drawMarker(ctx, pal, color, run, L) {
+    // The position marker and its heading tick; returns the points it painted [canvas px].
+    const r = CAM.marker_size_px / 2;
+    ctx.save();
+    if (run.yardstick === true) ctx.setLineDash(DASH_OUTLINE);
+    ctx.beginPath(); ctx.moveTo(L.base[0], L.base[1]); ctx.lineTo(L.nose[0], L.nose[1]);
+    ctx.strokeStyle = pal.bodyLine; ctx.lineWidth = MARKER_LINE_PX; ctx.stroke();
+    ctx.beginPath(); ctx.arc(L.base[0], L.base[1], r, 0, Math.PI * 2);
+    paint(ctx, color, pal.bodyLine, MARKER_RING_PX);
+    ctx.restore();
+    return { base: L.base.slice(), nose: L.nose.slice() };
+  }
+  function groundArc(L, a, b) {
+    const pts = [];
+    for (let i = 0; i <= GROUND_SAMPLES; i++) { const x = a + (b - a) * i / GROUND_SAMPLES; pts.push(L.toPx(x, groundY(x, R_E))); }
+    return pts;
+  }
+  function drawEarth(ctx, pal, L, opening) {
+    const v = L.view, cam = L.cam, x0 = cam.x0 - EDGE_SLACK_M, x1 = cam.x0 + cam.W + EDGE_SLACK_M, yBottom = cam.y0 - EDGE_SLACK_M;
+    pathPx(ctx, groundArc(L, x0, x1).concat([L.toPx(x1, yBottom), L.toPx(x0, yBottom)]));
+    ctx.fillStyle = pal.earth; ctx.fill();
+    const segs = opening && opening[1] > x0 && opening[0] < x1 ? [[x0, Math.max(x0, opening[0])], [Math.min(x1, opening[1]), x1]] : [[x0, x1]];
+    return () => {
+      ctx.save(); ctx.strokeStyle = pal.groundLine; ctx.lineWidth = GROUND_LINE_PX;
+      segs.forEach(sg => {
+        if (sg[1] <= sg[0]) return;
+        const pts = groundArc(L, sg[0], sg[1]);
+        ctx.beginPath(); pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); }); ctx.stroke();
+      });
+      ctx.restore();
+      return v;
+    };
+  }
+  function clipAboveGround(ctx, L, half, depth) {
+    // Clip to the sky above the drawn ground plus the pad's trench (half-width half, depth depth [m]): a
+    // pad's plume shows there and nowhere in the ground.
+    const cam = L.cam, x0 = cam.x0 - EDGE_SLACK_M, x1 = cam.x0 + cam.W + EDGE_SLACK_M, yTop = cam.y0 + cam.H + EDGE_SLACK_M;
+    const xa = Math.min(Math.max(-half, x0), x1), xb = Math.max(Math.min(half, x1), xa);
+    pathPx(ctx, groundArc(L, x0, xa).concat([L.toPx(xa, -depth), L.toPx(xb, -depth)], groundArc(L, xb, x1), [L.toPx(x1, yTop), L.toPx(x0, yTop)]));
+    ctx.clip();
+  }
+  function trackAt(a) {
+    const phi = a.track_angle_deg / DEG_PER_RAD, ax = Math.cos(phi), ay = Math.sin(phi);
+    return (s, n) => [s * ax - n * ay, a.track_start_altitude_m + s * ay + n * ax];
+  }
+  function drawSilo(ctx, t, pal, run, L) {
+    // The shaft runs from the carriage's bottom at push start (s = -carriage height) to the mouth (s = stroke).
+    const a = run.assist, g = L.g, at = trackAt(a), Ls = a.stroke_m, px = p => L.toPx(p[0], p[1]);
+    const Ds = g.silo.shaft_diameter_m, rw = g.silo.brake_rail_width_m, ch = g.silo.carriage_height_m;
+    const impact = run.end.status === "impact";
+    pathPx(ctx, [px(at(-ch, -Ds / 2)), px(at(Ls, -Ds / 2)), px(at(Ls, Ds / 2)), px(at(-ch, Ds / 2))]);
+    ctx.fillStyle = pal.shaftFill; ctx.fill();
+    const walls = [px(at(Ls, -Ds / 2)), px(at(-ch, -Ds / 2)), px(at(-ch, Ds / 2)), px(at(Ls, Ds / 2))];
+    ctx.beginPath(); ctx.moveTo(walls[0][0], walls[0][1]); walls.slice(1).forEach(q => ctx.lineTo(q[0], q[1]));
+    ctx.strokeStyle = pal.shaftLine; ctx.lineWidth = OUTLINE_PX; ctx.stroke();
+    const pitch = g.silo.ring_pitch_m, rs = Math.max(g.silo.ring_size_m, MIN_SHAPE_PX / L.cam.ppm), depth = Math.max(RING_DEPTH_OF_SIZE * g.silo.ring_size_m, MIN_SHAPE_PX / L.cam.ppm);
+    if (pitch > 0) {
+      for (let s = pitch; s < Ls - rs / 2; s += pitch) {
+        [-1, 1].forEach(side => {
+          const n0 = side * Ds / 2, n1 = side * (Ds / 2 + depth);
+          pathPx(ctx, [px(at(s - rs / 2, n0)), px(at(s + rs / 2, n0)), px(at(s + rs / 2, n1)), px(at(s - rs / 2, n1))]);
+          paint(ctx, pal.ring, pal.ringLine, HAIRLINE_PX);
+        });
+      }
+    }
+    const dist = a.braking_distance_m;
+    if (dist > 0) {
+      [-1, 1].forEach(side => {
+        const n0 = side * (Ds / 2 - rw), n1 = side * Ds / 2;
+        pathPx(ctx, [px(at(Ls, n0)), px(at(Ls + dist, n0)), px(at(Ls + dist, n1)), px(at(Ls, n1))]);
+        paint(ctx, impact ? null : pal.rail, pal.railLine, HAIRLINE_PX);
+      });
+    }
+    return () => {
+      const sTop = carriageS(run, t), cw = Ds / 2 - rw;
+      pathPx(ctx, [px(at(sTop - ch, -cw)), px(at(sTop, -cw)), px(at(sTop, cw)), px(at(sTop - ch, cw))]);
+      const outlined = impact && t >= 0;
+      if (outlined) ctx.setLineDash(DASH_OUTLINE);
+      paint(ctx, outlined ? null : pal.carriage, pal.carriageLine);
+      ctx.setLineDash([]);
+      // at the carriage's top, left to right on the canvas: the rails' outer faces (the shaft's walls,
+      // n = +-Ds/2) and the carriage's top corners (n = +-cw); n = +Ds/2 is the left wall of a vertical shaft
+      const lr = (p, q) => (p[0] <= q[0] ? [p, q] : [q, p]);
+      const rails = lr(px(at(sTop, -Ds / 2)), px(at(sTop, Ds / 2))), corners = lr(px(at(sTop, -cw)), px(at(sTop, cw)));
+      return { rails: rails, corners: corners, top: px(at(sTop, 0)), height_m: ch };
+    };
+  }
+  function drawCarriageLabel(ctx, pal, L, c, view) {
+    // After release: the carriage's label beside the rails (sideLabel: right of them, else left, else wrapped
+    // on the roomier side, never cut by the view's edge), with a leader from the carriage's top corner on
+    // that side; the rails at Ds/2 already clear the body and the plume's widest half-width. Shown while the
+    // carriage is tall enough to see and the vehicle's base is above the carriage's top by more than the
+    // label's height (canvas y grows downward). Returns the plate's box [canvas px] and the rails' x, or null.
+    if (L.cam.ppm * c.height_m < CARRIAGE_LABEL_MIN_PX) return null;
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+    const at = sideLabel(s => ctx.measureText(s).width, CARRIAGE_LABEL, [c.rails[0][0], c.rails[1][0]],
+      [view.x + VIEW_MARGIN_PX, view.x + view.w - VIEW_MARGIN_PX], LABEL_GAP_PX, PLATE_PAD_PX);
+    ctx.restore();
+    if (at === null) return null;
+    const h = plateHeight(at.lines.length, FONT_SMALL_PX), from = at.side === "right" ? c.corners[1] : c.corners[0];
+    if (c.top[1] - L.base[1] <= h) return null;
+    ctx.save();
+    ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX;
+    ctx.beginPath(); ctx.moveTo(from[0], from[1]); ctx.lineTo(at.x, from[1]); ctx.stroke();
+    ctx.restore();
+    const box = textPlate(ctx, pal, at.lines, at.x, from[1] - h / 2, { size: FONT_SMALL_PX, alignRight: at.side === "left" });
+    return Object.assign(box, { side: at.side, lines: at.lines, rails_x: [c.rails[0][0], c.rails[1][0]] });
+  }
+  function drawPadBelow(ctx, pal, L) {
+    const g = L.g, D = g.vehicle.body_diameter_m, mh = g.pad.mount_height_m, half = TRENCH_OF_BODY * D / 2;
+    pathPx(ctx, [L.toPx(-half, -mh), L.toPx(half, -mh), L.toPx(half, 0), L.toPx(-half, 0)]);
+    paint(ctx, pal.shaftFill, pal.shaftLine);
+    [-1, 1].forEach(side => {
+      pathPx(ctx, [L.toPx(side * half, -mh), L.toPx(side * (half + mh), -mh), L.toPx(side * (half + mh), 0), L.toPx(side * half, 0)]);
+      paint(ctx, pal.steel, pal.steelLine);
+    });
+  }
+  function drawClamps(ctx, t, pal, L, run) {
+    // Closed until liftoff (every pad has a liftoff event, logged when the hold is extended past release,
+    // else synthesised at release), open from then on.
+    const g = L.g, D = g.vehicle.body_diameter_m, cs = g.pad.clamp_size_m;
+    const lift = firstEventT(run, "liftoff"), open = t >= (lift === null ? 0 : lift);
+    [-1, 1].forEach(side => {
+      const xa = side * (open ? D / 2 + cs : D / 2), xb = side * (open ? D / 2 + CLAMP_OPEN_REACH * cs : D / 2 + cs);
+      const top = open ? cs : CLAMP_CLOSED_HEIGHT * cs;
+      pathPx(ctx, [L.toPx(xa, 0), L.toPx(xb, 0), L.toPx(xb, top), L.toPx(xa, top)]);
+      paint(ctx, pal.steel, pal.steelLine);
+    });
+  }
+  function drawScaleBar(ctx, box, pal, L) {
+    const len = niceLength(SCALE_BAR_OF_VIEW * box.w / L.cam.ppm), w = len * L.cam.ppm;
+    if (!(w > 0)) return;
+    const label = lengthText(len, SCALE_DECIMALS);
+    ctx.save();
+    ctx.font = FONT_TEXT_PX + "px " + pal.fontData;
+    const tw = ctx.measureText(label).width, x = box.x + SCALE_BAR_INSET_PX, y = box.y + box.h - SCALE_BAR_INSET_PX;
+    const pw = w + tw + 3 * PLATE_PAD_PX;
+    ctx.fillStyle = pal.panel; ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX;
+    ctx.fillRect(x - PLATE_PAD_PX, y - SCALE_PLATE_TOP_PX, pw, SCALE_PLATE_H_PX);
+    ctx.strokeRect(x - PLATE_PAD_PX + CRISP_PX, y - SCALE_PLATE_TOP_PX + CRISP_PX, pw - HAIRLINE_PX, SCALE_PLATE_H_PX - HAIRLINE_PX);
+    ctx.strokeStyle = pal.ink; ctx.lineWidth = SCALE_BAR_LINE_PX;
+    ctx.beginPath(); ctx.moveTo(x, y - SCALE_BAR_TICK_PX); ctx.lineTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y - SCALE_BAR_TICK_PX); ctx.stroke();
+    ctx.fillStyle = pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(label, x + w + PLATE_PAD_PX, y);
+    ctx.restore();
+  }
+  function drawGauges(ctx, pal, run, L, view, at) {
+    // The S1 and S2 gauges with their text: at `at` (the band), else at the view's bottom right, beside the
+    // scale bar when both fit on one row, else above it.
+    const lines = gaugeLines(run, [L.st.fill1, L.st.fill2], L.st.stage, view.w < NARROW_VIEW_PX), tanks = run.tanks;
+    const size = gaugeSize(ctx, pal, lines), w = size.w, h = size.h;
+    const x = at ? at.x : view.x + view.w - w - VIEW_MARGIN_PX;
+    const y = at ? at.y : view.y + view.h - h - (w > NARROW_PLATE_OF_VIEW * view.w ? SCALE_BAR_ROW_PX : VIEW_MARGIN_PX);
+    ctx.save();
+    ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+    ctx.fillStyle = pal.panel; ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX;
+    ctx.fillRect(x, y, w, h); ctx.strokeRect(x + CRISP_PX, y + CRISP_PX, w - HAIRLINE_PX, h - HAIRLINE_PX);
+    [L.st.fill1, L.st.fill2].forEach((f, k) => {
+      const gx = x + PLATE_PAD_PX + k * (GAUGE_W_PX + PLATE_PAD_PX), gy = y + PLATE_PAD_PX;
+      const fill = Math.min(1, Math.max(0, f === null ? 0 : f)), start = Math.min(1, Math.max(0, tanks.start_fill[k]));
+      ctx.fillStyle = pal.tankEmpty; ctx.fillRect(gx, gy, GAUGE_W_PX, GAUGE_H_PX);
+      if (start < 1) hatchRect(ctx, pal.hatch, gx, gy, GAUGE_W_PX, (1 - start) * GAUGE_H_PX);
+      ctx.fillStyle = pal.prop; ctx.fillRect(gx, gy + (1 - fill) * GAUGE_H_PX, GAUGE_W_PX, fill * GAUGE_H_PX);
+      ctx.strokeStyle = pal.bodyLine; ctx.lineWidth = HAIRLINE_PX; ctx.strokeRect(gx + CRISP_PX, gy + CRISP_PX, GAUGE_W_PX - HAIRLINE_PX, GAUGE_H_PX - HAIRLINE_PX);
+    });
+    ctx.fillStyle = pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    lines.forEach((s, i) => ctx.fillText(s, x + 2 * GAUGE_W_PX + 3 * PLATE_PAD_PX, y + PLATE_PAD_PX + i * LINE_TEXT_PX));
+    ctx.restore();
+  }
+  function drawHud(ctx, pal, lines, at) {
+    // The readout plate at `at` ({x, y, alignRight, maxW}); each line cut to maxW when one is given.
+    let shown = lines;
+    if (at.maxW) {
+      ctx.save();
+      ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+      shown = lines.map(s => fitText(ctx, s, at.maxW - 2 * PLATE_PAD_PX));
+      ctx.restore();
+    }
+    return textPlate(ctx, pal, shown, at.x, at.y, { alignRight: at.alignRight });
+  }
+  function markText(ctx, maxW) {
+    // The exploratory mark: DATA.exploratory_caveat, the one string of D-SP2-12, whole when it fits, else its
+    // first clause (up to its colon).
+    const full = DATA.exploratory_caveat;
+    return ctx.measureText(full).width <= maxW ? full : fitText(ctx, full.split(":")[0], maxW);
+  }
+  function drawMark(ctx, box, pal) {
+    ctx.save();
+    ctx.fillStyle = pal.cautionBg; ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeStyle = pal.caution; ctx.lineWidth = HAIRLINE_PX;
+    ctx.strokeRect(box.x + CRISP_PX, box.y + CRISP_PX, box.w - HAIRLINE_PX, box.h - HAIRLINE_PX);
+    ctx.fillStyle = pal.ink; ctx.font = LABEL_WEIGHT + " " + FONT_SMALL_PX + "px " + pal.fontBody; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(markText(ctx, box.w - 2 * TEXT_INSET_PX), box.x + TEXT_INSET_PX, box.y + box.h / 2);
+    ctx.restore();
+  }
+  function drawHeader(ctx, box, t, pal, run, L) {
+    ctx.save();
+    ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeStyle = pal.rule; ctx.lineWidth = HAIRLINE_PX;
+    ctx.beginPath(); ctx.moveTo(box.x, box.y + box.h - CRISP_PX); ctx.lineTo(box.x + box.w, box.y + box.h - CRISP_PX); ctx.stroke();
+    ctx.fillStyle = pal[run.key]; ctx.fillRect(box.x + HEADER_PAD_PX, box.y + HEADER_PAD_PX, SWATCH_PX, SWATCH_PX);
+    ctx.strokeStyle = pal.bodyLine; ctx.strokeRect(box.x + HEADER_PAD_PX + CRISP_PX, box.y + HEADER_PAD_PX + CRISP_PX, SWATCH_PX - HAIRLINE_PX, SWATCH_PX - HAIRLINE_PX);
+    ctx.textBaseline = "top"; ctx.textAlign = "right";
+    ctx.fillStyle = pal.ink; ctx.font = FONT_CLOCK_PX + "px " + pal.fontData;
+    const clock = clockText(t) + (box.w >= WIDE_HEADER_PX ? " after release" : "");
+    ctx.fillText(clock, box.x + box.w - HEADER_PAD_PX, box.y + HEADER_CLOCK_Y_PX);
+    const clockW = ctx.measureText(clock).width;
+    ctx.textAlign = "left"; ctx.fillStyle = pal.ink; ctx.font = LABEL_WEIGHT + " " + FONT_LABEL_PX + "px " + pal.fontBody;
+    const label = run.label + (run.yardstick === true ? YARDSTICK_MARK : "");
+    ctx.fillText(fitText(ctx, label, box.w - HEADER_TEXT_X_PX - clockW - HEADER_GAP_PX - HEADER_PAD_PX), box.x + HEADER_TEXT_X_PX, box.y + HEADER_LINE1_Y_PX);
+    ctx.fillStyle = pal.ink2; ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+    const phase = fitText(ctx, L.st.phase, box.w / 2 - HEADER_TEXT_X_PX);
+    ctx.fillText(phase, box.x + HEADER_TEXT_X_PX, box.y + HEADER_LINE2_Y_PX);
+    const grp = lastGroup(run, t), room = box.w - HEADER_TEXT_X_PX - ctx.measureText(phase).width - HEADER_GAP_PX - HEADER_PAD_PX;
+    ctx.textAlign = "right";
+    const last = grp ? "last event: " + groupLabels(run, grp.t).join(", ") + " at " + clockText(grp.t) : "no event yet";
+    ctx.fillText(fitText(ctx, last, room), box.x + box.w - HEADER_PAD_PX, box.y + HEADER_LINE2_Y_PX);
+    ctx.restore();
+  }
+  function drawTextBand(ctx, box, pal, lines, ruleAtTop) {
+    // A band of 11 px text across the panel (the run's note under the header, the legend at the bottom,
+    // the caveat footer of a captured frame): every line drawn, none dropped.
+    if (!(box.h > 0)) return;
+    ctx.save();
+    ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeStyle = pal.rule; ctx.lineWidth = HAIRLINE_PX;
+    const ry = ruleAtTop ? box.y + CRISP_PX : box.y + box.h - CRISP_PX;
+    ctx.beginPath(); ctx.moveTo(box.x, ry); ctx.lineTo(box.x + box.w, ry); ctx.stroke();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.fillStyle = pal.ink2; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    lines.forEach((s, i) => ctx.fillText(s, box.x + TEXT_INSET_PX, box.y + BAND_PAD_PX + i * LINE_SMALL_PX));
+    ctx.restore();
+  }
+  function drawView(ctx, box, t, pal, run, L) {
+    // The true-scale view; returns the points the vehicle was painted at, the readout's lines and the
+    // carriage label's plate (or null).
+    ctx.save();
+    ctx.beginPath(); ctx.rect(box.x, box.y, box.w, box.h); ctx.clip();
+    ctx.fillStyle = pal.sky; ctx.fillRect(box.x, box.y, box.w, box.h);
+    const g = L.g, a = run.assist, silo = siloReady(a), trench = TRENCH_OF_BODY * g.vehicle.body_diameter_m / 2;
+    const opening = silo ? (run.vertical ? [-g.silo.shaft_diameter_m / 2, g.silo.shaft_diameter_m / 2] : null) : [-trench, trench];
+    const groundLine = drawEarth(ctx, pal, L, opening);
+    let carriage = null;
+    if (silo) carriage = drawSilo(ctx, t, pal, run, L);
+    else if (!a) drawPadBelow(ctx, pal, L);
+    groundLine();
+    const carriageAt = carriage ? carriage() : null;
+    if (!a) { ctx.save(); clipAboveGround(ctx, L, trench, g.pad.mount_height_m); }
+    const painted = L.mode === "to_scale" ? drawVehicle(ctx, pal, vehicleSpec(run, L, L.base, L.dir, L.cam.ppm)) : drawMarker(ctx, pal, pal[run.key], run, L);
+    if (!a) ctx.restore();
+    if (!a) drawClamps(ctx, t, pal, L, run);
+    if (L.mode === "marker") {
+      // right of the marker, or left of it when the label would cross the view's right edge
+      const text = ["position marker (not to scale)"];
+      ctx.save();
+      ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+      const right = L.base[0] + MARKER_LABEL_DX_PX + ctx.measureText(text[0]).width + 2 * PLATE_PAD_PX <= box.x + box.w;
+      ctx.restore();
+      textPlate(ctx, pal, text, L.base[0] + (right ? MARKER_LABEL_DX_PX : -MARKER_LABEL_DX_PX), L.base[1] + MARKER_LABEL_DY_PX, { size: FONT_SMALL_PX, alignRight: !right });
+    }
+    const carriageLabel = carriageAt && t >= 0 ? drawCarriageLabel(ctx, pal, L, carriageAt, box) : null;
+    ctx.restore();
+    drawScaleBar(ctx, box, pal, L);
+    const hud = hudLines(L.st);
+    if (L.lay.mode !== "band") {
+      let top = box.y + VIEW_MARGIN_PX;
+      if (impactNote(run) && t >= 0) {
+        ctx.save();
+        ctx.font = FONT_TEXT_PX + "px " + pal.fontBody;
+        const lines = wrapLines(ctx, IMPACT_NOTE, Math.min(IMPACT_NOTE_MAX_PX, box.w * IMPACT_NOTE_OF_VIEW));
+        ctx.restore();
+        const r = textPlate(ctx, pal, lines, box.x + box.w - VIEW_MARGIN_PX, top, { alignRight: true, fill: pal.cautionBg, line: pal.caution, ink: pal.ink });
+        top = r.y + r.h + VIEW_MARGIN_PX;
+      }
+      drawHud(ctx, pal, hud, { x: box.x + box.w - VIEW_MARGIN_PX, y: top, alignRight: true });
+      drawGauges(ctx, pal, run, L, box, null);
+    }
+    return { main: painted, hud: hud, carriageLabel: carriageLabel };
+  }
+  function drawCloseup(ctx, box, t, pal, run, L) {
+    // The close-up at a scale of its own (the stack shown is CAM.closeup_stack_px long, so the scale changes
+    // at staging and at the fairing drop); returns the points the vehicle was painted at.
+    ctx.save();
+    ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.strokeStyle = pal.ink3; ctx.lineWidth = HAIRLINE_PX; ctx.strokeRect(box.x + CRISP_PX, box.y + CRISP_PX, box.w - HAIRLINE_PX, box.h - HAIRLINE_PX);
+    ctx.fillStyle = pal.ink2; ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    const scale = fmt(L.parts.L, LENGTH_DECIMALS) + " m" + (L.st.stage > 0 ? " = " : " stack = ") + fmt(CAM.closeup_stack_px, PX_DECIMALS) + " px";
+    // the whole stack (stage 1 to the fairing) is this length; less once staged or the fairing is off
+    const title = ["Close-up: drawn, not computed", (L.parts.L < L.g.stack_length_m ? "rescaled with the stack: " : "own scale: ") + scale];
+    title.forEach((s, i) => ctx.fillText(fitText(ctx, s, box.w - 2 * CLOSEUP_TEXT_INSET_PX), box.x + CLOSEUP_TEXT_INSET_PX, box.y + CLOSEUP_TITLE_TOP_PX + i * LINE_SMALL_PX));
+    const draw = { x: box.x, y: box.y + CLOSEUP_TITLE_PX, w: box.w, h: box.h - CLOSEUP_TITLE_PX - CLOSEUP_TEXT_PX };
+    ctx.beginPath(); ctx.rect(draw.x, draw.y, draw.w, draw.h); ctx.clip();
+    ctx.strokeStyle = pal.ink3; ctx.setLineDash(DASH_GUIDE); ctx.lineWidth = HAIRLINE_PX;
+    ctx.beginPath(); ctx.moveTo(draw.x, L.pivot[1]); ctx.lineTo(draw.x + draw.w, L.pivot[1]);
+    ctx.moveTo(L.pivot[0], draw.y); ctx.lineTo(L.pivot[0], draw.y + draw.h); ctx.stroke();
+    ctx.setLineDash([]);
+    const a = run.assist, kick = firstEventT(run, "kick_start");
+    let carriageLabel = null;  // the box of the carriage's label where it was drawn [canvas px], else null
+    if (siloReady(a) && (kick === null || t < kick)) {
+      // The carriage from push start to the kick, placed by its offset from the vehicle's base in the
+      // true-scale frame (the local horizontal is level at the site), at the close-up's scale; only while
+      // its top is at or under the base, so a carriage the vehicle fell back past never sits on the rocket.
+      const g = L.g, topW = trackAt(a)(carriageS(run, t), 0);
+      if (t < 0 || topW[1] <= L.xy[1] + ALT_TOL_M) {
+        const phi = a.track_angle_deg / DEG_PER_RAD, tx = Math.cos(phi), ty = -Math.sin(phi);
+        const top = [L.baseC[0] + (topW[0] - L.xy[0]) * L.kc, L.baseC[1] - (topW[1] - L.xy[1]) * L.kc];
+        const cw = (g.silo.shaft_diameter_m / 2 - g.silo.brake_rail_width_m) * L.kc, ch = g.silo.carriage_height_m * L.kc;
+        const nx = -ty, ny = tx;
+        pathPx(ctx, [[top[0] - cw * nx, top[1] - cw * ny], [top[0] + cw * nx, top[1] + cw * ny],
+          [top[0] + cw * nx - ch * tx, top[1] + cw * ny - ch * ty], [top[0] - cw * nx - ch * tx, top[1] - cw * ny - ch * ty]]);
+        const outlined = run.end.status === "impact" && t >= 0;
+        if (outlined) ctx.setLineDash(DASH_OUTLINE);
+        paint(ctx, outlined ? null : pal.carriage, pal.carriageLine);
+        ctx.setLineDash([]);
+        if (t >= 0) {
+          // the label only when the whole of it lies inside the drawing: the carriage slides out at the
+          // drawing's bottom edge (and back in on a fall-back), and a cut line would sit over the readout
+          ctx.fillStyle = pal.ink2; ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+          const lx = top[0] + cw + CLOSEUP_TEXT_INSET_PX, ly = top[1] + ch / 2, half = FONT_SMALL_PX / 2 + CLOSEUP_LABEL_CLEAR_PX;
+          const lw = ctx.measureText(CLOSEUP_CARRIAGE_LABEL).width;
+          if (ly - half >= draw.y && ly + half <= draw.y + draw.h && lx >= draw.x && lx + lw + CLOSEUP_LABEL_CLEAR_PX <= draw.x + draw.w) {
+            ctx.fillText(CLOSEUP_CARRIAGE_LABEL, lx, ly);
+            carriageLabel = { x: lx, y: ly - half, w: lw, h: 2 * half, drawing: draw };
+          }
+        }
+      }
+    }
+    const painted = drawVehicle(ctx, pal, vehicleSpec(run, L, L.baseC, L.dirC, L.kc));
+    painted.carriageLabel = carriageLabel;
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = pal.ink; ctx.font = FONT_SMALL_PX + "px " + pal.fontBody; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    const deg = wrapDeg(L.st.defined ? L.st.pitchDeg : L.angC * DEG_PER_RAD);
+    const readout = L.st.defined ? "pitch " + fmt(deg, ANGLE_DECIMALS) + "\u00b0 above local horizontal" : "held at " + fmt(deg, ANGLE_DECIMALS) + "\u00b0: drawn, not computed";
+    ctx.fillText(fitText(ctx, readout, box.w - 2 * CLOSEUP_TEXT_INSET_PX), box.x + CLOSEUP_TEXT_INSET_PX, box.y + box.h - CLOSEUP_TEXT_PX + CLOSEUP_READOUT_TOP_PX);
+    ctx.restore();
+    return painted;
+  }
+  function drawPanel(ctx, box, t, pal, run) {
+    // One panel at scene time t: returns its layout, the points painted and the readout's lines.
+    const L = layoutAt(run, t, box, ctx, pal), lay = L.lay;
+    ctx.save(); ctx.fillStyle = pal.panel; ctx.fillRect(box.x, box.y, box.w, box.h); ctx.restore();
+    const view = drawView(ctx, L.view, t, pal, run, L);
+    const closeup = drawCloseup(ctx, L.inset, t, pal, run, L);
+    if (lay.mode === "band") {
+      const p = lay.plates;
+      drawGauges(ctx, pal, run, L, L.view, p.gauges);
+      drawHud(ctx, pal, view.hud, p.hud);
+      if (p.caution && t >= 0) textPlate(ctx, pal, p.caution.lines, p.caution.x, p.caution.y, { fill: pal.cautionBg, line: pal.caution, ink: pal.ink });
+    }
+    if (lay.mark) drawMark(ctx, lay.mark, pal);
+    drawHeader(ctx, lay.header, t, pal, run, L);
+    drawTextBand(ctx, lay.noteBox, pal, lay.note, false);
+    drawTextBand(ctx, lay.legendBox, pal, lay.legend, true);
+    return { L: L, painted: { main: view.main, closeup: closeup, carriageLabel: view.carriageLabel }, hud: view.hud };
+  }
+  function footerLines() {
+    const git = DATA.git, state = git.dirty === true ? "dirty" : git.dirty === false ? "clean" : "state unknown" + (git.error ? " (" + git.error + ")" : "");
+    const lines = [];
+    if (DATA.exploratory_caveat) lines.push(DATA.exploratory_caveat);
+    lines.push(DATA.footer);
+    lines.push("Data: " + DATA.source + ", experiment " + DATA.experiment + ", " + DATA.timestamp + ", git " + git.hash + " (" + state + ").");
+    return lines;
+  }
+  function footerWrapped(ctx, pal, w) {
+    // The caveat footer's lines wrapped to a frame w px wide, every one kept.
+    ctx.save();
+    ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
+    const out = [];
+    footerLines().forEach(text => wrapLines(ctx, text, Math.max(1, w - 2 * TEXT_INSET_PX)).forEach(s => out.push(s)));
+    ctx.restore();
+    return out;
+  }
+  function drawTicks(ctx, box, t, pal, run) {
+    // The event marks over the time slider; the slider spans the run's own first and last rows. A name is
+    // printed where it fits clear of the last one, marked when the event is synthesised.
+    const t0 = run.t[0], span = Math.max(run.t[run.t.length - 1] - t0, EVENT_EPS_S);
+    const sx = te => box.x + TICK_PAD_PX + (te - t0) / span * (box.w - 2 * TICK_PAD_PX);
+    ctx.font = FONT_TICK_PX + "px " + pal.fontBody; ctx.textBaseline = "top"; ctx.textAlign = "center";
+    let lastRight = -Infinity;
+    run.event_groups.forEach(g => {
+      if (g.t === null) return;
+      const x = sx(g.t);
+      ctx.fillStyle = g.t <= t + EVENT_EPS_S ? pal.ink : pal.ink3; ctx.fillRect(x - HAIRLINE_PX / 2, box.y + TICK_MARK_TOP_PX, HAIRLINE_PX, TICK_MARK_PX);
+      const first = run.events.find(e => e.t === g.t);
+      if (!first) return;
+      const name = first.name + (first.synthetic ? SYNTH_MARK : ""), half = ctx.measureText(name).width / 2;
+      if (x - half > lastRight + TICK_LABEL_GAP_PX && x - half > box.x + TICK_LABEL_EDGE_PX && x + half < box.x + box.w - TICK_LABEL_EDGE_PX) {
+        ctx.fillText(name, x, box.y); lastRight = x + half;
+      }
+    });
+  }
+
+  // ------------------------------------------------------------------ the page
+  const TELEMETRY = [
+    ["alt", "Altitude"], ["speed", "Speed"], ["d", "Downrange"], ["pitch", "Attitude"], ["mass", "Mass (rebuilt)"],
+    ["thrust", "Engines (vacuum thrust)"], ["q", "q"], ["mach", "Mach"], ["drive", "Drive force"], ["power", "Drive power"],
+    ["s1", "S1 tank"], ["s2", "S2 tank"], ["stage", "Stage"]
+  ];
+  const cells = {};
+  function buildTelemetry() {
+    const grid = document.getElementById("tgrid");
+    grid.replaceChildren();
+    const items = TELEMETRY.slice();
+    if (Array.isArray(panelRun.felt_g)) items.push(["felt", "Felt g"]);
+    items.forEach(item => {
+      const div = document.createElement("div"), k = document.createElement("span"), v = document.createElement("span");
+      k.className = "k"; k.textContent = item[1]; v.className = "v"; v.textContent = DASH;
+      div.append(k, v); grid.appendChild(div); cells[item[0]] = v;
+    });
+  }
+  function updateTelemetry() {
+    const st = stateValues(panelRun, tNow), set = (k, s) => { if (cells[k]) cells[k].textContent = s; };
+    set("alt", lengthText(st.alt, LENGTH_DECIMALS)); set("speed", fmt(st.speed, SPEED_DECIMALS) + " m/s"); set("d", lengthText(st.d, LENGTH_DECIMALS));
+    set("pitch", st.defined ? "pitch " + fmt(wrapDeg(st.pitchDeg), ANGLE_DECIMALS) + "\u00b0" : "held (drawn)");
+    set("mass", fmt(st.mass / KG_PER_T, MASS_T_DECIMALS) + " t");
+    set("thrust", st.thrustOn ? pct(st.plume, THRUST_PCT_DECIMALS) + " of full" : "off");
+    set("q", orDash(st.q, q => fmt(q / PA_PER_KPA, Q_KPA_DECIMALS) + " kPa")); set("mach", orDash(st.mach, m => fmt(m, MACH_DECIMALS)));
+    set("drive", orDash(st.driveF, f => fmt(f / N_PER_MN, FORCE_MN_DECIMALS) + " MN")); set("power", orDash(st.driveP, p => fmt(p / W_PER_MW, POWER_MW_DECIMALS) + " MW"));
+    set("s1", orDash(st.fill1, f => pct(f, FILL_PCT_DECIMALS))); set("s2", orDash(st.fill2, f => pct(f, FILL_PCT_DECIMALS)));
+    set("stage", panelRun.tanks.stage_names[st.stage] + (st.fairingOn ? ", fairing on" : ""));
+    if (cells.felt) set("felt", orDash(st.felt, g => fmt(g, FELT_DECIMALS) + " g"));
+  }
+  let tickerItems = [];
+  function buildTicker() {
+    const ol = document.getElementById("ticker");
+    ol.replaceChildren();
+    // on a silo run that ends in impact the impact event says the model has no contact (D-SP2-20)
+    const noContact = impactNote(panelRun);
+    tickerItems = panelRun.events.filter(e => e.t !== null).map(e => {
+      const li = document.createElement("li"), b = document.createElement("button"), time = document.createElement("span"), label = document.createElement("span");
+      b.type = "button"; b.className = "evt";
+      time.className = "et"; time.textContent = clockText(e.t);
+      label.textContent = eventText(e) + (noContact && e.name === "impact" ? IMPACT_TICKER_NOTE : "");
+      if (e.synthetic && e.synthetic_from) b.title = e.synthetic_from;
+      b.append(time, label);
+      b.addEventListener("click", () => { tNow = Math.min(T_MAX, Math.max(T_MIN, e.t)); draw(); });
+      li.appendChild(b); ol.appendChild(li);
+      return { li: li, t: e.t };
+    });
+  }
+  function updateTicker() {
+    const grp = lastGroup(panelRun, tNow);
+    tickerItems.forEach(it => {
+      it.li.classList.toggle("past", it.t <= tNow + EVENT_EPS_S);
+      it.li.classList.toggle("current", grp !== null && it.t === grp.t);
+    });
+  }
+  function draw() {
+    const pal = scenePalette();
+    const cv = document.getElementById("scene");
+    const { ctx, w, h } = setupCanvas(cv);
+    drawPanel(ctx, { x: 0, y: 0, w: w, h: h }, tNow, pal, panelRun);
+    const ticks = setupCanvas(document.getElementById("ticks"));
+    drawTicks(ticks.ctx, { x: 0, y: 0, w: ticks.w, h: ticks.h }, tNow, pal, panelRun);
+    updateTelemetry();
+    updateTicker();
+    document.getElementById("clock").textContent = clockText(tNow);
+    document.getElementById("clockSub").textContent = playing ? "playing at " + currentRate() + "x" : "paused";
+    document.getElementById("scrub").value = tNow.toFixed(SCRUB_DECIMALS);
+  }
+
+  // ------------------------------------------------------------------ playback
+  function rateAt(t) {
+    const sel = document.getElementById("rate").value;
+    if (sel !== "auto") { const v = Number(sel); return RATE_CHOICES.indexOf(v) >= 0 ? v : 1; }
+    return rateLaw(t);
+  }
+  function currentRate() { return rateAt(tNow); }
+  function tick(ts) {
+    if (!playing) { lastFrame = null; return; }
+    if (lastFrame !== null) {
+      tNow = Math.min(T_MAX, tNow + (ts - lastFrame) / 1000 * currentRate());
+      if (tNow >= T_MAX) setPlaying(false);
+    }
+    lastFrame = ts;
+    draw();
+    if (playing) requestAnimationFrame(tick);
+  }
+  function setPlaying(p) {
+    playing = p;
+    const b = document.getElementById("play");
+    b.textContent = p ? "Pause" : "Play";
+    b.setAttribute("aria-label", p ? "Pause" : "Play");
+    if (p) { if (tNow >= T_MAX - 0.05) tNow = T_MIN; lastFrame = null; requestAnimationFrame(tick); }
+    draw();
+  }
+
+  // ------------------------------------------------------------------ the state hook
+  function sceneBox() {
+    const cv = document.getElementById("scene");
+    return { x: 0, y: 0, w: cv.clientWidth, h: cv.clientHeight };
+  }
+  function panelState(run, t, box) {
+    // The values drawn at t and the points painted: the panel is drawn on a canvas of the box's size, so
+    // every painted point is the one the drawing produced.
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(box.w)); cv.height = Math.max(1, Math.round(box.h));
+    const P = drawPanel(cv.getContext("2d"), box, t, scenePalette(), run), L = P.L, st = L.st, pm = P.painted;
+    return {
+      run: run.name, t: t, phase: st.phase, alt_m: st.alt, downrange_m: st.d, speed_mps: st.speed,
+      pitch_deg: st.pitchDeg, drawn_angle_deg: st.angleDeg, closeup_angle_deg: L.angC * DEG_PER_RAD, attitude_defined: st.defined,
+      plume: st.plume, plume_drawn: st.plumeDrawn, thrust_on: st.thrustOn, stage: st.stage, stage_name: run.tanks.stage_names[st.stage],
+      fairing_on: st.fairingOn, fill1: st.fill1, fill2: st.fill2, prop1_kg: st.prop1, prop2_kg: st.prop2, mass_kg: st.mass,
+      felt_g: st.felt, drive_force_N: st.driveF,
+      carriage_s_m: siloReady(run.assist) ? carriageS(run, t) : null,
+      events_shown: eventsShown(run, t), rate: rateAt(t), hud: P.hud, layout: L.lay.mode,
+      painted: {
+        base_px: pm.main.base, nose_px: pm.main.nose, ground_px: L.ground, px_per_m: L.cam.ppm, mode: L.mode, stack_length_m: L.parts.L,
+        closeup_base_px: pm.closeup.base, closeup_nose_px: pm.closeup.nose,
+        closeup_len_px: Math.hypot(pm.closeup.nose[0] - pm.closeup.base[0], pm.closeup.nose[1] - pm.closeup.base[1]),
+        carriage_label: pm.carriageLabel, closeup_carriage_label: pm.closeup.carriageLabel,
+        camera: { x0_m: L.cam.x0, y0_m: L.cam.y0, view_height_m: L.cam.H, view_width_m: L.cam.W, extent_m: L.cam.E, view: L.view }
+      }
+    };
+  }
+  function stateAt(t) {
+    const tt = Number(t);
+    if (!Number.isFinite(tt)) throw new TypeError("stateAt needs a finite time in seconds after release");
+    return [panelState(panelRun, snapTime(tt, TIME_DECIMALS), sceneBox())];
+  }
+  function captureFrame(t, width, height) {
+    // A PNG of the panel at t with the caveat footer under it; captureFrame(t) (design 4.5) is a frame of
+    // CAPTURE_DEFAULT_W_PX x CAPTURE_DEFAULT_H_PX, and a width and a height may be given.
+    return new Promise((resolve, reject) => {
+      const tt = Number(t);
+      const W = Math.round(Number(width === undefined ? CAPTURE_DEFAULT_W_PX : width));
+      const H = Math.round(Number(height === undefined ? CAPTURE_DEFAULT_H_PX : height));
+      if (!Number.isFinite(tt) || !(W >= CAPTURE_MIN_PX && W <= CAPTURE_MAX_PX) || !(H >= CAPTURE_MIN_PX + CAPTURE_FOOTER_PX && H <= CAPTURE_MAX_PX)) {
+        reject(new RangeError("captureFrame needs a finite time, a width of " + CAPTURE_MIN_PX + " to " + CAPTURE_MAX_PX +
+          " px and a height of " + (CAPTURE_MIN_PX + CAPTURE_FOOTER_PX) + " to " + CAPTURE_MAX_PX + " px"));
+        return;
+      }
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext("2d"), pal = scenePalette();
+      const lines = footerWrapped(ctx, pal, W);
+      const footerH = Math.max(CAPTURE_FOOTER_PX, lines.length * LINE_SMALL_PX + 2 * BAND_PAD_PX);
+      const box = { x: 0, y: 0, w: W, h: H - footerH };
+      const lay = box.h >= CAPTURE_MIN_PX ? panelLayout(ctx, pal, panelRun, box) : null;
+      if (!lay || lay.view.w < CAPTURE_MIN_PX || lay.view.h < CAPTURE_MIN_PX || lay.inset.y + lay.inset.h > lay.legendBox.y) {
+        reject(new RangeError("captureFrame: in a frame of " + W + " x " + H + " px the caveat footer takes " + footerH +
+          " px and the panel's text, view and close-up do not fit in the rest; ask for a taller frame"));
+        return;
+      }
+      drawPanel(ctx, box, snapTime(tt, TIME_DECIMALS), pal, panelRun);
+      drawTextBand(ctx, { x: 0, y: box.h, w: W, h: footerH }, pal, lines, true);
+      cv.toBlob(blob => { if (blob) resolve(blob); else reject(new Error("the browser returned no PNG")); }, "image/png");
+    });
+  }
+
+  // ------------------------------------------------------------------ wiring
+  function setRun(index) {
+    panelRun = runs[index] || runs[0];
+    T_MIN = panelRun.t[0]; T_MAX = panelRun.t[panelRun.t.length - 1];
+    const scrub = document.getElementById("scrub");
+    const k = Math.pow(10, SCRUB_DECIMALS);
+    scrub.min = (Math.floor(T_MIN * k) / k).toFixed(SCRUB_DECIMALS); scrub.max = (Math.ceil(T_MAX * k) / k).toFixed(SCRUB_DECIMALS);
+    tNow = Math.min(T_MAX, Math.max(T_MIN, tNow));
+    document.getElementById("runSel").value = String(runs.indexOf(panelRun));
+    document.getElementById("scene").setAttribute("aria-label", "Launch scene of " + panelRun.label +
+      ": a true-scale cross-section of the site with a close-up of the vehicle at a scale of its own; the telemetry below gives the values as text");
+    const failed = panelRun.checks && panelRun.checks.failed ? panelRun.checks.failed : [];
+    const flagged = Array.isArray(panelRun.flags) ? panelRun.flags : [];
+    const parts = [];
+    if (failed.length) parts.push("Load-time check failed for this run: " + failed.join("; ") + ".");
+    if (flagged.length) parts.push("Flagged: " + flagged.join("; ") + ".");
+    const flag = document.getElementById("flag");
+    flag.hidden = parts.length === 0;
+    flag.textContent = parts.join(" ");
+    const note = document.getElementById("runNote");
+    note.hidden = !panelRun.note;
+    note.textContent = panelRun.note || "";
+    buildTelemetry();
+    buildTicker();
+  }
+  function listItems(id, items) {
+    const ul = document.getElementById(id);
+    ul.replaceChildren();
+    items.forEach(s => { const li = document.createElement("li"); li.textContent = s; ul.appendChild(li); });
+  }
+  function postHeight() {
+    if (!embedded || window.parent === window) return;
+    try { window.parent.postMessage({ type: "launchsim-scene-height", height: Math.ceil(document.documentElement.scrollHeight) }, "/"); } catch (e) { /* no parent to tell */ }
+  }
+  function init() {
+    const names = runs.map(r => r.name);
+    const hash = parseHash(window.location.hash, {
+      tMin: Math.min(...runs.map(r => r.t[0])), tMax: Math.max(...runs.map(r => r.t[r.t.length - 1])), names: names
+    });
+    const root = document.documentElement;
+    if (hash.theme === "light") root.setAttribute("data-theme", "light");
+    if (hash.theme === "dark") root.setAttribute("data-theme", "dark");
+    if (hash.embed) { embedded = true; root.setAttribute("data-embed", "1"); }
+
+    const sel = document.getElementById("runSel"), groups = {};
+    runs.forEach((r, i) => {
+      if (!groups[r.role]) { groups[r.role] = document.createElement("optgroup"); groups[r.role].label = r.role; sel.appendChild(groups[r.role]); }
+      const o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = (r.label.indexOf(r.name) === 0 ? r.label : r.label + " [" + r.name + "]") + (r.yardstick === true ? YARDSTICK_MARK : "");
+      groups[r.role].appendChild(o);
+    });
+    sel.addEventListener("change", () => { setRun(Number(sel.value)); draw(); });
+    setRun(hash.runs.length ? names.indexOf(hash.runs[0]) : 0);
+    tNow = hash.t === null ? T_MIN : Math.min(T_MAX, Math.max(T_MIN, snapTime(hash.t, TIME_DECIMALS)));
+
+    const scrub = document.getElementById("scrub");
+    scrub.addEventListener("input", () => { tNow = Math.min(T_MAX, Math.max(T_MIN, snapTime(Number(scrub.value), TIME_DECIMALS))); draw(); });
+    document.getElementById("play").addEventListener("click", () => setPlaying(!playing));
+    document.getElementById("rate").addEventListener("change", draw);
+    document.addEventListener("keydown", e => {
+      if (e.target && ["INPUT", "SELECT", "BUTTON"].includes(e.target.tagName) && e.key === " ") return;
+      if (e.key === " ") { e.preventDefault(); setPlaying(!playing); }
+    });
+    document.addEventListener("visibilitychange", () => { if (document.hidden && playing) setPlaying(false); });
+
+    document.title = "Launch Scene: " + DATA.experiment;
+    document.getElementById("subtitle").textContent = DATA.experiment + " " + DATA.timestamp +
+      ": the vehicle is replayed from the recorded time series; nothing is integrated in the browser.";
+    if (DATA.exploratory_caveat) { const b = document.getElementById("banner"); b.hidden = false; b.textContent = DATA.exploratory_caveat; }
+    if (DATA.excluded.length) { const x = document.getElementById("excluded"); x.hidden = false; x.textContent = DATA.excluded.map(e => e.reason).join(" "); }
+    // the caveats built for the runs shown, then the display-only items; the directory's recorded offload
+    // caveats in a list of their own under a line that says where they come from
+    const split = splitCaveats(DATA.caveats, DATA.offload_caveats);
+    listItems("caveats", split.own.concat(DATA.display_only));
+    if (split.recorded.length) {
+      document.getElementById("offloadHead").hidden = false;
+      document.getElementById("offloadCaveats").hidden = false;
+      listItems("offloadCaveats", split.recorded);
+    }
+    document.getElementById("strip").textContent = (DATA.exploratory_caveat ? DATA.exploratory_caveat + " " : "") + DATA.footer;
+    const foot = document.getElementById("foot");
+    foot.replaceChildren();
+    footerLines().forEach(s => { const p = document.createElement("p"); p.textContent = s; foot.appendChild(p); });
+
+    const redraw = () => { draw(); postHeight(); };
+    new ResizeObserver(redraw).observe(document.querySelector(".wrap"));
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+    new MutationObserver(() => draw()).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    draw();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
+    window.launchsimScene = Object.freeze({ stateAt: stateAt, captureFrame: captureFrame });
+    if (hash.qa !== null) {
+      document.getElementById("qa-state").textContent = JSON.stringify(hash.qa.map(t => stateAt(t))).replace(/</g, "\\u003c");
+    }
+    postHeight();
+    const autoplay = !reduceMotion && (hash.autoplay || (!hash.embed && hash.t === null && hash.qa === null));
+    if (autoplay) setTimeout(() => setPlaying(true), AUTOPLAY_DELAY_MS);
+  }
+  init();
+})();
+</script>
+</body>
+</html>

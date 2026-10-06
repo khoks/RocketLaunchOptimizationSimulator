@@ -14,6 +14,7 @@ does. Anything else (a bug in the simulator) keeps its traceback.
     launchsim animate <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--fps N]
                       [--seconds S] [--width PX]
     launchsim replay <run_dir> [--runs NAME [NAME ...]] [--out PATH]
+    launchsim scene <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--display PATH]
     launchsim --version
 
 ``--results-root`` defaults to ``<repo root>/results`` (the repository holding the
@@ -26,6 +27,13 @@ experiment file, found by its pyproject.toml), so the layout is the same from an
 ``replay`` writes the same kind of selection as one self-contained interactive HTML page
 (replay.write_replay_page: scrub, play, telemetry, metrics and caveats); the default
 output is ./<experiment>_<timestamp>_replay.html, never inside results/.
+
+``scene`` writes the 2-D launch scene of planar_2d runs as one standalone HTML page
+(scene.write_scene_page: a true-scale cross-section of the site with a fixed-scale
+close-up of the vehicle, telemetry, events and caveats; it makes no request); the
+default output is ./<experiment>_<timestamp>_scene.html, never inside results/. The
+display files come from ``--display`` or else configs/display of the repository found
+above the working directory, then above the installed package.
 """
 
 from __future__ import annotations
@@ -37,7 +45,7 @@ from typing import Any
 
 import yaml
 
-from launchsim import __version__, plots, replay, sim
+from launchsim import __version__, plots, replay, run_data, scene, sim
 from launchsim.compare import CHECK_NA
 from launchsim.config import OFFLOAD_GROSS_MODES, ResolvedExperiment, resolve_experiment
 from launchsim.results_io import OFFLOAD_QUOTED_FAILED, OFFLOAD_QUOTED_NO_CONTROL
@@ -56,8 +64,8 @@ class CliError(Exception):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for ``launchsim run``, ``sweep``, ``animate`` and
-    ``replay``."""
+    """Build the argument parser for ``launchsim run``, ``sweep``, ``animate``, ``replay``
+    and ``scene``."""
     parser = argparse.ArgumentParser(
         prog="launchsim", description="Ground-powered launch-assist simulator."
     )
@@ -157,6 +165,38 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Output .html file. Default: ./<experiment>_<timestamp>_replay.html, "
         "never inside results/.",
+    )
+
+    scn = sub.add_parser(
+        "scene",
+        help="Write the 2-D launch scene of planar_2d runs of one results directory as a "
+        "standalone HTML page.",
+    )
+    scn.add_argument(
+        "run_dir", help="A results directory of a planar_2d run: results/<experiment>/<timestamp>."
+    )
+    scn.add_argument(
+        "--runs",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help="Runs the page can show (default: the baseline and the first solved stage-1 "
+        "offload case, else the first assisted variant that is not a yardstick).",
+    )
+    scn.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="Output .html file. Default: ./<experiment>_<timestamp>_scene.html, "
+        "never inside results/.",
+    )
+    scn.add_argument(
+        "--display",
+        default=None,
+        metavar="PATH",
+        help="Folder of the display files (scene.yaml and one file per vehicle family). "
+        "Default: configs/display of the repository above the working directory, else "
+        "above the installed package.",
     )
     return parser
 
@@ -488,6 +528,45 @@ def command_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def scene_display_dir(display: str | None) -> Path:
+    """The display files' folder: ``--display`` as given, else configs/display
+    (scene.DEFAULT_DISPLAY_DIR) of the nearest repository (pyproject.toml) above the
+    working directory that has one, else of the repository above the installed package.
+    Raises CliError when neither has it."""
+    if display is not None:
+        return Path(display)
+    for start in (Path.cwd(), Path(scene.__file__).resolve().parent):
+        root = find_repo_root(start)
+        if root is not None and (root / scene.DEFAULT_DISPLAY_DIR).is_dir():
+            return root / scene.DEFAULT_DISPLAY_DIR
+    raise CliError(
+        f"no {scene.DEFAULT_DISPLAY_DIR.as_posix()} folder above the working directory or "
+        "the installed package; pass --display PATH"
+    )
+
+
+def command_scene(args: argparse.Namespace) -> int:
+    """Write the standalone scene page of a planar results directory and print its path
+    and size. The directory is checked first (a clear error before the display files are
+    looked for, as ``command_replay`` checks its directory before choosing the output);
+    a missing display folder raises CliError unchanged."""
+    run_dir = Path(args.run_dir)
+    try:
+        scene.check_scene_run_dir(run_dir)
+        display_dir = scene_display_dir(args.display)
+        written = scene.write_scene_page(
+            run_dir,
+            args.runs,
+            None if args.out is None else Path(args.out),
+            cwd=Path.cwd(),
+            display_dir=display_dir,
+        )
+    except run_data.RunDataError as exc:  # SceneError and the shared readers' refusals
+        raise CliError(str(exc)) from exc
+    say(f"scene: {written} ({written.stat().st_size / 1024:.0f} KiB)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns the process exit code: 0 on success, 1 for a configuration or
     file-system error (CliError, OSError), printed as one ``error:`` line. argparse
@@ -499,6 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         "sweep": command_sweep,
         "animate": command_animate,
         "replay": command_replay,
+        "scene": command_scene,
     }
     try:
         return commands[args.command](args)

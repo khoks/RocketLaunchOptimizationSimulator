@@ -20,6 +20,7 @@ Create these in Phase 0 and keep this list accurate.
 - Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]`
 - Animate a 2-D run (MP4/GIF): `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 - Interactive replay page (HTML): `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
+- 2-D launch scene page (standalone HTML): `uv run python -m launchsim scene results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH] [--display PATH]`
 
 ## Layout
 
@@ -48,9 +49,10 @@ src/launchsim/
   replay.py      the `replay` command: a self-contained interactive HTML replay page (template in templates/replay.html)
   run_data.py    shared read-only reader of a results directory: file readers, directory check, run selection and roles, series and event readers (mass before and after each drop), calibration records, the output-path rule; no matplotlib
   display.py     display-only reconstructions of the 2-D scene, pure: the display-file models, tank levels and their load-time checks, separation state and vacuum coast, screen transform and camera law, row selection, held attitude; never model output
-  scene.py       the scene data payload of a planar results directory (I/O: reads through run_data and configs/display/, writes nothing) and its strict-JSON encoding
+  scene.py       the 2-D scene: the data payload of a planar results directory (reads through run_data and configs/display/), its strict-JSON encoding, and the standalone page (render_page fills templates/scene.html; write_scene_page writes only the page, never inside a results tree)
   optimize.py    ascent optimization (Phase 5)
   cli.py
+  templates/     package-data page templates: replay.html (the replay page; frozen in SP2) and scene.html (the standalone 2-D scene page that scene.py renders and writes; no request, state hook window.launchsimScene)
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
 configs/display/   display-only geometry of the 2-D scene (one YAML per vehicle family, applies_to names the vehicles; scene.yaml for the camera, pixel thresholds and the generic shape); every number has `source:` or `assumed: true`; nothing here enters the model
 experiments/       one YAML per experiment: baseline, variants, sweep axes

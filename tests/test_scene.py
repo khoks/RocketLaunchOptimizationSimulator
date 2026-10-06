@@ -622,6 +622,62 @@ def test_offload_notes_are_the_replay_pages_own(derived_dir: Path) -> None:
             assert "none found (status no_offload" in control
 
 
+def test_offload_runs_are_labelled_by_kind_and_carry_their_flags(derived_dir: Path) -> None:
+    """The scene labels an offload case's recorded run by what its offload is (a penalty
+    row with its assumed dry mass, a solve, an imposed fixed case) where the replay page
+    says '(offload)' alone; a stage-2 or both-stage solve says it is a property of the
+    vehicle model (criterion 7) and a solve with a stage-2 pre-offload names the imposed
+    part, so neither reads as the stage-1 headline; a paired pad and a pad control keep
+    the replay's label. The
+    flags list names a failed verification (with its reading) and each flag of the case
+    record; a passed, unflagged case and a paired pad carry none. The page shows the note
+    and the flags (tests/test_scene_page.py checks the template's wiring)."""
+    runs = {
+        r["key"]: r
+        for selection in (
+            ["light_s1", "light_s1__pad", "light_s1_dry+8.1t"],
+            ["light_fix10pct", "light_s2"],
+        )
+        for r in scene.scene_payload(derived_dir, selection, display_dir=DISPLAY_DIR)["runs"]
+    }
+    assert runs["light_s1"]["label"] == "light_s1 (offload, solved)"
+    assert runs["light_s1_dry+8.1t"]["label"] == (
+        "light_s1_dry+8.1t (offload penalty row: assumed +8.1 t of stage-1 dry mass)"
+    )
+    assert runs["light_fix10pct"]["label"] == "light_fix10pct (offload, imposed)"
+    assert runs["light_s2"]["label"] == (
+        "light_s2 (offload, solved, stage 2: a property of the vehicle model)"
+    )
+    assert runs["light_s1__pad"]["label"] == "light_s1__pad (paired pad)"
+    # a both-stage solve and a stage-1 solve with an imposed stage-2 pre-offload (records as
+    # results/silo_offload_2d writes them: silo_cold_both, silo_cold_s1_s2pre2t)
+    solve = {"kind": run_data.OFFLOAD_SOLVED_KIND, "status": "ok"}
+    label = scene.scene_run_label
+    case, role = run_data.OFFLOAD_CASE, run_data.ROLE_OFFLOAD
+    assert label("b", role, False, case, {**solve, "mode": "both"}) == (
+        "b (offload, solved, both stages: a property of the vehicle model)"
+    )
+    pre = {**solve, "mode": "stage1", "stage2_preoffload_kg": 2000.0}
+    assert label("p", role, False, case, pre) == (
+        "p (offload, solved, plus 2.00 t imposed on stage 2)"
+    )
+    assert label("z", role, False, case, {**pre, "stage2_preoffload_kg": 0.0}) == (
+        "z (offload, solved)"
+    )
+    flags = runs["light_s2"]["flags"]
+    assert flags[0] == (
+        "verification failed (+15.36 kg against 2.3 kg): the gross removal is a flagged lower bound"
+    )
+    flag = "offload: offload_verify_mismatch: the payload search ended ok above P_ref"
+    assert flags[1:] == [flag]
+    for key in ("light_s1", "light_s1__pad", "light_s1_dry+8.1t", "light_fix10pct"):
+        assert runs[key]["flags"] == [], key
+    assert all(r["yardstick"] is False for r in runs.values())
+    control = scene.scene_payload(derived_dir, ["pad__offload_stage1"], display_dir=DISPLAY_DIR)
+    assert control["runs"][0]["label"] == "pad__offload_stage1 (pad control)"
+    assert control["runs"][0]["flags"] == []
+
+
 def test_offload_caveats_appear_only_with_an_offload_run_and_the_exploratory_line(
     derived_dir: Path, exploratory_dir: Path
 ) -> None:

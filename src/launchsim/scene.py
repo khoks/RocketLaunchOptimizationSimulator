@@ -1,5 +1,6 @@
-"""The data payload of the 2-D launch scene (I/O: reads one results directory and the
-display files under configs/display/; writes nothing).
+"""The 2-D launch scene: its data payload and its standalone page (I/O: reads one results
+directory and the display files under configs/display/; writes only the page, never
+inside a results tree).
 
 ``scene_payload`` builds, for one to run_data.MAX_RUNS runs of a planar_2d results
 directory (results/<experiment>/<timestamp>), everything the scene page draws, as plain
@@ -11,8 +12,9 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   pitch and the drawn (held) angle, the plume fraction (``thrust_vac_N`` over the stage's
   full vacuum thrust from the run's own vehicle block), the step series (stage index,
   phase, fairing on, thrust on), the track series over the push (null outside it), q and
-  Mach (null inside the vented shaft), the two tank series (display.tank_levels, 0.1 kg)
-  and their fills against the full-load tanks of the fill-reference block;
+  Mach (null inside the vented shaft), the felt axial acceleration (``felt_axial_g`` as
+  recorded, in g), the two tank series (display.tank_levels, 0.1 kg) and their fills
+  against the full-load tanks of the fill-reference block;
 - the events with the mass before and after each drop (run_data.with_drop_masses),
   labelled by name and stage, each at its matched row's time; a pad's liftoff and ramp
   end synthesised from the metrics and marked so; events at one time grouped;
@@ -22,21 +24,27 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   drop) on a display-only vacuum coast (display.vacuum_coast) clipped at the run's last
   time, with each body's own apex, impact time, speed and downrange, and the body's own
   measured screen gap from the recorded COAST_STAGING rows (display.coast_gap_m);
-- the run's role (run_data.run_source, offload_role) and note (for an offload run the
-  replay page's own wording, replay.replay_offload_note: the one note source of D-SP2-23,
-  two decimals, a paired pad said to fly its own payload capacity, a penalty row's
-  assumed dry mass, a fixed case's P* - P_ref reading, a net-of-pad-control quotation, a
-  failed verification and the flags) and the load-time check verdicts (display.tank_checks
-  plus the rebuilt-mass check and the row selection's convergence, ``selection_check``);
+- the run's role (run_data.run_source, offload_role), its label (the replay's, except
+  that an offload case's recorded run is labelled by kind: solved, imposed or a penalty
+  row with its assumed dry mass, ``scene_run_label``), whether it is a yardstick
+  (replay.is_yardstick: drawn dashed), its note (for an offload run the replay page's
+  own wording, replay.replay_offload_note: the one note source of D-SP2-23, two
+  decimals, a paired pad said to fly its own payload capacity, a penalty row's assumed
+  dry mass, a fixed case's P* - P_ref reading, a net-of-pad-control quotation, a failed
+  verification and the flags), its offload flags one by one (``offload_flags``) and the
+  load-time check verdicts (display.tank_checks plus the rebuilt-mass check and the row
+  selection's convergence, ``selection_check``);
 - at the top level: the directory's identity and git record as metrics.json holds it
   (``hash``; ``dirty`` true, false, or null when git status itself failed and the state
   is unknown, never read as clean; ``error``, git's reason), its label, the vehicle, the
   display geometry (the matching display file, else the generic shape with the reason),
-  R_E and omega_p from constants, the camera and tolerance constants, the display-only
-  list (design 4.9), the caveats (every line replay.caveats gives the same selection, so
-  the scene's model caveats are a superset of the replay page's, plus the directory's
-  ``offload.caveats`` word for word when an offload run is shown) and the provenance
-  footer.
+  R_E and omega_p from constants, the camera and tolerance constants, the page's drawing
+  constant that the display-only text quotes (PLUME_OF_STACK), the display-only list
+  (design 4.9), the caveats (every line replay.caveats gives the same selection, so the
+  scene's model caveats are a superset of the replay page's, plus the directory's
+  ``offload.caveats`` word for word when an offload run is shown), the exploratory mark
+  (replay.EXPLORATORY_CAVEAT for an exploratory directory, else None: the one string the
+  page's banner, strip, footer and in-canvas tag use) and the provenance footer.
 
 With no run selection the payload shows D-SP2-28's default pair (``default_pair``): the
 baseline on the left; on the right the first solved stage-1 offload case, else the first
@@ -47,10 +55,25 @@ one-line reason under ``excluded``; a 1-D directory, a sweep directory or sweep 
 directory with FAILED.txt or one without summary.md is refused with a SceneError (a
 run_data.RunDataError). Everything on disk is read through run_data (never results_io,
 sim, compare or a reader of this module's own); replay is imported for its caveat list
-(through ``replay_data``), its offload note, its label and status helpers (``run_label``,
-``is_vertical``, ``is_exploratory``, ``INSERTED``), ``source_text`` and ``embed_json``.
+(through ``replay_data``) and exploratory mark, its offload note and the pieces of it
+the label and flags reuse (``penalty_added_kg``, ``penalty_mass_text``,
+``verification_reading``, ``pad_control_record``, ``has_flags``), its label and status
+helpers (``run_label``, ``is_vertical``, ``is_exploratory``, ``is_yardstick``,
+``INSERTED``), ``source_text`` and ``embed_json``.
 ``scene_json`` encodes the payload as strict ASCII JSON with '<' escaped, for the
-``__SCENE_DATA__`` token of the scene template (step A3).
+``__SCENE_DATA__`` token of the scene template.
+
+The page (SP2 step A3, design section 4.5): ``render_page`` replaces the one token of
+the package template templates/scene.html (read through importlib.resources, as
+replay.load_template reads its own) with ``scene_json`` of the payload and changes
+nothing else; ``write_scene_page`` writes it under run_data's shared output-path rule
+(default ./<experiment>_<timestamp>_scene.html, refused inside any results tree, the
+folder must exist). The page draws, plays and exposes the state hook
+``window.launchsimScene``; it makes no request (its Content-Security-Policy allows the
+one inline script by its sha256, inline styles and data: images only). site/build.py
+must not insert elements into, or patch the script of, a scene page: frame it from an
+outer page with an iframe; the meta CSP blocks same-origin images and links, and the
+script-src hash pins the script.
 
 Units: SI and radians in every computation; the payload carries metres, seconds,
 kilograms, newtons, watts, pascals and DEGREES for angles (converted here through
@@ -62,6 +85,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
+from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -75,7 +99,7 @@ from launchsim.metrics_planar import RAMP_START_METRICS, RAMP_START_REQUEST_METR
 from launchsim.phases.planar import COAST_STAGING, FAIRING_EVENT
 from launchsim.phases.trace import ASSIST_KIND
 from launchsim.search import OK_STATUS
-from launchsim.units import deg_to_rad, from_g, rad_to_deg, t_to_kg, to_g
+from launchsim.units import deg_to_rad, from_g, kg_to_t, rad_to_deg, t_to_kg, to_g
 
 if TYPE_CHECKING:
     # The frame type only: every file is read through run_data, never with pandas here.
@@ -108,6 +132,15 @@ DEFAULT_DISPLAY_DIR = Path("configs") / "display"
 """Where the display files live, relative to the repository root."""
 SCENE_DATA_TOKEN = "__SCENE_DATA__"
 """The scene template's placeholder for the embedded JSON (step A3)."""
+SCENE_TEMPLATE = ("templates", "scene.html")
+"""The page template, package data of launchsim (importlib.resources path parts)."""
+SCENE_MARKER = "Written by launchsim scene"
+"""The template's own marker (its style comment); never the replay page's, so the site
+build does not frame a scene page as a replay page."""
+SCENE_SUFFIXES = (".html", ".htm")
+"""Extensions a scene page may be written with (any letter case)."""
+SCENE_STEM = "scene"
+"""Quantity part of the default file name <experiment>_<timestamp>_scene.html."""
 
 SCENE_COLUMNS = (
     *run_data.PLANAR_BASE_COLUMNS,
@@ -148,6 +181,8 @@ Q_DECIMALS = 1
 """Decimals [Pa] of the dynamic-pressure samples."""
 MACH_DECIMALS = 4
 """Decimals [-] of the Mach samples."""
+G_DECIMALS = 3
+"""Decimals [g] of the felt axial acceleration samples (``felt_axial_g``)."""
 MASS_DECIMALS = 3
 """Decimals [kg] of the scalar masses in the payload (events, loads, payload)."""
 COAST_DECIMALS = 2
@@ -187,6 +222,15 @@ TrackConfig), neither recorded in the run nor computed from other values."""
 SELECTION_CHECK_UNIT = "fraction of the tolerance"
 """Unit of the row-selection check item (``selection_check``): a residual over its row's
 tolerance."""
+OFFLOAD_NET_MODE_WORDS: Mapping[str, str] = {"stage2": "stage 2", "both": "both stages"}
+"""How a run label names the offload mode of a solve quoted net of the pad control (a mode
+outside config.OFFLOAD_GROSS_MODES; D-SP1-10): scene_run_label. A mode not listed is
+named as recorded."""
+
+PLUME_OF_STACK = 0.35
+"""Length of the drawn plume at full vacuum thrust, as a fraction of the drawn stack (a
+drawing choice, not a model value): carried in the payload as ``drawing.plume_of_stack``
+so the page draws it and DISPLAY_ONLY quotes it from this one number."""
 
 FOOTER_TEXT = (
     "The vehicle's path, thrust and mass are replayed from the recorded time series. The "
@@ -198,8 +242,13 @@ FOOTER_TEXT = (
 DISPLAY_ONLY: tuple[str, ...] = (
     "Every shape and length: the model has a reference area and a point mass; the "
     "vehicle's shape and the widths and sizes of the shaft, rings, carriage, rails, mount "
-    "and clamps come from configs/display, not from the model (the shaft depth and the "
-    "rail length are the run's own stroke and braking distance). alt_m is drawn at the "
+    "and clamps come from configs/display, and the other proportions from the page's "
+    "drawing constants (the plume's length, "
+    f"{PLUME_OF_STACK:.0%} of the drawn stack at full vacuum thrust scaled by the thrust "
+    "fraction, and its width; the tank margins; the fairing outline and the payload stub; "
+    "the trench width; the clamp spacing; the ring depth), not from the model (the shaft "
+    "depth and the rail length are the run's own stroke and braking distance, the shaft "
+    "drawn on down to the carriage's bottom at push start). alt_m is drawn at the "
     "rocket's base.",
     "The body attitude: the model has a thrust direction, not a body axis. While the "
     "engines are off outside the hold and the track (an unpowered coast, a fall-back) the "
@@ -219,9 +268,9 @@ DISPLAY_ONLY: tuple[str, ...] = (
     "the aref_fairing calibration case, both with the larger reference area), below one "
     "pixel at that camera scale (hundreds of metres per pixel), so the gap drawn then is a "
     "drawing choice; the gap grows with the drag the coast ignores, so a run that stages "
-    "lower sits further from it and nothing bounds it for a run not yet flown: read the "
-    "shown run's own staging_coast_gap_m. Both fairing halves follow one path; a body "
-    "still in flight when the run ends is drawn stopped there.",
+    "lower sits further from it and nothing bounds it for a run not yet flown. Both "
+    "fairing halves follow one path; a body still in flight when the run ends is drawn "
+    "stopped there.",
     "The plume inside the shaft and the carriage beneath lit engines: the model has a vented "
     "shaft and one impingement fraction that moves only track forces and drive energy; no "
     "back-pressure, heating or exhaust on the carriage.",
@@ -294,15 +343,17 @@ def load_scene_config(display_dir: Path) -> display.SceneDisplayConfig:
 
 def load_display_configs(display_dir: Path) -> list[display.VehicleDisplayConfig]:
     """Every vehicle display file under ``display_dir`` (``*.yaml`` but scene.yaml), in
-    name order; raises SceneError for one that does not validate (one line)."""
+    name order; raises SceneError for one that cannot be read or parsed ('cannot read')
+    or does not validate (one line each)."""
     out: list[display.VehicleDisplayConfig] = []
     if not display_dir.is_dir():
         return out
     for path in sorted(display_dir.glob(f"*{DISPLAY_FILE_SUFFIX}")):
         if path.name == SCENE_CONFIG_FILE:
             continue
+        data = run_data.read_yaml(path, error=SceneError)
         try:
-            out.append(display.VehicleDisplayConfig.model_validate(run_data.read_yaml(path)))
+            out.append(display.VehicleDisplayConfig.model_validate(data))
         except ValueError as exc:
             raise SceneError(f"{path} does not validate: {_one_line(exc)}") from exc
     return out
@@ -811,6 +862,79 @@ def _offload_fractions(
     )
 
 
+def scene_run_label(
+    name: str, role: str, baseline: bool, kind: str | None, record: Mapping[str, Any] | None
+) -> str:
+    """The run's label on the scene page: replay.run_label's, except for an offload case's
+    recorded run (``kind`` run_data.OFFLOAD_CASE with its case ``record``), labelled by
+    what its offload is instead of '(offload)' alone: '(offload penalty row: assumed +8.1 t
+    of stage-1 dry mass)' for a penalty row (replay.penalty_added_kg and
+    penalty_mass_text), '(offload, solved)' for a solve that ended ok, '(offload, solve
+    status <status>)' for one that did not, '(offload, imposed)' for a fixed case. A solve
+    quoted net of the pad control (a mode outside OFFLOAD_GROSS_MODES) adds what it is
+    ('(offload, solved, stage 2: a property of the vehicle model)', criterion 7), and a
+    solve with a stage-2 pre-offload adds it ('(offload, solved, plus 2.00 t imposed on
+    stage 2)'), so the selector and the header never show such a run as the stage-1
+    headline. A scene-side label: the replay page's labels are unchanged."""
+    label = replay.run_label(name, role, baseline, kind)
+    if baseline or kind != run_data.OFFLOAD_CASE or record is None:
+        return label
+    added = replay.penalty_added_kg(record)
+    if added is not None:
+        what = f"offload penalty row: assumed {replay.penalty_mass_text(added)}"
+    elif record.get("kind") == run_data.OFFLOAD_SOLVED_KIND:
+        status = record.get("status")
+        what = "offload, solved" if status == OK_STATUS else f"offload, solve status {status}"
+        mode = record.get("mode")
+        if mode is not None and mode not in OFFLOAD_GROSS_MODES:
+            words = OFFLOAD_NET_MODE_WORDS.get(str(mode), str(mode))
+            what += f", {words}: a property of the vehicle model"
+        imposed_kg = run_data.finite(record.get("stage2_preoffload_kg"))
+        if imposed_kg is not None and imposed_kg > 0.0:
+            what += f", plus {float(kg_to_t(imposed_kg)):.2f} t imposed on stage 2"
+    else:
+        what = "offload, imposed"
+    return f"{name} ({what})"
+
+
+def offload_flags(offload: Mapping[str, Any], name: str) -> list[str]:
+    """The flags of run ``name`` of metrics.json's ``offload`` block, one item each, for
+    the page's flag line: for an offload case's recorded run a failed verification first
+    ('verification failed (+15.36 kg against 2.6 kg): the gross removal is a flagged lower
+    bound', replay.verification_reading), then, for a stage-2 or both-stage solve quoted
+    net of a pad control that carries flags, that the net figure subtracts a flagged pad
+    control, then the case record's own ``flags``; for a pad control its record's
+    ``flags``; [] for a paired pad (the case's verdicts belong to the case's run) and for
+    every run outside the block. The note (replay.replay_offload_note) says the same in
+    one sentence; this list names each flag."""
+    role = run_data.offload_role(offload, name)
+    if role is None or role[0] == run_data.OFFLOAD_PAIRED_PAD:
+        return []
+    kind, record = role
+    out: list[str] = []
+    if kind == run_data.OFFLOAD_CASE:
+        verification = run_data.as_mapping(record.get("verification"))
+        if verification.get("passed") is False:
+            size, reading, _ = replay.verification_reading(verification)
+            out.append(f"verification failed{size}: {reading}")
+        mode = record.get("mode")
+        if (
+            record.get("kind") == run_data.OFFLOAD_SOLVED_KIND
+            and mode not in (None, *OFFLOAD_GROSS_MODES)
+            and run_data.finite(record.get("quoted_offload_kg")) is not None
+        ):
+            control = replay.pad_control_record(offload, mode)
+            if control is not None and replay.has_flags(control):
+                n = len(control["flags"])
+                out.append(
+                    f"the net figure subtracts a flagged pad control ({n} flag"
+                    f"{'' if n == 1 else 's'}) and is uncertain both ways"
+                )
+    if replay.has_flags(record):
+        out.extend(str(flag) for flag in record["flags"])
+    return out
+
+
 def selection_check(selection: display.RowSelection) -> display.CheckResult:
     """The row selection's convergence as a load-time check item (exit criterion 5):
     passed when every CSV row of every interpolated field lies within
@@ -957,24 +1081,30 @@ def run_payload(
         track[column] = _series(values, TRACK_DECIMALS)
 
     kind = None
+    case_record = None
     note = str(source["note"])
     offload_note = None
+    flags: list[str] = []
     if source["role"] == run_data.ROLE_OFFLOAD:
         # The replay page's note, not run_data.offload_note (the animation's one-decimal
         # legend): one note source for both pages (D-SP2-23, design 4.3).
         offload = run_data.as_mapping(metrics.get("offload"))
         role = run_data.offload_role(offload, name)
         kind = None if role is None else role[0]
+        case_record = None if role is None else role[1]
         offload_note = replay.replay_offload_note(offload, name, baseline)
         note = offload_note
+        flags = offload_flags(offload, name)
 
     return {
         "key": name,
-        "label": replay.run_label(name, source["role"], name == baseline, kind),
+        "label": scene_run_label(name, source["role"], name == baseline, kind, case_record),
         "role": source["role"],
         "offload_kind": kind,
         "note": note,
         "offload_note": offload_note,
+        "flags": flags,
+        "yardstick": replay.is_yardstick(dict(m)),
         "compared_to": source["compared_to"],
         "baseline": name == baseline,
         "status": status,
@@ -1000,6 +1130,7 @@ def run_payload(
         "thrust_on": [bool(v) for v in levels.thrust_on[sel]],
         "q_pa": _series(frame["q_pa"].to_numpy(dtype=float)[sel], Q_DECIMALS),
         "mach": _series(frame["mach"].to_numpy(dtype=float)[sel], MACH_DECIMALS),
+        "felt_g": _series(frame["felt_axial_g"].to_numpy(dtype=float)[sel], G_DECIMALS),
         "track": track,
         "prop1_kg": _series(prop1[sel], TANK_DECIMALS),
         "prop2_kg": _series(prop2[sel], TANK_DECIMALS),
@@ -1192,6 +1323,9 @@ def scene_payload(
         "git": git_record(git),
         "label": None if label is None else str(label),
         "exploratory": replay.is_exploratory(metrics),
+        "exploratory_caveat": (
+            replay.EXPLORATORY_CAVEAT if replay.is_exploratory(metrics) else None
+        ),
         "model": str(metrics.get("model")),
         "baseline": baseline,
         "vehicle": vehicle_name,
@@ -1217,6 +1351,7 @@ def scene_payload(
             "time_decimals": TIME_DECIMALS,
             "tank_decimals": TANK_DECIMALS,
         },
+        "drawing": {"plume_of_stack": PLUME_OF_STACK},
         "display_only": list(DISPLAY_ONLY),
         "caveats": caveats + offload_caveats,
         "offload_caveats": offload_caveats,
@@ -1233,6 +1368,74 @@ def scene_json(payload: Mapping[str, Any]) -> str:
     return replay.embed_json(dict(payload))
 
 
+# ------------------------------------------------------------------ the page
+
+
+def load_template() -> str:
+    """The scene page template (package data launchsim/templates/scene.html), as text,
+    read through importlib.resources as replay.load_template reads its own. The bytes are
+    decoded here (UTF-8; the template is ASCII) because this module reads no results file
+    itself: tests/test_scene.py keeps every file reader of a results directory in
+    run_data, and a package resource is not one."""
+    path = resources.files("launchsim").joinpath(*SCENE_TEMPLATE)
+    return path.read_bytes().decode("utf-8")
+
+
+def render_page(payload: Mapping[str, Any]) -> str:
+    """The standalone scene page: the template with its one SCENE_DATA_TOKEN replaced by
+    ``scene_json(payload)`` and nothing else changed (no other server-side string enters
+    the HTML). Raises RuntimeError when the template does not hold the token exactly
+    once, ValueError for a payload with NaN or infinity."""
+    template = load_template()
+    if template.count(SCENE_DATA_TOKEN) != 1:
+        raise RuntimeError(f"scene template must hold {SCENE_DATA_TOKEN} exactly once")
+    return template.replace(SCENE_DATA_TOKEN, scene_json(payload))
+
+
+def default_scene_path(run_dir: Path, cwd: Path) -> Path:
+    """<cwd>/<experiment>_<timestamp>_scene.html; when ``cwd`` is inside a results tree
+    (the run's own or any folder named results) the file goes next to the outermost such
+    tree instead (run_data.default_output_path, the shared rule of D-SP2-14)."""
+    experiment, timestamp = run_data.run_identity(run_dir)
+    name = run_data.plot_stem(f"{experiment}_{timestamp}", SCENE_STEM) + SCENE_SUFFIXES[0]
+    return run_data.default_output_path(run_dir, cwd, name)
+
+
+def check_scene_out(out_path: Path, run_dir: Path) -> None:
+    """Raise SceneError for an output that is not .html (or .htm), lies inside a results
+    tree (run_data.protected_tree: the run's own or any folder named results, in any
+    letter case), or whose folder does not exist, in that order (run_data.check_output)."""
+    run_data.check_output(
+        out_path,
+        run_dir,
+        suffixes=SCENE_SUFFIXES,
+        suffix_text=SCENE_SUFFIXES[0],
+        what="page",
+        error=SceneError,
+    )
+
+
+def write_scene_page(
+    run_dir: Path,
+    runs: Sequence[str] | None,
+    out: Path | None,
+    *,
+    cwd: Path,
+    display_dir: Path,
+) -> Path:
+    """Write the scene page of the selected ``runs`` (None: D-SP2-28's default pair) of
+    the planar results directory ``run_dir`` to ``out`` (None: ``default_scene_path``
+    under ``cwd``) as UTF-8 text with LF line ends, and return the path written.
+    Validates the directory, the runs and the display files (``scene_payload``), then the
+    output path (``check_scene_out``), before anything is written; raises SceneError."""
+    payload = scene_payload(run_dir, runs, display_dir=display_dir)
+    out_path = default_scene_path(run_dir, cwd) if out is None else out
+    check_scene_out(out_path, run_dir)
+    page = render_page(payload)
+    out_path.write_text(page, encoding="utf-8", newline="\n")
+    return out_path
+
+
 __all__ = [
     "DEFAULT_DISPLAY_DIR",
     "DISPLAY_ONLY",
@@ -1240,9 +1443,15 @@ __all__ = [
     "EMPTY_SERIES_WORDING",
     "FAILED_MARKER",
     "FOOTER_TEXT",
+    "G_DECIMALS",
+    "PLUME_OF_STACK",
     "SCENE_COLUMNS",
     "SCENE_CONFIG_FILE",
     "SCENE_DATA_TOKEN",
+    "SCENE_MARKER",
+    "SCENE_STEM",
+    "SCENE_SUFFIXES",
+    "SCENE_TEMPLATE",
     "SCENE_WORDING",
     "SELECTION_CHECK_UNIT",
     "SOURCE_DEFAULT",
@@ -1252,19 +1461,26 @@ __all__ = [
     "SceneError",
     "assist_settings",
     "body_payload",
+    "check_scene_out",
     "check_scene_run_dir",
     "default_pair",
+    "default_scene_path",
     "display_geometry_for",
     "event_label",
     "git_record",
     "load_display_configs",
     "load_scene_config",
+    "load_template",
+    "offload_flags",
     "ramp_start",
+    "render_page",
     "run_payload",
     "run_rows",
     "scene_json",
     "scene_payload",
+    "scene_run_label",
     "selection_check",
     "site_omega_p",
     "synthetic_events",
+    "write_scene_page",
 ]
