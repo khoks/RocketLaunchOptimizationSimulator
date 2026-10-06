@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-05 (SP2 in progress: steps A1 and A1b done; KI-002, KI-016, KI-017, KI-018 closed).
+Last updated: 2026-10-05 (SP2 in progress: steps A1, A1b and A1a done; KI-002, KI-016, KI-017, KI-018, KI-029 closed).
 
 ## Program
 
@@ -337,7 +337,7 @@ Added 2026-10-03 in SP1 step 8:
 
 Added 2026-10-03 at the SP2 fact-check:
 
-- **KI-029** [low, open, owner SP2] `replay.drive_caveat` (replay.py) ends "Each of these favours the assisted runs.", which is misleading; site/build.py (`REPLAY_TEXT_FIXES`) rewrites the sentence in the gallery pages. Fix it in replay.py (and drop the site rewrite) when SP2 touches replay (SP2 section 5.8 item 5).
+- **KI-029** [low, closed 2026-10-05 in SP2 step A1a (41f838a): `drive_caveat` closes with clauses built from the runs shown; site/build.py no longer rewrites it; the gallery pages are regenerated] `replay.drive_caveat` (replay.py) ends "Each of these favours the assisted runs.", which is misleading; site/build.py (`REPLAY_TEXT_FIXES`) rewrites the sentence in the gallery pages. Fix it in replay.py (and drop the site rewrite) when SP2 touches replay (SP2 section 5.8 item 5).
 
 Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the design; severity and owner as the approved design gives them, docs/phases/inputs/2026-10-05-SP2-design.md section 8; line numbers are for commit b69ff0c):
 

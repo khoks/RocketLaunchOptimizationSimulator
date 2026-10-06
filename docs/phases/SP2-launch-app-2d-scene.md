@@ -1237,7 +1237,7 @@ decision.
 | A0 | Plan and mock-ups | the design ([inputs/2026-10-05-SP2-design.md](inputs/2026-10-05-SP2-design.md)), this file | - | The user's approval (given 2026-10-05) | [x] | a5b8133 (the start commit, "Start SP2: status in progress") |
 | A1 | run_data; plots and replay switched; KI-002, KI-016, KI-017 | run_data.py, plots.py, replay.py, physics.md, CLAUDE.md | test_run_data.py (27 of survey 06: readers, roles, the four fairing cases, output-path corners, the runs-block digest, import rule) | Reference page, seven more and the five gallery pages byte-identical; existing tests unchanged; no `plots._` call in replay.py | [x] | 9579f89 |
 | A1b | Pillow in the dev extra (KI-018) | pyproject.toml, uv.lock | - | Lock diff is that line only; exact golden tier passes; reference sha256 unchanged | [x] | 78eaefd |
-| A1a | Caveat wording at source (KI-029) | replay.py, plots.py, site/build.py, site/examples/ | per-clause tests (22 t sled, failed run, q-alpha below the baseline, paired pad, an offloaded push) | The gate of the design's section 4.3 (below the table); honesty review; the diff against the reference page recorded | [ ] | |
+| A1a | Caveat wording at source (KI-029) | replay.py, plots.py, site/build.py, site/examples/ | per-clause tests (22 t sled, failed run, q-alpha below the baseline, paired pad, an offloaded push) | The gate of the design's section 4.3 (below the table); honesty review; the diff against the reference page recorded | [x] | 41f838a |
 | A2 | display.py, display files, payload, physics.md section | display.py, scene.py, configs/display/ | test_display.py (coast energy, angular momentum and the closed form; the coast reproduces the recorded staging-coast rows; separation state; row selection; transform), test_scene.py (strict JSON, nulls in the shaft, null payload, bound runs and cases, zero-offload pad control, offload caveats, refusals) | Independent comparison of the payload with the CSVs of the reference directory, silo_cold_s1, silo_cold_lag and silo_instant; the load-time checks pass on every run folder of every complete planar directory on disk (56 today), results in the session log; every display number sourced or assumed | [ ] | |
 | A3 | Scene part 1 | scene.html, scene.py, cli.py | template checks (ASCII, package data, one data token, helper pin, sink scan, contrast, `parseHash` and `node --check`) | State-hook values and painted points within criterion 5 at push start, mid-push, release, ignition, ramp end and the kick for the five runs, and the whole of silo_failed; the exported page makes no request | [ ] | |
 | A3b | Scene part 2, two panels | scene.html | rate law, camera and marker checks through node | The remaining times of criterion 5; criterion 16 (watchable); both themes | [ ] | |
@@ -1677,7 +1677,23 @@ Also from the design's section 8:
   change adds only the pillow lines (numpy, scipy, pandas, pyyaml, matplotlib unchanged);
   exact golden tier 1372 passed; reference sha256 unchanged; independent gate passed all
   eight checks. Commit 78eaefd. docs/manual/01-install.md names the extra.
-- Next: step A1a (caveat wording at source).
+- Step A1a: the replay caveat wording fixed at source (KI-029) so that replay and scene share
+  one caveat source (D-SP2-23); the exploratory line of D-SP2-12 in replay.caveats and
+  plots.animation_caveats. Workflow: implementer; honesty auditor and compliance auditor,
+  three passes; two fix rounds; independent gate (pass on G1-G5, S1-S5); then a final fix
+  round for the findings the third pass left (a penalty row's structure caveat said no
+  structural mass was charged; a no_offload or failed solve read like a success; the
+  verification verdict ignored the sign of the gap; the manual described the old page).
+  Deliberate replay changes, recorded: the 13 reference pages differ from the pre-A1 set in
+  text keys only (meta.caveats, meta.subtitle, meta.closeup_notes, offload labels and
+  notes); every numeric series and event number is identical (gate script
+  gate_a1a_g1.py). The five gallery pages were regenerated and equal fresh renders; site
+  build clean (no fix-table warning, 1,136 links, none broken). Existing-test edit
+  (deviation): tests/test_offload_pipeline.py asserts the two-decimal note. Fast suite
+  1403 passed, 35 deselected. Commit 41f838a. KI-029 closed; the three canvas-label patches
+  stay in site/build.py (KI-031). Noted for A8: README.md "Silo air" calls the shaft-drag
+  bias figures measured where RQ3 calls them an estimate (fix with the README edits).
+- Next: step A2 (display.py, the display files, the scene payload, the physics.md section).
 
 ## 12. Deviations from the plan
 
