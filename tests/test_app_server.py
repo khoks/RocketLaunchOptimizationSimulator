@@ -117,6 +117,12 @@ LOGO = REPO / "assets" / "brand" / "logo-mark.svg"
 FAVICON = REPO / "assets" / "brand" / "favicon.svg"
 CLEAN = {"hash": "0123456789ab", "dirty": False, "error": None}
 START = app.ServerStart(git=dict(CLEAN), head=None)
+_DRIVE_NOTE_RE = re.compile(r'const DRIVE_NOTE = "([^"]*)" \+\s*"([^"]*)";')
+_DRIVE_NOTE_FOUND = _DRIVE_NOTE_RE.search(app.load_app_template())
+assert _DRIVE_NOTE_FOUND is not None
+DRIVE_NOTE = _DRIVE_NOTE_FOUND.group(1) + _DRIVE_NOTE_FOUND.group(2)
+"""The app page's line beside a push of the prescribed drive, read from the template (a
+change of its wording is caught by the served-panel test)."""
 """A server start without a HEAD hash: code_changed makes no git call (None)."""
 POLL_S = 0.02
 TIMEOUT_S = 30.0
@@ -584,6 +590,7 @@ def test_raw_socket_guard_table(
         stamp = b"20260101T000000Z"
         sweep = b"/api/results/silo_x/" + stamp
         scene_path = b"/scene/silo_x/" + stamp + b"/pad"
+        panel_path = b"/api/panel/silo_x/" + stamp + b"/pad,silo"
         nested = b"[" * 30_000 + b"]" * 30_000
         full = good + b" " * (app.MAX_JSON_BODY_BYTES - len(good))
         huge = json.dumps({**request_body, "stroke_m": 7}).replace(": 7", ": 1e400").encode()
@@ -636,6 +643,9 @@ def test_raw_socket_guard_table(
             ("GET /api/results, cross-site", g(b"/api/results", sfs + b"cross-site\r\n"), 403),
             ("GET /api/job, same-site", g(b"/api/job", sfs + b"same-site\r\n"), 403),
             ("GET /api/job, cross-site", g(b"/api/job", sfs + b"cross-site\r\n"), 403),
+            ("GET /api/panel, same-site", g(panel_path, sfs + b"same-site\r\n"), 403),
+            ("GET /api/panel, cross-site", g(panel_path, sfs + b"cross-site\r\n"), 403),
+            ("GET /api/panel, Origin of another site", g(panel_path, evil), 403),
             ("GET /, cross-site (a link opens the app)", g(b"/", sfs + b"cross-site\r\n"), 200),
             ("GET /api/job, same-origin", g(b"/api/job", sfs + b"same-origin\r\n"), 200),
             ("GET /api/job, none", g(b"/api/job", sfs + b"none\r\n"), 200),
@@ -748,12 +758,13 @@ def test_header_table_per_route(tmp_path: Path, basis: appform.Basis, launched: 
             get(b"/api/form"),
             get(b"/api/results"),
             get(b"/api/results/app/" + launched.name.encode()),
+            get(b"/api/panel/app/" + launched.name.encode() + b"/pad"),
             get(b"/nothing"),
             raw(server.port, b"PUT / HTTP/1.1\r\nHost: " + own + b"\r\n\r\n"),
             raw(server.port, b"NONSENSE\r\n\r\n"),
         ]
     responses = [page, scene_page, *api]
-    assert [r[0] for r in responses] == [200, 200, 200, 200, 200, 200, 404, 501, 400]
+    assert [r[0] for r in responses] == [200, 200, 200, 200, 200, 200, 200, 404, 501, 400]
     for status, headers, body in responses:
         for name, value in app.FIXED_HEADERS:
             assert _single(headers, name) == value, (status, name)
@@ -1486,7 +1497,7 @@ def test_classify_reads_cases_bounds_and_sensitivity_arms(tmp_path: Path) -> Non
         cases={"readme_loads": {"status": app.BUG_SUSPECT, "flags": ["bug_suspect: budget"]}},
     )
     assert (kind, message) == (app.OUTCOME_FLAGGED, "readme_loads (case): status bug_suspect")
-    assert notes == ("readme_loads (case): status bug_suspect", "readme_loads (case): 1 flag(s)")
+    assert notes == ("readme_loads (case): status bug_suspect", "readme_loads (case): 1 flag")
     bound = {
         "run": "silo__aero_bound",
         "paired_baseline": "pad__aero_bound",
@@ -1513,7 +1524,7 @@ def test_classify_reads_cases_bounds_and_sensitivity_arms(tmp_path: Path) -> Non
         "silo__isp__+0.1 (sensitivity arm) did not fly: search_failed (edge)",
     )
     assert notes[1:] == (
-        "silo__isp__+0.1 (sensitivity arm): 1 flag(s)",
+        "silo__isp__+0.1 (sensitivity arm): 1 flag",
         "silo__isp__+0.1 (sensitivity arm) against its same-perturbation baseline: bug_suspect",
     )
 
@@ -1984,7 +1995,7 @@ def test_sp1_differences_is_bounded(basis: appform.Basis) -> None:
     config = {"runs": {"silo": {"run": wide}}}
     lines = app.sp1_differences(basis, metrics, config)
     assert lines is not None and len(lines) == app.SP1_DIFF_MAX_LINES + 1
-    assert lines[0] == "extra.s0: 0 (SP1's silo_cold_s1: none)"
+    assert lines[0] == "extra.s0: 0 (SP1's silo_cold_s1: not set)"
     assert lines[-1] == f"and {121 - app.SP1_DIFF_MAX_LINES} more"  # 120 extras + offload
     comparison = app.sp1_comparison(basis, metrics, config, [])
     assert comparison is not None and comparison["reproduces"] is False
@@ -2273,6 +2284,105 @@ def test_an_imposed_offload_headline_names_its_penalty() -> None:
     assert plain["text"].startswith("Imposed offload of 20.55 t: P* - P_ref +429.4 kg")
 
 
+def test_an_imposed_offload_with_a_pre_offload_states_them_apart() -> None:
+    """Review of A5, round 3 (usability): an imposed stage-1 offload flown with a stage-2
+    pre-offload states the two apart, as the form sets them (the pre-offload a property of
+    the vehicle model, not netted), never one summed figure the push would replace; the
+    penalty and P* - P_ref follow as before. The panel text is the headline as served."""
+    offload = {"reference_payload_kg": 26_000.0}
+    fields = {
+        "kind": "fixed",
+        "fixed_key": "stage1_t",
+        "fixed_fraction": None,
+        "stage2_preoffload_kg": 2_000.0,
+        "stage1_offload_kg": 30_000.0,
+        "stage2_offload_kg": 2_000.0,
+        "total_offload_kg": 32_000.0,
+        "payload_kg": 26_065.7,
+        "payload_delta_kg": 65.7,
+        "verification": None,
+        "stage1_dry_mass_added_kg": 2_000.0,
+        "assumed_penalty": True,
+    }
+    head = app.case_headline(_case("silo_fix30t", 26_000.0, **fields), offload)
+    assert head["kind"] == app.HEADLINE_IMPOSED
+    assert head["text"].startswith(
+        "Imposed offload: 30.00 t from stage 1, plus a 2.00 t stage-2 pre-offload (a property "
+        "of the vehicle model, not netted) with an assumed +2 t of stage-1 dry mass: P* - P_ref "
+        "+65.7 kg"
+    )
+    assert "32.00 t" not in head["text"]
+    # without a pre-offload the one figure stays
+    alone = {**fields, "stage2_preoffload_kg": 0.0, "stage2_offload_kg": 0.0}
+    alone["total_offload_kg"] = 30_000.0
+    assert app.case_headline(_case("silo_fix30t", 26_000.0, **alone), offload)["text"].startswith(
+        "Imposed offload of 30.00 t with an assumed +2 t"
+    )
+
+
+def test_a_launch_that_did_not_fly_is_described_from_its_config() -> None:
+    """Review of A5, round 3 (honesty): the run browser's line (and the panel's 'Launched:'
+    line) of a launched run whose search failed says no flight was recorded, never 'stage
+    1 never lit' (its metrics hold no ignition time because nothing was flown: here a hot
+    start lit on the carriage 2 s before the push); it keeps the silo's configured depth
+    and the ramp start it set. A failed ignition that flew (status impact) still says
+    stage 1 never lit."""
+    assist = {
+        "model": "constant_accel",
+        "net_accel_g": 0.2,
+        "stroke_m": 100,
+        "carriage_mass_t": 0,
+        "track": {"angle_deg": 90, "exit_altitude_m": 0},
+    }
+
+    def directory(ignition: dict[str, Any], silo: dict[str, Any]) -> tuple[dict, dict]:
+        metrics = {
+            "baseline": "pad",
+            "runs": {"pad": {"status": "inserted"}, "silo": silo},
+        }
+        config = {  # resolved_config.yaml's runs: {name: {run: <run block>}}
+            "runs": {
+                "pad": {"run": {"name": "pad", "assist": {"model": "none"}}},
+                "silo": {
+                    "run": {"name": "silo", "assist": assist, "ignition": {"stage1": ignition}}
+                },
+            }
+        }
+        return metrics, config
+
+    failed = {
+        "status": "search_failed",
+        "search_failure_kind": "grid",
+        "t_ign_rel_release_s_stage1": None,
+        "track_start_altitude_m": None,
+        "flags": ["search_failed: grid: (first failure: drive_limit: x)"],
+    }
+    hot = {"t_ign_s": -2, "reference": "push_start"}
+    metrics, config = directory(hot, failed)
+    line = app.app_description(metrics, config, ("did_not_fly", "silo did not fly: x"))
+    assert "never lit" not in line
+    assert line.startswith(
+        "silo: vertical silo 100 m deep, 0.2 g net push; ramp start set at T-2 s from push "
+        "start; no flight recorded (its search failed), so no ignition time"
+    )
+    height = {"at_height_m": 300.9, "height_method": "event"}
+    metrics, config = directory(height, failed)
+    assert "ramp start set at 300.9 m above the mouth (event method); no flight recorded" in (
+        app.app_description(metrics, config)
+    )
+    flown = {
+        "status": "impact",
+        "t_ign_rel_release_s_stage1": None,
+        "track_start_altitude_m": -100.0,
+    }
+    metrics, config = directory({"fails": True}, flown)
+    assert "; stage 1 never lit" in app.app_description(metrics, config)
+    assert app.configured_ramp_start({"ignition": {"stage1": {"fails": True}}}) == (
+        "stage 1 set never to light (failed ignition)"
+    )
+    assert app.configured_ramp_start({}) == "ramp start set at T+0 s from release"
+
+
 def test_a_git_record_without_a_hash_is_never_clean() -> None:
     """A git record whose hash is missing, null, empty, not a string, 'unknown' or
     'no-git', or whose dirty flag is not a boolean, reads unknown, never clean; the shown
@@ -2393,6 +2503,27 @@ def test_max_q_of_a_bound_names_its_paired_baseline() -> None:
     assert flight["max_q_against"] == "pad__aero_bound"
 
 
+def test_max_q_of_a_run_short_of_orbit_is_not_compared() -> None:
+    """Review of A5: a run that did not reach the target orbit (a failed ignition's impact)
+    has its max-Q without 'above' or 'below the pad's': its flight is no like-for-like
+    comparison; outcome rows count flags in words ('1 flag', '2 flags'); an absent setting
+    in the comparison with SP1's case reads 'not set', never 'none' (a push key stated the
+    other way is not 'no push')."""
+    source = {
+        "metrics": {"max_q_pa": 3_600.0, "status": "impact"},
+        "config": {},
+        "role": "run",
+        "compared_to": "pad",
+        "comparison": {"max_q_above_baseline": False},
+    }
+    metrics = {"baseline": "pad", "runs": {"pad": {"max_q_pa": 37_200.0}}}
+    flight = app.flight_view("silo_failed", source, metrics)
+    assert flight["max_q_text"] == "max-Q 3.6 kPa"
+    assert flight["max_q_vs_pad"] is None and flight["max_q_against"] is None
+    assert [app.flags_text(n) for n in (1, 2)] == ["1 flag", "2 flags"]
+    assert app._setting_text(None) == "not set"
+
+
 def test_panel_of_an_imposed_offload_above_and_below_p_ref(
     panels: dict[str, dict[str, Any]],
 ) -> None:
@@ -2434,6 +2565,169 @@ def test_panel_of_a_run_that_did_not_fly(panels: dict[str, dict[str, Any]]) -> N
     assert panel["outcome"]["kind"] == app.OUTCOME_DID_NOT_FLY
     assert detail["default_pair"] == ["pad"]
     assert detail["panel_error"] is None
+    # its run-list line: the launched run's own headline says it did not fly, so the
+    # outcome is not repeated after it (step A5)
+    row = next(
+        r
+        for g in panels["listing"]["groups"]
+        for r in g["rows"]
+        if r["timestamp"] == "20260103T000005Z"
+    )
+    assert "The run did not fly: search_failed (edge)" in row["description"]
+    assert "did_not_fly" not in row["description"] and "silo did not fly" not in row["description"]
+
+
+def test_panel_for_the_runs_the_scene_shows(
+    panel_root: Path, basis: appform.Basis, tmp_path: Path
+) -> None:
+    """GET /api/panel/<experiment>/<timestamp>/<runs> (step A5: the results panel follows
+    the runs the page's scene shows): the panel of the runs named, the right-hand one
+    shown and the caveats built for them; one run alone; the selection rule of the scene
+    route (1 to PANEL_RUNS distinct runs of the directory's run list, else 422); 409 for a
+    directory with no panel; GET /api/results/... keeps the directory's own pair; every
+    panel carries what the scene draws that the model does not compute
+    (scene.DISPLAY_ONLY, design 4.9)."""
+    stamp = "20260103T000001Z"
+    sweep = make_sweep(tmp_path / "other", "sweeps", "20260101T000006Z")
+    with serving(panel_root, basis) as server:
+
+        def get(path: str) -> tuple[int, Any]:
+            status, _, body = call(server.port, "GET", path)
+            return status, strict(body)
+
+        own_status, own = get(f"/api/results/app/{stamp}")
+        pair_status, pair = get(f"/api/panel/app/{stamp}/pad,silo")
+        alone_status, alone = get(f"/api/panel/app/{stamp}/pad")
+        refused = {
+            sel: get(f"/api/panel/app/{stamp}/{sel}")[0]
+            for sel in ("pad,pad", "pad,silo,silo_s1", "nope", "pad,nope", "")
+        }
+        missing = get("/api/panel/app/20990101T000000Z/pad")[0]
+        extra = call(server.port, "GET", f"/api/panel/app/{stamp}/pad/x")[0]
+    with serving(sweep.parent.parent, basis) as server:
+        swept = call(server.port, "GET", f"/api/panel/sweeps/{sweep.name}/pad")
+    assert own_status == pair_status == alone_status == 200
+    assert own["panel"]["shown"] == "silo_s1" and own["panel"]["pair"] == ["pad", "silo_s1"]
+    assert pair["panel"]["shown"] == "silo" and pair["panel"]["pair"] == ["pad", "silo"]
+    assert pair["panel"]["built_for"] == ["pad", "silo"]
+    assert pair["panel"]["headline"] != own["panel"]["headline"]
+    assert pair["runs"] == own["runs"] and pair["default_pair"] == own["default_pair"]
+    assert alone["panel"]["shown"] == "pad" and alone["panel"]["pair"] == ["pad"]
+    assert alone["panel"]["push"] is None  # the pad has no push
+    assert refused == {sel: 422 for sel in refused}
+    assert missing == 404 and extra == 404
+    assert swept[0] == 409 and strict(swept[2])["error"] == "no_panel"
+    for detail in (own, pair, alone):
+        assert detail["panel"]["display_only"] == list(scene.DISPLAY_ONLY)
+    assert ("GET", "/api/panel/<experiment>/<timestamp>/<runs>") in app.ROUTES
+
+
+def test_recorded_rows_name_the_findings_notes_that_cite_them(
+    tmp_path: Path, basis: appform.Basis, launched: Path
+) -> None:
+    """GET /api/results: each row carries the findings notes of the repository
+    (docs/findings/*.md) that cite its results/<experiment>/<timestamp>, with the note's
+    first heading as its title; a row no note cites carries none; a missing folder gives
+    none."""
+    root = tmp_path / "root"
+    shutil.copytree(launched, root / "recorded" / "20260105T000001Z")
+    shutil.copytree(launched, root / "recorded" / "20260105T000002Z")
+    notes = tmp_path / "docs" / "findings"
+    notes.mkdir(parents=True)
+    (notes / "RQ9-test.md").write_text(
+        "# RQ9: a test note\n\nSee results/recorded/20260105T000001Z/summary.md and again "
+        "results/recorded/20260105T000001Z.\n",
+        encoding="utf-8",
+    )
+    (notes / "RQ8-other.md").write_text(
+        "no heading, cites results/recorded/20260105T000001Z\n", encoding="utf-8"
+    )
+    with serving(root, basis) as server:
+        listing = strict(call(server.port, "GET", "/api/results")[2])
+    rows = {r["timestamp"]: r for g in listing["groups"] for r in g["rows"]}
+    assert rows["20260105T000001Z"]["cited_in"] == [
+        {"path": "docs/findings/RQ8-other.md", "title": "RQ8-other"},
+        {"path": "docs/findings/RQ9-test.md", "title": "RQ9: a test note"},
+    ]
+    assert rows["20260105T000002Z"]["cited_in"] == []
+    assert app.findings_citations(tmp_path / "nowhere") == {}
+
+
+@pytest.mark.skipif(sup.NODE is None, reason="node not installed: the page's panel text is not run")
+def test_page_panel_text_from_served_records(
+    panels: dict[str, dict[str, Any]], tmp_path: Path
+) -> None:
+    """The app page's results panel (templates/app.html's panelBlocks under node) on the
+    records GET /api/results serves for each derived launch kind and for SP1's directory:
+    the order of design 4.7 (the tag, the run shown, its headline, the comparison, the
+    push, the flight, flags and verification, the caveats); 'Reproduction' only over
+    reproduction lines, SP1's comparison under its own heading otherwise; the offload runs
+    of an offload launch, each with its note; a run that did not fly has no push or flight
+    block; no value is a unit or a 'T+' on a missing number; the caveats box ends with
+    every display-only item of design 4.9; no heading or label of the page says 'saved'
+    (D-SP2-27; the server's own sentences are tested where they are made)."""
+    stamps = [k for k in panels if k != "listing"]
+    out = sup.run_page_pure(
+        sup.PAGE_BLOCKS_HARNESS, {"details": [panels[k] for k in stamps]}, tmp_path
+    )
+    for stamp, lines in zip(stamps, out["panels"], strict=True):
+        panel = panels[stamp]["panel"]
+        tags = [t for t, _ in lines]
+        texts = [x for _, x in lines]
+        heads = [x for t, x in lines if t == "h3"]
+        assert tags[0].startswith("p.tag"), stamp
+        shown = texts.index(next(x for x in texts if x.startswith("Run shown: ")))
+        assert tags[shown + 1].startswith("p.headline"), stamp
+        assert ("Reproduction" in heads) == bool(panel["reproduces"]), stamp
+        comparison = panel["sp1_comparison"]
+        if comparison and comparison["text"] not in panel["reproduces"]:
+            assert f"Against SP1's {comparison['case']}" in heads, stamp
+            # SP1's headline is an offload: a launch without one is not compared with it
+            if any(r["role"] == "offload" for r in panels[stamp]["runs"]):
+                assert comparison["text"] in texts
+            else:
+                at = texts.index(f"Against SP1's {comparison['case']}")
+                assert texts[at + 1].endswith(
+                    "this launch has no offload, so it is not compared with it."
+                )
+        order = [h for h in heads if h in ("Push", "Flight", "Flags and verification")] + [
+            heads[-1]
+        ]
+        if panel["headline"]["kind"] == app.HEADLINE_DID_NOT_FLY:
+            assert "Push" not in heads and "Flight" not in heads, stamp
+        else:
+            assert order[:2] == ["Push", "Flight"], stamp
+        assert heads[-1] == "Read before quoting: the caveats of the runs shown", stamp
+        assert order[-2:] == ["Flags and verification", heads[-1]], stamp
+        box = tags.index("box.caveats")
+        # folded, its summary counting what it holds (round 3 of the A5 review)
+        display = texts.index(
+            "What the scene draws that the model does not compute (display only): "
+            f"{len(scene.DISPLAY_ONLY)} items"
+        )
+        assert tags[display] == "summary"
+        assert box < display and texts[display + 1 : display + 1 + len(scene.DISPLAY_ONLY)] == list(
+            scene.DISPLAY_ONLY
+        )
+        # every served push of the prescribed drive carries its model, and the panel says
+        # under its text what the carriage mass and the impingement fraction change
+        if panel["push"] is not None and panel["headline"]["kind"] != app.HEADLINE_DID_NOT_FLY:
+            assert panel["push"]["model"] == "constant_accel", stamp
+            at = lines.index(["h3", "Push"])
+            assert lines[at + 1] == ["p", panel["push"]["text"]], stamp
+            assert lines[at + 2] == ["p.meta", DRIVE_NOTE], stamp
+        offload = [r for r in panels[stamp]["runs"] if r["role"] == "offload" and r["note"]]
+        if offload:
+            assert any(h.startswith("Offload runs of this") for h in heads + texts), stamp
+            assert all(r["note"] in texts for r in offload), stamp
+        for tag, text in lines:
+            label = text
+            if tag == "kv":
+                label, value = text.split(": ", 1)
+                assert "not recorded" == value or "not recorded" not in value, (stamp, text)
+                assert not re.match(r"^\S+ not recorded", value), (stamp, text)
+            if tag in ("kv", "h3", "h4", "summary"):
+                assert not re.search(r"\bsaved\b", label, re.I), (stamp, text)
 
 
 def test_scene_of_runs_without_rows_and_a_panel_that_fails(
@@ -2606,68 +2900,34 @@ def test_injected_text_is_escaped_in_every_response(
 
 
 PAGE_INPUTS = (
-    "location.hash",
     "location.search",
     "location.href",
     "document.URL",
     "document.referrer",
     "window.name",
-    'addEventListener("message"',
-    "addEventListener('message'",
     "onmessage",
     "opener",
 )
-"""What another site controls when it opens GET / (the one route it can reach): the app
-page's script reads none of them, so nothing it does at load depends on the opener."""
-ACTING_ROUTES = ("/api/launches", "/scene/")
-"""Routes the app page may name only inside a click or keydown handler: a launch, or a
-scene, starts from the user's own action, never at load."""
-
-
-def _handler_spans(script: str) -> list[tuple[int, int]]:
-    """(start, end) of the body of every click or keydown handler registered with
-    addEventListener in ``script``: from the first '{' after the registration to its
-    matching '}', string literals and comments skipped."""
-    spans: list[tuple[int, int]] = []
-    for match in re.finditer(r"addEventListener\(\s*[\"'](click|keydown)[\"']", script):
-        start = script.find("{", match.end())
-        depth, i, quote = 0, start, ""
-        while 0 <= i < len(script):
-            ch = script[i]
-            if quote:
-                if ch == "\\":
-                    i += 1
-                elif ch == quote:
-                    quote = ""
-            elif ch in "\"'`":
-                quote = ch
-            elif script.startswith("//", i):
-                i = script.find("\n", i)
-                continue
-            elif script.startswith("/*", i):
-                end = script.find("*/", i)
-                if end < 0:
-                    break
-                i = end + 1
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    spans.append((start, i))
-                    break
-            i += 1
-    return spans
+"""What another site controls when it opens GET / (the one route it can reach) that the
+app page's script never reads. Step A5's page reads its own hash and takes its scene
+frame's height message only as tests/test_app_page.py checks: the hash only when the user
+opened the page (GET /'s from_other_site false), the message only from the frame's own
+window and origin, and only a number."""
+ACTING_ROUTES = {"/api/launches": "postLaunch", "/scene/": "scenePath"}
+"""Routes the app page names, each once, in the one function that asks for it;
+tests/test_app_page.py checks that both act only behind the page's may-act guard (a page
+another site opened acts only once the user has used it; exit criterion 17) and that a
+launch follows a click."""
 
 
 def test_app_page_template(tmp_path: Path, basis: appform.Basis) -> None:
-    """The placeholder page: ASCII, one data token (strict JSON, '<' escaped, the
-    printed URL and the boot id), the brand mark and tab icon byte for byte, one inline
-    script with no HTML sink, textContent for every value, no external request. GET / is
-    the one route another site can open (with any hash, query or referrer), so the script
-    reads none of PAGE_INPUTS and names ACTING_ROUTES only inside a click or keydown
-    handler (review 04; criterion 17): nothing it does at load launches or loads a scene.
-    The checks are written for step A5's page too."""
+    """The app page (step A5): ASCII, one data token (strict JSON, '<' escaped, the
+    printed URL, the boot id and whether another site opened the page), the brand mark and
+    tab icon byte for byte, one inline script with no HTML sink, textContent for every
+    value, no external request. GET / is the one route another site can open (with any
+    hash, query or referrer), so the script reads none of PAGE_INPUTS and names each of
+    ACTING_ROUTES once, in the function that asks for it (review 04; criterion 17;
+    tests/test_app_page.py has the rest)."""
     template = app.load_app_template()
     assert template.isascii() and template.count(app.APP_DATA_TOKEN) == 1
     assert "\r" not in template
@@ -2680,16 +2940,16 @@ def test_app_page_template(tmp_path: Path, basis: appform.Basis) -> None:
         assert sink not in script[0], sink
     for name in PAGE_INPUTS:
         assert name not in script[0], name
-    spans = _handler_spans(script[0])
-    for route in ACTING_ROUTES:
-        for found in re.finditer(re.escape(route), script[0]):
-            assert any(a < found.start() < b for a, b in spans), (route, found.start())
-    sample = 'b.addEventListener("click", function () { fetch("/api/launches", {}); });'
-    assert _handler_spans(sample) and _handler_spans(sample)[0][0] < sample.index("/api/launches")
+    for route, owner in ACTING_ROUTES.items():
+        assert script[0].count(route) == 1, route
+        body = re.search(rf"\n  function {owner}\(.*?\n  \}}\n", script[0], re.S)
+        assert body is not None and route in body.group(0), (route, owner)
     assert "textContent" in script[0] and "step A5" in template
     assert re.findall(r"https?://[^\s\"']+", template) == ["http://www.w3.org/2000/svg"]
     with serving(tmp_path / "root", basis) as server:
-        status, _, body = call(server.port, "GET", "/")
+        status, _, body = call(server.port, "GET", "/", headers={"Sec-Fetch-Site": "none"})
+        other = call(server.port, "GET", "/")[2].decode("ascii")  # no Sec-Fetch-Site: fail safe
+    assert '"from_other_site":true' in other
     page = body.decode("ascii")
     (block,) = re.findall(
         r'<script type="application/json" id="app-data">(.*?)</script>', page, re.S
@@ -2698,6 +2958,7 @@ def test_app_page_template(tmp_path: Path, basis: appform.Basis) -> None:
         "url": server.url,
         "boot_id": server.boot_id,
         "version": app.__version__,
+        "from_other_site": False,
     }
     assert status == 200
 

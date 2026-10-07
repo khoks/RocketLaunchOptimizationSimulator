@@ -55,7 +55,15 @@ survey 07 sections 3 to 6; review 04):
   allowed); errors are JSON with a fixed message and never a traceback or a local path.
 - Routes (ROUTES): GET / (the app page), GET /api/form, POST /api/launches, GET
   /api/job, GET /api/results, GET /api/results/<experiment>/<timestamp>, GET
-  /scene/<experiment>/<timestamp>/<runs>; every other path is 404.
+  /api/panel/<experiment>/<timestamp>/<runs> (the results panel of the runs the page's
+  scene shows; step A5), GET /scene/<experiment>/<timestamp>/<runs>; every other path is
+  404.
+- The page (step A5, templates/app.html): GET / says in its data block whether the
+  request came from another site (``from_other_site``: Sec-Fetch-Site same-site or
+  cross-site), and the page then acts on nothing until the user does; GET /api/form adds
+  what the page's form needs beside the fields: a starting value per field
+  (``form_defaults``), one per imposed-offload key (``fixed_defaults``), the silo details
+  the form shows read-only (``silo_fixed``) and the Advanced forms with their readings.
 - The run browser (``AppServer.results`` over ``listed_directories``, kept per folder by
   ``AppServer.listing``; ``directory_row``) and the results panel (``results_panel``:
   the headline with its verdicts, SP1's headline and caveat groups for SP1's case, the
@@ -106,6 +114,7 @@ import yaml
 from launchsim import __version__, appform, replay, results_io, run_data, scene, sim, summary
 from launchsim.compare import BUG_SUSPECT, CHECK_FAIL, CHECK_NA
 from launchsim.config import (
+    OFFLOAD_FIXED_MODES,
     OFFLOAD_GROSS_MODES,
     PLANAR_2D,
     VERTICAL_1D,
@@ -118,6 +127,7 @@ from launchsim.phases.planar import INSERTED_STATUS
 from launchsim.results_io import REFERENCE_FAILED_STATUS
 from launchsim.search import NO_ORBIT_STATUS, OK_STATUS, SEARCH_FAILED_STATUS
 from launchsim.units import kg_to_t, pa_to_kpa, to_percent
+from launchsim.vehicle import offload_load_kg
 
 OFFLOAD_EXPERIMENT = PurePosixPath("experiments") / "silo_offload_2d.yaml"
 """The committed experiment whose shared blocks, baseline, silo, offload cases and
@@ -166,12 +176,20 @@ a failing pad control, bug_suspect); complete."""
 NOT_FLOWN_STATUSES = (SEARCH_FAILED_STATUS, sim.GUIDANCE_FAILED_STATUS)
 """Run statuses with no recorded run (an empty time series)."""
 M5_NOT_MADE_TEXT = (
-    "; the M5 anchor check was not made (the directory has no silo_instant and pad_instant "
-    "pair to anchor it)"
+    "; the screening check against the instant-start yardsticks (an assisted run may not "
+    "beat the instant-start silo's gain at its release speed) was not made: it needs "
+    "silo_instant and pad_instant in one directory, and this directory does not have both"
 )
 """What a complete outcome's message adds when a comparison's M5 check reads n/a
 (compare.anchor_from needs silo_instant and pad_instant in one experiment): true of an
-app launch (one variant) and of a recorded directory alike."""
+app launch (one variant) and of a recorded directory alike. In words, not the check's
+ID (the page shows it)."""
+COMPLETE_CHECKS_TEXT = (
+    "no flag, no failed verification and no result marked as a suspected bug "
+    f"(status {BUG_SUSPECT}) recorded"
+)
+"""What a complete outcome's message says was checked: the three things ``classify``
+reads, in words (the status name kept in parentheses, as summary.md writes it)."""
 CODE_CHANGED_MESSAGE = (
     "the code under src, configs, experiments, pyproject.toml or uv.lock differs from the "
     "commit the app imported at its start, or git could not compare them: restart the app"
@@ -741,6 +759,11 @@ def failed_line(marker: Path) -> str:
     return ""
 
 
+def flags_text(count: int) -> str:
+    """A count of flags as an outcome row states it: '1 flag' or '<count> flags'."""
+    return "1 flag" if count == 1 else f"{count} flags"
+
+
 def _status_notes(name: str, m: Mapping[str, Any], notes: dict[str, list[str]]) -> None:
     """Add the outcome rows of one run's metrics record ``m`` (named ``name`` in them) to
     ``notes``: not flown (search or guidance failed), bug_suspect, not in orbit, flags."""
@@ -753,7 +776,7 @@ def _status_notes(name: str, m: Mapping[str, Any], notes: dict[str, list[str]]) 
     elif status != INSERTED_STATUS:
         notes[OUTCOME_NOT_IN_ORBIT].append(f"{name} did not reach the target orbit: {status}")
     if m.get("flags"):
-        notes[OUTCOME_FLAGGED].append(f"{name}: {len(m['flags'])} flag(s)")
+        notes[OUTCOME_FLAGGED].append(f"{name}: {flags_text(len(m['flags']))}")
 
 
 def _comparison_note(label: str, c: Any, notes: dict[str, list[str]]) -> None:
@@ -904,7 +927,7 @@ def _pad_control_notes(p: Mapping[str, Any]) -> list[tuple[str, str]]:
         )
         rows.append((OUTCOME_DID_NOT_FLY, f"pad control {mode} did not fly ({status}): {lost}"))
     if p.get("run") is None and p.get("flags"):
-        rows.append((OUTCOME_FLAGGED, f"pad control {mode}: {len(p['flags'])} flag(s)"))
+        rows.append((OUTCOME_FLAGGED, f"pad control {mode}: {flags_text(len(p['flags']))}"))
     if p.get("consistency") == CHECK_FAIL:
         rows.append(
             (OUTCOME_FLAGGED, f"pad control {mode}: consistency {CHECK_FAIL} (blocks findings)")
@@ -990,7 +1013,7 @@ def _offload_notes(offload: Mapping[str, Any]) -> dict[str, list[str]]:
         if verdict_row is not None:
             notes[OUTCOME_FLAGGED].append(verdict_row)
         if c.get("flags"):
-            notes[OUTCOME_FLAGGED].append(f"offload case {name}: {len(c['flags'])} flag(s)")
+            notes[OUTCOME_FLAGGED].append(f"offload case {name}: {flags_text(len(c['flags']))}")
     for label, c in summary.offload_check_comparisons(offload):
         if c.get("screening_status") == BUG_SUSPECT:
             notes[OUTCOME_FLAGGED].append(f"{label}: {BUG_SUSPECT}")
@@ -1007,7 +1030,7 @@ def _offload_notes(offload: Mapping[str, Any]) -> dict[str, list[str]]:
         if m.get("status") == BUG_SUSPECT:
             notes[OUTCOME_FLAGGED].append(f"{name}: status {BUG_SUSPECT}")
         if m.get("flags"):
-            notes[OUTCOME_FLAGGED].append(f"{name}: {len(m['flags'])} flag(s)")
+            notes[OUTCOME_FLAGGED].append(f"{name}: {flags_text(len(m['flags']))}")
     return notes
 
 
@@ -1030,7 +1053,7 @@ def classify(out_dir: Path) -> tuple[str, str, tuple[str, ...]]:
     bounds and the sensitivity arms, ``_offload_notes``; the notes list every row), or
     OUTCOME_COMPLETE with a message that claims only what was checked: the baseline and
     the variant (the names in metrics.json's ``runs``) reached the target orbit, and no
-    flag, failed verification or bug_suspect check in any run or comparison metrics.json
+    flag, failed verification or bug_suspect status in any run or comparison metrics.json
     records (a stage-1 pad control that ends no_offload is recorded short of orbit by
     design and is not claimed), with M5_NOT_MADE_TEXT when a comparison's M5 check reads
     n/a. Reads only metrics.json (and whether FAILED.txt and summary.md exist)."""
@@ -1066,8 +1089,8 @@ def classify(out_dir: Path) -> tuple[str, str, tuple[str, ...]]:
     )
     return (
         OUTCOME_COMPLETE,
-        f"complete: {names} reached the target orbit; no flag, failed verification or "
-        f"{BUG_SUSPECT} check" + (M5_NOT_MADE_TEXT if m5_na else ""),
+        f"complete: {names} reached the target orbit; {COMPLETE_CHECKS_TEXT}"
+        + (M5_NOT_MADE_TEXT if m5_na else ""),
         notes,
     )
 
@@ -1097,7 +1120,11 @@ SCENE_LRU_SIZE = 8
 """Rendered scene pages kept, keyed by directory, run selection and metrics.json's
 mtime (review 04 finding 3)."""
 PANEL_LRU_SIZE = 8
-"""Results-panel records kept, keyed by directory and the stat of its key files."""
+"""Results-panel records kept, keyed by directory, the stat of its key files and the runs
+the panel is built for."""
+PANEL_RUNS = 2
+"""The most runs the app page shows side by side (its two scene panels), and so the most a
+results panel is built for (GET /api/panel/<experiment>/<timestamp>/<runs>)."""
 MAX_METRICS_BYTES = 16 * 1024 * 1024
 """A metrics.json above this size [bytes] (16 MiB) is unreadable: never parsed."""
 MAX_CONFIG_BYTES = 1024 * 1024
@@ -1278,6 +1305,9 @@ IMPOSED_VERIFICATION_TEXT = (
     "a solved x* is verified"
 )
 """The verification text of an imposed (fixed) offload case."""
+PRE_OFFLOAD_READING = "a property of the vehicle model, not netted"
+"""How a stage-2 pre-offload reads beside an imposed stage-1 offload's headline (the
+form's words: imposed on stage 2 first, not netted)."""
 PUSH_METRICS: tuple[tuple[str, str], ...] = (
     ("exit_speed_mps", "exit_speed_mps"),
     ("net_accel_g", "net_accel_g"),
@@ -1626,11 +1656,14 @@ def guard(method: str, target: str, headers: Any, port: int) -> list[str]:
 
     GET / is the one route another site can reach, so that a link opens the app. Exit
     criterion 17 (another origin cannot start a launch or make the server build a scene)
-    therefore holds only while the page, on load, issues nothing but GET requests to
-    /api/form, /api/job and /api/results: it never starts a launch, sends a dry run or
-    requests /scene/... from location.hash, location.search, document.referrer or a
-    postMessage; those follow a user's click or key only (templates/app.html says the
-    same for step A5)."""
+    therefore holds only while the page, when another site opened it, issues nothing but
+    GET requests to /api/form, /api/job and /api/results until the user acts on the page
+    itself: GET / tells it so (``from_other_site``: Sec-Fetch-Site same-site or
+    cross-site), and the page then reads no hash, sends no dry run and requests no
+    /scene/... until a trusted pointer, key or input event of its own; a launch always
+    follows a click on Launch (templates/app.html, step A5). The page never reads
+    location.search, document.referrer or window.name, and takes from a postMessage only
+    a height from its own scene frame."""
     hosts = headers.get_all("Host") or []
     if len(hosts) != 1 or hosts[0].strip().lower() not in allowed_hosts(port):
         raise Refused(
@@ -1652,6 +1685,25 @@ def guard(method: str, target: str, headers: Any, port: int) -> list[str]:
     if "?" in target or "#" in target:
         raise Refused(HTTPStatus.BAD_REQUEST, "query_not_allowed", "no query string is accepted")
     return split_target(target)
+
+
+OWN_SITE_VALUES = ("same-origin", "none")
+"""Sec-Fetch-Site values of a request the app's own page or the user made (the guard's
+set): a typed or bookmarked address, a reload, the browser opened by ``--open``, headless
+QA. Any other value, or more than one, is another site's (same-site: another port on this
+loopback address)."""
+
+
+def from_other_site(headers: Any) -> bool:
+    """Whether a request (GET /) may have come from a page of another site (step A5;
+    exit criterion 17): anything but exactly one Sec-Fetch-Site of OWN_SITE_VALUES. Fail
+    safe: a request without Sec-Fetch-Site (a browser without Fetch Metadata, or a client
+    that is no browser) counts as another site's, so such a page restores no view from its
+    address and asks for nothing until the user uses it (the guard's rule on the other
+    routes, which accepts a missing header, is unchanged: this only makes the page wait).
+    ``headers``: the request's email.message.Message."""
+    sites = headers.get_all("Sec-Fetch-Site") or []
+    return len(sites) != 1 or sites[0].strip().lower() not in OWN_SITE_VALUES
 
 
 # ------------------------------------------------------------------ files and directories
@@ -2034,9 +2086,20 @@ def case_headline(record: Mapping[str, Any], offload: Mapping[str, Any]) -> dict
     if delta is None and payload is not None and p_ref is not None:
         delta = round(payload - p_ref, 1)
     reading = "" if delta is None else replay.payload_reading(delta, "P_ref", imposed=True)
+    pre = run_data.finite(record.get("stage2_preoffload_kg"))
+    stage1 = run_data.finite(record.get("stage1_offload_kg"))
+    if pre is not None and pre > 0.0 and mode in OFFLOAD_GROSS_MODES:
+        # the stage-1 offload and the stage-2 pre-offload apart, as the form sets them: the
+        # sum is not what the push replaces (review of A5, usability)
+        amount = (
+            "Imposed offload: "
+            + ("an unknown amount" if stage1 is None else _t(stage1))
+            + f" from stage 1, plus a {_t(pre)} stage-2 pre-offload ({PRE_OFFLOAD_READING})"
+        )
+    else:
+        amount = "Imposed offload of " + ("an unknown amount" if removed is None else _t(removed))
     text = (
-        "Imposed offload of "
-        + ("an unknown amount" if removed is None else _t(removed))
+        amount
         + replay.penalty_clause(record)
         + (": P* - P_ref not recorded" if delta is None else f": P* - P_ref {delta:+,.1f} kg")
         + reading
@@ -2141,9 +2204,12 @@ def run_headline(
 
 def push_view(m: Mapping[str, Any], assist: Mapping[str, Any]) -> dict[str, Any]:
     """The push of a pushed run (PUSH_METRICS from its metrics; ``text``: the replay
-    page's assist_text)."""
+    page's assist_text; ``model``: the assist model, so the page says what a prescribed
+    constant-acceleration drive does not depend on)."""
     out: dict[str, Any] = {key: run_data.finite(m.get(src)) for key, src in PUSH_METRICS}
     out["text"] = replay.assist_text(dict(assist), dict(m))
+    model = assist.get("model")
+    out["model"] = model if isinstance(model, str) else None
     return out
 
 
@@ -2191,15 +2257,19 @@ def _kpa(pa: float) -> str:
 def flight_view(name: str, source: Mapping[str, Any], metrics: Mapping[str, Any]) -> dict[str, Any]:
     """The flight of a run (FLIGHT_METRICS; MECO after release), its stage-1 ignition
     in the replay page's words, and max-Q 'above' or 'below' the compared run's from the
-    run's own comparison (``_max_q_against``; None without one): 'the pad's' when that run
-    is the baseline, else the run by name (a bound is compared with its paired baseline),
-    named in ``max_q_against``."""
+    run's own comparison (``_max_q_against``; None without one, and None for a run that
+    ended neither inserted nor bug_suspect, whose flight is no like-for-like comparison):
+    'the pad's'
+    when that run is the baseline, else the run by name (a bound is compared with its
+    paired baseline), named in ``max_q_against``."""
     m = run_data.as_mapping(source.get("metrics"))
     assisted = replay.is_assisted(replay.run_assist(run_data.as_mapping(source.get("config"))))
     out: dict[str, Any] = {key: run_data.finite(m.get(src)) for key, src in FLIGHT_METRICS}
     out["status"] = str(m.get("status", "unknown"))
     out["ignition"] = replay.ignition_text(dict(m), assisted)
     above, pad_q, against = _max_q_against(name, source, metrics)
+    if m.get("status") not in (INSERTED_STATUS, BUG_SUSPECT):
+        above, pad_q, against = None, None, None
     out["max_q_vs_pad"] = None if above is None else ("above" if above else "below")
     out["pad_max_q_pa"] = pad_q
     out["max_q_against"] = against
@@ -2392,10 +2462,11 @@ def _leaves(obj: Any, prefix: str = "", budget: int = LEAF_BUDGET) -> dict[str, 
 
 
 def _setting_text(value: Any) -> str:
-    """A setting as the comparison line shows it: 'none' for absent, true/false, a float's
-    shortest repr (every digit that differs is shown), else its text."""
+    """A setting as the comparison line shows it: 'not set' for absent (so a push key
+    stated the other way never reads as 'no push'), true/false, a float's shortest repr
+    (every digit that differs is shown), else its text."""
     if value is None:
-        return "none"
+        return "not set"
     if isinstance(value, bool):
         return "true" if value else "false"
     return repr(value) if isinstance(value, float) else str(value)
@@ -2742,26 +2813,38 @@ def results_panel(
     metrics: Mapping[str, Any],
     config: Mapping[str, Any],
     sp1_same: bool | None = None,
+    chosen: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """The results panel data of a complete planar results directory (design 4.7),
     built from the directory alone, so a recorded directory gets the same panel as a
     fresh launch: the run list (``run_view`` of every run folder), the scene's default
-    pair, the run shown (``shown_run``), the tag, the shown run's headline, SP1's
-    headline with its caveat groups when the shown run is SP1's case in SP1's directory or
-    a reproduction of it (``sp1_headline_for``), the reproduction lines
-    (``directory_reproduction_lines``), the comparison with SP1's case
+    pair, the run shown (``shown_run``; with ``chosen``, 1 to PANEL_RUNS run folders the
+    page shows side by side, its right-hand run, and the pair is ``chosen``), the tag, the
+    shown run's headline, SP1's headline with its caveat groups when the shown run is SP1's
+    case in SP1's directory or a reproduction of it (``sp1_headline_for``), the
+    reproduction lines (``directory_reproduction_lines``), the comparison with SP1's case
     (``sp1_comparison``; ``sp1_same``: whether the basis files at the directory's recorded
     basis commit are SP1's, ``sp1_files_same``, ``AppServer.sp1_same_at``), the push,
-    flight, flags and verification, the outcome
-    (``classify``) and the caveats of the baseline and the shown run
-    (``panel_caveats``)."""
+    flight, flags and verification, the outcome (``classify``), the caveats of the pair
+    (``panel_caveats``) and what the scene draws that the model does not compute
+    (scene.DISPLAY_ONLY, design 4.9). Raises ValueError for a ``chosen`` that is not 1 to
+    PANEL_RUNS distinct run folders."""
     rows = run_folders(run_dir, metrics)
     runs = [run_view(n, metrics, config, rows) for n in rows]
     available = [n for n in rows if rows[n]]
     default = scene.default_pair(dict(metrics), dict(config), available) if available else []
-    shown = shown_run(metrics, config, rows)
     baseline = str(metrics.get("baseline"))
-    pair = list(dict.fromkeys(n for n in (baseline, shown) if n is not None and n in rows))
+    if chosen is not None:
+        names = list(chosen)
+        if not 1 <= len(names) <= PANEL_RUNS or len(set(names)) != len(names):
+            raise ValueError(f"a panel describes 1 to {PANEL_RUNS} distinct runs")
+        if any(n not in rows for n in names):
+            raise ValueError("a run the panel would describe is not in the run list")
+        shown: str | None = names[-1]
+        pair = names
+    else:
+        shown = shown_run(metrics, config, rows)
+        pair = list(dict.fromkeys(n for n in (baseline, shown) if n is not None and n in rows))
     view = next((r for r in runs if r["name"] == shown), None)
     kind, message, notes = classify(run_dir)
     reproduces = directory_reproduction_lines(basis, metrics)
@@ -2780,6 +2863,7 @@ def results_panel(
         "verification": None if view is None else view.get("verification"),
         "outcome": {"kind": kind, "message": message, "notes": list(notes)},
         **panel_caveats(run_dir, metrics, runs, pair),
+        "display_only": list(scene.DISPLAY_ONLY),
     }
     return {
         "baseline": baseline,
@@ -2796,28 +2880,102 @@ def app_description(
     is not stored): the launched run (the variant, else the pad) with the replay page's
     assist and ignition text, then the headline of its offload case (its verdicts
     included), else its own; then the outcome (``classify``'s kind and message) unless it
-    is OUTCOME_COMPLETE, so a flagged figure never reads as unflagged."""
+    is OUTCOME_COMPLETE, so a flagged figure never reads as unflagged: the kind in words
+    (underscores as spaces) and the message, left out only when the launched run's own
+    headline already says it (a run that did not fly or did not reach orbit, with no
+    offload case: the message then names that run)."""
     text = _app_line(metrics, config)
-    if outcome is not None and outcome[0] != OUTCOME_COMPLETE:
-        text += f"; {outcome[0]}: {outcome[1]}"
-    return text
+    if outcome is None or outcome[0] == OUTCOME_COMPLETE:
+        return text
+    kind, message = outcome
+    baseline = str(metrics.get("baseline"))
+    name = _launched_run(metrics)
+    has_case = bool(run_data.as_mapping(metrics.get("offload")).get("cases"))
+    said = kind in (OUTCOME_DID_NOT_FLY, OUTCOME_NOT_IN_ORBIT) and not has_case
+    if said and name != baseline and str(message).startswith(f"{name} "):
+        return text
+    return f"{text}; {kind.replace('_', ' ')}: {message}"
+
+
+def _launched_run(metrics: Mapping[str, Any]) -> str:
+    """The run an app directory's line describes: its variant, else the pad."""
+    baseline = str(metrics.get("baseline"))
+    runs = run_data.as_mapping(metrics.get("runs"))
+    return str(next((n for n in runs if n != baseline), baseline))
+
+
+NOT_FLOWN_IGNITION = {
+    SEARCH_FAILED_STATUS: "no flight recorded (its search failed), so no ignition time",
+    sim.GUIDANCE_FAILED_STATUS: "no flight recorded (its guidance failed), so no ignition time",
+}
+"""What a run that did not fly says in place of its ignition: its metrics hold no
+ignition time because nothing was flown, not because stage 1 never lit."""
+
+
+def configured_ramp_start(run_cfg: Mapping[str, Any]) -> str:
+    """The stage-1 ramp start a run block of resolved_config.yaml sets, in words (for a run
+    that did not fly, whose metrics record no ignition): never lit by design (a failed
+    ignition), a depth below the mouth, a speed on the push, a height above the mouth
+    (with its method), else a time after release or after the push starts. Reads only the
+    config; says nothing about whether stage 1 lit."""
+    stage1 = run_data.as_mapping(run_data.as_mapping(run_cfg.get("ignition")).get("stage1"))
+    if stage1.get("fails") is True:
+        return "stage 1 set never to light (failed ignition)"
+    depth = run_data.finite(stage1.get("at_depth_m"))
+    if depth is not None:
+        return f"ramp start set at {depth:g} m below the mouth"
+    speed = run_data.finite(stage1.get("at_speed_mps"))
+    if speed is not None:
+        return f"ramp start set at {speed:g} m/s on the push"
+    height = run_data.finite(stage1.get("at_height_m"))
+    if height is not None:
+        method = stage1.get("height_method")
+        how = f" ({method} method)" if isinstance(method, str) and method else ""
+        return f"ramp start set at {height:g} m above the mouth{how}"
+    t = run_data.finite(stage1.get("t_ign_s"))
+    origin = "push start" if stage1.get("reference") == appform.PUSH_START_REFERENCE else "release"
+    return f"ramp start set at T{0.0 if t is None else t:+g} s from {origin}"
+
+
+def _depth_from_config(m: Mapping[str, Any], assist: Mapping[str, Any]) -> dict[str, Any]:
+    """The metrics ``m`` with the track's start altitude taken from a vertical silo's
+    configured depth (exit altitude less stroke_m) when the metrics hold none (a run that
+    did not fly), so the description keeps the depth the user set."""
+    out = dict(m)
+    if out.get("track_start_altitude_m") is None and replay.is_vertical(dict(assist)):
+        stroke = run_data.finite(assist.get("stroke_m"))
+        track = run_data.as_mapping(assist.get("track"))
+        exit_m = run_data.finite(track.get("exit_altitude_m"))
+        if stroke is not None:
+            out["track_start_altitude_m"] = (0.0 if exit_m is None else exit_m) - stroke
+    return out
 
 
 def _app_line(metrics: Mapping[str, Any], config: Mapping[str, Any]) -> str:
-    """``app_description`` without the outcome."""
-    baseline = str(metrics.get("baseline"))
-    runs = run_data.as_mapping(metrics.get("runs"))
-    name = next((n for n in runs if n != baseline), baseline)
+    """``app_description`` without the outcome. A run that did not fly (NOT_FLOWN_STATUSES)
+    is described from its config: the silo's configured depth (``_depth_from_config``),
+    the ramp start it set (``configured_ramp_start``) and that no flight was recorded
+    (NOT_FLOWN_IGNITION), never 'stage 1 never lit', which its metrics cannot say."""
+    name = _launched_run(metrics)
     try:
         source = replay.run_source(dict(metrics), dict(config), name)
     except run_data.RunDataError:
         return f"{name}: not described in metrics.json"
     m = run_data.as_mapping(source["metrics"])
-    assist = replay.run_assist(run_data.as_mapping(source["config"]))
-    parts = [
-        f"{name}: {replay.assist_text(dict(assist), dict(m))}",
-        replay.ignition_text(dict(m), replay.is_assisted(assist)),
-    ]
+    run_cfg = run_data.as_mapping(source["config"])
+    assist = replay.run_assist(run_cfg)
+    status = m.get("status")
+    if status in NOT_FLOWN_STATUSES:
+        parts = [
+            f"{name}: {replay.assist_text(dict(assist), _depth_from_config(m, assist))}",
+            configured_ramp_start(run_cfg),
+            NOT_FLOWN_IGNITION[status],
+        ]
+    else:
+        parts = [
+            f"{name}: {replay.assist_text(dict(assist), dict(m))}",
+            replay.ignition_text(dict(m), replay.is_assisted(assist)),
+        ]
     offload = run_data.as_mapping(metrics.get("offload"))
     case = next((run_data.as_mapping(c) for c in offload.get("cases") or []), None)
     if case is not None:
@@ -2969,6 +3127,44 @@ def directory_row(
         tag = "" if label is None else f" ({label})"
         row["description"] = f"{experiment}{tag}: {len(rows)} runs"
     return row
+
+
+FINDINGS_DIR = PurePosixPath("docs") / "findings"
+"""The repository folder of the findings notes (one per research question)."""
+FINDINGS_NOTE_MAX_BYTES = 1024 * 1024
+"""A findings note above this size [bytes] is not read for its citations."""
+CITED_DIRECTORY_PATTERN = re.compile(
+    r"results/([A-Za-z0-9][A-Za-z0-9_.+-]{0,127})/([0-9]{8}T[0-9]{6}Z(?:-[0-9]{1,4})?)"
+)
+"""A results directory as a findings note cites it: results/<experiment>/<timestamp>."""
+
+
+def findings_citations(repo_root: Path) -> dict[tuple[str, str], list[dict[str, str]]]:
+    """The findings notes that cite each results directory (the run browser's recorded
+    rows say which note a directory rests on): every docs/findings/*.md of ``repo_root``
+    (links and notes over FINDINGS_NOTE_MAX_BYTES skipped) read for
+    CITED_DIRECTORY_PATTERN, as {(experiment, timestamp): [{path, title}]}, path relative
+    to the repository, title the note's first '# ' heading (else its file name), each note
+    once per directory, in file-name order. {} when the folder is missing."""
+    folder = Path(repo_root, *FINDINGS_DIR.parts)
+    out: dict[tuple[str, str], list[dict[str, str]]] = {}
+    if not folder.is_dir() or is_link(folder):
+        return out
+    for note in sorted(folder.glob("*.md")):
+        stat = _stat(note)
+        if is_link(note) or not note.is_file() or stat is None:
+            continue
+        if stat[0] > FINDINGS_NOTE_MAX_BYTES:
+            continue
+        try:
+            text = note.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        title = next((ln[2:].strip() for ln in text.splitlines() if ln.startswith("# ")), note.stem)
+        record = {"path": str(FINDINGS_DIR / note.name), "title": title}
+        for found in dict.fromkeys(CITED_DIRECTORY_PATTERN.findall(text)):
+            out.setdefault(found, []).append(record)
+    return out
 
 
 def unreadable_row(experiment: str, timestamp: str, exc: BaseException) -> dict[str, Any]:
@@ -3196,6 +3392,215 @@ def outcome_record(outcome: LaunchOutcome) -> dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------------ the form's starting values
+
+PAGE_ONLY_FIELDS = ("preset", "dry_run")
+"""Request fields that are no form control (the page sets them)."""
+RAMP_START_FALLBACKS: tuple[tuple[str, str], ...] = (
+    ("at_depth_m", "depth_m"),
+    ("at_speed_mps", "speed_mps"),
+    ("at_height_m", "height_m"),
+)
+"""(form field, appform.derived ramp_start key) of the ramp-start ways no preset states:
+the first preset whose own ramp start, converted by ``appform.derived``, has the value
+(the speed only from a ramp start on the push, where the depth is set too, so it is a
+speed on the push, never one of the coast after release)."""
+FIXED_T_DECIMALS = 3
+"""Decimals of an imposed offload's starting tonnes (to the kilogram)."""
+
+
+def _default_order(presets: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """The presets with appform.DEFAULT_PRESET first, then in their order."""
+    return sorted(presets, key=lambda p: p["name"] != appform.DEFAULT_PRESET)
+
+
+def form_defaults(
+    basis: appform.Basis,
+    presets: Sequence[Mapping[str, Any]],
+    ramp_starts: Mapping[str, Mapping[str, Any] | None],
+) -> dict[str, Any]:
+    """The value each form field starts from when the user turns to it (GET /api/form
+    ``defaults``; step A5: the page's fields show their default and range), never a
+    recommendation and never sent unless the field is used: a boolean false; a field of
+    appform.OFFLOAD_OPTIONAL_FIELDS none (0 t or false: a stage-2 pre-offload, a penalty
+    and a paired pad are each the user's choice; the presets that state them set them
+    when chosen); any other field the value of the first preset that states it
+    (``presets``: GET /api/form's records, appform.DEFAULT_PRESET first); a ramp-start way
+    no preset states the first preset's own ramp start converted (RAMP_START_FALLBACKS,
+    ``ramp_starts``: appform.derived's ramp_start by preset name); the startup ramp time
+    the vehicle's own stage-1 ramp; else None (the page shows the field empty with its
+    range)."""
+    order = _default_order(presets)
+    out: dict[str, Any] = {}
+    for key, spec in appform.FIELDS.items():
+        if key in PAGE_ONLY_FIELDS:
+            continue
+        if spec.kind == appform.BOOLEAN:
+            out[key] = False
+        elif key in appform.OFFLOAD_OPTIONAL_FIELDS:
+            out[key] = 0
+        else:
+            out[key] = next((p["request"][key] for p in order if key in p["request"]), None)
+    for key, derived_key in RAMP_START_FALLBACKS:
+        if out.get(key) is not None:
+            continue
+        found = _ramp_fallback(order, ramp_starts, derived_key)
+        if found is not None:
+            out[key] = found[0]
+    if out.get("t_ramp_s") is None:
+        startup = basis.committed_runs[basis.baseline_name].to_vehicle().stages[0].startup
+        if startup.effective_kind == appform.STARTUP_RAMP:
+            out["t_ramp_s"] = float(startup.t_ramp_s)
+    return out
+
+
+def _ramp_fallback(
+    order: Sequence[Mapping[str, Any]],
+    ramp_starts: Mapping[str, Mapping[str, Any] | None],
+    derived_key: str,
+) -> tuple[float, str, Mapping[str, Any]] | None:
+    """(value, preset name, that preset's converted ramp start) of the first preset in
+    ``order`` whose own ramp start, converted by ``appform.derived``, has ``derived_key``
+    (a speed only from a ramp start on the push, where the depth is set too), or None."""
+    for preset in order:
+        start = ramp_starts.get(str(preset["name"])) or {}
+        value = start.get(derived_key)
+        if value is None or (derived_key == "speed_mps" and start.get("depth_m") is None):
+            continue
+        return float(value), str(preset["name"]), start
+    return None
+
+
+def form_default_sources(
+    presets: Sequence[Mapping[str, Any]],
+    ramp_starts: Mapping[str, Mapping[str, Any] | None],
+) -> dict[str, dict[str, Any]]:
+    """Where each ramp-start default that no preset states comes from (GET /api/form
+    ``default_sources``; the page names it beside the default, so 94.574441 m reads as
+    silo_hot_ramp_on_track's ramp start stated as a depth): {field: {preset,
+    time_after_release_s}} for the fields of RAMP_START_FALLBACKS that ``form_defaults``
+    fills from a preset's converted ramp start (``_ramp_fallback``)."""
+    order = _default_order(presets)
+    out: dict[str, dict[str, Any]] = {}
+    for key, derived_key in RAMP_START_FALLBACKS:
+        if any(key in p["request"] for p in order):
+            continue
+        found = _ramp_fallback(order, ramp_starts, derived_key)
+        if found is not None:
+            out[key] = {
+                "preset": found[1],
+                "time_after_release_s": run_data.finite(found[2].get("time_after_release_s")),
+            }
+    return out
+
+
+def push_start_default(
+    presets: Sequence[Mapping[str, Any]],
+    ramp_starts: Mapping[str, Mapping[str, Any] | None],
+) -> dict[str, Any] | None:
+    """The default of a ramp start stated as a time from push start (GET /api/form
+    ``push_start_default``; review of A5): the field t_ign_s is shared with the time from
+    release, whose default (+0.5 s) read from push start would be a hot start on the
+    track, so the page shows this one instead: {value [s], preset, time_after_release_s}
+    of the first preset (the default first) whose own ramp start converts to a time from
+    push start (``appform.derived``), or None."""
+    found = _ramp_fallback(_default_order(presets), ramp_starts, "time_from_push_start_s")
+    if found is None:
+        return None
+    return {
+        "value": found[0],
+        "preset": found[1],
+        "time_after_release_s": run_data.finite(found[2].get("time_after_release_s")),
+    }
+
+
+def vehicle_startup(basis: appform.Basis) -> dict[str, Any]:
+    """The baseline vehicle's own stage-1 startup (GET /api/form ``vehicle_startup``; the
+    page says what the startup choice 'the vehicle's own' is): its effective kind, the
+    ramp time [s] of a ramp, the time constant [s] of a lag (else None) and the vehicle
+    file."""
+    startup = basis.committed_runs[basis.baseline_name].to_vehicle().stages[0].startup
+    kind = startup.effective_kind
+    return {
+        "kind": kind,
+        "t_ramp_s": float(startup.t_ramp_s) if kind == appform.STARTUP_RAMP else None,
+        "tau_s": float(startup.tau_s) if kind == appform.STARTUP_LAG else None,
+        "vehicle": basis.vehicle_path,
+    }
+
+
+REPOSITORY_RESULTS = run_data.RESULTS_TREE_NAME
+"""The repository's own results folder (relative to the repository): app runs written
+there keep their summary.md tracked and public (D-SP2-03, D-SP2-37)."""
+
+
+def results_root_view(results_root: Path, repo_root: Path) -> dict[str, Any]:
+    """Where the server writes launches, for the page (GET /api/form ``results_root``):
+    ``path``, the results root relative to the repository (POSIX) when it is inside it,
+    else None (a folder outside the repository: the page says so and names no local
+    path); ``tracked``, True for the repository's own results folder
+    (REPOSITORY_RESULTS)."""
+    try:
+        rel = Path(results_root).resolve().relative_to(Path(repo_root).resolve())
+    except (OSError, ValueError):
+        return {"path": None, "tracked": False}
+    path = rel.as_posix()
+    return {"path": path, "tracked": path == REPOSITORY_RESULTS}
+
+
+def fixed_defaults(
+    basis: appform.Basis, presets: Sequence[Mapping[str, Any]]
+) -> dict[str, float | None]:
+    """The starting value of an imposed offload for each way of stating it (GET
+    /api/form ``fixed_defaults``; the page puts it in the field when the key changes
+    between a fraction and tonnes): the first preset's imposed fraction (SP1's 5% case)
+    for a fraction key, and the same fraction of the stage's full load in tonnes
+    (vehicle.offload_load_kg of the baseline's vehicle, to FIXED_T_DECIMALS) for a tonnes
+    key; all None when no preset imposes a fraction."""
+    fraction = next(
+        (
+            float(p["request"]["fixed_value"])
+            for p in _default_order(presets)
+            if "fraction" in str(p["request"].get("fixed_key", ""))
+        ),
+        None,
+    )
+    vehicle = basis.committed_runs[basis.baseline_name].to_vehicle()
+    out: dict[str, float | None] = {}
+    for key in appform.FIXED_KEYS:
+        if fraction is None:
+            out[key] = None
+        elif "fraction" in key:
+            out[key] = fraction
+        else:
+            load_t = float(kg_to_t(offload_load_kg(vehicle, OFFLOAD_FIXED_MODES[key])))
+            out[key] = round(fraction * load_t, FIXED_T_DECIMALS)
+    return out
+
+
+def offload_loads_t(basis: appform.Basis) -> dict[str, float]:
+    """The full propellant load [t] of each offload mode's tanks (vehicle.offload_load_kg
+    of the baseline's vehicle; GET /api/form ``loads_t``): the page states an imposed
+    offload in tonnes, and a stage-2 pre-offload, against it (appform refuses a mass at or
+    beyond the load)."""
+    vehicle = basis.committed_runs[basis.baseline_name].to_vehicle()
+    modes = dict.fromkeys(OFFLOAD_FIXED_MODES.values())
+    return {mode: float(kg_to_t(offload_load_kg(vehicle, mode))) for mode in modes}
+
+
+def silo_fixed(basis: appform.Basis) -> list[dict[str, Any]]:
+    """The silo details the form shows read-only (design 4.7: the brake, the drive
+    efficiency, the vented shaft, the vertical track): every key of the committed silo's
+    assist block (appform.SILO_FRAGMENT_VARIANT) the form does not edit, as {key,
+    config_key, value}, values as committed."""
+    edited = {*appform.PUSH_KEYS, *appform.SILO_FIELDS, "model"}
+    return [
+        {"key": key, "config_key": f"assist.{key}", "value": plain(value)}
+        for key, value in basis.silo_assist.items()
+        if key not in edited
+    ]
+
+
 # ------------------------------------------------------------------ pages
 
 
@@ -3334,7 +3739,7 @@ class AppServer(http.server.ThreadingHTTPServer):
         self._scene_lock = threading.Lock()
         self._form_info: dict[str, Any] | None = None
         self._form_lock = threading.Lock()
-        self._page: tuple[bytes, str] | None = None
+        self._pages: dict[bool, tuple[bytes, str]] = {}
         self._scene_csp: str | None = None
         self._serve_started = threading.Event()
         self._serve_done = threading.Event()
@@ -3664,9 +4069,17 @@ class AppServer(http.server.ThreadingHTTPServer):
         """GET /api/form (built once): the presets (name, kind, label, the committed name
         when the basis was read from a commit, the expected range and its note, the form
         as a request), presets this basis cannot resolve with the reason, the default
-        preset, every field with its kind, label, unit, config key, choices and range, the
-        required choices, the limits, the server-start record, the boot id, SP1's
-        headline with its caveat groups, the exploratory line and the launch note."""
+        preset, every field with its kind, label, unit, config key, choices and range, each
+        field's starting value (``form_defaults``; the preset a converted ramp-start
+        default comes from, ``form_default_sources``; the time-from-push-start default,
+        ``push_start_default``) and each imposed-offload key's
+        (``fixed_defaults``), the vehicle's own stage-1 startup (``vehicle_startup``),
+        where launches are written (``results_root_view``), each offload mode's full load
+        in tonnes
+        (``offload_loads_t``), the silo details shown read-only (``silo_fixed``), the
+        Advanced forms with their readings, the required choices, the limits, the
+        server-start record, the boot id, SP1's headline with its caveat groups, the
+        exploratory line and the launch note."""
         with self._form_lock:
             if self._form_info is None:
                 self._form_info = self._build_form_info()
@@ -3676,6 +4089,7 @@ class AppServer(http.server.ThreadingHTTPServer):
         """Build the GET /api/form record (see ``form_info``)."""
         presets: list[dict[str, Any]] = []
         unavailable: list[dict[str, str]] = []
+        ramp_starts: dict[str, Any] = {}
         for name, kind in appform.PRESETS:
             try:
                 form = appform.preset_form(self.basis, name)
@@ -3684,6 +4098,7 @@ class AppServer(http.server.ThreadingHTTPServer):
             except (ValueError, KeyError) as exc:
                 unavailable.append({"name": name, "reason": _exception_line(exc)})
                 continue
+            ramp_starts[name] = values["ramp_start"]
             presets.append(
                 {
                     "name": name,
@@ -3722,6 +4137,20 @@ class AppServer(http.server.ThreadingHTTPServer):
             "presets_unavailable": unavailable,
             "default_preset": appform.DEFAULT_PRESET,
             "fields": fields,
+            "defaults": plain(form_defaults(self.basis, presets, ramp_starts)),
+            "default_sources": plain(form_default_sources(presets, ramp_starts)),
+            "push_start_default": plain(push_start_default(presets, ramp_starts)),
+            "vehicle_startup": vehicle_startup(self.basis),
+            "results_root": results_root_view(self.results_root, self.repo_root),
+            "fixed_defaults": fixed_defaults(self.basis, presets),
+            "loads_t": offload_loads_t(self.basis),
+            "silo_fixed": silo_fixed(self.basis),
+            "advanced": {
+                "solve_modes": list(appform.ADVANCED_SOLVE_MODES),
+                "fixed_keys": list(appform.ADVANCED_FIXED_KEYS),
+                "solve_reading": appform.ADVANCED_SOLVE_READING,
+                "fixed_reading": appform.ADVANCED_FIXED_READING,
+            },
             "required_choices": list(appform.REQUIRED_CHOICES),
             "limits": {
                 "max_body_bytes": MAX_JSON_BODY_BYTES,
@@ -3733,13 +4162,23 @@ class AppServer(http.server.ThreadingHTTPServer):
             "launch_note": LAUNCH_NOTE,
         }
 
-    def app_page(self) -> tuple[bytes, str]:
-        """GET /: the app page and its Content-Security-Policy (rendered once)."""
-        if self._page is None:
-            self._page = render_app_page(
-                {"url": self.url, "boot_id": self.boot_id, "version": __version__}
+    def app_page(self, other_site: bool = False) -> tuple[bytes, str]:
+        """GET /: the app page and its Content-Security-Policy (rendered once per value
+        of ``other_site``, ``from_other_site`` of the request: the page's data block
+        carries it as ``from_other_site``; the script, and so the policy, is the same)."""
+        key = bool(other_site)
+        page = self._pages.get(key)
+        if page is None:
+            page = render_app_page(
+                {
+                    "url": self.url,
+                    "boot_id": self.boot_id,
+                    "version": __version__,
+                    "from_other_site": key,
+                }
             )
-        return self._page
+            self._pages[key] = page
+        return page
 
     def launch(self, obj: dict[str, Any]) -> tuple[HTTPStatus, dict[str, Any]]:
         """POST /api/launches: ``appform.parse_request``; with ``dry_run`` true, 200 with
@@ -3893,12 +4332,15 @@ class AppServer(http.server.ThreadingHTTPServer):
     def results(self) -> dict[str, Any]:
         """GET /api/results: the run browser, two groups (app runs, recorded
         experiments), newest first, each directory handled on its own (``listing``,
-        ``_row``); the count of the entries not listed."""
+        ``_row``), each row with the findings notes that cite it (``cited_in``,
+        ``findings_citations`` of the repository); the count of the entries not listed."""
         found, others = self.listing()
         running = self.running_directory()
+        cites = findings_citations(self.repo_root)
         groups: dict[str, list[dict[str, Any]]] = {GROUP_APP: [], GROUP_RECORDED: []}
         for experiment, timestamp, run_dir in found:
             row = self._row(run_dir, experiment, timestamp, (experiment, timestamp) == running)
+            row = {**row, "cited_in": cites.get((experiment, timestamp), [])}
             groups[row["group"]].append(row)
         for rows in groups.values():
             rows.sort(key=lambda r: (stamp_key(r["timestamp"]), r["experiment"]), reverse=True)
@@ -3916,16 +4358,33 @@ class AppServer(http.server.ThreadingHTTPServer):
             else {"experiment": running[0], "timestamp": running[1]},
         }
 
-    def result_detail(self, experiment: str, timestamp: str) -> dict[str, Any]:
-        """GET /api/results/<experiment>/<timestamp>: the directory's row and, for a
-        complete planar directory, its run list, default pair and results panel
-        (``results_panel`` with ``sp1_same_at`` of the directory's basis commit, cached by
-        the directory's signature; one build at a time). A panel that cannot be built
-        leaves the row with ``panel_error``: an unreadable file's fixed text
-        (UnreadableError: the file's name only), else the error's type only."""
+    def result_detail(
+        self, experiment: str, timestamp: str, selection: str | None = None
+    ) -> dict[str, Any]:
+        """GET /api/results/<experiment>/<timestamp> (``selection`` None) and GET
+        /api/panel/<experiment>/<timestamp>/<runs>: the directory's row and, for a complete
+        planar directory, its run list, default pair and results panel (``results_panel``
+        with ``sp1_same_at`` of the directory's basis commit, cached by the directory's
+        signature and the runs; one build at a time). ``selection``: the runs the panel
+        describes, names joined by ',' (1 to PANEL_RUNS distinct runs of the directory's
+        run list, else Refused 422 bad_selection, the scene route's rule; Refused 409
+        no_panel for a directory that has no panel); None: the directory's own pair
+        (``shown_run``). A panel that cannot be built leaves the row with
+        ``panel_error``: an unreadable file's fixed text (UnreadableError: the file's name
+        only), else the error's type only."""
         run_dir = self.find(experiment, timestamp)
         running = self.running_directory() == (experiment, timestamp)
         row = self._row(run_dir, experiment, timestamp, running)
+        chosen: tuple[str, ...] | None = None
+        if selection is not None:
+            chosen = tuple(selection.split(","))
+            if not 1 <= len(chosen) <= PANEL_RUNS or len(set(chosen)) != len(chosen):
+                raise Refused(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    "bad_selection",
+                    f"a results panel describes 1 to {PANEL_RUNS} distinct runs of the "
+                    "directory's run list",
+                )
         out: dict[str, Any] = {
             "row": row,
             "baseline": None,
@@ -3935,8 +4394,14 @@ class AppServer(http.server.ThreadingHTTPServer):
             "panel_error": None,
         }
         if row["state"] != DIR_COMPLETE or row["model"] != PLANAR_2D:
+            if chosen is not None:
+                raise Refused(
+                    HTTPStatus.CONFLICT,
+                    "no_panel",
+                    f"this directory has no results panel: {row['reason'] or row['state']}",
+                )
             return out
-        key = (str(run_dir), directory_signature(run_dir))
+        key = (str(run_dir), directory_signature(run_dir), chosen)
         detail = self._panels.get(key)
         if detail is None:
             with self._panel_lock:
@@ -3946,6 +4411,14 @@ class AppServer(http.server.ThreadingHTTPServer):
                         metrics = read_capped_json(
                             run_dir / run_data.METRICS_FILE, MAX_METRICS_BYTES
                         )
+                        if chosen is not None and any(
+                            n not in run_folders(run_dir, metrics) for n in chosen
+                        ):
+                            raise Refused(
+                                HTTPStatus.UNPROCESSABLE_ENTITY,
+                                "bad_selection",
+                                "a run of the selection is not in the directory's run list",
+                            )
                         config = read_capped_yaml(run_dir / run_data.CONFIG_FILE, MAX_CONFIG_BYTES)
                         detail = plain(
                             results_panel(
@@ -3956,8 +4429,11 @@ class AppServer(http.server.ThreadingHTTPServer):
                                 metrics,
                                 config,
                                 self.sp1_same_at(metrics),
+                                chosen,
                             )
                         )
+                    except Refused:
+                        raise
                     except Exception as exc:  # the row stands; the panel says why it is missing
                         why = (
                             str(exc)[:FAILED_LINE_MAX]
@@ -4078,6 +4554,7 @@ ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/api/job"),
     ("GET", "/api/results"),
     ("GET", "/api/results/<experiment>/<timestamp>"),
+    ("GET", "/api/panel/<experiment>/<timestamp>/<runs>"),
     ("GET", "/scene/<experiment>/<timestamp>/<runs>"),
 )
 """Every route (method, path); any other path is 404, any other method 501."""
@@ -4235,11 +4712,12 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
 
     def _route_get(self, parts: list[str]) -> None:
         """Dispatch a guarded GET by its decoded path segments (ROUTES): /, /api/form,
-        /api/job, /api/results, /api/results/<experiment>/<timestamp> and
+        /api/job, /api/results, /api/results/<experiment>/<timestamp>,
+        /api/panel/<experiment>/<timestamp>/<runs> and
         /scene/<experiment>/<timestamp>/<runs>; anything else is Refused 404."""
         server = self.server
         if parts == [""]:
-            page, csp = server.app_page()
+            page, csp = server.app_page(from_other_site(self.headers))
             self._send(HTTPStatus.OK, page, HTML_CONTENT_TYPE, (FRAME_DENY, csp))
         elif parts == ["api", "form"]:
             self._json(HTTPStatus.OK, server.form_info())
@@ -4249,6 +4727,8 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, server.results())
         elif len(parts) == 4 and parts[:2] == ["api", "results"]:
             self._json(HTTPStatus.OK, server.result_detail(parts[2], parts[3]))
+        elif len(parts) == 5 and parts[:2] == ["api", "panel"]:
+            self._json(HTTPStatus.OK, server.result_detail(parts[2], parts[3], parts[4]))
         elif len(parts) == 4 and parts[0] == "scene":
             page = server.scene_page(parts[1], parts[2], parts[3])
             frame = (FRAME_SAMEORIGIN, server.scene_csp())

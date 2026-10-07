@@ -7,110 +7,2643 @@
 <title>launch-assist-sim app</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgdmlld0JveD0iMCAwIDY0IDY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImxhdW5jaC1hc3Npc3Qtc2ltIj48dGl0bGU+bGF1bmNoLWFzc2lzdC1zaW08L3RpdGxlPjxjbGlwUGF0aCBpZD0iZmMiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9jbGlwUGF0aD48Y2xpcFBhdGggaWQ9ImZyIj48cGF0aCBkPSJNMjggMTguNUMyOCAxMiAzMC42IDcuNCAzMiA1LjVDMzMuNCA3LjQgMzYgMTIgMzYgMTguNVY0N0gyOFoiLz48L2NsaXBQYXRoPjxnIGNsaXAtcGF0aD0idXJsKCNmYykiPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI0MSIgZmlsbD0iIzJkNWY4ZiIvPjxyZWN0IHk9IjQxIiB3aWR0aD0iNjQiIGhlaWdodD0iMjMiIGZpbGw9IiMxYzIyMjYiLz48cmVjdCB4PSIyNSIgeT0iNDEiIHdpZHRoPSIxNCIgaGVpZ2h0PSIyMyIgZmlsbD0iIzJiMzIzOCIvPjxwYXRoIGQ9Ik0wIDQyLjI1SDI1TTM5IDQyLjI1SDY0IiBzdHJva2U9IiNiMDlhNzgiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHBhdGggZD0iTTE5LjUgNDguNWg1LjVNMzkgNDguNWg1LjUiIHN0cm9rZT0iI2YwOGE0YiIgc3Ryb2tlLW9wYWNpdHk9IjEuMCIgc3Ryb2tlLXdpZHRoPSIzLjYiLz48cGF0aCBkPSJNMTkuNSA1Ni41aDUuNU0zOSA1Ni41aDUuNSIgc3Ryb2tlPSIjZjA4YTRiIiBzdHJva2Utb3BhY2l0eT0iMC41IiBzdHJva2Utd2lkdGg9IjMuNiIvPjxwYXRoIGQ9Ik0yOCAxOC41QzI4IDEyIDMwLjYgNy40IDMyIDUuNUMzMy40IDcuNCAzNiAxMiAzNiAxOC41VjQ3SDI4WiIgZmlsbD0iI2ZiZmJmOCIvPjxyZWN0IHg9IjMzLjYiIHk9IjQiIHdpZHRoPSIzIiBoZWlnaHQ9IjQ0IiBmaWxsPSIjZGZlNGUxIiBjbGlwLXBhdGg9InVybCgjZnIpIi8+PHJlY3QgeD0iMjgiIHk9IjI3IiB3aWR0aD0iOCIgaGVpZ2h0PSIyLjIiIGZpbGw9IiMxYzIyMjYiLz48cGF0aCBkPSJNMCA0MVY1MkExMiAxMiAwIDAgMCAxMiA2NEg1MkExMiAxMiAwIDAgMCA2NCA1MlY0MSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGM1NjVjIiBzdHJva2Utd2lkdGg9IjUiLz48L2c+PC9zdmc+Cg==">
 <style>
-/* Written by launchsim app (src/launchsim/templates/app.html): a placeholder of SP2 step A4b;
-   step A5 replaces it with the form, the launch progress, the results panel and the scene.
-   The server sends the Content-Security-Policy as a header, with this page's one inline script
-   by its sha256. Every value from the server reaches the page by textContent.
-   Rule for step A5 (exit criterion 17): GET / is the one route another site can reach, so on
-   load this page issues only GET requests to /api/form, /api/job and /api/results. It never
-   starts a launch, sends a dry run or requests /scene/... from location.hash, location.search,
-   document.referrer or a postMessage; those follow a user's click or key only. */
+/* Written by launchsim app (src/launchsim/templates/app.html), SP2 step A5: the local app's
+   page. Layout as the approved mock-up (docs/phases/inputs/2026-10-05-SP2-mockups/app-page.html):
+   a header with the mark, the title, the address and the exploratory badge; the launch form
+   on the left; the launch progress, the results panel and the scene frame on the right; the
+   run browser below. Tokens: the site's set (site/assets/site.css), light and dark, in its
+   three-block pattern; tests/test_app_page.py checks their contrast.
+   The server sends the Content-Security-Policy as a header with this page's one inline
+   script by its sha256 (app.render_app_page computes it from the page it serves). Every value
+   from the server reaches the page by textContent or createElement, never as markup.
+   Exit criterion 17: GET / is the one route another site can reach. When the server says the
+   request came from another site (from_other_site), the page reads no hash and issues only GET
+   requests to /api/form, /api/job and /api/results until the user acts on the page itself (a
+   trusted pointer, key or input event); a launch always follows a click on Launch. */
 :root {
   --bg: #f1f2ee;
   --panel: #fbfbf8;
   --ink: #1c2226;
   --ink-2: #4c565c;
+  --ink-3: #626c71;
   --rule: #d6d9d1;
+  --grid: #e3e5de;
+  --ground: #8a7a62;
+  --shaft: #d9d2c4;
+  --run-0: #2d5f8f;
+  --run-1: #c2521a;
+  --run-2: #177d6f;
+  --run-3: #7a4c8e;
+  --good: #177d6f;
+  --bad: #b3261e;
+  --caution: #845a00;
+  --caution-bg: #f6ecd2;
+  --focus: #2d5f8f;
+  --link: #2d5f8f;
+  --code-bg: #eceee8;
+  --accent-ink: #a8440f;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161b1e;
-    --panel: #1c2226;
-    --ink: #eef0ea;
-    --ink-2: #b9c0bc;
-    --rule: #333c41;
+  :root:not([data-theme="light"]) {
+    --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+    --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+    --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+    --good: #4cc2ae; --bad: #f2867c;
+    --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+    --accent-ink: #f08a4b;
+    color-scheme: dark;
   }
 }
-html { background: var(--bg); color: var(--ink); }
-body {
-  margin: 0;
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+:root[data-theme="dark"] {
+  --bg: #111518; --panel: #171c20; --ink: #e3e7e4; --ink-2: #aab3b3; --ink-3: #87919a;
+  --rule: #2b3238; --grid: #222a2f; --ground: #b09a78; --shaft: #2c2a25;
+  --run-0: #7fb0e0; --run-1: #f08a4b; --run-2: #4cc2ae; --run-3: #c39ad6;
+  --good: #4cc2ae; --bad: #f2867c;
+  --caution: #e0b653; --caution-bg: #2c2513; --focus: #7fb0e0; --link: #7fb0e0; --code-bg: #1d2328;
+  --accent-ink: #f08a4b;
+  color-scheme: dark;
 }
-.wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
-header { display: flex; align-items: center; gap: 14px; }
-header svg { width: 48px; height: 48px; flex: none; }
-h1 { font-size: 22px; margin: 0; }
-h2 { font-size: 16px; margin: 24px 0 8px; }
-p { margin: 8px 0; color: var(--ink-2); }
-code { font-family: ui-monospace, Consolas, monospace; color: var(--ink); }
-section { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
-  padding: 4px 16px 12px; margin-top: 16px; }
-ul { margin: 4px 0; padding-left: 20px; }
-li { margin: 3px 0; overflow-wrap: anywhere; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; overflow-wrap: break-word; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 12px 20px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+a { color: var(--link); text-underline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+code { font-family: var(--font-data); font-size: 0.86em; overflow-wrap: anywhere; }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.top svg { width: 44px; height: 44px; flex: none; }
+.ident { min-width: 0; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; letter-spacing: 0.02em; margin: 0; line-height: 1.1; }
+.addr { margin: 0; color: var(--ink-2); font-size: 0.85rem; overflow-wrap: anywhere; }
+.addr code { color: var(--ink); }
+.badge { margin: 0 0 0 auto; padding: 4px 10px; border: 1px solid var(--caution); border-radius: 4px; background: var(--caution-bg); color: var(--ink); font-size: 0.85rem; font-weight: 600; }
+.themepick { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); }
+.themepick select { width: auto; }
+.notice { margin: 0; padding: 8px 12px; border-left: 4px solid var(--caution); background: var(--caution-bg); color: var(--ink); max-width: 110ch; }
+
+/* columns */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+/* wide screens: the form is a sidebar with a scroll of its own and the Launch bar pinned to
+   its foot, so the button, its duration and its reason stay in view beside the results. The
+   notice sits at the top of the right-hand column (row 1), so the form card's top stays at
+   the header's foot whether or not a notice shows (its max-height assumes that top); on a
+   narrow screen the notice comes first, above the form. */
+@media (min-width: 1000px) {
+  .layout { grid-template-columns: minmax(330px, 400px) minmax(0, 1fr); grid-template-rows: auto 1fr; row-gap: 0; }
+  .layout > .notice { grid-column: 2; grid-row: 1; margin-bottom: 16px; }
+  .layout > .side { grid-column: 2; grid-row: 2; }
+  #formCard { grid-column: 1; grid-row: 1 / span 2; position: sticky; top: 12px; max-height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain; padding-bottom: 0; }
+  #formCard .launch { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--rule); padding: 8px 0 12px; }
+}
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 6px; color: var(--ink-2); }
+h3 { font-size: 0.95rem; margin: 12px 0 4px; }
+h4 { font-size: 0.88rem; margin: 10px 0 4px; color: var(--ink-2); }
+p { margin: 4px 0; }
+ul, ol { margin: 4px 0; padding-left: 1.2rem; }
+li { margin: 2px 0; overflow-wrap: anywhere; }
+
+/* the form */
+fieldset { border: 1px solid var(--rule); border-radius: 6px; margin: 10px 0 0; padding: 4px 10px 10px; min-width: 0; }
+legend { font-weight: 600; padding: 0 4px; }
+.field { display: grid; gap: 2px; margin-top: 8px; min-width: 0; }
+.field > label, .grouplabel { font-size: 0.9rem; margin: 0; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+select { font-family: var(--font-body); }
+input[type=text], select { font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--panel); border: 1px solid var(--ink-3); border-radius: 4px; padding: 5px 8px; width: 100%; max-width: 100%; min-width: 0; }
+input[type=text] { font-family: var(--font-data); }
+input[type=text]:disabled, select:disabled { background: var(--code-bg); color: var(--ink-3); border-style: dashed; }
+/* a disabled group or control reads as disabled throughout: its labels as well as its inputs */
+fieldset:disabled .grouplabel, fieldset:disabled .field > label, fieldset:disabled .radios label, fieldset:disabled label.check,
+fieldset:disabled .fixedlist, label:has(> input:disabled) { color: var(--ink-3); }
+input[type=radio], input[type=checkbox] { accent-color: var(--ink); width: 16px; height: 16px; margin: 0; flex: none; }
+/* an invalid field is marked by its border, so the outline stays the focus ring (:focus-visible) on the field the
+   user is sent to fix */
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+.radios[aria-invalid="true"] { box-shadow: 0 0 0 2px var(--bad); border-radius: 4px; }
+.radios { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.radios label, label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }
+.meta { margin: 0; font-size: 0.78rem; color: var(--ink-3); overflow-wrap: anywhere; }
+.meta code { color: var(--ink-2); }
+.err { margin: 2px 0 0; color: var(--bad); font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.why { margin: 4px 0 0; font-size: 0.82rem; color: var(--ink-2); border-left: 3px solid var(--ink-3); padding-left: 6px; }
+#presetEdited p { margin: 0; }
+#presetEdited button { margin-top: 4px; }
+.fixedlist { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.82rem; color: var(--ink-2); }
+.fixedlist li { margin: 1px 0; }
+.reading { font-size: 0.8rem; color: var(--ink-2); margin: 4px 0 0; }
+.near { font-size: 0.82rem; color: var(--ink-2); margin: 6px 0 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.near:empty { display: none; }
+/* while the form is being checked, the values under the fields are the last check's: said so */
+#formCard.checking .near { color: var(--ink-3); }
+#formCard.checking .near::before { content: "Checking; until then the last check said: "; font-family: var(--font-body); }
+#formCard.checking #derivedBody { color: var(--ink-3); }
+.derived { margin-top: 12px; border-top: 1px solid var(--rule); padding-top: 6px; }
+.derived h3 { margin-top: 4px; }
+dl.kv { display: grid; grid-template-columns: minmax(0, 13em) minmax(0, 1fr); gap: 2px 10px; margin: 4px 0; font-size: 0.88rem; }
+dl.kv dt { color: var(--ink-2); }
+dl.kv dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  dl.kv { grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr); font-size: 0.84rem; }
+}
+details > summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-2); }
+.launch { margin-top: 12px; display: grid; gap: 6px; }
+
+/* buttons */
+button { font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--panel); border: 1px solid var(--ink-3); border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); font-weight: 600; width: 100%; padding: 9px 12px; text-align: center; }
+button:disabled { cursor: not-allowed; background: var(--code-bg); color: var(--ink-3); border: 1px dashed var(--ink-3); }
+.confirm { border: 1px solid var(--caution); background: var(--caution-bg); border-radius: 6px; padding: 8px 10px; display: grid; gap: 6px; }
+.confirm .btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* the job card */
+.jobhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.jobhead strong { font-size: 1rem; }
+.pill { font-size: 0.8rem; border: 1px solid var(--ink-3); border-radius: 10px; padding: 0 8px; color: var(--ink-2); }
+.pill.good { border-color: var(--good); color: var(--good); }
+.pill.bad { border-color: var(--bad); color: var(--bad); }
+ol.stages { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+ol.stages li { margin: 0; font-size: 0.82rem; border: 1px solid var(--rule); border-radius: 4px; padding: 2px 8px; color: var(--ink-3); background: var(--panel); }
+ol.stages li.done { color: var(--ink-2); border-color: var(--ink-3); }
+ol.stages li.now { color: var(--ink); border: 2px solid var(--ink); font-weight: 600; }
+ol.stages li .st { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-left: 6px; }
+ol.stages li .took { font-size: 0.78rem; font-family: var(--font-data); margin-left: 6px; }
+.caution { color: var(--ink); border-left: 4px solid var(--caution); background: var(--caution-bg); padding: 4px 8px; margin: 6px 0; }
+.bad { color: var(--bad); font-weight: 600; }
+
+/* the results panel */
+.tag { margin: 0 0 6px; padding: 4px 8px; border-left: 4px solid var(--ink-3); font-weight: 600; overflow-wrap: anywhere; }
+.tag.exploratory { border-left-color: var(--caution); background: var(--caution-bg); }
+.headline { font-size: 1rem; font-weight: 600; margin: 8px 0 4px; overflow-wrap: anywhere; }
+.sp1 { border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; margin: 8px 0; }
+details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.caveats { background: var(--caution-bg); border: 1px solid var(--rule); border-left: 4px solid var(--caution); border-radius: 6px; padding: 6px 12px; margin-top: 10px; overflow-wrap: anywhere; }
+.caveats h3 { color: var(--caution); margin-top: 4px; }
+/* the push and the flight: one column, two side by side on a wide panel */
+.numbers { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 24px; align-items: start; }
+.numcol { min-width: 0; }
+@media (min-width: 1200px) {
+  .numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .numcol dl.kv { grid-template-columns: minmax(0, 11em) minmax(0, 1fr); }
+}
+.caveats h4 { color: var(--ink-2); }
+
+/* the scene */
+.picks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.picks label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); min-width: 0; flex: 1 1 240px; white-space: nowrap; }
+.picks select { flex: 1 1 auto; }
+/* the frame takes the card's full width (the scene's own panels carry their borders), so the scene's two panels sit
+   side by side from a 1024 px window; the card's other content keeps the card's inset */
+#sceneCard { padding-inline: 0; }
+#sceneCard > * { margin-inline: 14px; }
+#sceneCard > #frame { margin-inline: 0; }
+#frame { display: block; width: 100%; height: 640px; border: 0; background: var(--bg); margin-top: 8px; }
+/* focus inside the frame (a scene opened, Open, Show the new launch): the iframe matches no :focus-visible and the
+   scene's own body draws no ring, so the frame says where Space, [ and ] go; inset, inside the full-width frame */
+#frame:focus-within { outline: 2px solid var(--focus); outline-offset: -2px; }
+.framebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 6px; }
+
+/* the run browser */
+.browserbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.group { margin-top: 8px; }
+.rows { list-style: none; padding: 0; margin: 0; }
+.rows li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--rule); margin: 0; }
+.rows li.off .desc { color: var(--ink-3); }
+.rows li[aria-current="true"] { background: var(--code-bg); }
+.rows .desc { overflow-wrap: anywhere; }
+.rows .meta { grid-column: 1 / 2; }
+.rows .act { grid-column: 2 / 3; grid-row: 1 / span 2; }
+.rows .reason { font-size: 0.8rem; color: var(--ink-3); }
+.foot { color: var(--ink-3); font-size: 0.8rem; font-family: var(--font-data); overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .wrap { padding-inline: 16px; }
+  .badge { margin-left: 0; }
+  .rows li { grid-template-columns: minmax(0, 1fr); }
+  .rows .act { grid-column: 1 / 2; grid-row: auto; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-<header>
+<header class="top">
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="launch-assist-sim"><title>launch-assist-sim</title><clipPath id="mc"><rect width="64" height="64" rx="12"/></clipPath><clipPath id="mr"><path d="M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V46H28Z"/></clipPath><linearGradient id="mt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbf8" stop-opacity=".5"/><stop offset="1" stop-color="#fbfbf8" stop-opacity="0"/></linearGradient><g clip-path="url(#mc)"><rect width="64" height="41" fill="#2d5f8f"/><rect y="41" width="64" height="23" fill="#1c2226"/><rect x="25" y="41" width="14" height="23" fill="#2b3238"/><path d="M0 42.25H25M39 42.25H64" stroke="#b09a78" stroke-width="2.5"/><path d="M25.6 41V64M38.4 41V64" stroke="#b09a78" stroke-opacity=".55" stroke-width="1.2"/><path d="M19.5 47.5h5.5M39 47.5h5.5" stroke="#f08a4b" stroke-opacity="1.0" stroke-width="2.8"/><path d="M19.5 53.5h5.5M39 53.5h5.5" stroke="#f08a4b" stroke-opacity="0.62" stroke-width="2.8"/><path d="M19.5 59.5h5.5M39 59.5h5.5" stroke="#f08a4b" stroke-opacity="0.32" stroke-width="2.8"/><rect x="28" y="46" width="8" height="15" fill="url(#mt)"/><path d="M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V46H28Z" fill="#fbfbf8"/><rect x="33.6" y="4" width="3" height="43" fill="#dfe4e1" clip-path="url(#mr)"/><rect x="28" y="27" width="8" height="2.2" fill="#1c2226"/><path d="M0 41V52A12 12 0 0 0 12 64H52A12 12 0 0 0 64 52V41" fill="none" stroke="#4c565c" stroke-width="3"/></g></svg>
-<h1>launch-assist-sim: local app</h1>
+<div class="ident">
+<h1>launch-assist-sim</h1>
+<p class="addr"><code id="addr">127.0.0.1</code>, this machine only</p>
+</div>
+<p class="badge" id="badge">Exploratory runs, not findings</p>
+<label class="themepick" for="theme">Theme <select id="theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
 </header>
-<p>Serving at <code id="url">(loading)</code>, on this machine only.</p>
-<p>The launch form arrives in step A5.</p>
-<p id="exploratory"></p>
-<section>
-<h2>Results directories</h2>
-<p id="status">Loading the results directories...</p>
+
+<div class="layout">
+<p class="notice" id="notice" role="status" hidden></p>
+<section class="card" id="formCard" aria-labelledby="formTitle">
+<h2 id="formTitle">Launch</h2>
+<p class="err" id="formError" role="alert" hidden></p>
+<div class="field">
+<label for="f-preset">Preset</label>
+<select id="f-preset" aria-describedby="presetCommitted presetExpected presetUnavailable"></select>
+<p class="meta" id="presetCommitted"></p>
+<p class="meta" id="presetExpected"></p>
+<p class="meta" id="presetUnavailable" hidden></p>
+<div class="why" id="presetEdited" hidden><p id="presetEditedText"></p><button type="button" id="resetPreset"></button></div>
+</div>
+<fieldset id="g-site"><legend>Launch site</legend><div id="c-site"></div></fieldset>
+<fieldset id="g-push"><legend>Push</legend><p class="why" id="why-push" hidden></p><div id="c-push"></div>
+<p class="near" id="d-push" aria-live="polite"></p></fieldset>
+<fieldset id="g-silo"><legend>Silo details</legend><p class="why" id="why-silo" hidden></p><div id="c-silo"></div>
+<p class="meta" id="siloNote"></p>
+<ul class="fixedlist" id="siloFixed" aria-label="Silo details the form does not edit"></ul></fieldset>
+<fieldset id="g-ramp"><legend>Stage-1 ramp start</legend><p class="why" id="failsRamp" hidden></p><div id="c-ramp"></div>
+<p class="why" id="rampWayNote" hidden></p>
+<p class="why" id="padRampNote" hidden></p>
+<button type="button" id="usePadStart" hidden></button>
+<p class="near" id="d-ramp" aria-live="polite"></p>
+<p class="caution" id="apexWarn" hidden></p></fieldset>
+<fieldset id="g-startup"><legend>Stage-1 startup</legend><p class="why" id="failsStartup" hidden></p><div id="c-startup"></div></fieldset>
+<fieldset id="g-fails"><legend>Failed ignition</legend><div id="c-fails"></div></fieldset>
+<fieldset id="g-prop"><legend>Propellant</legend><p class="why" id="why-propellant" hidden></p><div id="c-prop"></div>
+<div class="field" id="w-padcontrol"><label class="check" for="padControl"><input type="checkbox" id="padControl" disabled> <span>Pad control</span></label><p class="meta" id="padControlWhy"></p></div>
+<p class="reading" id="readingSolve"></p>
+<p class="reading" id="readingFixed"></p>
+</fieldset>
+<fieldset id="g-pre"><legend>Stage-2 pre-offload</legend><p class="why" id="why-preoffload" hidden></p><div id="c-pre"></div>
+<p class="reading" id="readingPre"></p></fieldset>
+<fieldset id="g-paired"><legend>Paired pad</legend><p class="why" id="why-paired" hidden></p><div id="c-paired"></div></fieldset>
+<fieldset id="g-penalty"><legend>Assumed structural penalty</legend><p class="why" id="why-penalty" hidden></p><div id="c-penalty"></div></fieldset>
+
+<section class="derived" id="derived" aria-labelledby="derivedTitle" aria-live="polite">
+<h3 id="derivedTitle">Derived values (checked by the server, nothing flown)</h3>
+<p class="meta" id="derivedState">Checking the form...</p>
+<div id="derivedBody"></div>
+<button type="button" id="openRecorded" hidden></button>
+</section>
+
+<p class="meta" id="launchNote"></p>
+<p class="meta" id="exploratoryNote"></p>
+<div class="launch">
+<button type="button" class="primary" id="launchBtn" disabled>Launch</button>
+<p class="why" id="launchWhy" hidden></p>
+<p class="err" id="launchErr" role="alert" hidden></p>
+<div class="confirm" id="confirm" role="group" aria-labelledby="confirmText" hidden>
+<p id="confirmText"></p>
+<div class="btnrow"><button type="button" id="confirmYes">Launch it</button><button type="button" id="confirmNo">Not now</button></div>
+</div>
+</div>
+</section>
+
+<div class="side">
+<section class="card" id="jobCard" aria-labelledby="jobTitle">
+<h2 id="jobTitle">Launch progress</h2>
+<p class="vh" id="jobLive" role="status"></p>
+<div id="jobBody"><p class="meta">Loading the job...</p></div>
+<button type="button" id="showNew" hidden>Show the new launch</button>
+</section>
+
+<section class="card" id="panelCard" aria-labelledby="panelTitle">
+<h2 id="panelTitle">Results</h2>
+<p class="caution" id="panelOther" hidden></p>
+<div id="panelBody"><p class="meta">Open a directory from the run list, or launch one: its results appear here, with the caveats of the runs shown.</p></div>
+</section>
+
+</div>
+</div>
+
+<section class="card" id="sceneCard" aria-labelledby="sceneTitle">
+<h2 id="sceneTitle">Scene</h2>
+<div class="picks" id="picks" hidden>
+<label for="pickL">Left panel <select id="pickL"></select></label>
+<label for="pickR">Right panel <select id="pickR"></select></label>
+</div>
+<ul class="fixedlist" id="pickNotes" aria-label="Notes of the runs shown" hidden></ul>
+<p class="meta" id="sceneStatus">No scene loaded: open a directory from the run list, or launch one.</p>
+<div class="framebar"><a id="openPage" target="_blank" rel="noopener noreferrer" hidden>Open as a page</a><span class="meta">While the scene is on screen, Space plays or pauses, [ and ] jump between events, and Left and Right step the clock 1 s (with Shift 10 s), from anywhere on this page outside a form control; with the scene off screen, Space scrolls the page as usual. The results panel above describes the runs shown here, with their caveats and what the scene draws that the model does not compute.</span></div>
+<iframe id="frame" title="Launch scene" referrerpolicy="no-referrer" hidden></iframe>
+</section>
+
+<section class="card" id="browser" aria-labelledby="browserTitle">
+<h2 id="browserTitle">Runs on disk</h2>
+<div class="browserbar">
+<label class="check" for="playableOnly"><input type="checkbox" id="playableOnly" checked> <span>Playable only</span></label>
+<button type="button" id="refresh">Refresh the list</button>
+<span class="meta" id="browserStatus">Loading the results directories...</span>
+</div>
 <div id="groups"></div>
 </section>
+
+<section class="card" id="sp1Card" aria-labelledby="sp1Title">
+<h2 id="sp1Title">SP1's headline, for reference</h2>
+<details><summary>The one finding the offload presets come from, with its six caveat groups</summary><div id="sp1Body"></div></details>
+</section>
+
+<footer class="foot" id="foot"></footer>
 </div>
 <script type="application/json" id="app-data">__APP_DATA__</script>
 <script>
 (function () {
   "use strict";
-  var data = JSON.parse(document.getElementById("app-data").textContent);
-  document.getElementById("url").textContent = data.url;
-  document.getElementById("exploratory").textContent =
-    "Every launch from this app is exploratory, not a finding.";
-  var status = document.getElementById("status");
-  var groups = document.getElementById("groups");
+  const DATA = JSON.parse(document.getElementById("app-data").textContent);
 
-  function rowText(row) {
-    var text = row.experiment + "/" + row.timestamp + ": " + row.state;
-    if (!row.playable && row.reason) { text += " (" + row.reason + ")"; }
-    if (row.description) { text += ". " + row.description; }
-    if (row.line && row.state !== "complete") { text += ". " + row.line; }
-    return text;
+  // ------------------------------------------------------------------ pure functions: begin
+  // Read nothing from the page or the server's data; tests/test_app_page.py runs this block under node.
+  const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}$/;
+  const STAMP_RE = /^[0-9]{8}T[0-9]{6}Z(?:-[0-9]{1,4})?$/;
+  const NUMBER_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+  const HASH_KEYS = ["dir", "runs", "theme", "preset"];
+  const HASH_MAX_PARTS = 16;   // key=value pairs read from the hash; the rest are ignored
+  const PANELS = 2;            // the app shows at most two runs side by side (app.PANEL_RUNS)
+  const MAX_SCENE_RUNS = 4;    // run_data.MAX_RUNS: the most runs one scene page holds
+  const THEMES = ["light", "dark"];
+  const SITE_PAD = "pad", SITE_SILO = "silo";
+  const FULL = "full", FIXED = "fixed", SOLVE = "solve";
+  const PUSH_KEYS = ["net_accel_g", "exit_speed_mps"];
+  const SILO_FIELDS = ["stroke_m", "push_by", "carriage_mass_t", "exhaust_impingement_fraction"];
+  const OFFLOAD_OPTIONAL = ["stage2_offload_t", "stage1_dry_mass_added_t", "paired_pad"];
+  const FREE_FIELDS = ["fails", "advanced", "preset", "dry_run"];
+  const REQUIRED_CHOICES = ["site", "ramp_by", "startup", "propellant"];
+  const RAMP_VALUE_KEYS = {
+    time_release: "t_ign_s", time_push_start: "t_ign_s", depth: "at_depth_m", speed: "at_speed_mps",
+    height_event: "at_height_m", height_closed_form: "at_height_m"
+  };
+  const STARTUP_VALUE_KEYS = { ramp: "t_ramp_s", lag: "tau_s" };
+  const PAD_RAMP_WAY = "time_release";
+  const PUSH_RELATIVE = ["time_push_start", "depth", "speed", "height_event", "height_closed_form"];
+  // the stage-2 and both-stage forms, each with the stage-1 form it falls back to when Advanced is off
+  const STAGE1_FORM = { stage2: "stage1", both: "stage1", stage2_t: "stage1_t", stage2_fraction: "stage1_fraction", both_fraction: "stage1_fraction" };
+  const WHY = {
+    padPush: "Pad only: there is no push.",
+    padSilo: "Pad only: there is no silo.",
+    padRamp: "Pad only: the ramp start is a time from release (the other ways are stated on the silo's push).",
+    padOffload: "Pad only: an offload needs the silo (the pad's own offload is its pad control).",
+    failsOffload: "Failed ignition: stage 1 never lights and the run never reaches orbit, so there is no offload.",
+    fullLoad: "Full load: this applies to an offload case only.",
+    penaltyPaired: "Cleared by the assumed penalty: a paired pad flies the case's own vehicle, and the penalty belongs to the assisted run only.",
+    preStage2: "A stage-2 pre-offload goes with a stage-1 offload only: a stage-2 or both-stage offload sets stage 2 itself.",
+    advancedOff: "Advanced is off: stage 1 only.",
+    advancedFull: "Applies to an offload only.",
+    padControlSolve: "On, locked: every solve runs its pad control (the pad's own offload at the same payload); a stage-2 or both-stage solve is quoted net of it.",
+    padControlFixed: "None: an imposed offload has no pad control."
+  };
+  const ROLE_GROUPS = [
+    ["run", null, "Experiment runs"],
+    ["offload", "offload case", "Offload cases"],
+    ["offload", "paired pad", "Paired pads"],
+    ["offload", "pad control", "Pad controls"],
+    ["case", null, "Cases"],
+    ["bound", null, "Bounds"],
+    ["paired_baseline", null, "Paired baselines"]
+  ];
+  const OUTCOME_LABELS = {
+    complete: "Complete",
+    flagged: "Complete, flagged",
+    not_in_orbit: "Complete, not in orbit",
+    did_not_fly: "Complete: the run did not fly",
+    offload_found_nothing: "Complete: the offload found nothing",
+    crashed: "Crashed (FAILED.txt)",
+    refused: "Refused",
+    incomplete: "Incomplete"
+  };
+  const DID_NOT_FLY = "did_not_fly";       // app.HEADLINE_DID_NOT_FLY: a headline of a run that did not fly
+  const OFFLOAD_ROLE = "offload";          // run_data.ROLE_OFFLOAD
+  const OFFLOAD_LIST_OPEN = 6;             // an offload-run list longer than this is folded
+  const SNAP_REL = 1e-9;                   // a converted value this close to a stored one takes the stored one
+  const APEX_WARN_M = 5, APEX_WARN_FRACTION = 0.01;  // a height-event ramp start this close to the drag-free apex
+  const STAGE_LABELS = {
+    preflight: "Preflight", pad: "Pad baseline", variant: "Variant",
+    comparison: "Comparison and offload", writing: "Writing the results"
+  };
+  // which of a launch's expected parts (appform.expected_work's labels) run in which stage
+  const STAGE_ITEM_PREFIXES = {
+    pad: ["pad baseline "], variant: ["variant "], comparison: ["pad control ", "solve ", "imposed offload ", "paired pad "]
+  };
+  // planar.py's GuidanceFailure("no_ignition") text: the apex reached, how far below, the ignition altitude [m]
+  const NO_IGNITION_RE = /no_ignition: the coast after release reached its apex at ([0-9.eE+-]+) m \(t = [^)]*\), ([0-9.eE+-]+) m below the ignition altitude ([0-9.eE+-]+) m/;
+  const IDLE_TEXT = "No launch in this server session yet. Every launch writes app/<UTC time>/ under the server's results " +
+    "root (results/ unless the server was started with --results-root) and is exploratory, not a finding.";
+  const REPO_RESULTS = "results";          // app.REPOSITORY_RESULTS: the repository's own results folder
+  // a results root outside the repository: the server sends no local path (app.results_root_view), so the page says
+  // where the path is (cli.command_app prints it at start)
+  const ROOT_PATH_WHERE = "its full path is the \"results root\" line the server printed in its console at start";
+  const CONSTANT_ACCEL = "constant_accel"; // the prescribed constant-acceleration drive (the assist model)
+  // what the carriage mass and the impingement fraction change under that drive (the form's silo group and every
+  // pushed run of that drive in the results panel)
+  const DRIVE_NOTE = "Under the prescribed constant-acceleration drive the carriage mass and the impingement fraction " +
+    "change only the drive's force, energy and peak power: not the release speed, the payload or the offload.";
+  // the unit of acceleration: g0 = 9.80665 m/s^2 (units.py) throughout the page; the recorded push text (the replay
+  // page's words, kept word for word) writes it "g", so a push whose text has one gets a line that says so
+  const G_IN_TEXT_RE = /\d g\b/;
+  const G0_NOTE = "Here g is g0 = 9.80665 m/s^2, the unit of the rows below and of the form.";
+  const OFFLOAD_CAVEATS_TITLE = "recorded with this directory's offload block (metrics.json offload.caveats), word for word";
+  const DISPLAY_ONLY_TITLE = "What the scene draws that the model does not compute (display only)";
+  const FLAG_COUNT_RE = /: \d+ flags?$/;  // an outcome row that counts a run's flags (app.flags_text)
+  const PUSH_KEYS_NOTE = "Compared by config key: a push stated as exit speed instead of net acceleration (or the " +
+    "reverse) is listed under both keys even when it is the same push; the form's derived values show whether it is.";
+  const JOB_TAG_TEXT = "Exploratory app run: not a finding. Its caveats (and SP1's caveat groups, when it reproduces " +
+    "SP1's case) are in the results panel below.";
+  const SP1_NOT_FROM_LAUNCH = "The penalty rows, the +/-10% range, the screening ratio and the README-loads bridge come " +
+    "from SP1's runs, not from this launch.";
+
+  function has(list, x) { return Array.isArray(list) && list.indexOf(x) >= 0; }
+  function own(obj, key) { return obj !== null && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key); }
+  function validName(s) { return typeof s === "string" && NAME_RE.test(s); }
+  function validStamp(s) { return typeof s === "string" && STAMP_RE.test(s); }
+  function positive(v) { return typeof v === "number" && Number.isFinite(v) && v > 0; }
+
+  function usedFields(c) {
+    // appform.used_fields: (required, optional) fields of the choices, beside the required choices and the free fields
+    const required = REQUIRED_CHOICES.slice(), optional = FREE_FIELDS.slice();
+    if (c.site === SITE_SILO) {
+      SILO_FIELDS.forEach(k => required.push(k));
+      if (has(PUSH_KEYS, c.push_by)) required.push(c.push_by);
+    }
+    if (own(RAMP_VALUE_KEYS, c.ramp_by)) required.push(RAMP_VALUE_KEYS[c.ramp_by]);
+    if (own(STARTUP_VALUE_KEYS, c.startup)) required.push(STARTUP_VALUE_KEYS[c.startup]);
+    if (c.propellant === FIXED) {
+      required.push("fixed_key", "fixed_value");
+      OFFLOAD_OPTIONAL.forEach(k => optional.push(k));
+    } else if (c.propellant === SOLVE) {
+      required.push("solve_mode");
+      OFFLOAD_OPTIONAL.forEach(k => optional.push(k));
+    }
+    return { required: required, optional: optional };
   }
 
-  function show(listing) {
-    var total = 0;
-    listing.groups.forEach(function (group) {
-      var title = document.createElement("h2");
-      title.textContent = group.title + " (" + group.rows.length + ")";
-      groups.appendChild(title);
-      var list = document.createElement("ul");
-      group.rows.forEach(function (row) {
-        var item = document.createElement("li");
-        item.textContent = rowText(row);
-        list.appendChild(item);
-        total += 1;
+  function viewOf(values, advanced) {
+    // The disabled-state matrix (design 4.7): the effective values a launch sends, each disabled control's reason
+    // (why) and each disabled option's (off). The stored values are kept, so a choice comes back when its rule lifts.
+    const v = Object.assign({}, values);
+    const why = {}, off = {};
+    const adv = advanced && typeof advanced === "object" ? advanced : {};
+    const advSolve = Array.isArray(adv.solve_modes) ? adv.solve_modes : [];
+    const advFixed = Array.isArray(adv.fixed_keys) ? adv.fixed_keys : [];
+    if (v.site === SITE_PAD) {
+      why.push = WHY.padPush;
+      why.silo = WHY.padSilo;
+      PUSH_RELATIVE.forEach(w => { off["ramp_by:" + w] = WHY.padRamp; });
+      if (has(PUSH_RELATIVE, v.ramp_by)) v.ramp_by = PAD_RAMP_WAY;
+      why.ramp_by = WHY.padRamp;
+      why.propellant = WHY.padOffload;
+      v.propellant = FULL;
+    } else if (v.fails === true) {
+      why.propellant = WHY.failsOffload;
+      v.propellant = FULL;
+    }
+    if (v.propellant === FULL) {
+      const reason = why.propellant || WHY.fullLoad;
+      why.preoffload = reason;
+      why.paired_pad = reason;
+      why.penalty = reason;
+      why.advanced = why.propellant || WHY.advancedFull;
+      v.advanced = false;
+    }
+    if (v.advanced !== true) {
+      advSolve.forEach(m => { off["solve_mode:" + m] = WHY.advancedOff; });
+      advFixed.forEach(k => { off["fixed_key:" + k] = WHY.advancedOff; });
+      if (v.propellant === SOLVE && has(advSolve, v.solve_mode)) { v.solve_mode = STAGE1_FORM[v.solve_mode] || "stage1"; why.solve_mode = WHY.advancedOff; }
+      if (v.propellant === FIXED && has(advFixed, v.fixed_key)) { v.fixed_key = STAGE1_FORM[v.fixed_key] || "stage1_fraction"; why.fixed_key = WHY.advancedOff; }
+    }
+    const stage2Form = (v.propellant === SOLVE && own(STAGE1_FORM, v.solve_mode)) || (v.propellant === FIXED && own(STAGE1_FORM, v.fixed_key));
+    if (stage2Form) {
+      why.preoffload = WHY.preStage2;
+      v.stage2_offload_t = 0;
+    }
+    if (v.propellant !== FULL && positive(v.stage1_dry_mass_added_t)) {
+      why.paired_pad = WHY.penaltyPaired;
+      v.paired_pad = false;
+    }
+    const padControl = v.propellant === SOLVE ? "on" : (v.propellant === FIXED ? "none" : null);
+    return { values: v, why: why, off: off, padControl: padControl };
+  }
+
+  function buildRequest(values, fieldKeys, preset) {
+    // The request for the effective values: the fields the choices use (appform.form_to_request), each value as
+    // stored (a preset's value is never re-read from the text shown), the free booleans when true, the preset;
+    // `blank` lists the used fields that have no number yet.
+    const used = usedFields(values);
+    const out = {}, blank = [];
+    (fieldKeys || []).forEach(k => {
+      if (k === "preset" || k === "dry_run") return;
+      const value = own(values, k) ? values[k] : null;
+      if (has(used.required, k)) {
+        if (value === null || value === undefined) blank.push(k);
+        else out[k] = value;
+      } else if (has(used.optional, k) && value !== null && value !== undefined && value !== false && value !== 0) {
+        out[k] = value;
+      }
+    });
+    if (validName(preset)) out.preset = preset;
+    return { request: out, blank: blank };
+  }
+  function sameValue(a, b) {
+    // two request values alike: numbers to SNAP_REL (a converted value that snapped back is the stored one), else ===
+    if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= SNAP_REL * Math.max(1, Math.abs(a), Math.abs(b));
+    return a === b;
+  }
+  function editedKeys(values, presetValues, fieldKeys, advanced) {
+    // The fields whose effective value differs from the preset's (each side as the request it would send): the
+    // 'Edited from' list, so a field changed and changed back is not listed, and a choice another rule overrides is.
+    const mine = buildRequest(viewOf(values, advanced).values, fieldKeys, null).request;
+    const theirs = buildRequest(viewOf(presetValues, advanced).values, fieldKeys, null).request;
+    return (fieldKeys || []).filter(k => (own(mine, k) || own(theirs, k)) && !sameValue(mine[k], theirs[k]));
+  }
+
+  function numberFrom(text) {
+    if (typeof text !== "string") return null;
+    const t = text.trim();
+    if (!NUMBER_RE.test(t)) return null;
+    const v = Number(t);
+    return Number.isFinite(v) ? v : null;
+  }
+  function snapTo(value, candidates) {
+    // a converted value (the same ramp start or push stated another way) takes the first stored candidate it equals
+    // to SNAP_REL, so a round trip through another way sends the committed number again
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    for (const c of Array.isArray(candidates) ? candidates : []) {
+      if (typeof c === "number" && Number.isFinite(c) && Math.abs(c - value) <= SNAP_REL * Math.max(1, Math.abs(c))) return c;
+    }
+    return value;
+  }
+  function fmtNum(v) {
+    // a stored number for its input: short, or 8 significant digits (the value sent stays the stored one)
+    if (typeof v !== "number" || !Number.isFinite(v)) return "";
+    const s = String(v);
+    return s.length <= 10 ? s : String(Number(v.toPrecision(8)));
+  }
+  function fx(v, d) {
+    // a number with d decimals and thousands separators (presentation only)
+    if (typeof v !== "number" || !Number.isFinite(v)) return "not recorded";
+    const s = Math.abs(v).toFixed(d);
+    const dot = s.indexOf(".");
+    const whole = dot < 0 ? s : s.slice(0, dot), frac = dot < 0 ? "" : s.slice(dot);
+    return (v < 0 && Number(s) !== 0 ? "-" : "") + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + frac;
+  }
+  function qty(v, d, unit, scale, prefix) {
+    // a recorded number with its prefix and unit (divided by scale), or "not recorded" alone: never a unit, a prefix
+    // or a made-up zero on a missing value
+    if (typeof v !== "number" || !Number.isFinite(v)) return "not recorded";
+    const k = typeof scale === "number" && scale > 0 ? scale : 1;
+    return (prefix || "") + fx(v / k, d) + (unit ? " " + unit : "");
+  }
+  function relTime(t, d) {
+    // a time after release as T+x or T-x
+    return typeof t === "number" && Number.isFinite(t) ? "T" + (t < 0 ? "" : "+") + fx(t, d) + " s" : "not recorded";
+  }
+  function fmtDuration(s) {
+    if (typeof s !== "number" || !Number.isFinite(s) || s < 0) return "unknown";
+    const r = Math.round(s);
+    if (r < 90) return r + " s";
+    const m = Math.floor(r / 60), sec = r - 60 * m;
+    return m + " min" + (sec ? " " + sec + " s" : "");
+  }
+  function fmtRange(span) {
+    if (!Array.isArray(span) || span.length !== 2) return "unknown";
+    if (typeof span[1] === "number" && span[1] < 1) return "under a second";
+    return fmtDuration(span[0]) + " to " + fmtDuration(span[1]);
+  }
+  function fmtSize(bytes, lower) {
+    if (typeof bytes !== "number" || !Number.isFinite(bytes)) return "size not known yet";
+    // under 1 kB in bytes: a directory holding only FAILED.txt is small, not empty ("0 kB")
+    if (bytes < 1e3) return (lower ? "at least " : "") + fx(bytes, 0) + " B";
+    const text = bytes >= 1e6 ? fx(bytes / 1e6, 1) + " MB" : fx(bytes / 1e3, 0) + " kB";
+    return (lower ? "at least " : "") + text;
+  }
+  function plural(n, one, many) { return n === 1 ? "1 " + one : n + " " + many; }
+  function stampMs(stamp) {
+    const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(typeof stamp === "string" ? stamp : "");
+    if (!m) return null;
+    return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+  }
+  function ageText(stamp, nowMs) {
+    const t = stampMs(stamp);
+    if (t === null || typeof nowMs !== "number" || !Number.isFinite(nowMs)) return "";
+    const s = Math.max(0, Math.round((nowMs - t) / 1000));
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 172800) return Math.floor(s / 3600) + " h ago";
+    return Math.floor(s / 86400) + " days ago";
+  }
+  function keyText(k) {
+    // a config key in words: underscores as spaces, the unit suffix dropped (unitOfKey gives it)
+    return String(k).replace(/_(deg|m|s|t|g|kg|mps)$/, "").replace(/_/g, " ");
+  }
+  function unitOfKey(k) {
+    const m = /_(deg|m|s|t|g|kg|mps)$/.exec(String(k));
+    if (!m) return "";
+    return " " + ({ deg: "deg", m: "m", s: "s", t: "t", g: "g0", kg: "kg", mps: "m/s" })[m[1]];
+  }
+  function valueText(value) {
+    if (value !== null && typeof value === "object") {
+      return Object.keys(value).map(k => keyText(k) + " " + valueText(value[k]) + unitOfKey(k)).join(", ");
+    }
+    return String(value);
+  }
+  function apexWarning(rampBy, heightM, apexM) {
+    // a ramp start by the altitude event close below the drag-free apex: the flown coast (with drag) peaks lower
+    if (rampBy !== "height_event" || typeof heightM !== "number" || typeof apexM !== "number") return "";
+    if (!Number.isFinite(heightM) || !Number.isFinite(apexM)) return "";
+    const margin = apexM - heightM;
+    if (margin >= Math.max(APEX_WARN_M, APEX_WARN_FRACTION * apexM)) return "";
+    return "Within " + fx(Math.max(0, margin), 2) + " m of the drag-free apex (" + fx(apexM, 2) + " m): with drag the coast " +
+      "peaks lower, so the rocket may never reach this height, stage 1 would never light and the run would not fly.";
+  }
+
+  function wayNoteText(note, noteFor, shownWay) {
+    // the ramp-start way's note only under the way it was written for: a way forced by another choice (Pad only shows
+    // the time from release) never carries the note of the way chosen before
+    return typeof note === "string" && note && noteFor === shownWay ? note : "";
+  }
+  function pctText(fraction) { return fx(100 * fraction, 2) + "%"; }
+  function offloadRows(v, loads) {
+    // The derived rows of the propellant choice (the effective values v; loads: GET /api/form loads_t, the full load
+    // [t] of stage1, stage2 and both): an imposed offload in tonnes and as a share of its load, whichever way it is
+    // typed; a stage-2 pre-offload the same against stage 2; a solve says its figure comes after the launch.
+    const out = [];
+    const L = loads && typeof loads === "object" ? loads : {};
+    const load = k => (typeof L[k] === "number" && L[k] > 0 ? L[k] : null);
+    const value = typeof v.fixed_value === "number" && Number.isFinite(v.fixed_value) ? v.fixed_value : null;
+    if (v.propellant === FIXED && value !== null) {
+      const key = String(v.fixed_key || "");
+      const fraction = key.indexOf("fraction") >= 0;
+      if (key === "both_fraction") {
+        const a = load("stage1"), b = load("stage2");
+        if (a !== null && b !== null) {
+          out.push(["Imposed offload", fx(value * a, 2) + " t from stage 1 and " + fx(value * b, 2) + " t from stage 2 (" +
+            pctText(value) + " of each load, " + fx(a, 1) + " t and " + fx(b, 1) + " t): " + fx(value * (a + b), 2) + " t in all"]);
+        }
+      } else {
+        const stage = key.indexOf("stage2") === 0 ? "stage2" : "stage1";
+        const words = stage === "stage2" ? "stage 2's" : "stage 1's";
+        const l = load(stage);
+        if (l !== null) {
+          const t = fraction ? value * l : value;
+          out.push(["Imposed offload", fx(t, 2) + " t, " + pctText(t / l) + " of " + words + " " + fx(l, 1) + " t load"]);
+        }
+      }
+    } else if (v.propellant === SOLVE) {
+      out.push(["Offload", "solved at the pad's payload: the figure appears after the launch"]);
+    }
+    const pre = v.stage2_offload_t;
+    if (v.propellant !== FULL && typeof pre === "number" && Number.isFinite(pre) && pre > 0 && load("stage2") !== null) {
+      out.push(["Stage-2 pre-offload", fx(pre, 2) + " t, " + pctText(pre / load("stage2")) + " of stage 2's " + fx(load("stage2"), 1) +
+        " t load (a property of the vehicle model, not netted)"]);
+    }
+    return out;
+  }
+  function decodePart(text) {
+    try { return decodeURIComponent(text); } catch (e) { return null; }
+  }
+  function parseHash(text) {
+    // #dir=<experiment>/<timestamp>&runs=<a,b>&theme=<light|dark>&preset=<name>. Total: anything it cannot use is
+    // ignored, never thrown on; names are checked against the results naming rule, never used as markup, a selector
+    // or a style, and become a URL only as path segments built by scenePath or the API paths.
+    const out = { dir: null, runs: [], theme: null, preset: null };
+    if (typeof text !== "string") return out;
+    const body = text.charAt(0) === "#" ? text.slice(1) : text;
+    const seen = [];
+    body.split("&", HASH_MAX_PARTS).forEach(part => {
+      const eq = part.indexOf("=");
+      const key = decodePart(eq < 0 ? part : part.slice(0, eq));
+      const value = decodePart(eq < 0 ? "" : part.slice(eq + 1));
+      if (key === null || value === null || !has(HASH_KEYS, key) || has(seen, key)) return;
+      seen.push(key);
+      if (key === "dir") {
+        const slash = value.indexOf("/");
+        const e = value.slice(0, slash), t = value.slice(slash + 1);
+        if (slash > 0 && validName(e) && validStamp(t)) out.dir = { experiment: e, timestamp: t };
+      } else if (key === "runs") {
+        value.split(",", PANELS + 1).forEach(n => { if (validName(n) && !has(out.runs, n) && out.runs.length < PANELS) out.runs.push(n); });
+      } else if (key === "theme") {
+        if (has(THEMES, value)) out.theme = value;
+      } else if (key === "preset") {
+        if (validName(value)) out.preset = value;
+      }
+    });
+    return out;
+  }
+  function hashText(view) {
+    // the page's own hash for a view (the inverse of parseHash on valid names)
+    const parts = [];
+    if (view && view.dir && validName(view.dir.experiment) && validStamp(view.dir.timestamp)) {
+      parts.push("dir=" + encodeURIComponent(view.dir.experiment) + "/" + encodeURIComponent(view.dir.timestamp));
+      const runs = (Array.isArray(view.runs) ? view.runs : []).filter(validName).slice(0, PANELS);
+      if (runs.length) parts.push("runs=" + runs.map(encodeURIComponent).join(","));
+    }
+    if (view && has(THEMES, view.theme)) parts.push("theme=" + view.theme);
+    if (view && validName(view.preset)) parts.push("preset=" + encodeURIComponent(view.preset));
+    return parts.join("&");
+  }
+  function mayAct(fromOtherSite, userActed) {
+    // whether the page may send a dry run or ask for a scene: always when the user opened it, else after the user acted
+    return fromOtherSite === false || userActed === true;
+  }
+  function bootPlan(fromOtherSite, hash) {
+    // what the page does at load: restore the view in its hash and check the form, unless another site opened it
+    if (fromOtherSite !== false) return { restore: null, dryRun: false };
+    return { restore: hash, dryRun: true };
+  }
+  function scenePath(experiment, timestamp, runs) {
+    // the one scene URL, the scene route over <experiment>/<timestamp>/<a,b>: every segment a checked name, encoded once
+    if (!validName(experiment) || !validStamp(timestamp) || !Array.isArray(runs)) return null;
+    if (runs.length < 1 || runs.length > MAX_SCENE_RUNS || !runs.every(validName)) return null;
+    if (new Set(runs).size !== runs.length) return null;
+    return "/scene/" + encodeURIComponent(experiment) + "/" + encodeURIComponent(timestamp) + "/" + runs.map(encodeURIComponent).join(",");
+  }
+  function sceneHash(runs, theme, t, embed) {
+    // The scene page's hash for scenePath's path: embed=1 in the frame; the theme; the runs in their panels' order (left,
+    // then right: without runs= the scene puts its own default pair's order on them); t, a clock time [s] the scene
+    // clamps to its runs (kept across a change of the pickers). Names checked, each encoded once.
+    const parts = [];
+    if (embed === true) parts.push("embed=1");
+    if (has(THEMES, theme)) parts.push("theme=" + theme);
+    const names = (Array.isArray(runs) ? runs : []).filter(validName).slice(0, MAX_SCENE_RUNS);
+    if (names.length) parts.push("runs=" + names.map(encodeURIComponent).join(","));
+    if (typeof t === "number" && Number.isFinite(t)) parts.push("t=" + encodeURIComponent(String(t)));
+    return parts.length ? "#" + parts.join("&") : "";
+  }
+  function pickPair(runs, defaultPair, wanted) {
+    // the runs to show: the wanted ones when each is a run with a time series, else the directory's default pair
+    const playable = (Array.isArray(runs) ? runs : []).filter(r => r && r.has_rows === true && validName(r.name)).map(r => r.name);
+    const ok = Array.isArray(wanted) && wanted.length >= 1 && wanted.length <= PANELS &&
+      wanted.every(n => has(playable, n)) && new Set(wanted).size === wanted.length;
+    if (ok) return wanted.slice();
+    return (Array.isArray(defaultPair) ? defaultPair : []).filter(n => has(playable, n)).slice(0, PANELS);
+  }
+  function panelPair(detail) {
+    // the runs of a directory's results panel that have a time series (a run that did not fly has none)
+    const p = detail && detail.panel;
+    return p && Array.isArray(p.pair) ? pickPair(detail.runs, p.pair, null) : [];
+  }
+  function startPair(detail, wanted) {
+    // The runs a directory opens with: the wanted ones when each has a time series; else the results panel's own
+    // runs that do (for an app run, its launched run beside the pad, so the scene shows what the panel describes;
+    // for a recorded directory the panel's pair is the default pair); else the default pair (D-SP2-28).
+    if (!detail) return [];
+    const base = panelPair(detail);
+    return pickPair(detail.runs, base.length ? base : detail.default_pair, wanted);
+  }
+  function groupRuns(runs) {
+    const groups = ROLE_GROUPS.map(g => ({ label: g[2], runs: [] }));
+    const other = { label: "Other run folders", runs: [] };
+    (Array.isArray(runs) ? runs : []).forEach(r => {
+      const i = ROLE_GROUPS.findIndex(g => g[0] === r.role && (g[1] === null || g[1] === r.offload_kind));
+      (i >= 0 ? groups[i] : other).runs.push(r);
+    });
+    return groups.concat([other]).filter(g => g.runs.length > 0);
+  }
+  function samePair(a, b) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+  }
+  function presetText(p, headlineCase) {
+    // a preset's option: its name first (the long descriptions share their start), SP1's headline case marked
+    return p.name + (p.name === headlineCase ? " (SP1's headline case)" : "") + ": " + p.label;
+  }
+  function rootText(root) {
+    // where a launch is written (GET /api/form results_root): the repository's results/ (tracked), another folder
+    // of the repository, or a folder outside it (named by the server's --results-root only)
+    if (!root || typeof root !== "object") return "app/<UTC time>/ under the server's results root";
+    if (typeof root.path !== "string") return "app/<UTC time>/ under the folder given by --results-root, outside the repository (not tracked; " + ROOT_PATH_WHERE + ")";
+    const where = root.path + "/app/<UTC time>/ in the repository";
+    return where + (root.tracked === true ? " (tracked: each launch's summary.md is committed and public)" : " (not the tracked results/)");
+  }
+  function idleText(root) {
+    if (!root || typeof root !== "object") return IDLE_TEXT;
+    return "No launch in this server session yet. Every launch writes " + rootText(root) + " and is exploratory, not a finding.";
+  }
+  function dirText(dir, root) {
+    // a launch's directory as the job card names it: under its results root when the server said which
+    const name = dir.experiment + "/" + dir.timestamp;
+    if (root && typeof root.path === "string") return root.path + "/" + name;
+    return name + (root && typeof root === "object" ? " under the --results-root folder (" + ROOT_PATH_WHERE + ")" : "");
+  }
+  function sp1FoldTitle(h, exploratory) {
+    // the folded box of SP1's headline in a results panel: what it is, and for an app run what the launch reproduces
+    // of it (only the case's x*: every other number of the headline comes from SP1's runs)
+    const n = Array.isArray(h.caveats) ? h.caveats.length : 0;
+    const inside = " Its text and its " + plural(n, "caveat group", "caveat groups") + ".";
+    if (!exploratory) return "SP1's headline: this directory is SP1's own run of its case (" + h.case + ")." + inside;
+    return "SP1's headline. This launch reproduces only its " + h.case + " figure (x* " + qty(h.offload_kg, 2, "t", 1e3) +
+      "): a reproduction, not new evidence. " + SP1_NOT_FROM_LAUNCH + inside;
+  }
+
+  // The results panel and the job card as blocks, built here so tests can read the text the page shows. A block is
+  // {t: "p" | "h3" | "h4", cls, text}, {t: "ul", items}, {t: "strongs", items: [[title, text]]}, {t: "kv", rows:
+  // [[key, value]]}, {t: "details", summary, items}, {t: "box", cls, blocks} or {t: "fold", cls, summary, blocks} (a
+  // closed details element around blocks); renderBlocks draws them by textContent.
+  function headlineBlocks(h, title) {
+    // SP1's headline with its caveat groups, under a heading (none when title is null: a fold's summary names it)
+    const caveats = Array.isArray(h.caveats) ? h.caveats : [];
+    return (title === null ? [] : [{ t: "h3", text: title }]).concat([
+      { t: "p", text: h.text },
+      { t: "p", cls: "meta", text: "Status " + h.status + "; " + h.source + "; " + h.directory + " at " + h.commit + "; case " + h.case + "." },
+      { t: "h4", text: "Its " + caveats.length + " caveat groups" },
+      { t: "strongs", items: caveats.map(c => [c.title, c.text]) }
+    ]);
+  }
+  function pushRows(q) {
+    return [
+      ["Push time", qty(q.push_time_s, 2, "s")],
+      ["Felt on the track (peak)", qty(q.felt_g_peak, 2, "g0")],
+      ["Interface force (peak)", qty(q.interface_force_peak_N, 2, "MN", 1e6)],
+      ["Electrical energy", qty(q.electrical_energy_kWh, 0, "kWh")],
+      ["Peak drive power", qty(q.peak_drive_power_W, 0, "MW", 1e6)],
+      ["Braking distance", qty(q.braking_distance_m, 1, "m")],
+      ["Facility length", qty(q.facility_length_m, 1, "m")],
+      ["Carriage mass", qty(q.carriage_mass_kg, 1, "t", 1e3)]
+    ];
+  }
+  function flightRows(f) {
+    return [
+      ["Status", f.status],
+      ["Stage-1 ignition", f.ignition],
+      // the server's text starts with its own "max-Q " (app.flight_view): the row's label says it once
+      ["Max-Q", typeof f.max_q_text === "string" && f.max_q_text ? f.max_q_text.replace(/^max-Q /, "") : "not recorded"],
+      ["Liftoff mass", qty(f.liftoff_mass_kg, 1, "t", 1e3)],
+      ["MECO after release", qty(f.meco_after_release_s, 1, "s", 1, "T+")],
+      ["Peak q-alpha", qty(f.peak_q_alpha, 1, "Pa rad")],
+      ["Peak felt axial g in flight", qty(f.peak_felt_axial_g_flight, 2, "g0")],
+      ["Payload", qty(f.payload_kg, 1, "kg")]
+    ];
+  }
+  function panelBlocks(detail) {
+    // The results panel (design 4.7) in its order: the tag; the run shown and its headline (for a run that did not
+    // fly, the search's reason under it); the whole directory's outcome when it is not plain complete (the flags
+    // above the numbers); SP1's headline where it applies; the reproduction lines; the comparison with SP1's case;
+    // the offload runs; the push and the flight (none for a run that did not fly); flags and verification; the
+    // caveats of the runs shown, the directory's offload caveats and what the scene draws but the model does not.
+    const out = [];
+    const row = detail && detail.row ? detail.row : {};
+    const p = detail ? detail.panel : null;
+    if (!p) {
+      out.push({ t: "p", cls: "tag", text: row.experiment + "/" + row.timestamp + ": " + row.state + (row.reason ? " (" + row.reason + ")" : "") });
+      if (row.line) out.push({ t: "p", cls: "meta", text: row.line });
+      if (detail && detail.panel_error) out.push({ t: "p", cls: "err", text: detail.panel_error });
+      if (row.state === "running") out.push({ t: "p", cls: "meta", text: "This launch is still running: its results appear when it ends." });
+      return out;
+    }
+    const tag = p.tag || {};
+    const exploratory = tag.kind === "exploratory";
+    // an app run's tag names its directory, and the next line what was launched, so the panel never reads as the
+    // results of another launch (a recorded directory's tag names it already)
+    const named = exploratory && validName(row.experiment) && validStamp(row.timestamp);
+    out.push({ t: "p", cls: "tag" + (exploratory ? " exploratory" : ""), text: (tag.text || "") + (named ? ": " + row.experiment + "/" + row.timestamp : "") });
+    if (exploratory && typeof row.description === "string" && row.description) out.push({ t: "p", cls: "meta", text: "Launched: " + row.description });
+    if (exploratory) {
+      const git = tag.git || {}, start = tag.server_start || {};
+      out.push({ t: "p", cls: "meta", text: "Code at server start: git " + (start.hash || "unknown") + " (" + (start.state || "unknown") +
+        "); working tree at launch: " + (tag.launch_tree || "unknown") + "; recorded commit " + (git.hash || "unknown") + " (" + (git.state || "unknown") + ")." });
+    } else if (tag.label) {
+      out.push({ t: "p", cls: "meta", text: "Label: " + tag.label });
+    }
+    const pair = Array.isArray(p.pair) ? p.pair : [];
+    const others = pair.filter(n => n !== p.shown);
+    const h = p.headline || {};
+    const notFlown = h.kind === DID_NOT_FLY;
+    // a run that did not fly has no trajectory: the scene shows only the others, and the line says so
+    const shownText = (p.shown || "none") + (notFlown && p.shown ? " (did not fly: no trajectory, so it is not in the scene)" : "");
+    out.push({ t: "p", cls: "meta", text: "Run shown: " + shownText + (others.length ? " beside " + others.join(", ") : "") });
+    out.push({ t: "p", cls: "headline" + (h.flagged ? " bad" : ""), text: h.text || "No headline: the run shown has none recorded." });
+    const flags = Array.isArray(p.flags) ? p.flags : [];
+    if (notFlown && flags.length) out.push({ t: "p", cls: "caution", text: "Why, in the search's own words: " + flags[0] });
+    const o = p.outcome || {};
+    if (o.kind && o.kind !== "complete") {
+      out.push({ t: "h3", text: "Outcome of the whole directory: " + (OUTCOME_LABELS[o.kind] || o.kind) });
+      if (o.message) out.push({ t: "p", cls: "caution", text: o.message });
+      const notes = (Array.isArray(o.notes) ? o.notes : []).filter(n => n !== o.message);
+      if (notes.length) out.push({ t: "ul", items: notes });
+      if ((o.notes || []).some(n => FLAG_COUNT_RE.test(n))) {
+        out.push({ t: "p", cls: "meta", text: "A count of flags names its run only: summary.md's Flags section gives each flag's text." });
+      }
+    }
+    if (p.sp1_headline) {
+      // folded: the run's own numbers follow the headline directly; the summary says what the box holds
+      out.push({ t: "fold", cls: "sp1", summary: sp1FoldTitle(p.sp1_headline, exploratory), blocks: headlineBlocks(p.sp1_headline, null) });
+    }
+    const repro = Array.isArray(p.reproduces) ? p.reproduces : [];
+    if (repro.length) {
+      out.push({ t: "h3", text: "Reproduction" });
+      out.push({ t: "ul", items: repro });
+    }
+    const cmp = p.sp1_comparison;
+    const hasOffload = (Array.isArray(detail.runs) ? detail.runs : []).some(r => r && r.role === OFFLOAD_ROLE);
+    if (cmp && cmp.text && !has(repro, cmp.text)) {
+      out.push({ t: "h3", text: "Against SP1's " + cmp.case });
+      if (!hasOffload) {
+        out.push({ t: "p", text: "SP1's headline is an offload at the pad's payload (" + cmp.case + "); this launch has no offload, so it is not compared with it." });
+      } else {
+        out.push({ t: "p", text: cmp.text });
+        const differs = Array.isArray(cmp.differs) ? cmp.differs : [];
+        const pushKeys = PUSH_KEYS.filter(k => differs.some(d => String(d).indexOf("assist." + k + ":") === 0));
+        const items = differs.map(valueText).concat(pushKeys.length === PUSH_KEYS.length ? [PUSH_KEYS_NOTE] : []);
+        if (differs.length) out.push({ t: "details", summary: "What differs from SP1's " + cmp.case + ", by config key", items: items });
+      }
+    }
+    const offloadRuns = (Array.isArray(detail.runs) ? detail.runs : []).filter(r => r && r.role === OFFLOAD_ROLE && r.note);
+    if (offloadRuns.length) {
+      const title = (exploratory ? "Offload runs of this launch" : "Offload runs of this directory") + " (" + offloadRuns.length + ")";
+      const items = offloadRuns.map(r => r.note);
+      if (items.length > OFFLOAD_LIST_OPEN) out.push({ t: "details", summary: title, items: items });
+      else { out.push({ t: "h3", text: title }); out.push({ t: "ul", items: items }); }
+    }
+    if (notFlown) {
+      out.push({ t: "p", cls: "meta", text: "No push or flight figures: the run shown did not fly (the scene shows the runs that have a time series)." });
+    } else {
+      // the push and the flight side by side on a wide panel (.numbers), so the scene below stays near the headline
+      const cols = [];
+      if (p.push) {
+        const push = [{ t: "h3", text: "Push" }];
+        if (p.push.text) push.push({ t: "p", text: p.push.text });
+        if (p.push.model === CONSTANT_ACCEL) push.push({ t: "p", cls: "meta", text: DRIVE_NOTE });
+        if (typeof p.push.text === "string" && G_IN_TEXT_RE.test(p.push.text)) push.push({ t: "p", cls: "meta", text: G0_NOTE });
+        push.push({ t: "kv", rows: pushRows(p.push) });
+        cols.push({ t: "box", cls: "numcol", blocks: push });
+      }
+      if (p.flight) cols.push({ t: "box", cls: "numcol", blocks: [{ t: "h3", text: "Flight" }, { t: "kv", rows: flightRows(p.flight) }] });
+      if (cols.length) out.push({ t: "box", cls: "numbers", blocks: cols });
+    }
+    out.push({ t: "h3", text: "Flags and verification" });
+    if (flags.length) out.push({ t: "ul", items: flags });
+    else out.push({ t: "p", cls: "meta", text: "No flag on the run shown." });
+    if (p.verification) {
+      out.push({ t: "p", cls: p.verification.passed === false ? "bad" : null, text: p.verification.text || "no verification recorded" });
+      if (p.verification.verdict) out.push({ t: "p", cls: "caution", text: p.verification.verdict });
+    }
+    const cav = [
+      { t: "h3", text: "Read before quoting: the caveats of the runs shown" },
+      { t: "p", cls: "meta", text: "Built for " + ((p.built_for || []).join(" and ") || "no run") + " from this directory." },
+      { t: "ul", items: Array.isArray(p.caveats) ? p.caveats : [] }
+    ];
+    if (p.error) cav.push({ t: "p", cls: "err", text: p.error });
+    // the run's own caveats stay open; the directory's offload caveats and the display-only list are folded (each
+    // summary counts its items), so the scene below stays near the headline and both lists stay on the page
+    const recorded = Array.isArray(p.offload_caveats) ? p.offload_caveats : [];
+    if (recorded.length) {
+      cav.push({ t: "details", summary: plural(recorded.length, "caveat", "caveats") + " " + OFFLOAD_CAVEATS_TITLE, items: recorded });
+    }
+    const drawn = Array.isArray(p.display_only) ? p.display_only : [];
+    if (drawn.length) {
+      cav.push({ t: "details", summary: DISPLAY_ONLY_TITLE + ": " + plural(drawn.length, "item", "items"), items: drawn });
+    }
+    out.push({ t: "box", cls: "caveats", blocks: cav });
+    return out;
+  }
+  function stageSpan(stage, items) {
+    // a stage's expected range [s]: the sum of the launched form's expected parts (its dry run's expected_items,
+    // appform.expected_work's labels) that run in it, or null when none does (preflight, writing, a cached pad)
+    const prefixes = own(STAGE_ITEM_PREFIXES, stage) ? STAGE_ITEM_PREFIXES[stage] : [];
+    const parts = (Array.isArray(items) ? items : []).filter(i => Array.isArray(i) && typeof i[0] === "string" &&
+      prefixes.some(p => i[0].indexOf(p) === 0) && typeof i[1] === "number" && typeof i[2] === "number");
+    if (!parts.length) return null;
+    return [parts.reduce((s, i) => s + i[1], 0), parts.reduce((s, i) => s + i[2], 0)];
+  }
+  function stageItems(job, launchedRuns, times, mark, items) {
+    // The job's stages as {label, state, took}: done, now (the running one) or to come. launchedRuns: the runs the
+    // launched form's dry run named (a pad-only launch names one, so its variant stage says it has none), or null;
+    // times: a finished stage's duration [s] by its index, as the page saw it between polls (took; else null). The
+    // running stage also has ran (its time so far [s], from mark {index, elapsed}: the job's elapsed time when the
+    // page first saw it running; null when the page did not see it start), span (its expected range, stageSpan of
+    // items, the launched form's expected parts; else null) and over (ran past the span's upper end).
+    const at = job && typeof job.stage_index === "number" ? job.stage_index : -1;
+    const padOnly = Array.isArray(launchedRuns) && launchedRuns.length === 1;
+    return (job && Array.isArray(job.stages) ? job.stages : []).map((name, i) => {
+      const done = job.state === "done" || i < at;
+      const now = job.state === "running" && i === at;
+      let label = own(STAGE_LABELS, name) ? STAGE_LABELS[name] : String(name);
+      if (name === "pad" && job.pad_cached === true) label += ", cached";
+      if (name === "variant" && padOnly) label += " (none: pad only)";
+      const t = done && times && typeof times === "object" ? times[i] : null;
+      const item = {
+        label: label, state: done ? "done" : (now ? "now" : (job.state === "running" ? "to come" : "")),
+        took: typeof t === "number" && Number.isFinite(t) && t >= 0 ? t : null
+      };
+      if (now) {
+        const seen = mark && typeof mark === "object" && mark.index === i && typeof mark.elapsed === "number" &&
+          typeof job.elapsed_s === "number";
+        item.ran = seen ? Math.max(0, job.elapsed_s - mark.elapsed) : null;
+        item.span = stageSpan(name, items);
+        item.over = item.ran !== null && item.span !== null && item.ran > item.span[1];
+      }
+      return item;
+    });
+  }
+  function nowText(item) {
+    // the running stage's chip after NOW: its time so far and its expected range, past it "longer than expected"
+    const bits = [];
+    if (typeof item.ran === "number") bits.push(fmtDuration(item.ran));
+    if (Array.isArray(item.span)) bits.push("(expected " + fmtRange(item.span) + (item.over ? "; longer than expected" : "") + ")");
+    return bits.join(" ");
+  }
+  function plainWhy(flag) {
+    // a run that did not fly, in plain words when its search's first failure is a ramp start the coast never reached
+    // (planar.py's no_ignition text); else the search's own words
+    const m = NO_IGNITION_RE.exec(typeof flag === "string" ? flag : "");
+    if (!m) return "Why, in the search's own words: " + flag;
+    return "Stage 1 never lit: the coast after release peaked at " + fx(Number(m[1]), 2) + " m, " + fx(Number(m[2]), 2) +
+      " m below its ramp-start altitude of " + fx(Number(m[3]), 2) + " m. A ramp start below the coast's peak lets it light.";
+  }
+  function jobBlocks(job, ctx) {
+    // The job card's text (after its head and stages). ctx: {items: the launched form's expected parts, from its dry
+    // run ([name, lo, hi]), or null; headline, flagged: the results panel's headline of the job's directory (its
+    // default panel, the launched run's, never a pair picked later), once opened; why: that panel's first flag when
+    // its run did not fly; root: where launches are written (GET /api/form results_root)}. The headline goes with the exploratory tag and the pointer to the caveats, and
+    // not for a launch that did not reach orbit or did not fly (the outcome line already says so).
+    const c = ctx || {};
+    const out = [];
+    if (!job || job.state === "idle") return [{ t: "p", cls: "meta", text: idleText(c.root) }];
+    if (job.description) {
+      out.push({ t: "p", cls: "meta", text: job.description + (job.preset ? " (preset " + job.preset + ")" : (job.preset_edited ? " (edited from " + job.started_from_preset + ")" : "")) });
+    }
+    if (Array.isArray(job.expected_s)) out.push({ t: "p", cls: "meta", text: "Expected " + fmtRange(job.expected_s) + " (an estimate, not a countdown)." });
+    if (job.state === "running" && Array.isArray(c.items) && c.items.length) {
+      out.push({ t: "details", summary: "What this launch runs, each part an estimate", items: c.items.map(i => i[0] + ": " + fmtRange([i[1], i[2]])) });
+    }
+    if (job.longer_than_expected) out.push({ t: "p", cls: "caution", text: "Longer than expected: past the upper end of the estimate." });
+    if (job.pad_cached === true) out.push({ t: "p", cls: "meta", text: "Pad cached: the baseline was not flown again." });
+    if (job.directory) out.push({ t: "p", cls: "meta", text: "Directory: " + dirText(job.directory, c.root) });
+    if (job.outcome) {
+      const o = job.outcome;
+      out.push({ t: "h3", text: "Outcome: " + (OUTCOME_LABELS[o.kind] || o.kind) });
+      if (o.message) out.push({ t: "p", cls: o.kind === "complete" ? null : "caution", text: o.message });
+      const notes = (Array.isArray(o.notes) ? o.notes : []).filter(n => n !== o.message);
+      if (notes.length) out.push({ t: "ul", items: notes });
+      // a launch that did not fly: why, from its results panel (the launched run's first flag), in plain words
+      if (o.kind === DID_NOT_FLY && typeof c.why === "string" && c.why) out.push({ t: "p", cls: "caution", text: plainWhy(c.why) });
+      const said = o.kind === "not_in_orbit" || o.kind === DID_NOT_FLY;
+      if (typeof c.headline === "string" && c.headline && !said) {
+        out.push({ t: "p", cls: "tag exploratory", text: JOB_TAG_TEXT });
+        out.push({ t: "p", cls: "headline" + (c.flagged === true ? " bad" : ""), text: c.headline });
+      }
+      if ((o.reproduces || []).length) {
+        out.push({ t: "h4", text: "Reproduction" });
+        out.push({ t: "ul", items: o.reproduces });
+      }
+    }
+    return out;
+  }
+  // ------------------------------------------------------------------ pure functions: end
+
+  const DRY_RUN_DEBOUNCE_MS = 250;   // a dry run after the last change (design 4.7)
+  const JOB_POLL_MS = 500;           // GET /api/job while a launch runs
+  const JOB_RETRY_MS = 2000;         // ... after a poll that failed
+  const CONFIRM_ABOVE_S = 60;        // a launch whose upper bound passes this asks first
+  const FRAME_MIN_PX = 200, FRAME_MAX_PX = 8000;  // the frame's height: the scene's own height, measured
+  const FRAME_START_PX = 640;        // the height a frame starts from while its scene loads
+  // The window height the scene sizes its canvas by (--app-vh, scene.html's embed rules): the app's window less the
+  // scene card's heading and the frame's transport. With the frame's top at the window's top (focusScene) the canvas
+  // fits the window from 560 px of canvas width for one panel and from 1132 px for two side by side; narrower, the
+  // scene's own band layout (each panel's close-up and gauges under its view, scene.html's 1.25 x height rules, as on
+  // the scene page itself) is taller than the window, and the window scrolls over it.
+  const FRAME_VIEW_ALLOWANCE_PX = 140;
+  const HEIGHT_MESSAGE = "launchsim-scene-height";
+  // the player's keys and its clock steps (Shift: the big step), each forwarded only while the scene is on screen, so
+  // they never take a key the page could use elsewhere (Space scrolls a page whose scene is out of sight)
+  const FORWARD_KEYS = [" ", "[", "]"];
+  const ARROW_KEYS = ["ArrowLeft", "ArrowRight"];
+  const BASE_TITLE = "launch-assist-sim app";
+  const CHOICE_LABELS = {
+    site: { pad: "Pad only (held down until release)", silo: "Silo (vertical push)" },
+    push_by: { net_accel_g: "Net acceleration", exit_speed_mps: "Exit speed" },
+    ramp_by: {
+      time_release: "Time from release", time_push_start: "Time from push start", depth: "Depth below the mouth",
+      speed: "Speed on the push", height_event: "Height above the mouth (altitude event)",
+      height_closed_form: "Height above the mouth (closed form)"
+    },
+    startup: { vehicle_default: "The vehicle's own startup", step: "Step (instant: a yardstick, not an engine)", ramp: "Linear ramp", lag: "First-order lag" },
+    propellant: { full: "Full load", fixed: "Imposed offload", solve: "Solve the largest offload" },
+    fixed_key: {
+      stage1_t: "Stage 1, tonnes", stage1_fraction: "Stage 1, fraction of its load", stage2_t: "Stage 2, tonnes (Advanced)",
+      stage2_fraction: "Stage 2, fraction of its load (Advanced)", both_fraction: "Both stages, one fraction of each load (Advanced)"
+    },
+    solve_mode: { stage1: "Stage 1 (the headline)", stage2: "Stage 2 (Advanced)", both: "Both stages (Advanced)" }
+  };
+  const CHECK_LABELS = {
+    fails: "Stage 1 never lights (the run ends in an impact)",
+    paired_pad: "Also fly the pad with the same offload and no push",
+    advanced: "Advanced: stage-2 and both-stage offloads"
+  };
+  const RAMP_HELP = {
+    time_release: "A time after release: negative lights stage 1 before release (on the track, or on the pad's hold-down).",
+    time_push_start: "A time after the push starts: negative lights stage 1 on the carriage before the push.",
+    depth: "A depth below the mouth on the push: a hot start on the track.",
+    speed: "A speed on the push: a hot start on the track.",
+    height_event: "Stage 1 lights when the flown altitude (with drag) reaches this height; the times shown for it are drag-free estimates.",
+    height_closed_form: "Before the flight the height is turned into a time after release by the drag-free formula; stage 1 lights at that time."
+  };
+  const FIELD_HELP = {
+    exhaust_impingement_fraction: "The share of the exhaust momentum that pushes on the carriage while stage 1 is lit on the track.",
+    stage1_dry_mass_added_t: "Assumed: a parametric stand-in for the structure a push needs, not a sized structure."
+  };
+  // what each startup choice does (vehicle.thrust_fraction); the vehicle's own is read from GET /api/form
+  const STARTUP_HELP = {
+    step: "Full thrust at once: a yardstick, not an engine.",
+    ramp: "Thrust rises linearly from zero to full over the ramp time.",
+    lag: "Thrust follows a first-order lag: 63% of full after tau, 95% after 3 tau."
+  };
+  const FAILS_NOTE = {
+    failsRamp: "Failed ignition: stage 1 never lights, so the ramp start never acts; it is still sent and recorded with the run's settings.",
+    failsStartup: "Failed ignition: stage 1 never lights, so the startup never acts; it is still sent and recorded with the run's settings."
+  };
+  const PRESET_GROUPS = [["baseline", "The pad"], ["variant", "Variants (the silo and the instant yardsticks)"], ["case", "Offload cases (SP1)"]];
+  const LAYOUT = [
+    ["c-site", [["site", "radios"]]],
+    ["c-push", [["stroke_m", "number"], ["push_by", "radios"], ["net_accel_g", "number"], ["exit_speed_mps", "number"]]],
+    ["c-silo", [["carriage_mass_t", "number"], ["exhaust_impingement_fraction", "number"]]],
+    ["c-ramp", [["ramp_by", "select"], ["t_ign_s", "number"], ["at_depth_m", "number"], ["at_speed_mps", "number"], ["at_height_m", "number"]]],
+    ["c-startup", [["startup", "select"], ["t_ramp_s", "number"], ["tau_s", "number"]]],
+    ["c-fails", [["fails", "check"]]],
+    ["c-prop", [["propellant", "radios"], ["advanced", "check"], ["fixed_key", "select"], ["fixed_value", "number"], ["solve_mode", "select"]]],
+    ["c-pre", [["stage2_offload_t", "number"]]],
+    ["c-paired", [["paired_pad", "check"]]],
+    ["c-penalty", [["stage1_dry_mass_added_t", "number"]]]
+  ];
+  const GROUP_OF_WHY = { push: "g-push", silo: "g-silo", preoffload: "g-pre", paired_pad: "g-paired", penalty: "g-penalty" };
+  const WHY_LINE = { push: "why-push", silo: "why-silo", propellant: "why-propellant", preoffload: "why-preoffload", paired_pad: "why-paired", penalty: "why-penalty" };
+  const SILO_FIXED_LABELS = { brake_decel_g: "Carriage brake [g0]", drive_efficiency: "Drive efficiency", shaft: "Shaft", track: "Track" };
+  const BLOCK_TAGS = ["p", "h3", "h4"];
+
+  const SELF_ORIGIN = window.location.origin;
+  const $ = id => document.getElementById(id);
+  const S = {
+    bootId: DATA.boot_id, fromOtherSite: DATA.from_other_site !== false, userActed: false,
+    info: null, fields: {}, fieldKeys: [], presets: {},
+    form: null, controls: {},
+    derived: null, derivedFor: null, refusal: null, checking: false, local: [],
+    confirmFor: null, lastLaunched: null, launchItems: null, launchRuns: null,
+    job: null, pollTimer: null, launching: false, launchedAt: 0, pendingNew: null,
+    stageTimes: {}, stageTimesFor: null, stageMark: null, jobStarted: null, jobLiveKey: "",
+    listing: null, playableOnly: true,
+    dir: null, detail: null, panelAsked: "", dirHeadline: null,
+    scene: null, frameState: "blank", frameHeight: 0, playerTouchedAt: 0,
+    theme: "auto", dryTimer: null, drySeq: 0
+  };
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+  function setText(id, text) { const node = $(id); node.textContent = text || ""; node.hidden = !text; }
+  function clear(node) { node.replaceChildren(); return node; }
+  function kv(dl, key, value) {
+    if (value === null || value === undefined || value === "") return;
+    dl.appendChild(el("dt", null, key));
+    dl.appendChild(el("dd", null, value));
+  }
+  function list(items, cls) {
+    const ul = el("ul", cls);
+    (items || []).forEach(t => ul.appendChild(el("li", null, t)));
+    return ul;
+  }
+  function renderBlocks(box, blocks) {
+    // draw panelBlocks, jobBlocks or headlineBlocks: fixed tags, every value by textContent
+    (blocks || []).forEach(b => {
+      if (b.t === "ul") box.appendChild(list(b.items));
+      else if (b.t === "kv") {
+        const dl = el("dl", "kv");
+        (b.rows || []).forEach(r => kv(dl, r[0], r[1]));
+        box.appendChild(dl);
+      } else if (b.t === "details") {
+        const more = el("details");
+        more.appendChild(el("summary", null, b.summary));
+        more.appendChild(list(b.items));
+        box.appendChild(more);
+      } else if (b.t === "strongs") {
+        const ul = el("ul");
+        (b.items || []).forEach(i => {
+          const li = el("li");
+          li.append(el("strong", null, i[0]), document.createTextNode(" " + i[1]));
+          ul.appendChild(li);
+        });
+        box.appendChild(ul);
+      } else if (b.t === "box") {
+        box.appendChild(renderBlocks(el("div", b.cls), b.blocks));
+      } else if (b.t === "fold") {
+        const fold = el("details", b.cls);
+        fold.appendChild(el("summary", null, b.summary));
+        box.appendChild(renderBlocks(fold, b.blocks));
+      } else if (has(BLOCK_TAGS, b.t)) {
+        box.appendChild(el(b.t, b.cls || null, b.text));
+      }
+    });
+    return box;
+  }
+  function notice(text) { setText("notice", text); }
+  function mayActNow() { return mayAct(S.fromOtherSite ? true : false, S.userActed); }
+
+  // ------------------------------------------------------------------ the server
+  function api(path, opts) {
+    // every request of this page: a relative /api/ path of its own server
+    if (typeof path !== "string" || path.indexOf("/api/") !== 0) return Promise.reject(new Error("not an API path"));
+    const init = Object.assign({ cache: "no-store", credentials: "same-origin", redirect: "error" }, opts || {});
+    return fetch(path, init).then(r => r.text().then(text => {
+      let body = null;
+      try { body = text ? JSON.parse(text) : null; } catch (e) { body = null; }
+      return { status: r.status, ok: r.ok, body: body };
+    }));
+  }
+  function postLaunch(request) {
+    // the launch route (a dry run or a launch): only once the page may act (exit criterion 17)
+    if (!mayActNow()) return Promise.reject(new Error("the page has not been used yet"));
+    return api("/api/launches", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request)
+    });
+  }
+  function errorText(res) {
+    if (res && res.body && typeof res.body.message === "string") return res.body.message;
+    return "HTTP " + (res ? res.status : "error");
+  }
+
+  // ------------------------------------------------------------------ theme and hash
+  function effectiveTheme() {
+    if (has(THEMES, S.theme)) return S.theme;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function frameDoc() {
+    if (S.frameState !== "ready") return null;
+    try { return $("frame").contentDocument; } catch (e) { return null; }
+  }
+  function applyTheme() {
+    const root = document.documentElement;
+    if (has(THEMES, S.theme)) root.setAttribute("data-theme", S.theme); else root.removeAttribute("data-theme");
+    $("theme").value = has(THEMES, S.theme) ? S.theme : "auto";
+    const doc = frameDoc();
+    if (doc) doc.documentElement.setAttribute("data-theme", effectiveTheme());
+  }
+  function readHash() { return parseHash(window.location.hash); }
+  function writeHash() {
+    const sameDir = S.scene && S.dir && S.scene.experiment === S.dir.experiment && S.scene.timestamp === S.dir.timestamp;
+    const text = hashText({
+      dir: S.dir, runs: sameDir ? S.scene.runs : [], theme: has(THEMES, S.theme) ? S.theme : null,
+      preset: S.form ? S.form.preset : null
+    });
+    try { history.replaceState(null, "", "/" + (text ? "#" + text : "")); } catch (e) { /* a page without history */ }
+  }
+
+  // ------------------------------------------------------------------ the form
+  function loadOf(fixedKey) {
+    // the full load [t] an imposed offload (or a stage-2 pre-offload) is taken from, and its words
+    const loads = S.info && S.info.loads_t ? S.info.loads_t : {};
+    const mode = String(fixedKey || "").indexOf("stage2") === 0 ? "stage2" : (String(fixedKey || "").indexOf("both") === 0 ? "both" : "stage1");
+    const words = { stage1: "stage 1's", stage2: "stage 2's", both: "both stages'" }[mode];
+    return typeof loads[mode] === "number" ? { t: loads[mode], words: words } : null;
+  }
+  function fieldUnit(key, values) {
+    const spec = S.fields[key];
+    if (!spec) return "";
+    if (key === "fixed_value") return String(values.fixed_key || "").indexOf("fraction") >= 0 ? "fraction of the load" : "t";
+    return spec.unit || "";
+  }
+  function fieldLabel(key, values) {
+    const spec = S.fields[key];
+    let label = spec ? spec.label : key;
+    if (key === "t_ign_s") label = values.ramp_by === "time_push_start" ? "Ramp start time from push start" : "Ramp start time from release";
+    const unit = fieldUnit(key, values);
+    return unit ? label + " [" + unit + "]" : label;
+  }
+  function plainLabel(key) {
+    const spec = S.fields[key];
+    return spec ? spec.label : key;
+  }
+  function rangeText(key, values) {
+    if (key === "fixed_value") {
+      const fk = String(values.fixed_key || "");
+      if (fk.indexOf("fraction") >= 0) return "range 0 to under 1 (a fraction of the load)";
+      const load = loadOf(fk);
+      if (load) return "range 0 to under " + fx(load.t, 1) + " t (" + load.words + " full load)";
+    }
+    if (key === "stage2_offload_t") {
+      const load = loadOf("stage2_t");
+      if (load) return "range 0 to under " + fx(load.t, 1) + " t (" + load.words + " full load)";
+    }
+    const spec = S.fields[key];
+    if (!spec || typeof spec.lo !== "number" || typeof spec.hi !== "number") return "";
+    const unit = fieldUnit(key, values);
+    return "range " + spec.lo + " to " + spec.hi + (unit ? " " + unit : "");
+  }
+  function metaLine(node, key, values) {
+    clear(node);
+    const spec = S.fields[key];
+    let configKey = spec ? spec.config_key : key;
+    if (key === "t_ign_s") configKey += values.ramp_by === "time_push_start" ? " (reference push_start)" : " (reference release)";
+    if (key === "fixed_value" && values.fixed_key) configKey = "offload.cases[].fixed." + values.fixed_key;
+    if (key === "push_by") configKey = PUSH_KEYS.map(k => (S.fields[k] ? S.fields[k].config_key : k)).join(" or ");
+    if (configKey) node.appendChild(el("code", null, configKey));
+    const bits = [];
+    const range = rangeText(key, values);
+    if (range) bits.push(range);
+    const pushStart = key === "t_ign_s" && values.ramp_by === "time_push_start";
+    const def = key === "fixed_value" && S.info && S.info.fixed_defaults ? S.info.fixed_defaults[values.fixed_key] :
+      (pushStart ? pushStartDefault() : (S.info ? S.info.defaults[key] : null));
+    if (spec && spec.kind === "number" && typeof def === "number") bits.push("default " + fmtNum(def) + (pushStart ? pushStartSource() : defaultSource(key)));
+    if (bits.length) node.appendChild(document.createTextNode((configKey ? "; " : "") + bits.join("; ")));
+  }
+  function defaultSource(key) {
+    // where a converted ramp-start default comes from (GET /api/form default_sources): that preset's ramp start
+    const src = S.info && S.info.default_sources && own(S.info.default_sources, key) ? S.info.default_sources[key] : null;
+    if (!src || !validName(src.preset)) return "";
+    return " (" + src.preset + "'s ramp start" + (typeof src.time_after_release_s === "number" ? ", " + relTime(src.time_after_release_s, 3) + " after release" : "") + ", stated this way)";
+  }
+  function pushStartDefault() {
+    // the time-from-push-start default: a preset's ramp start stated from push start (GET /api/form push_start_default);
+    // the release default (0.5 s after release) would be a hot start on the track if read from push start
+    const d = S.info ? S.info.push_start_default : null;
+    return d && typeof d.value === "number" ? d.value : null;
+  }
+  function pushStartSource() {
+    const d = S.info ? S.info.push_start_default : null;
+    if (!d || !validName(d.preset)) return "";
+    return " (" + d.preset + "'s ramp start" + (typeof d.time_after_release_s === "number" ? ", " + relTime(d.time_after_release_s, 3) + " after release" : "") + ", stated this way)";
+  }
+  function startupHelp(value) {
+    if (value !== "vehicle_default") return own(STARTUP_HELP, value) ? STARTUP_HELP[value] : "";
+    const vs = S.info ? S.info.vehicle_startup : null;
+    if (!vs || typeof vs !== "object") return "";
+    const what = vs.kind === "ramp" ? "a linear ramp to full thrust over " + fmtNum(vs.t_ramp_s) + " s" :
+      (vs.kind === "lag" ? "a first-order lag, tau " + fmtNum(vs.tau_s) + " s" : "full thrust at once (a step)");
+    return "Stage 1's startup as the vehicle file (" + vs.vehicle + ") states it: " + what + ".";
+  }
+  function helpText(key, values) {
+    if (key === "ramp_by") return own(RAMP_HELP, values.ramp_by) ? RAMP_HELP[values.ramp_by] : "";
+    if (key === "startup") return startupHelp(values.startup);
+    return own(FIELD_HELP, key) ? FIELD_HELP[key] : "";
+  }
+  function choiceLabel(key, value) {
+    return own(CHOICE_LABELS, key) && own(CHOICE_LABELS[key], value) ? CHOICE_LABELS[key][value] : String(value);
+  }
+  function buildField(key, kind) {
+    const spec = S.fields[key];
+    if (!spec) return null;
+    const wrap = el("div", "field");
+    wrap.id = "w-" + key;
+    const meta = el("p", "meta");
+    meta.id = "m-" + key;
+    const help = el("p", "meta");
+    help.id = "p-" + key;
+    help.hidden = true;
+    const err = el("p", "err");
+    err.id = "e-" + key;
+    err.hidden = true;
+    const hint = el("p", "meta");
+    hint.id = "h-" + key;
+    hint.hidden = true;
+    const whyLine = el("p", "why");
+    whyLine.id = "y-" + key;
+    whyLine.hidden = true;
+    const ctl = { kind: kind, wrap: wrap, meta: meta, help: help, err: err, hint: hint, why: whyLine, label: null, input: null, radios: [], options: {} };
+    const described = meta.id + " " + help.id + " " + err.id;
+    if (kind === "number") {
+      const label = el("label");
+      label.htmlFor = "f-" + key;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = "f-" + key;
+      input.inputMode = "decimal";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      input.setAttribute("aria-describedby", described + " " + hint.id);
+      input.addEventListener("input", () => onNumberInput(key, input.value));
+      wrap.append(label, input);
+      ctl.label = label;
+      ctl.input = input;
+    } else if (kind === "select") {
+      const label = el("label");
+      label.htmlFor = "f-" + key;
+      const select = document.createElement("select");
+      select.id = "f-" + key;
+      select.setAttribute("aria-describedby", described + " " + whyLine.id);
+      spec.choices.forEach(c => {
+        const opt = el("option", null, choiceLabel(key, c));
+        opt.value = c;
+        select.appendChild(opt);
+        ctl.options[c] = opt;
       });
-      groups.appendChild(list);
+      select.addEventListener("change", () => onChoice(key, select.value));
+      wrap.append(label, select);
+      ctl.label = label;
+      ctl.input = select;
+    } else if (kind === "radios") {
+      const label = el("p", "grouplabel");
+      label.id = "l-" + key;
+      const group = el("div", "radios");
+      group.id = "f-" + key;
+      group.setAttribute("role", "radiogroup");
+      group.setAttribute("aria-labelledby", label.id);
+      group.setAttribute("aria-describedby", described);
+      spec.choices.forEach(c => {
+        const lab = el("label");
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "f-" + key;
+        radio.value = c;
+        radio.id = "f-" + key + "-" + c;
+        lab.htmlFor = radio.id;
+        radio.addEventListener("change", () => { if (radio.checked) onChoice(key, c); });
+        lab.append(radio, el("span", null, choiceLabel(key, c)));
+        group.appendChild(lab);
+        ctl.radios.push(radio);
+      });
+      wrap.append(label, group);
+      ctl.label = label;
+      ctl.input = group;
+    } else {
+      const lab = el("label", "check");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.id = "f-" + key;
+      lab.htmlFor = box.id;
+      box.setAttribute("aria-describedby", described + " " + whyLine.id);
+      box.addEventListener("change", () => onCheck(key, box.checked));
+      lab.append(box, el("span", null, own(CHECK_LABELS, key) ? CHECK_LABELS[key] : spec.label));
+      wrap.appendChild(lab);
+      ctl.input = box;
+    }
+    wrap.append(meta, help, whyLine, err, hint);
+    S.controls[key] = ctl;
+    return wrap;
+  }
+  function buildPresetSelect(info) {
+    const select = clear($("f-preset"));
+    const headlineCase = info.headline ? info.headline.case : null;
+    const groups = {};
+    PRESET_GROUPS.forEach(g => {
+      const og = document.createElement("optgroup");
+      og.setAttribute("label", g[1]);
+      groups[g[0]] = og;
     });
-    var others = listing.not_listed ? "; " + listing.not_listed + " other entries not listed" : "";
-    status.textContent = total + " directories" + others + ".";
+    const other = document.createElement("optgroup");
+    other.setAttribute("label", "Other presets");
+    info.presets.forEach(p => {
+      S.presets[p.name] = p;
+      const opt = el("option", null, presetText(p, headlineCase));
+      opt.value = p.name;
+      (own(groups, p.kind) ? groups[p.kind] : other).appendChild(opt);
+    });
+    const missing = Array.isArray(info.presets_unavailable) ? info.presets_unavailable : [];
+    const off = document.createElement("optgroup");
+    off.setAttribute("label", "Not offered by this server's basis");
+    missing.forEach(m => {
+      const opt = el("option", null, m.name + " (not offered: " + m.reason + ")");
+      opt.value = "";
+      opt.disabled = true;
+      off.appendChild(opt);
+    });
+    PRESET_GROUPS.map(g => groups[g[0]]).concat([other, off]).forEach(og => { if (og.childElementCount) select.appendChild(og); });
+    setText("presetUnavailable", missing.length ? "Not offered by this server's basis: " +
+      missing.map(m => m.name + " (" + m.reason + ")").join("; ") + "." : "");
+  }
+  function buildForm(info) {
+    S.info = info;
+    S.fields = {};
+    S.fieldKeys = [];
+    info.fields.forEach(f => { S.fields[f.key] = f; S.fieldKeys.push(f.key); });
+    S.presets = {};
+    S.controls = {};
+    buildPresetSelect(info);
+    LAYOUT.forEach(entry => {
+      const box = clear($(entry[0]));
+      entry[1].forEach(f => { const node = buildField(f[0], f[1]); if (node) box.appendChild(node); });
+    });
+    const fixedList = clear($("siloFixed"));
+    (info.silo_fixed || []).forEach(item => {
+      const li = el("li");
+      const label = own(SILO_FIXED_LABELS, item.key) ? SILO_FIXED_LABELS[item.key] : item.key;
+      li.append(el("span", null, label + ": " + valueText(item.value) + " (read-only) "), el("code", null, item.config_key));
+      fixedList.appendChild(li);
+    });
+    const adv = info.advanced || {};
+    $("readingSolve").textContent = adv.solve_reading ? "A stage-2 or both-stage solve is " + adv.solve_reading + "." : "";
+    $("readingFixed").textContent = adv.fixed_reading ? "An imposed stage-2 or both-stage offload is " + adv.fixed_reading + "." : "";
+    $("launchNote").textContent = (info.launch_note || "") + (info.results_root ? " Launches write to " + rootText(info.results_root) + "." : "");
+    $("siloNote").textContent = DRIVE_NOTE;
+    $("exploratoryNote").textContent = info.exploratory_caveat || "";
+    renderSp1Reference(info.headline);
+    const start = info.server_start || {};
+    $("foot").textContent = "launchsim " + (info.version || DATA.version) + "; code at server start: git " +
+      (start.hash || "unknown") + " (" + (start.state || "unknown") + ")" +
+      (start.code_check ? "; a launch is refused once HEAD moves to a commit that changes src, configs, experiments, " +
+        "pyproject.toml or uv.lock (an uncommitted edit is not refused: each launch records the working tree's state)" :
+        "; the code check is off (no git at server start)");
+  }
+  function hideConfirm() {
+    $("confirm").hidden = true;
+    S.confirmFor = null;
+  }
+  function choosePreset(name) {
+    const preset = own(S.presets, name) ? S.presets[name] : S.presets[S.info.default_preset];
+    const values = Object.assign({}, S.info.defaults || {});
+    Object.keys(preset.request).forEach(k => { if (k !== "preset") values[k] = preset.request[k]; });
+    S.form = { preset: preset.name, values: values, base: Object.assign({}, values), touched: {}, texts: {}, bad: {}, wayNote: "", wayNoteFor: null };
+    S.derived = null;
+    S.refusal = null;
+    hideConfirm();
+    renderForm(true);
+  }
+  function resetPreset() {
+    // every field back to the preset's own values (its request again); focus to the preset, as the button hides
+    if (!S.form) return;
+    choosePreset(S.form.preset);
+    writeHash();
+    scheduleDryRun(0);
+    $("f-preset").focus();
+  }
+  function edited(key) {
+    S.form.touched[key] = true;
+    S.refusal = null;
+    hideConfirm();
+  }
+  function onNumberInput(key, text) {
+    edited(key);
+    S.form.texts[key] = text;
+    if (key === RAMP_VALUE_KEYS[S.form.values.ramp_by]) S.form.wayNote = "";
+    const v = numberFrom(text);
+    if (v === null) { S.form.values[key] = null; S.form.bad[key] = true; }
+    else { S.form.values[key] = v; delete S.form.bad[key]; }
+    if (key === "stage1_dry_mass_added_t" && positive(v)) S.form.values.paired_pad = false;
+    renderForm(false);
+    scheduleDryRun();
+  }
+  function storedCandidates(key) {
+    // the stored values a converted value may snap to: the preset's, then the form's defaults
+    const preset = S.presets[S.form.preset];
+    return [preset && preset.request ? preset.request[key] : undefined, S.info.defaults ? S.info.defaults[key] : undefined];
+  }
+  function derivedFill(key) {
+    // a value the last dry run gives for a field the user turns to (the same push or ramp start stated another way)
+    const d = S.derived;
+    if (!d) return null;
+    if (key === "net_accel_g" || key === "exit_speed_mps") return d.push && typeof d.push[key] === "number" ? d.push[key] : null;
+    const r = d.ramp_start;
+    if (!r) return null;
+    const ways = { time_release: "time_after_release_s", time_push_start: "time_from_push_start_s", depth: "depth_m", height_event: "height_m", height_closed_form: "height_m" };
+    if (own(ways, key)) return typeof r[ways[key]] === "number" ? r[ways[key]] : null;
+    if (key === "speed") return typeof r.speed_mps === "number" && typeof r.depth_m === "number" ? r.speed_mps : null;
+    return null;
+  }
+  function rampStartText(r) {
+    // the start of the way note (its only caller): the ramp start as it stands
+    if (!r || typeof r.time_after_release_s !== "number") return "The ramp start";
+    return "The ramp start at " + relTime(r.time_after_release_s, 3) + " after release";
+  }
+  function startKindNote(way) {
+    // what a way the current ramp start cannot be stated in makes of it: a depth or a speed is on the push (a hot
+    // start on the track); a height is above the mouth (a start after release, on the coast)
+    if (way === "depth" || way === "speed") return " This makes it a hot start on the track.";
+    if (way === "height_event" || way === "height_closed_form") return " This makes it a start after release, on the coast.";
+    return "";
+  }
+  function onChoice(key, value) {
+    const vals = S.form.values;
+    if (vals[key] === value) return;
+    const before = vals[key];
+    edited(key);
+    vals[key] = value;
+    if (key === "push_by") {
+      const filled = derivedFill(value);
+      if (filled !== null) { vals[value] = snapTo(filled, storedCandidates(value)); S.form.touched[value] = true; delete S.form.texts[value]; delete S.form.bad[value]; }
+    } else if (key === "ramp_by") {
+      const target = RAMP_VALUE_KEYS[value];
+      const filled = derivedFill(value);
+      S.form.wayNote = "";
+      S.form.wayNoteFor = value;
+      if (target && filled !== null) {
+        vals[target] = snapTo(filled, storedCandidates(target));
+        S.form.touched[target] = true;
+        delete S.form.texts[target];
+        delete S.form.bad[target];
+      } else if (target) {
+        // the current ramp start cannot be stated this way: the field keeps its own value, which moves the ramp start
+        const kept = typeof vals[target] === "number" ? fmtNum(vals[target]) + " " + fieldUnit(target, vals) : "no value";
+        S.form.wayNote = (S.derived ? rampStartText(S.derived.ramp_start) : "The ramp start as it stands") + " has no " +
+          choiceLabel("ramp_by", value).toLowerCase() + " value, so this way starts from " + kept +
+          ", which moves the ramp start: the derived values under the field say where." + (S.derived ? startKindNote(value) : "") +
+          " Type the value you want.";
+      }
+    } else if (key === "fixed_key") {
+      // a new way of stating the imposed offload (another stage, or a fraction for tonnes) starts from its own value
+      const def = S.info.fixed_defaults ? S.info.fixed_defaults[value] : null;
+      if (before !== value) {
+        vals.fixed_value = typeof def === "number" ? def : null;
+        S.form.touched.fixed_value = true;
+        delete S.form.texts.fixed_value;
+        delete S.form.bad.fixed_value;
+      }
+    }
+    renderForm(true);
+    scheduleDryRun();
+  }
+  function onCheck(key, checked) {
+    edited(key);
+    S.form.values[key] = checked;
+    renderForm(true);
+    scheduleDryRun();
+  }
+  function padStart() {
+    // the committed pad's own ramp start (a time from release), from the pad preset
+    const pad = Object.keys(S.presets).map(n => S.presets[n]).find(p => p.kind === "baseline");
+    return pad && pad.request && typeof pad.request.t_ign_s === "number" ? pad.request.t_ign_s : null;
+  }
+  function usePadStart() {
+    const t = padStart();
+    if (t === null || !S.form) return;
+    edited("t_ign_s");
+    S.form.values.t_ign_s = t;
+    delete S.form.texts.t_ign_s;
+    delete S.form.bad.t_ign_s;
+    renderForm(true);
+    scheduleDryRun();
+  }
+  function preReading(v) {
+    // the stage-2 pre-offload's reading for the propellant choice it goes with: under a stage-1 solve (whose pad control
+    // runs) it says what x* is; under an imposed stage-1 offload, the imposed reading (no pad control)
+    const adv = S.info && S.info.advanced ? S.info.advanced : {};
+    if (v.propellant === SOLVE) {
+      return "A stage-2 pre-offload is imposed on stage 2 before the stage-1 solve: the solved x* is the stage-1 offload " +
+        "on top of it, and the pre-offload itself is a property of the vehicle model, imposed, not solved and not netted.";
+    }
+    return adv.fixed_reading ? "A stage-2 pre-offload is imposed on stage 2 before the stage-1 offload: " + adv.fixed_reading + "." : "";
+  }
+  function currentView() { return viewOf(S.form.values, S.info.advanced); }
+  function groupLabel(ctl, text) {
+    // a control's label; read by assistive technology only where it repeats its group's legend
+    ctl.label.textContent = text;
+    const set = ctl.wrap.parentNode ? ctl.wrap.parentNode.parentNode : null;
+    const legend = set && set.firstElementChild && set.firstElementChild.tagName === "LEGEND" ? set.firstElementChild : null;
+    ctl.label.classList.toggle("vh", legend !== null && legend.textContent === text);
+  }
+  function renderForm(syncInputs) {
+    if (!S.form) return;
+    const view = currentView();
+    const v = view.values;
+    $("f-preset").value = S.form.preset;
+    const preset = S.presets[S.form.preset];
+    // the preset's whole label under the select (the select cuts a long option off at its arrow), then its name
+    $("presetCommitted").textContent = !preset ? "" : preset.label + ". " + (preset.committed_name ?
+      "Committed name: " + preset.committed_name + " (" + preset.kind + ")." :
+      "Not read from a commit: a launch takes a neutral name (" + preset.name + ").");
+    $("presetExpected").textContent = preset ? "Expected, pad not cached: " + fmtRange(preset.expected_s) + " (an estimate)" : "";
+    const changed = editedKeys(S.form.values, S.form.base, S.fieldKeys, S.info.advanced);
+    $("presetEditedText").textContent = changed.length ? "Edited from " + S.form.preset + " (" + changed.map(plainLabel).join(", ") +
+      "): a launch keeps the committed name only if its settings resolve equal to the committed ones." +
+      (has(changed, "push_by") ? " Stating the push another way (exit speed or net acceleration) changes the run's name, not its physics." : "") : "";
+    $("resetPreset").textContent = "Reset to " + S.form.preset;
+    $("presetEdited").hidden = changed.length === 0;
+    Object.keys(S.controls).forEach(key => {
+      const ctl = S.controls[key];
+      const val = v[key];
+      if (ctl.kind === "number") {
+        ctl.label.textContent = fieldLabel(key, v);
+        const focused = document.activeElement === ctl.input;
+        const shown = own(S.form.texts, key) ? S.form.texts[key] : fmtNum(val);
+        if (syncInputs || !focused) { if (ctl.input.value !== shown) ctl.input.value = shown; }
+        const stored = typeof val === "number" && !own(S.form.texts, key) && String(val) !== shown;
+        ctl.hint.textContent = stored ? "Sent at full precision: " + String(val) : "";
+        ctl.hint.hidden = !stored;
+      } else if (ctl.kind === "select") {
+        groupLabel(ctl, S.fields[key].label);
+        Object.keys(ctl.options).forEach(c => { ctl.options[c].disabled = own(view.off, key + ":" + c); });
+        if (ctl.input.value !== val) ctl.input.value = val;
+      } else if (ctl.kind === "radios") {
+        groupLabel(ctl, S.fields[key].label);
+        ctl.radios.forEach(r => { r.checked = r.value === val; r.disabled = own(view.off, key + ":" + r.value); });
+      } else {
+        ctl.input.checked = val === true;
+      }
+      metaLine(ctl.meta, key, v);
+      const help = helpText(key, v);
+      ctl.help.textContent = help;
+      ctl.help.hidden = !help;
+      // a reason once: a group's own line carries it for the controls of that group
+      const repeated = key === "advanced" && own(view.why, "propellant");
+      const reason = own(view.why, key) && !own(WHY_LINE, key) && !repeated ? view.why[key] : "";
+      ctl.why.textContent = reason;
+      ctl.why.hidden = !reason;
+      const bad = own(S.form.bad, key);
+      const refused = S.refusal && S.refusal.field === key;
+      const blank = has(S.local, key) && (val === null || val === undefined);
+      const message = bad ? "Type a number (" + rangeText(key, v) + ")." :
+        (blank ? "Type a value (" + rangeText(key, v) + ")." : (refused ? S.refusal.message : ""));
+      ctl.err.textContent = message;
+      ctl.err.hidden = !message;
+      if (message) ctl.input.setAttribute("aria-invalid", "true"); else ctl.input.removeAttribute("aria-invalid");
+    });
+    // which fields the choices use
+    const show = (key, on) => { if (S.controls[key]) S.controls[key].wrap.hidden = !on; };
+    show("net_accel_g", v.push_by === "net_accel_g");
+    show("exit_speed_mps", v.push_by === "exit_speed_mps");
+    const rampKey = RAMP_VALUE_KEYS[v.ramp_by];
+    ["t_ign_s", "at_depth_m", "at_speed_mps", "at_height_m"].forEach(k => show(k, k === rampKey));
+    show("t_ramp_s", v.startup === "ramp");
+    show("tau_s", v.startup === "lag");
+    show("fixed_key", v.propellant === FIXED);
+    show("fixed_value", v.propellant === FIXED);
+    show("solve_mode", v.propellant === SOLVE);
+    // disabled groups and their reasons
+    Object.keys(GROUP_OF_WHY).forEach(k => { $(GROUP_OF_WHY[k]).disabled = own(view.why, k); });
+    Object.keys(WHY_LINE).forEach(k => setText(WHY_LINE[k], own(view.why, k) ? view.why[k] : ""));
+    const propOff = own(view.why, "propellant");
+    ["propellant", "fixed_key", "fixed_value", "solve_mode", "advanced"].forEach(k => {
+      const ctl = S.controls[k];
+      if (!ctl) return;
+      const off = propOff || (k === "advanced" && own(view.why, "advanced"));
+      if (ctl.kind === "radios") ctl.radios.forEach(r => { r.disabled = off || own(view.off, k + ":" + r.value); });
+      else ctl.input.disabled = off;
+    });
+    $("w-padcontrol").hidden = view.padControl === null;
+    $("padControl").checked = view.padControl === "on";
+    $("padControlWhy").textContent = view.padControl === "on" ? WHY.padControlSolve : (view.padControl === "none" ? WHY.padControlFixed : "");
+    // each reading only with the form it reads
+    $("readingSolve").hidden = !(v.propellant === SOLVE && own(STAGE1_FORM, v.solve_mode));
+    $("readingFixed").hidden = !(v.propellant === FIXED && own(STAGE1_FORM, v.fixed_key));
+    $("readingPre").hidden = own(view.why, "preoffload");
+    $("readingPre").textContent = preReading(v);
+    Object.keys(FAILS_NOTE).forEach(id => setText(id, v.fails === true ? FAILS_NOTE[id] : ""));
+    setText("rampWayNote", wayNoteText(S.form.wayNote, S.form.wayNoteFor, v.ramp_by));
+    const padT = padStart();
+    const padUnlit = v.site === SITE_PAD && v.ramp_by === PAD_RAMP_WAY && typeof v.t_ign_s === "number" && padT !== null &&
+      v.t_ign_s > 0;
+    setText("padRampNote", padUnlit ? "The committed pad lights at " + relTime(padT, 3) + " on the hold-down; this start (" +
+      relTime(v.t_ign_s, 3) + ") releases the pad unlit, so it is not the committed pad." : "");
+    $("usePadStart").textContent = padT !== null ? "Use " + relTime(padT, 3) + " (the committed pad's)" : "";
+    $("usePadStart").hidden = !padUnlit;
+    renderLaunch();
+  }
+  function currentRequest() {
+    const view = currentView();
+    const built = buildRequest(view.values, S.fieldKeys, S.form.preset);
+    built.bad = Object.keys(S.form.bad).filter(k => has(usedFields(view.values).required, k) || has(usedFields(view.values).optional, k));
+    return built;
   }
 
-  fetch("/api/results", { cache: "no-store", credentials: "same-origin" })
-    .then(function (response) {
-      if (!response.ok) { throw new Error("HTTP " + response.status); }
-      return response.json();
-    })
-    .then(show)
-    .catch(function (error) {
-      status.textContent = "The results directories could not be loaded: " + error.message;
+  // ------------------------------------------------------------------ the dry run
+  function scheduleDryRun(delay) {
+    if (S.dryTimer !== null) clearTimeout(S.dryTimer);
+    S.drySeq += 1;
+    S.checking = true;
+    // until the check answers, the values shown are the last check's, of the form before this change: said so
+    $("derivedState").textContent = $("derivedBody").childElementCount ?
+      "Checking the form: the values below are the last check's, for the form before your change." : "Checking the form...";
+    renderLaunch();
+    S.dryTimer = setTimeout(() => { S.dryTimer = null; sendDryRun(); }, delay === undefined ? DRY_RUN_DEBOUNCE_MS : delay);
+  }
+  function clearNear() {
+    $("d-push").textContent = "";
+    $("d-ramp").textContent = "";
+    setText("apexWarn", "");
+    clear($("derivedBody"));
+    $("openRecorded").hidden = true;
+  }
+  function sendDryRun() {
+    if (!S.form) return;
+    if (!mayActNow()) {
+      S.checking = false;
+      $("derivedState").textContent = "Not checked yet: this page sends nothing to the server until you use it.";
+      renderLaunch();
+      return;
+    }
+    const built = currentRequest();
+    S.local = built.blank;
+    if (built.blank.length || built.bad.length) {
+      S.checking = false;
+      S.derived = null;
+      $("derivedState").textContent = "Not checked: a field the launch uses has no number (marked above).";
+      clearNear();
+      renderForm(false);
+      return;
+    }
+    const seq = S.drySeq;
+    const sent = JSON.stringify(built.request);
+    $("derivedState").textContent = "Checking the form...";
+    postLaunch(Object.assign({}, built.request, { dry_run: true })).then(res => {
+      if (seq !== S.drySeq) return;
+      S.checking = false;
+      if (res.status === 200 && res.body && res.body.dry_run === true) {
+        if (res.body.refused) {
+          S.refusal = res.body.refused;
+          S.derived = null;
+          S.derivedFor = null;
+          showRefusal(res.body.refused);
+        } else {
+          S.refusal = null;
+          S.derived = res.body.derived;
+          S.derivedFor = sent;
+          setText("formError", "");
+          renderDerived(res.body.derived);
+        }
+      } else {
+        S.derived = null;
+        clearNear();
+        $("derivedState").textContent = "The check failed: " + errorText(res);
+      }
+      renderForm(false);
+    }).catch(err => {
+      if (seq !== S.drySeq) return;
+      S.checking = false;
+      S.derived = null;
+      clearNear();
+      $("derivedState").textContent = "The server is not answering: " + err.message;
+      renderLaunch();
     });
+  }
+  function showRefusal(refused) {
+    const field = refused && typeof refused.field === "string" && own(S.controls, refused.field) &&
+      !S.controls[refused.field].wrap.hidden ? refused.field : null;
+    // under its own field the server's line as it is (it names the field; the input's aria-describedby ties it to its
+    // label); a refusal with no field shown goes above the form with "Refused: "
+    const message = String(refused.message || "refused");
+    S.refusal = { field: field, message: message };
+    setText("formError", field === null ? "Refused: " + message : "");
+    $("derivedState").textContent = "Refused by the server: nothing would be launched or written (the line is under the field).";
+    clearNear();
+  }
+  function nearPush(p) {
+    const bits = [p.typed === "net_accel_g" ? "Gives exit speed " + qty(p.exit_speed_mps, 2, "m/s") : "Gives net acceleration " + qty(p.net_accel_g, 3, "g0")];
+    bits.push("push " + qty(p.push_time_s, 2, "s"), "felt " + qty(p.felt_g, 2, "g0"), "facility " + qty(p.facility_length_m, 1, "m"));
+    return bits.join("; ");
+  }
+  function nearRamp(r, fails) {
+    if (fails) return "No ramp start: stage 1 never lights (failed ignition).";
+    if (!r) return "";
+    const est = r.estimate ? " (drag-free estimate)" : "";
+    const free = " (drag-free closed form)";
+    const bits = [];
+    if (typeof r.time_after_release_s === "number") bits.push("Ramp start " + relTime(r.time_after_release_s, 3) + " after release" + est);
+    if (typeof r.time_from_push_start_s === "number") bits.push(fx(r.time_from_push_start_s, 3) + " s from push start" + est);
+    if (typeof r.depth_m === "number") bits.push(fx(r.depth_m, 2) + " m below the mouth");
+    if (typeof r.speed_mps === "number") bits.push(fx(r.speed_mps, 2) + " m/s " + (typeof r.depth_m === "number" ? "on the push" : "on the coast" + free));
+    if (typeof r.height_m === "number") bits.push(fx(r.height_m, 2) + " m above the mouth" + free);
+    return bits.join("; ");
+  }
+  function renderDerived(d) {
+    const body = clear($("derivedBody"));
+    $("derivedState").textContent = "Checked: the server would accept this launch.";
+    const dl = el("dl", "kv");
+    const v = currentView().values;
+    $("d-push").textContent = d.push ? nearPush(d.push) : "";
+    $("d-ramp").textContent = nearRamp(d.ramp_start, d.fails);
+    setText("apexWarn", d.push ? apexWarning(v.ramp_by, v.at_height_m, d.push.drag_free_apex_m) : "");
+    if (d.push) {
+      const p = d.push;
+      if (p.typed === "net_accel_g") kv(dl, "Exit speed", qty(p.exit_speed_mps, 2, "m/s"));
+      else kv(dl, "Net acceleration", qty(p.net_accel_g, 3, "g0"));
+      kv(dl, "Push time", qty(p.push_time_s, 2, "s"));
+      kv(dl, "Felt on the track", qty(p.felt_g, 2, "g0") + " (net plus g)");
+      kv(dl, "Braking distance", qty(p.braking_distance_m, 1, "m"));
+      kv(dl, "Facility length", qty(p.facility_length_m, 1, "m") + " (depth plus braking)");
+      if (v.ramp_by === "height_event" || v.ramp_by === "height_closed_form") {
+        kv(dl, "Drag-free apex", qty(p.drag_free_apex_m, 2, "m") + " above the mouth: a height ramp start must be below it");
+      }
+    }
+    if (d.fails) kv(dl, "Ramp start", "none: stage 1 never lights (failed ignition)");
+    const r = d.ramp_start;
+    if (r) {
+      const est = r.estimate ? " (drag-free estimate)" : "";
+      const free = " (drag-free closed form)";
+      if (typeof r.time_after_release_s === "number") kv(dl, "Ramp start from release", relTime(r.time_after_release_s, 3) + est);
+      if (typeof r.time_from_push_start_s === "number") kv(dl, "... from push start", fx(r.time_from_push_start_s, 3) + " s" + est);
+      if (typeof r.depth_m === "number") kv(dl, "... depth below the mouth", fx(r.depth_m, 2) + " m");
+      if (typeof r.speed_mps === "number") kv(dl, typeof r.depth_m === "number" ? "... speed on the push" : "... speed on the coast", fx(r.speed_mps, 2) + " m/s" + (typeof r.depth_m === "number" ? "" : free));
+      if (typeof r.height_m === "number") kv(dl, "... height above the mouth", fx(r.height_m, 2) + " m" + free);
+    }
+    offloadRows(v, S.info ? S.info.loads_t : null).forEach(row => kv(dl, row[0], row[1]));
+    body.appendChild(dl);
+    // one run name per line (a long name never leaves a comma alone on the next line)
+    body.appendChild(el("h4", null, "Runs to be written"));
+    body.appendChild(list(d.runs || [], "fixedlist"));
+    const span = el("dl", "kv");
+    kv(span, "Expected duration", fmtRange(d.expected_s));
+    body.appendChild(span);
+    body.appendChild(el("p", "meta", "An estimate, not a promise or a countdown: how the range is made is below."));
+    const more = el("details");
+    more.appendChild(el("summary", null, "How the range is made"));
+    more.appendChild(list((d.expected_items || []).map(i => i[0] + ": " + fmtRange([i[1], i[2]]))));
+    more.appendChild(el("p", "meta", d.expected_note || ""));
+    body.appendChild(more);
+    const repro = Array.isArray(d.reproduces) ? d.reproduces : [];
+    if (repro.length) {
+      body.appendChild(el("h4", null, "This form reproduces a committed configuration"));
+      body.appendChild(list(repro));
+    }
+    renderOpenRecorded(repro);
+  }
+  function sp1Directory() {
+    // SP1's recorded directory as {experiment, timestamp} when the run list holds it
+    const h = S.info ? S.info.headline : null;
+    const m = h && typeof h.directory === "string" ? /^results\/([^/]+)\/([^/]+)$/.exec(h.directory) : null;
+    if (!m || !validName(m[1]) || !validStamp(m[2])) return null;
+    const dir = { experiment: m[1], timestamp: m[2] };
+    const row = findRow(dir);
+    return row && row.playable ? dir : null;
+  }
+  function renderOpenRecorded(repro) {
+    const h = S.info ? S.info.headline : null;
+    const dir = sp1Directory();
+    const same = h && dir && repro.some(t => typeof t === "string" && t.indexOf(h.case + ":") === 0);
+    const btn = $("openRecorded");
+    btn.hidden = !same;
+    btn.textContent = same ? "Open SP1's recorded run of " + h.case + " (" + dir.experiment + "/" + dir.timestamp + ") instead of launching" : "";
+  }
+
+  // ------------------------------------------------------------------ launch
+  function jobRunning() { return S.job !== null && S.job.state === "running"; }
+  function renderLaunch() {
+    const btn = $("launchBtn");
+    let why = "";
+    const fresh = S.form && S.derived && S.derivedFor === JSON.stringify(buildRequest(currentView().values, S.fieldKeys, S.form.preset).request);
+    if (jobRunning()) why = "A launch is running: one at a time, and it cannot be cancelled. The form, the run list and the scene stay usable.";
+    else if (S.launching) why = "Starting the launch...";
+    else if (!S.form) why = "Loading the form...";
+    else if (S.checking) why = "Checking the form...";
+    else if (!mayActNow()) why = "Use the form first: this page sends nothing until you do.";
+    else if (!fresh) why = S.refusal ? "The server refused this form (see the marked field)." : "The form has not passed the check.";
+    btn.disabled = why !== "";
+    $("formCard").classList.toggle("checking", S.checking === true);
+    // one estimate at a time: the preset's (pad not cached) until a check answers, then the check's on the button
+    $("presetExpected").hidden = !!fresh;
+    const span = fresh ? fmtRange(S.derived.expected_s) : null;
+    btn.textContent = span ? "Launch: expected " + span + ", cannot be cancelled" : "Launch";
+    setText("launchWhy", why);
+  }
+  function launchClicked() {
+    setText("launchErr", "");
+    if ($("launchBtn").disabled || !S.derived || S.derivedFor === null) return;
+    const sent = S.derivedFor;
+    const hi = Array.isArray(S.derived.expected_s) ? S.derived.expected_s[1] : 0;
+    const again = S.lastLaunched !== null && sent === S.lastLaunched;
+    if (hi > CONFIRM_ABOVE_S || again) {
+      $("confirmText").textContent = (again ? "Launch the same configuration again? It writes another results directory. " : "") +
+        "This launch is expected to take " + fmtRange(S.derived.expected_s) +
+        " (an estimate). It cannot be cancelled (stopping the server marks it FAILED). Launch it?";
+      S.confirmFor = sent;
+      $("confirm").hidden = false;
+      // the safe choice takes focus: one Space (the player's key) never confirms a launch that cannot be cancelled
+      $("confirmNo").focus();
+      return;
+    }
+    startLaunch();
+  }
+  function startLaunch() {
+    // the launch itself: only the request the dry run passed, and when a confirmation was shown, the one it named
+    const built = currentRequest();
+    const sent = JSON.stringify(built.request);
+    const confirmed = S.confirmFor;
+    hideConfirm();
+    if ($("launchBtn").disabled || S.derivedFor !== sent || (confirmed !== null && confirmed !== sent)) return;
+    if (built.blank.length || built.bad.length || jobRunning()) return;
+    const items = S.derived && Array.isArray(S.derived.expected_items) ? S.derived.expected_items.slice() : null;
+    const runs = S.derived && Array.isArray(S.derived.runs) ? S.derived.runs.slice() : null;
+    S.launching = true;
+    S.launchedAt = Date.now();
+    renderLaunch();
+    postLaunch(built.request).then(res => {
+      S.launching = false;
+      const body = res.body || {};
+      if (res.status === 202 && body.job) {
+        // a new server first (its job ids start again at 1): the reset must not wipe this launch's own state below
+        if (body.job.boot_id !== S.bootId) serverRestarted(body.job);
+        S.lastLaunched = sent;
+        S.launchItems = items;
+        S.launchRuns = runs;
+        S.pendingNew = null;
+        $("showNew").hidden = true;
+        S.job = body.job;
+        S.jobStarted = body.job.id;
+        // this page's own launch: its stage clock starts at 0, never carried over from a job of the same id
+        S.stageTimesFor = null;
+        markStages(body.job);
+        announceJob(body.job);
+        renderJob();
+        poll(JOB_POLL_MS);
+      } else if (res.status === 409 && body.error === "busy") {
+        setText("launchErr", "A launch is already running (one at a time): its progress is shown above.");
+        if (body.job) { if (body.job.boot_id !== S.bootId) serverRestarted(body.job); S.job = body.job; renderJob(); poll(JOB_POLL_MS); }
+      } else if (res.status === 409 && body.error === "code_changed") {
+        setText("launchErr", "Refused: " + errorText(res) + " Restart the server (Ctrl+C in its console, then uv run python -m launchsim app) and reload this page.");
+      } else if (res.status === 422) {
+        showRefusal({ field: body.field, message: body.message || "refused" });
+        renderForm(false);
+        setText("launchErr", "Refused: nothing was launched or written.");
+      } else {
+        setText("launchErr", "Not launched: " + errorText(res));
+      }
+      renderLaunch();
+    }).catch(err => {
+      S.launching = false;
+      setText("launchErr", "Not launched: the server is not answering (" + err.message + ").");
+      renderLaunch();
+    });
+  }
+
+  // ------------------------------------------------------------------ the job
+  function poll(delay) {
+    if (S.pollTimer !== null) clearTimeout(S.pollTimer);
+    S.pollTimer = setTimeout(pollJob, delay);
+  }
+  function pollJob() {
+    S.pollTimer = null;
+    api("/api/job").then(res => {
+      if (!res.ok || !res.body) throw new Error(errorText(res));
+      handleJob(res.body, false);
+    }).catch(err => {
+      notice("The server is not answering (" + err.message + "); retrying while a launch runs.");
+      if (jobRunning()) poll(JOB_RETRY_MS);
+    });
+  }
+  function handleJob(job, atBoot) {
+    if (job.boot_id !== S.bootId) { serverRestarted(job); return; }
+    if ($("notice").textContent.indexOf("not answering") >= 0) notice("");
+    const before = S.job;
+    S.job = job;
+    markStages(job);
+    announceJob(job);
+    renderJob();
+    if (job.state === "running") {
+      if (atBoot) S.launchedAt = Date.now();
+      if (job.directory && !(before && before.directory)) loadListing();
+      poll(JOB_POLL_MS);
+    } else if (before && before.state === "running" && before.id === job.id) {
+      jobFinished(job);
+    }
+    renderLaunch();
+  }
+  function markStages(job) {
+    // Each finished stage's duration as this page saw it, to a poll (JOB_POLL_MS): the elapsed time at which a stage
+    // was first seen running and at which a later one (or the end) was first seen. A stage the page did not see start
+    // (it was opened mid-stage, or the stage began and ended between two polls) gets none.
+    // A stage that began and ended between two polls gets none either; the error of each time is under a poll.
+    if (!job || typeof job.id !== "number" || typeof job.elapsed_s !== "number") return;
+    const at = typeof job.stage_index === "number" ? job.stage_index : -1;
+    if (S.stageTimesFor !== job.id) {
+      S.stageTimesFor = job.id;
+      S.stageTimes = {};
+      S.stageMark = job.state === "running" ? { index: at, elapsed: job.id === S.jobStarted && at === 0 ? 0 : null } : null;
+      return;
+    }
+    const mark = S.stageMark;
+    if (!mark) return;
+    const end = job.state === "running" ? at : (Array.isArray(job.stages) ? job.stages.length : at + 1);
+    if (end <= mark.index) return;
+    if (mark.elapsed !== null) S.stageTimes[mark.index] = Math.max(0, job.elapsed_s - mark.elapsed);
+    S.stageMark = job.state === "running" ? { index: at, elapsed: job.elapsed_s } : null;
+  }
+  function announceJob(job) {
+    // the screen reader's line for the job (role status): only when its state or stage changes, never per poll
+    const key = job.state === "idle" ? "" : job.id + ":" + job.state + ":" + job.stage_index;
+    if (key === S.jobLiveKey) return;
+    S.jobLiveKey = key;
+    if (!key) { $("jobLive").textContent = ""; return; }
+    const stage = Array.isArray(job.stages) ? job.stages[job.stage_index] : null;
+    const label = own(STAGE_LABELS, stage) ? STAGE_LABELS[stage] : "";
+    const kind = job.outcome ? job.outcome.kind : job.state;
+    $("jobLive").textContent = job.state === "running" ? "Launch " + job.id + ": " + label :
+      "Launch " + job.id + " " + (job.state === "done" ? "done" : "failed") + ": " + (OUTCOME_LABELS[kind] || kind);
+  }
+  function serverRestarted(job) {
+    S.bootId = job.boot_id;
+    notice("The server restarted (its boot id changed): the form, the job and the run list were reset from the new server.");
+    S.job = null;
+    // the per-job state is keyed by job id, and a new server numbers its jobs from 1 again: none of it carries over
+    S.stageTimesFor = null; S.stageTimes = {}; S.stageMark = null; S.jobStarted = null; S.jobLiveKey = "";
+    if (S.pollTimer !== null) { clearTimeout(S.pollTimer); S.pollTimer = null; }
+    api("/api/form").then(res => {
+      if (!res.ok || !res.body) throw new Error(errorText(res));
+      const keep = S.form ? S.form.preset : null;
+      buildForm(res.body);
+      choosePreset(keep);
+      scheduleDryRun(0);
+    }).catch(err => notice("The server restarted, and its form could not be loaded: " + err.message));
+    handleJob(job, true);
+    loadListing();
+  }
+  function jobFinished(job) {
+    const kind = job.outcome ? job.outcome.kind : job.state;
+    document.title = (job.state === "done" ? "Done" : "Failed") + ": launch " + job.id + " (" + (OUTCOME_LABELS[kind] || kind) + ") - " + BASE_TITLE;
+    loadListing();
+    const dir = job.directory;
+    if (!dir || !validName(dir.experiment) || !validStamp(dir.timestamp) || job.state !== "done") return;
+    S.pendingNew = { experiment: dir.experiment, timestamp: dir.timestamp };
+    const touched = S.scene !== null && S.playerTouchedAt > S.launchedAt;
+    if (!touched && mayActNow()) {
+      const active = document.activeElement;
+      const quiet = !active || active === document.body || active === $("frame") || active === $("launchBtn");
+      showNewLaunch(quiet);
+    } else {
+      $("showNew").hidden = false;
+      renderJob();
+    }
+  }
+  function showNewLaunch(focus) {
+    const dir = S.pendingNew;
+    if (!dir) return;
+    S.pendingNew = null;
+    $("showNew").hidden = true;
+    openDirectory(dir, [], focus);
+    renderJob();
+  }
+  function offerPending(dir) {
+    // whether the "Show the new launch" button offers this directory (the job card then shows no second button for it)
+    return !$("showNew").hidden && S.pendingNew !== null && dir !== null &&
+      S.pendingNew.experiment === dir.experiment && S.pendingNew.timestamp === dir.timestamp;
+  }
+  function jobDirectory(job) {
+    const dir = job ? job.directory : null;
+    return dir && validName(dir.experiment) && validStamp(dir.timestamp) ? dir : null;
+  }
+  function renderJob() {
+    const body = clear($("jobBody"));
+    const job = S.job;
+    const root = S.info ? S.info.results_root : null;
+    renderPanelOther();
+    if (!job || job.state === "idle") {
+      renderBlocks(body, jobBlocks(job, { root: root }));
+      if (!jobRunning()) document.title = BASE_TITLE;
+      return;
+    }
+    const head = el("p", "jobhead");
+    head.appendChild(el("strong", null, "Launch " + job.id));
+    const pill = el("span", "pill" + (job.state === "done" ? " good" : (job.state === "failed" ? " bad" : "")), job.state === "running" ? "running" : (job.state === "done" ? "done" : "failed"));
+    head.appendChild(pill);
+    head.appendChild(el("span", "meta", (job.state === "running" ? "elapsed " : "took ") + fmtDuration(job.elapsed_s)));
+    body.appendChild(head);
+    const stages = el("ol", "stages");
+    stages.setAttribute("aria-label", "Stages");
+    const mine = job.id === S.jobStarted;  // launched from this page: its dry run's runs and parts are known
+    const seen = S.stageTimesFor === job.id;
+    stageItems(job, mine ? S.launchRuns : null, seen ? S.stageTimes : null, seen ? S.stageMark : null, mine ? S.launchItems : null).forEach(item => {
+      const li = el("li", item.state === "done" ? "done" : (item.state === "now" ? "now" : ""));
+      if (item.state === "now") li.setAttribute("aria-current", "step");
+      li.appendChild(el("span", null, item.label));
+      li.appendChild(el("span", "st", item.state));
+      if (item.took !== null) li.appendChild(el("span", "took", fmtDuration(item.took)));
+      const so = item.state === "now" ? nowText(item) : "";
+      if (so) li.appendChild(el("span", "took", so));
+      stages.appendChild(li);
+    });
+    body.appendChild(stages);
+    const dir = jobDirectory(job);
+    const opened = dir && S.dir && S.detail && S.dir.experiment === dir.experiment && S.dir.timestamp === dir.timestamp;
+    // the launch's own headline: its directory's default panel (the launched run's), never a pair picked later
+    const launchHead = opened && S.dirHeadline && S.dirHeadline.experiment === dir.experiment &&
+      S.dirHeadline.timestamp === dir.timestamp ? S.dirHeadline : null;
+    renderBlocks(body, jobBlocks(job, {
+      items: mine ? S.launchItems : null, headline: launchHead ? launchHead.text : null,
+      flagged: launchHead ? launchHead.flagged : false, why: launchHead ? launchHead.why : null, root: root
+    }));
+    // one way to the launch's directory: none while it is shown or loading, or while "Show the new launch" offers it
+    const showing = dir && S.dir && S.dir.experiment === dir.experiment && S.dir.timestamp === dir.timestamp;
+    if (dir && job.state !== "running" && !showing && !offerPending(dir)) {
+      const b = el("button", null, "Open this launch");
+      b.type = "button";
+      b.addEventListener("click", () => { openDirectory(dir, [], true, true); });
+      body.appendChild(b);
+    }
+    if (job.state === "running") document.title = "Running: launch " + job.id + " - " + BASE_TITLE;
+  }
+  function renderPanelOther() {
+    // when the results panel shows another directory than the launch in the job card, one line above it says so
+    const job = S.job;
+    const dir = jobDirectory(job);
+    const other = dir !== null && S.dir !== null && (S.dir.experiment !== dir.experiment || S.dir.timestamp !== dir.timestamp);
+    setText("panelOther", other ? "These are the results of " + S.dir.experiment + "/" + S.dir.timestamp + ", not of launch " +
+      job.id + " above (" + dir.experiment + "/" + dir.timestamp + (job.state === "running" ? ", still running" : "") + ")." : "");
+  }
+
+  // ------------------------------------------------------------------ the run browser
+  function loadListing() {
+    $("browserStatus").textContent = "Loading the results directories...";
+    return api("/api/results").then(res => {
+      if (!res.ok || !res.body) throw new Error(errorText(res));
+      S.listing = res.body;
+      renderBrowser();
+      if (S.derived) renderOpenRecorded(Array.isArray(S.derived.reproduces) ? S.derived.reproduces : []);
+      return res.body;
+    }).catch(err => {
+      $("browserStatus").textContent = "The results directories could not be loaded: " + err.message;
+      return null;
+    });
+  }
+  function findRow(dir) {
+    if (!S.listing || !dir) return null;
+    for (const g of S.listing.groups || []) {
+      for (const r of g.rows || []) if (r.experiment === dir.experiment && r.timestamp === dir.timestamp) return r;
+    }
+    return null;
+  }
+  function rowMeta(row, now) {
+    const why = row.reason && !row.playable && row.reason !== row.state ? " (" + row.reason + ")" : "";
+    const bits = [row.experiment + "/" + row.timestamp, row.state + why];
+    bits.push(fmtSize(row.size_bytes, row.size_is_lower_bound));
+    const git = row.git || {};
+    bits.push("git " + (git.hash || "unknown") + " (" + (git.state || "unknown") + ")");
+    if (row.server_start) bits.push("server start " + (row.server_start.hash || "unknown") + " (" + (row.server_start.state || "unknown") + ")");
+    const age = ageText(row.timestamp, now);
+    if (age) bits.push(age);
+    return bits.join("; ");
+  }
+  function renderBrowser() {
+    const box = clear($("groups"));
+    const listing = S.listing;
+    if (!listing) return;
+    const now = Date.now();
+    const running = listing.running;
+    let total = 0, hidden = 0;
+    (listing.groups || []).forEach(group => {
+      const rows = (group.rows || []).slice();
+      rows.sort((a, b) => {
+        const ra = running && a.experiment === running.experiment && a.timestamp === running.timestamp ? 1 : 0;
+        const rb = running && b.experiment === running.experiment && b.timestamp === running.timestamp ? 1 : 0;
+        return rb - ra;
+      });
+      const section = el("div", "group");
+      section.appendChild(el("h3", null, group.title + " (" + rows.length + ")"));
+      const ul = el("ul", "rows");
+      rows.forEach(row => {
+        total += 1;
+        const isRunning = row.state === "running";
+        if (S.playableOnly && !row.playable && !isRunning) { hidden += 1; return; }
+        const li = el("li", row.playable ? null : "off");
+        const desc = el("div", "desc", (isRunning ? "Running now: " : "") + (row.description || row.experiment));
+        li.appendChild(desc);
+        // a failed row's description already carries its FAILED.txt line ("failed: <line>"): not repeated here
+        li.appendChild(el("div", "meta", rowMeta(row, now) + (row.line && row.state !== "complete" && row.state !== "failed" ? ". " + row.line : "")));
+        const cited = Array.isArray(row.cited_in) ? row.cited_in : [];
+        if (cited.length) li.appendChild(el("div", "meta", "Cited in " + cited.map(c => c.title + " (" + c.path + ")").join("; ")));
+        const act = el("div", "act");
+        if (row.playable) {
+          const b = el("button", null, "Open");
+          b.type = "button";
+          b.setAttribute("aria-label", "Open " + row.experiment + "/" + row.timestamp);
+          b.addEventListener("click", () => { openDirectory({ experiment: row.experiment, timestamp: row.timestamp }, [], true, true); });
+          act.appendChild(b);
+        } else {
+          act.appendChild(el("span", "reason", isRunning ? "running: no scene yet" : "no scene: " + (row.reason || row.state)));
+        }
+        li.appendChild(act);
+        if (S.dir && S.dir.experiment === row.experiment && S.dir.timestamp === row.timestamp) li.setAttribute("aria-current", "true");
+        ul.appendChild(li);
+      });
+      if (!ul.childElementCount) ul.appendChild(el("li", "meta", rows.length ? "Every directory here is hidden by the filter." : "None yet."));
+      section.appendChild(ul);
+      box.appendChild(section);
+    });
+    const others = listing.not_listed ? "; " + plural(listing.not_listed, "other entry", "other entries") +
+      " of the results root not listed (not a results directory)" : "";
+    $("browserStatus").textContent = plural(total, "directory", "directories") + (hidden ? ", " + hidden + " hidden (not playable)" : "") + others + ".";
+  }
+
+  // ------------------------------------------------------------------ a directory: its panel and its scene
+  function detailPath(dir, runs) {
+    // /<experiment>/<timestamp> of a directory, with /<a,b> for the panel of the runs the scene shows (/api/panel/...)
+    const base = "/" + encodeURIComponent(dir.experiment) + "/" + encodeURIComponent(dir.timestamp);
+    return runs && runs.length ? base + "/" + runs.map(encodeURIComponent).join(",") : base;
+  }
+  function openDirectory(dir, wanted, focus, chosen) {
+    // chosen: the user picked this directory (a run-list Open, Open this launch, SP1's recorded run), which counts as
+    // touching the player, so a launch that ends meanwhile offers its scene instead of replacing this one
+    if (!dir || !validName(dir.experiment) || !validStamp(dir.timestamp)) return;
+    S.dir = { experiment: dir.experiment, timestamp: dir.timestamp };
+    S.detail = null;
+    S.dirHeadline = null;
+    S.panelAsked = "";
+    const panel = clear($("panelBody"));
+    panel.appendChild(el("p", "meta", "Loading " + dir.experiment + "/" + dir.timestamp + "..."));
+    renderPanelOther();
+    renderBrowser();
+    writeHash();
+    const asked = S.dir;
+    api("/api/results" + detailPath(dir, null)).then(res => {
+      if (S.dir !== asked) return;
+      if (!res.ok || !res.body) {
+        clear($("panelBody")).appendChild(el("p", "err", "The directory could not be opened: " + errorText(res)));
+        return;
+      }
+      S.detail = res.body;
+      // the directory's own headline (its default panel: an app run's launched run), kept for the job card whatever
+      // pair the pickers show later
+      const h = res.body.panel && res.body.panel.headline ? res.body.panel.headline : null;
+      const flags = res.body.panel && Array.isArray(res.body.panel.flags) ? res.body.panel.flags : [];
+      S.dirHeadline = {
+        experiment: dir.experiment, timestamp: dir.timestamp, text: h && h.text ? h.text : null, flagged: !!(h && h.flagged),
+        why: h && h.kind === DID_NOT_FLY && flags.length ? String(flags[0]) : null
+      };
+      buildPickers(res.body);
+      const pair = startPair(res.body, wanted);
+      renderPanel(res.body);
+      if (pair.length && res.body.panel && !samePair(pair, panelPair(res.body))) loadPanel(pair);
+      if (res.body.row && res.body.row.playable && pair.length) loadScene(dir.experiment, dir.timestamp, pair, focus, chosen);
+      else clearScene("No scene for this directory: " + ((res.body.row && (res.body.row.reason || res.body.row.state)) || "no run with a time series") + ".");
+      renderJob();
+    }).catch(err => {
+      if (S.dir !== asked) return;
+      clear($("panelBody")).appendChild(el("p", "err", "The directory could not be opened: " + err.message));
+    });
+  }
+  function loadPanel(pair) {
+    // the results panel of the runs the scene shows (the panel always describes the runs in the frame)
+    if (!S.dir || !Array.isArray(pair) || !pair.length || !pair.every(validName)) return;
+    const dir = S.dir, key = pair.join(",");
+    if (S.panelAsked === key) return;
+    S.panelAsked = key;
+    clear($("panelBody")).appendChild(el("p", "meta", "Loading the results panel of " + pair.join(" beside ") + "..."));
+    api("/api/panel" + detailPath(dir, pair)).then(res => {
+      if (S.dir !== dir || S.panelAsked !== key) return;
+      if (!res.ok || !res.body) {
+        clear($("panelBody")).appendChild(el("p", "err", "The results panel of " + pair.join(" beside ") + " could not be built: " + errorText(res)));
+        return;
+      }
+      S.detail = res.body;
+      renderPanel(res.body);
+      renderJob();
+    }).catch(err => {
+      if (S.dir !== dir || S.panelAsked !== key) return;
+      clear($("panelBody")).appendChild(el("p", "err", "The results panel could not be loaded: " + err.message));
+    });
+  }
+  function renderSp1Reference(h) {
+    const body = clear($("sp1Body"));
+    if (!h) { body.appendChild(el("p", "meta", "Not given by this server.")); return; }
+    renderBlocks(body, [{ t: "box", cls: "sp1", blocks: headlineBlocks(h, "SP1's headline (preliminary), shown only with its caveats") }]);
+  }
+  function renderPanel(detail) {
+    renderBlocks(clear($("panelBody")), panelBlocks(detail));
+  }
+
+  // ------------------------------------------------------------------ the scene frame
+  function buildPickers(detail) {
+    const runs = (detail.runs || []).filter(r => validName(r.name));
+    $("picks").hidden = runs.length === 0;
+    [["pickL", false], ["pickR", true]].forEach(spec => {
+      const select = clear($(spec[0]));
+      if (spec[1]) {
+        const none = el("option", null, "(none: one full-width panel)");
+        none.value = "";
+        select.appendChild(none);
+      }
+      groupRuns(runs).forEach(g => {
+        const og = document.createElement("optgroup");
+        og.setAttribute("label", g.label);
+        g.runs.forEach(r => {
+          const opt = el("option", null, (r.label || r.name) + (r.has_rows ? "" : " (no time series)"));
+          opt.value = r.name;
+          opt.disabled = r.has_rows !== true;
+          og.appendChild(opt);
+        });
+        select.appendChild(og);
+      });
+    });
+  }
+  function syncPickers() {
+    const runs = S.scene ? S.scene.runs : [];
+    $("pickL").value = runs[0] || "";
+    $("pickR").value = runs[1] || "";
+    const notes = clear($("pickNotes"));
+    const byName = {};
+    (S.detail && Array.isArray(S.detail.runs) ? S.detail.runs : []).forEach(r => { byName[r.name] = r; });
+    runs.forEach(n => { if (own(byName, n) && byName[n].note) notes.appendChild(el("li", null, n + ": " + byName[n].note)); });
+    notes.hidden = !notes.childElementCount;
+  }
+  function pickersChanged() {
+    if (!S.dir || !S.detail) return;
+    const left = $("pickL").value, right = $("pickR").value;
+    const pair = [left].concat(right && right !== left ? [right] : []).filter(validName);
+    if (!pair.length) return;
+    // the new pair opens at the moment the user was looking at (the scene clamps it to its runs)
+    loadScene(S.dir.experiment, S.dir.timestamp, pair, false, true, frameTime());
+    if (!samePair(pair, panelPair(S.detail))) loadPanel(pair);
+  }
+  function clearScene(text) {
+    S.scene = null;
+    S.frameState = "blank";
+    const frame = $("frame");
+    frame.hidden = true;
+    frame.src = "about:blank";
+    $("openPage").hidden = true;
+    $("sceneStatus").textContent = text;
+    syncPickers();
+    writeHash();
+  }
+  function sceneStatusText() {
+    return "Scene: " + S.scene.experiment + "/" + S.scene.timestamp + ", " + S.scene.runs.join(" beside ") + ".";
+  }
+  function focusScene() {
+    // the frame's top at the window's top: its transport and canvas (sized by --app-vh) then fit the window at the
+    // widths FRAME_VIEW_ALLOWANCE_PX names
+    $("frame").scrollIntoView({ block: "start" });
+    try { $("frame").focus({ preventScroll: true }); $("frame").contentWindow.focus(); } catch (e) { /* focus stays here */ }
+  }
+  function frameTime() {
+    // the clock [s after release] of the scene in the frame (its scrub's value; same origin), or null
+    const doc = frameDoc();
+    const scrub = doc ? doc.getElementById("scrub") : null;
+    const t = scrub ? Number(scrub.value) : NaN;
+    return Number.isFinite(t) ? t : null;
+  }
+  function loadScene(experiment, timestamp, runs, focus, chosen, keepT) {
+    // The only place a scene is asked for: after the user's own action, or at load when the user opened the page.
+    // chosen: the user asked for this scene (the run list, the pickers, Open this launch, SP1's recorded run), which
+    // counts as touching the player (design 4.7: a launch that ends then offers its scene, never replaces this one).
+    // keepT: the clock time [s] the new scene opens at (a change of the pickers keeps the moment), else its start.
+    if (!mayActNow()) return;
+    if (chosen === true) S.playerTouchedAt = Date.now();
+    const path = scenePath(experiment, timestamp, runs);
+    if (path === null) { clearScene("No scene: the run names are not valid."); return; }
+    const current = S.scene ? scenePath(S.scene.experiment, S.scene.timestamp, S.scene.runs) : null;
+    if (current === path && (S.frameState === "ready" || S.frameState === "loading")) {
+      // the scene already in the frame, or on its way: a new src would only change the fragment (no load event)
+      S.scene.focus = focus === true;
+      if (S.frameState === "ready") {
+        $("sceneStatus").textContent = sceneStatusText();
+        applyTheme();
+        if (S.scene.focus) focusScene();
+      }
+      syncPickers();
+      writeHash();
+      return;
+    }
+    S.scene = { experiment: experiment, timestamp: timestamp, runs: runs.slice(), focus: focus === true };
+    S.frameState = "loading";
+    S.playerTouchedAt = chosen === true ? Date.now() : 0;
+    $("sceneStatus").textContent = "Loading the scene of " + experiment + "/" + timestamp + " (" + runs.join(", ") + "): the server builds it once, which takes a few seconds for a large directory.";
+    const frame = $("frame");
+    frame.hidden = false;
+    resetFrameHeight();
+    // the runs in the hash too, in the pickers' order: the path alone leaves the order to the scene's default pair
+    frame.src = path + sceneHash(runs, effectiveTheme(), keepT, true);
+    const link = $("openPage");
+    link.href = path + sceneHash(runs, effectiveTheme(), null, false);
+    link.hidden = false;
+    syncPickers();
+    writeHash();
+  }
+  function frameLoaded() {
+    // a load of the frame: the scene asked for (loading), or the blank page a failed or cleared scene leaves
+    const frame = $("frame");
+    if (!S.scene || S.frameState !== "loading") return;
+    let doc = null, hook = null;
+    try { doc = frame.contentDocument; hook = frame.contentWindow ? frame.contentWindow.launchsimScene : null; } catch (e) { doc = null; }
+    if (!doc || !hook) {
+      S.frameState = "failed";
+      frame.hidden = true;
+      frame.src = "about:blank";
+      $("sceneStatus").textContent = "No scene was shown for " + S.scene.experiment + "/" + S.scene.timestamp + " (" + S.scene.runs.join(", ") +
+        "): the server refused it or the page did not start. Open as a page shows the server's reason.";
+      return;
+    }
+    S.frameState = "ready";
+    giveViewHeight(doc);
+    doc.documentElement.setAttribute("data-theme", effectiveTheme());
+    ["pointerdown", "keydown", "input", "change"].forEach(type => doc.addEventListener(type, () => { S.playerTouchedAt = Date.now(); }, true));
+    $("sceneStatus").textContent = sceneStatusText();
+    fitFrame();
+    if (S.scene.focus) focusScene();
+  }
+  function frameOnScreen() {
+    // whether some of the scene frame is in the window (the keys go to the player only then)
+    const r = $("frame").getBoundingClientRect();
+    return !$("frame").hidden && r.bottom > 0 && r.top < window.innerHeight && r.height > 0;
+  }
+  function forwardKey(e) {
+    const arrow = has(ARROW_KEYS, e.key);
+    if ((!has(FORWARD_KEYS, e.key) && !arrow) || e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
+    const t = e.target;
+    const tag = t && t.tagName ? t.tagName : "";
+    if (["INPUT", "SELECT", "TEXTAREA", "BUTTON", "A", "SUMMARY", "OPTION", "IFRAME"].indexOf(tag) >= 0 || (t && t.isContentEditable)) return;
+    const doc = frameDoc();
+    // every key only while the scene is on screen: off screen, Space scrolls the page and nothing counts as a touch
+    if (!doc || !frameOnScreen()) return;
+    e.preventDefault();
+    S.playerTouchedAt = Date.now();
+    const Kb = $("frame").contentWindow.KeyboardEvent;
+    doc.dispatchEvent(new Kb("keydown", { key: e.key, code: e.code, shiftKey: e.shiftKey, bubbles: true, cancelable: true }));
+  }
+  function resetFrameHeight() {
+    S.frameHeight = FRAME_START_PX;
+    $("frame").style.height = FRAME_START_PX + "px";
+  }
+  function giveViewHeight(doc) {
+    // the window height the scene sizes its canvas by (inside the frame, vh would be the frame's own height)
+    doc.documentElement.style.setProperty("--app-vh", Math.max(0, Math.round(window.innerHeight - FRAME_VIEW_ALLOWANCE_PX)) + "px");
+  }
+  function fitFrame() {
+    // The frame as tall as the scene's content, so it never scrolls: the scene's body measured (its height does not
+    // depend on the frame's, since the canvas follows --app-vh), plus the frame's own border.
+    const doc = frameDoc();
+    if (!doc || !doc.body) return;
+    const frame = $("frame");
+    const chrome = frame.offsetHeight - frame.clientHeight;
+    const h = Math.ceil(doc.body.getBoundingClientRect().height);
+    const px = Math.min(FRAME_MAX_PX, Math.max(FRAME_MIN_PX, h + chrome));
+    if (px !== S.frameHeight) { S.frameHeight = px; frame.style.height = px + "px"; }
+  }
+  function windowResized() {
+    const doc = frameDoc();
+    if (doc) giveViewHeight(doc);
+    fitFrame();
+  }
+  function heightMessage(e) {
+    // the scene's message that its height changed: only from the frame's own window and this page's own origin, with
+    // a number; the page then measures the scene itself (the posted figure is never below the frame's own height)
+    if (e.source !== $("frame").contentWindow || e.origin !== SELF_ORIGIN) return;
+    const d = e.data;
+    if (!d || typeof d !== "object" || d.type !== HEIGHT_MESSAGE) return;
+    const h = Number(d.height);
+    if (!Number.isFinite(h)) return;
+    fitFrame();
+  }
+
+  // ------------------------------------------------------------------ start
+  function firstAction(e) {
+    if (!e.isTrusted || S.userActed) return;
+    S.userActed = true;
+    if (S.fromOtherSite) {
+      notice("");
+      if (S.form) scheduleDryRun(0);
+    }
+  }
+  function restoreView(view) {
+    if (!view.dir) return;
+    if (findRow(view.dir)) openDirectory(view.dir, view.runs, false);
+    else clearScene("The directory named in the address (" + view.dir.experiment + "/" + view.dir.timestamp + ") is not in the run list.");
+  }
+  function hashChanged() {
+    // the address's hash changed (typed, a bookmark): the view follows it, as at load; never on a page another site
+    // opened (its hash is dropped at load, and a later change could come from that site)
+    if (S.fromOtherSite) return;
+    const view = readHash();
+    if (view.theme && view.theme !== S.theme) { S.theme = view.theme; applyTheme(); }
+    if (view.preset && S.form && view.preset !== S.form.preset && own(S.presets, view.preset)) { choosePreset(view.preset); scheduleDryRun(0); }
+    const shown = S.scene && S.dir && view.dir && S.dir.experiment === view.dir.experiment && S.dir.timestamp === view.dir.timestamp &&
+      (!view.runs.length || samePair(view.runs, S.scene.runs));
+    if (view.dir && !shown) restoreView(view);
+  }
+  function boot() {
+    $("addr").textContent = String(DATA.url || "").replace(/^http:\/\//, "").replace(/\/$/, "");
+    if (S.fromOtherSite) {
+      // the address another site gave the page is dropped, so no later load of it restores that site's view
+      try { history.replaceState(null, "", "/"); } catch (e) { /* a page without history */ }
+    }
+    const plan = bootPlan(S.fromOtherSite ? true : false, S.fromOtherSite ? null : readHash());
+    const view = plan.restore || parseHash("");
+    if (view.theme) S.theme = view.theme;
+    applyTheme();
+    if (S.fromOtherSite) {
+      notice("Opened from a link on another site, or by a browser that does not say where a request came from: this page " +
+        "asked the server only for the form, the job and the run list. Until you use the page it does not check the form, " +
+        "restore the view in the address or load a scene.");
+    }
+    ["pointerdown", "keydown", "input"].forEach(type => document.addEventListener(type, firstAction, true));
+    document.addEventListener("keydown", forwardKey);
+    window.addEventListener("message", heightMessage);
+    window.addEventListener("resize", windowResized);
+    window.addEventListener("hashchange", hashChanged);
+    $("frame").addEventListener("load", frameLoaded);
+    $("f-preset").addEventListener("change", () => { choosePreset($("f-preset").value); writeHash(); scheduleDryRun(0); });
+    // the preset back after edits (choosing the same option again fires no change event)
+    $("resetPreset").addEventListener("click", () => { resetPreset(); });
+    $("launchBtn").addEventListener("click", () => { launchClicked(); });
+    $("confirmYes").addEventListener("click", () => { startLaunch(); });
+    $("confirmNo").addEventListener("click", () => { hideConfirm(); $("launchBtn").focus(); });
+    $("usePadStart").addEventListener("click", () => { usePadStart(); });
+    $("openRecorded").addEventListener("click", () => { const dir = sp1Directory(); if (dir) openDirectory(dir, [], true, true); });
+    $("showNew").addEventListener("click", () => { showNewLaunch(true); });
+    $("pickL").addEventListener("change", pickersChanged);
+    $("pickR").addEventListener("change", pickersChanged);
+    $("playableOnly").addEventListener("change", () => { S.playableOnly = $("playableOnly").checked; renderBrowser(); });
+    $("refresh").addEventListener("click", () => { loadListing(); });
+    $("theme").addEventListener("change", () => { S.theme = $("theme").value; applyTheme(); writeHash(); });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+    // back on the page: one GET /api/job, so a server restart (a new boot id) or a launch from elsewhere shows
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && S.form && S.pollTimer === null) pollJob(); });
+
+    api("/api/form").then(res => {
+      if (!res.ok || !res.body) throw new Error(errorText(res));
+      buildForm(res.body);
+      choosePreset(view.preset && own(S.presets, view.preset) ? view.preset : res.body.default_preset);
+      // a user who acted before the form arrived (firstAction found no form to check) gets the check now
+      if (plan.dryRun || mayActNow()) scheduleDryRun(0);
+      else { $("derivedState").textContent = "Not checked yet: this page sends nothing to the server until you use it."; S.checking = false; renderLaunch(); }
+      return api("/api/job");
+    }).then(res => {
+      if (!res.ok || !res.body) throw new Error(errorText(res));
+      handleJob(res.body, true);
+      return loadListing();
+    }).then(listing => {
+      if (!listing || !plan.restore) return;
+      restoreView(view);
+    }).catch(err => {
+      notice("The app could not start: " + err.message + ". Is the server running? Reload this page once it is.");
+      renderLaunch();
+    });
+  }
+  boot();
 })();
 </script>
 </body>

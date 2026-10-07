@@ -548,7 +548,7 @@ def test_outcome_did_not_fly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 def test_outcome_flagged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A run with a flag: flagged, the count named."""
     outcome = _fake_launch(tmp_path, monkeypatch, "silo_cold", flags={"silo_cold": ["f1"]})
-    assert outcome.kind == app.OUTCOME_FLAGGED and outcome.message == "silo_cold: 1 flag(s)"
+    assert outcome.kind == app.OUTCOME_FLAGGED and outcome.message == "silo_cold: 1 flag"
 
 
 def test_outcome_offload_found_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -590,7 +590,7 @@ def test_outcome_flagged_by_a_bug_suspect_comparison_or_a_pad_control_flag(
     form = dataclasses.replace(appform.preset_form(basis, "silo_cold_s1"), paired_pad=False)
     outcome = app.run_launch(basis, form, results_root=tmp_path / "b", **common)
     assert outcome.kind == app.OUTCOME_FLAGGED
-    assert outcome.message == "pad__offload_stage1: 1 flag(s)"
+    assert outcome.message == "pad__offload_stage1: 1 flag"
 
 
 def _write_dir(folder: Path, metrics: dict[str, Any]) -> Path:
@@ -685,7 +685,7 @@ def test_classify_reads_the_offload_record(tmp_path: Path) -> None:
         "control_flags",
         {"cases": [s2], "pad_controls": [{**control, "flags": ["search_failed: edge: x"]}]},
     )
-    assert "pad control stage2: 1 flag(s)" in notes
+    assert "pad control stage2: 1 flag" in notes
     # a paired pad whose search failed (a run of the offload block, not of the case)
     kind, message, _ = classify(
         "paired_not_flown",
@@ -715,9 +715,10 @@ def test_classify_reads_the_offload_record(tmp_path: Path) -> None:
     assert kind == app.OUTCOME_COMPLETE and notes == ()
     kind, message, notes = classify("complete", {"cases": [{**solve, "status": "ok"}]})
     assert kind == app.OUTCOME_COMPLETE and notes == ()
+    # in words, not check IDs (review of A5, usability): the status name kept in parentheses
     assert message == (
-        "complete: pad, silo reached the target orbit; no flag, failed verification or "
-        "bug_suspect check"
+        "complete: pad, silo reached the target orbit; no flag, no failed verification and no "
+        "result marked as a suspected bug (status bug_suspect) recorded"
     )
 
 

@@ -175,6 +175,15 @@ FIXED_KEY_TAGS: dict[str, str] = {
 }
 """The tag of an imposed offload in a neutral case name, {} replaced by the mass [t] or
 the percentage (SP1's names: silo_cold_fix5pct)."""
+FIXED_KEY_WORDS: dict[str, tuple[str, str]] = {
+    "stage1_t": ("stage 1", "its"),
+    "stage1_fraction": ("stage 1", "its"),
+    "stage2_t": ("stage 2", "its"),
+    "stage2_fraction": ("stage 2", "its"),
+    "both_fraction": ("both stages", "each"),
+}
+"""An imposed offload's key in a form's one-line description (``describe``): the tanks it
+is taken from, and the word before 'load' for a fraction (its load, each load)."""
 ASSIST_UNION_TAGS = frozenset({"none", "constant_accel", *PLANNED_MODELS})
 """Discriminator tags pydantic puts into an error location after ``assist``; dropped
 from the location a refusal names."""
@@ -1047,12 +1056,13 @@ def describe(form: Form) -> str:
             parts.append(ADVANCED_SOLVE_READING)
     elif form.propellant == PROPELLANT_FIXED:
         assert form.fixed_key is not None
+        tanks, whose = FIXED_KEY_WORDS[form.fixed_key]
         value = (
-            f"{float(to_percent(float(form.fixed_value or 0.0))):g}% of the load"
+            f"{float(to_percent(float(form.fixed_value or 0.0))):g}% of {whose} load"
             if "fraction" in form.fixed_key
             else f"{_num(form.fixed_value)} t"
         )
-        parts.append(f"imposed offload ({form.fixed_key}): {value}")
+        parts.append(f"imposed offload from {tanks}: {value}")
         if form.fixed_key in ADVANCED_FIXED_KEYS:
             parts.append(ADVANCED_FIXED_READING)
     if form.propellant != PROPELLANT_FULL:
@@ -1388,15 +1398,20 @@ both are a verified solve each, SP1's budget widened, not measured."""
 PAIRED_PAD_S = SEARCHED_RUN_S
 """A paired pad (one payload search)."""
 EXPECTED_DURATION_NOTE = (
-    "estimated from run times measured on this machine, the upper ends widened from runs "
-    "under load (other jobs running); a quiet machine can finish below the lower end (the "
-    "silo_cold_s1 preset took 90 s in the A4 review); a stage-1 lag startup multiplies its "
-    "runs by 1 + 1 s / tau (2-3x a ramp run, measured at tau 1 s and 0.5 s); a stage-2 or "
-    "both pad control or solve is SP1's budget, not measured; the same run has taken from "
-    "12 s to 46 s here, so this is a range, not a promise"
+    "estimated from run times measured on this machine during development: the upper ends "
+    "widened from runs under load (other jobs running) and the lower ends set below the "
+    "fastest runs measured (12 s for one searched run), so a launch can end anywhere in its "
+    "range; the silo_cold_s1 preset took 90 s in one launch and 102 to 155 s in others with "
+    "a cached pad, inside its range; a stage-1 lag startup multiplies its runs by 1 + 1 s / "
+    "tau (2-3x a ramp run, measured at tau 1 s and 0.5 s); a stage-2 or both pad control or "
+    "solve is not measured and is given a stage-1 solve's range, which holds SP1's "
+    "pre-registered budget of 90 to 110 s for each; one searched run (the pad or a variant) "
+    "has taken from 12 s to 46 s here, so this is a range, not a promise"
 )
 """What the page says beside every expected duration (``derived`` and each Preset carry
-it)."""
+it): how the ranges are made, in words (no step IDs), the lower ends said to be set
+below the fastest runs (SEARCHED_RUN_S: not a bound) and the stage-2 and both parts said
+to take a stage-1 solve's range (SOLVE_WITH_VERIFICATION_S), which covers SP1's budget."""
 
 
 def stage1_lag_tau_s(run: ResolvedRun) -> float | None:

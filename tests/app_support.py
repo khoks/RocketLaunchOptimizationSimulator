@@ -15,7 +15,10 @@ loaded by path as tests/golden_1d_support.py is.
   run, solve, matched run and paired-pad comparison is a cheap fake, so a launch with an
   offload block runs in well under a second;
 - ``git_states``: ``sim.git_info`` replaced by a fake that returns given states in turn
-  (the server start, then each launch).
+  (the server start, then each launch);
+- ``run_page_pure``: the app page's pure block (templates/app.html, step A5) run under node
+  with a harness, and ``PAGE_BLOCKS_HARNESS``, which flattens the page's results-panel and
+  job-card blocks into [tag, text] lines (tests/test_app_page.py and test_app_server.py).
 
 Nothing here writes outside the folders a test hands in.
 """
@@ -23,7 +26,10 @@ Nothing here writes outside the folders a test hands in.
 from __future__ import annotations
 
 import copy
+import json
 import math
+import shutil
+import subprocess
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import SimpleNamespace
@@ -74,6 +80,76 @@ CONTROL_LOGS = (
     OffloadEval(OFFLOAD_X2_LOG, 2.0, -0.033, 0.0, None),
 )
 """Logged evaluations of a fake stage-1 pad control: one bracket of m_res = 0."""
+
+
+# ------------------------------------------------------------------ the app page under node
+
+NODE = shutil.which("node")
+"""node, which runs the app page's pure block (None: those tests are skipped)."""
+PAGE_PURE_BEGIN = (
+    "// ------------------------------------------------------------------ pure functions: begin"
+)
+PAGE_PURE_END = (
+    "// ------------------------------------------------------------------ pure functions: end"
+)
+PAGE_BLOCKS_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+function flat(blocks, out) {
+  blocks.forEach(b => {
+    if (b.t === "box" || b.t === "fold") {
+      out.push([b.t + "." + b.cls, b.t === "fold" ? b.summary : ""]);
+      flat(b.blocks, out);
+      out.push(["/" + b.t, ""]);
+    } else if (b.t === "ul") b.items.forEach(i => out.push(["li", i]));
+    else if (b.t === "kv") b.rows.forEach(r => out.push(["kv", r[0] + ": " + r[1]]));
+    else if (b.t === "details") {
+      out.push(["summary", b.summary]);
+      b.items.forEach(i => out.push(["li", i]));
+    } else if (b.t === "strongs") b.items.forEach(i => out.push(["li", i[0] + " " + i[1]]));
+    else out.push([b.t + (b.cls ? "." + b.cls : ""), b.text]);
+  });
+  return out;
+}
+const out = {};
+out.panels = (input.details || []).map(d => flat(panelBlocks(d), []));
+out.jobs = (input.jobs || []).map(j => flat(jobBlocks(j[0], j[1]), []));
+out.stages = (input.jobs || []).map(j => {
+  const ctx = j[1] || {};
+  return stageItems(j[0], ctx.runs || null, ctx.times || null, ctx.mark || null, ctx.items || null);
+});
+out.now = out.stages.map(s => s.filter(i => i.state === "now").map(nowText));
+process.stdout.write(JSON.stringify(out));
+"""
+"""Run with ``run_page_pure``: {details: [GET /api/results/... records], jobs: [[job,
+ctx]]} -> {panels, jobs: [[tag(.class), text]] per record, stages (stageItems with the
+ctx's ``runs``, ``times``, ``mark`` and ``items``), now (nowText of each running
+stage)}; a box opens with 'box.<class>' and closes with '/box', a fold opens with
+'fold.<class>' and its summary and closes with '/fold', a list item is 'li', a key-value
+row 'kv'."""
+
+
+def run_page_pure(harness: str, case: Any, tmp_path: Path) -> Any:
+    """The app page's pure block (app.load_app_template, between PAGE_PURE_BEGIN and
+    PAGE_PURE_END) with ``harness`` appended, run under node on ``case`` (JSON in a file,
+    the script's argv[2]); the harness writes one JSON value to stdout."""
+    assert NODE is not None
+    template = app.load_app_template()
+    start, end = template.index(PAGE_PURE_BEGIN), template.index(PAGE_PURE_END)
+    js = tmp_path / "page_pure.js"
+    js.write_text(template[start:end] + harness, encoding="utf-8", newline="\n")
+    data = tmp_path / "page_case.json"
+    data.write_text(json.dumps(case), encoding="utf-8", newline="\n")
+    proc = subprocess.run(
+        [NODE, str(js), str(data)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
 
 
 # ------------------------------------------------------------------ files and bases

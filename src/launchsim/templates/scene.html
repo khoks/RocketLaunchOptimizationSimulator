@@ -211,6 +211,32 @@ html[data-embed="1"] .wrap { padding-block: 8px; }
 @container scenepanel (width < 560px) {
   #scene.two { height: calc(2 * clamp(900px, 125vh, 1300px) + 12px); }
 }
+/* In the app's frame (embed mode; the app page's frame contract, SP2 step A5): the app sets the frame's height to
+   this page's own height, so in the frame vh is that height, and a canvas sized in vh would grow with the frame up
+   to each clamp's top. The app gives the height of its own window as --app-vh, and these rules, the seven canvas
+   heights above with vh read from it (100vh as --app-vh, 125vh as 1.25 times it), size the canvas as the page
+   would be in that window. The app's own run selectors choose the runs, so the frame's are hidden; the app's card
+   already insets the frame, so the page keeps a narrow inset of its own (two panels sit side by side from a 1024 px
+   window, a classic scrollbar included). A page opened on its own has no data-embed and none of this applies. */
+html[data-embed="1"] .runpick { display: none; }
+html[data-embed="1"] .wrap { padding-inline: 8px; }
+html[data-embed="1"] #scene { height: clamp(420px, calc(var(--app-vh, 100vh) - 240px), 760px); }
+html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh) - 160px), 800px); }
+@media (max-width: 900px) {
+  html[data-embed="1"] #scene { height: clamp(440px, calc(var(--app-vh, 100vh) - 300px), 760px); }
+}
+@container scenepanel (width < 560px) {
+  html[data-embed="1"] #scene { height: clamp(900px, calc(1.25 * var(--app-vh, 100vh)), 1300px); }
+}
+@container scenepanel (width < 1132px) {
+  html[data-embed="1"] #scene.two { height: clamp(900px, calc(1.25 * var(--app-vh, 100vh)), 1300px); }
+}
+@container scenepanel (width < 900px) {
+  html[data-embed="1"] #scene.two { height: calc(2 * clamp(440px, calc(var(--app-vh, 100vh) - 300px), 760px) + 12px); }
+}
+@container scenepanel (width < 560px) {
+  html[data-embed="1"] #scene.two { height: calc(2 * clamp(900px, calc(1.25 * var(--app-vh, 100vh)), 1300px) + 12px); }
+}
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 </head>
