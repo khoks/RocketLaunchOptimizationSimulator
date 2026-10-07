@@ -1246,7 +1246,7 @@ decision.
 | A4b | Server | app.py, cli.py | raw-socket guard table (the survey's 38 cases plus Sec-Fetch-Site, path decoding, body limits, two simultaneous launches); header table; injection test; leak test; Ctrl+Break subprocess test | Only 127.0.0.1 bound and a second server fails; no client path opened; an interrupted job leaves FAILED.txt; security review | [x] | 48c540f |
 | A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [x] | ed0f4bb |
 | | Checkpoint 2: the request is met | | | | | |
-| A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [ ] | |
+| A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [x] | 637994a |
 | A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [ ] | |
 | A8 | Close | docs, TODO.md, memory | full suite | The 17 exit criteria; close-out question to the user; SP7's file fact-checked after the last code commit; handoff, memory, cold read; push and Pages | [ ] | |
 
@@ -1791,7 +1791,24 @@ Also from the design's section 8:
   Commit ed0f4bb.
 - Checkpoint 2 reached: the request is met (form, Launch, progress, the scene side by side,
   browse and replay, every app run a normal exploratory results directory).
-- Next: step A6v (the MP4 export from the app).
+- Step A6v (2026-10-07): video.py, the video routes, the Save-video control, captureFrame
+  with the server's footer. Workflow: implementer; security, compliance and honesty
+  reviewers, three passes; three fix rounds. Gate (independent, headless Edge with real
+  clicks): pass on G1-G5 and S1-S5 (pad beside silo_cold_s1 exported at 24 fps and 1280 px:
+  1,800 frames in 32 s, 6.1 MB, and at the natural length 1,727 frames at 20 fps; the
+  footer on frames at five points; 73 raw-socket checks on the frame route; Cancel and
+  Ctrl+Break leave nothing; all 1,811 requests to 127.0.0.1). Deviations, with the
+  reason: the server answers HTTP/1.1 with a per-request deadline (A4b chose HTTP/1.0 on
+  the survey's advice; under load a frame post per connection was lost to loopback
+  connection churn, the honesty reviewer's blocker); the default fps is 20, not 24, so
+  the default pair's natural length (86.4 s) fits the design's 1,800-frame cap (24 fps
+  scales the clip to 75 s and says so on the page); plots.py's footnote line reads "no
+  sized structural mass" and names a penalty row's assumed mass, so the frame's fixed
+  line and the run's own structure line agree (one caveat source). The payload's
+  frame_caveat field stays for frames captured from the standalone page, where no server
+  supplies the footer. Fast suite 1665 passed, 41 deselected. Commit 637994a.
+- Next: step A7 (full visual QA through the app, QA fixes, the gallery scene page and
+  video, the demo README; then the demo launches from the clean tree).
 
 ## 12. Deviations from the plan
 
