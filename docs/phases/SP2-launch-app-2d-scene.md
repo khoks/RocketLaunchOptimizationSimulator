@@ -1244,7 +1244,7 @@ decision.
 | | Checkpoint 1: `launchsim scene` is complete | | | | | |
 | A4 | appform and `run_launch` | appform.py, app.py, config.py, summary.py | each preset resolves to the committed variant; every refusal one line and nothing written; key-by-key equality with `run_experiment`; faked-seam offload launch with a fresh and a cached pad; counting test; banner and both git states; one slow real launch with a stage-1 solve | Fast and slow suites; honesty review of the banner | [x] | 6f22046 |
 | A4b | Server | app.py, cli.py | raw-socket guard table (the survey's 38 cases plus Sec-Fetch-Site, path decoding, body limits, two simultaneous launches); header table; injection test; leak test; Ctrl+Break subprocess test | Only 127.0.0.1 bound and a second server fails; no client path opened; an interrupted job leaves FAILED.txt; security review | [x] | 48c540f |
-| A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [ ] | |
+| A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [x] | ed0f4bb |
 | | Checkpoint 2: the request is met | | | | | |
 | A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [ ] | |
 | A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [ ] | |
@@ -1774,8 +1774,24 @@ Also from the design's section 8:
   run_launch changed by one item (the pad-stage progress report carries the directory, so
   the job record and the stop handling know it). Fast suite 1592 passed, 37 deselected.
   KI-037 logged (Ctrl+Break under `uv run`). Commit 48c540f.
-- Next: step A5 (the app page: form, presets, refusals, progress, results panel, run
-  browser, the scene frame).
+- Step A5 (2026-10-06 to 2026-10-07): templates/app.html and its server glue. Workflow:
+  implementer; visual-QA, compliance and security, honesty and usability reviewers, three
+  passes (49, 42 and 24 findings); three fix rounds. The model changed to Fable 5.1 during
+  fix round 2 (agents inherit the session model). Gate (independent, headless Edge over
+  CDP with real clicks): pass on G1-G7 and S1-S5; criterion 2 by a driver of 26 launches
+  (every preset, every ramp-start way, exit speed, an imposed offload, a stage-2 solve, a
+  penalty), each directory holding the form's values and playable or explained
+  (scratchpad/a5/gate/a5_criterion2.md, to be copied into docs/demos/SP2/ in A7); three
+  launches by click; the two recorded directories browsed and played; 375 px without
+  sideways scroll; no request off the machine. Exit criterion 17 kept by a server flag: a
+  page opened from another site reads no hash and acts only after the user's first trusted
+  event. Files outside the step's main ones, with the reason: appform.py (wording of
+  describe() and the duration note only); scene.html (embed-only CSS for the frame's
+  canvas height; script and CSP hash unchanged). Fast suite 1626 passed, 37 deselected.
+  Commit ed0f4bb.
+- Checkpoint 2 reached: the request is met (form, Launch, progress, the scene side by side,
+  browse and replay, every app run a normal exploratory results directory).
+- Next: step A6v (the MP4 export from the app).
 
 ## 12. Deviations from the plan
 
