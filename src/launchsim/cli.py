@@ -42,7 +42,9 @@ port) until Ctrl+C (or Ctrl+Break on Windows), which stops the server, marks a r
 launch FAILED and exits 0. Launches are exploratory and go to <results root>/app/; the
 default results root is <repo root>/results, the repository being the nearest one above
 the working directory, else above the installed package, that holds
-experiments/silo_offload_2d.yaml. ``--open`` opens the page in a new browser tab.
+experiments/silo_offload_2d.yaml. ``--open`` opens the page in a new browser tab. ffmpeg
+is resolved once at start (video.find_ffmpeg; the start lines print its absolute path or
+why the MP4 export is off); videos go to the working directory, never into results/.
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ from typing import Any
 
 import yaml
 
-from launchsim import __version__, app, plots, replay, run_data, scene, sim
+from launchsim import __version__, app, plots, replay, run_data, scene, sim, video
 from launchsim.compare import CHECK_NA
 from launchsim.config import OFFLOAD_GROSS_MODES, ResolvedExperiment, resolve_experiment
 from launchsim.results_io import OFFLOAD_QUOTED_FAILED, OFFLOAD_QUOTED_NO_CONTROL
@@ -651,6 +653,14 @@ STOPPED_BEFORE_SERVING_LINE = "launchsim app: stopped before it served"
 """What the app prints for a Ctrl+C or Ctrl+Break during its start (before the URL)."""
 
 
+def video_line(server: app.AppServer) -> str:
+    """The start line on the MP4 export: the resolved ffmpeg's absolute path and the folder
+    videos go to (the working directory), or why the export is off."""
+    if server.video_reason or server.encoder is None:
+        return f"  video: MP4 export off ({server.video_reason})"
+    return f"  video: ffmpeg {server.encoder.display}; MP4 files go to {server.work_dir}"
+
+
 def app_server(args: argparse.Namespace) -> tuple[app.AppServer, Path, app.ServerStart]:
     """(the bound server, the results root, the server-start record) of ``launchsim app``:
     check the repository (the experiment files, ``app_repo_root``; the display files the
@@ -672,6 +682,8 @@ def app_server(args: argparse.Namespace) -> tuple[app.AppServer, Path, app.Serve
         basis = app.load_basis(repo_root, start)
     except app.BasisError as exc:
         raise CliError(str(exc)) from exc
+    work_dir = Path.cwd()
+    lookup = video.find_ffmpeg(work_dir, repo_root, results)
     try:
         server = app.AppServer(
             port=args.port,
@@ -680,6 +692,9 @@ def app_server(args: argparse.Namespace) -> tuple[app.AppServer, Path, app.Serve
             results_root=results,
             repo_root=repo_root,
             display_dir=display,
+            encoder=lookup.encoder,
+            video_reason=lookup.reason,
+            work_dir=work_dir,
         )
     except OSError as exc:
         if app.port_unavailable(exc):
@@ -733,6 +748,7 @@ def command_app(args: argparse.Namespace) -> int:
                 )
                 say("  launches are exploratory, not findings")
                 say("  Ctrl+C stops the server; a running launch is stopped and marked FAILED")
+                say(video_line(server))
                 sys.stdout.flush()
                 if args.open:
                     webbrowser.open_new_tab(server.url)

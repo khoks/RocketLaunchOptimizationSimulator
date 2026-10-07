@@ -52,10 +52,11 @@ src/launchsim/
   display.py     display-only reconstructions of the 2-D scene, pure: the display-file models, tank levels and their load-time checks, separation state and vacuum coast, screen transform and camera law, row selection, held attitude; never model output
   scene.py       the 2-D scene: the data payload of a planar results directory (reads through run_data and configs/display/), its strict-JSON encoding, and the standalone page (render_page fills templates/scene.html; write_scene_page writes only the page, never inside a results tree)
   appform.py     the local app's form, pure: the basis of the two committed experiments, the request parser (whitelisted keys, enumerated choices, finite bounded numbers), the presets, build_experiment (experiment app, label exploratory, committed names only for committed configurations), the derived values and the one-line refusals
-  app.py         the local app's launch function: load_basis, the server-start git state and the code-change check, the in-memory pad cache, run_launch (results_io's pieces in run_experiment's order, FAILED.txt on any exception, no PNG plots) and the outcome of a written directory; the server (AppServer and AppHandler: 127.0.0.1-only bind, the request guard, the routes, one launch worker, the run browser and results-panel data, the Ctrl+C and Ctrl+Break stop)
+  app.py         the local app's launch function: load_basis, the server-start git state and the code-change check, the in-memory pad cache, run_launch (results_io's pieces in run_experiment's order, FAILED.txt on any exception, no PNG plots) and the outcome of a written directory; the server (AppServer and AppHandler: 127.0.0.1-only bind, the request guard, the routes, one launch worker, the run browser and results-panel data, the video routes and the caveat footer of a video, the Ctrl+C and Ctrl+Break stop)
+  video.py       the app's MP4 export: the ffmpeg lookup at server start (absolute PATH entries only; nothing from the working directory, the repository or the results root), the request rules (fps and width lists, 1-1,800 frames, the byte budget), the PNG header check before any byte is piped, one VideoSession at a time (ffmpeg on a pipe, a writer thread, the idle, blocked-write and finish timeouts, the temporary folder) and the exclusive output reservation in the working directory (never inside a results tree)
   optimize.py    ascent optimization (Phase 5)
   cli.py
-  templates/     package-data page templates: replay.html (the replay page; frozen in SP2), scene.html (the standalone 2-D scene page that scene.py renders and writes; no request, state hook window.launchsimScene) and app.html (the app page; a placeholder until step A5)
+  templates/     package-data page templates: replay.html (the replay page; frozen in SP2), scene.html (the standalone 2-D scene page that scene.py renders and writes; no request; the hook window.launchsimScene: stateAt, captureFrame with the server's footer lines, clipTimes) and app.html (the app page: form, presets, live checks, progress, results panel, run browser, the scene frame and the Save video control)
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
 configs/display/   display-only geometry of the 2-D scene (one YAML per vehicle family, applies_to names the vehicles; scene.yaml for the camera, pixel thresholds and the generic shape); every number has `source:` or `assumed: true`; nothing here enters the model
 experiments/       one YAML per experiment: baseline, variants, sweep axes
@@ -146,7 +147,7 @@ Calibration is separate from validation; label it as such:
 ## Code style
 
 - Python 3.12, type hints everywhere, frozen dataclasses for parameters, pydantic to validate YAML.
-- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py, run_data.py, scene.py and app.py.
+- Physics functions are pure: no globals, I/O or printing. I/O lives in cli.py, sim.py, results_io.py, plots.py, replay.py, run_data.py, scene.py, app.py and video.py.
 - Small functions with docstrings. No magic numbers outside constants.py and configs.
 - ruff for lint and format. Mark tests slower than 5 s with `@pytest.mark.slow`.
 

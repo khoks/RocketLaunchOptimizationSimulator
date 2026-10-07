@@ -1278,16 +1278,37 @@ def test_default_pair_follows_d_sp2_28(real_dir: Path, derived_dir: Path) -> Non
     assert scene.default_pair({"baseline": "pad"}, {}, ["x", "y"]) == ["x"]
 
 
+def _pushed_penalty_dir(derived_dir: Path, dst: Path) -> Path:
+    """A copy of the derived directory whose offload runs light_s1 (the solved case) and
+    light_s1_dry+8.1t (the penalty row) are pushed runs: each one's folder, run block and
+    metrics record replaced by silo_cold's (a cold silo start), the ``offload.cases``
+    records kept, so the penalty row's record still charges +8.1 t of stage-1 dry mass on a
+    run with a push (A6v fix round 1: the derived fixture's own offload runs fly from the
+    pad, where no structural line applies)."""
+    shutil.copytree(derived_dir, dst)
+    metrics = run_data.read_json(dst / run_data.METRICS_FILE)
+    config = run_data.read_yaml(dst / run_data.CONFIG_FILE)
+    for name in ("light_s1", "light_s1_dry+8.1t"):
+        shutil.rmtree(dst / name)
+        shutil.copytree(dst / "silo_cold", dst / name)
+        metrics["offload"]["runs"][name] = copy.deepcopy(metrics["runs"]["silo_cold"])
+        config["offload_runs"][name] = copy.deepcopy(config["runs"]["silo_cold"])
+    _write_json(dst / run_data.METRICS_FILE, metrics)
+    (dst / run_data.CONFIG_FILE).write_text(json.dumps(config), encoding="utf-8", newline="\n")
+    return dst
+
+
 def test_peak_q_row_kept_and_frame_caveats(
-    real_dir: Path, real_payload: dict[str, Any], derived_dir: Path
+    real_dir: Path, real_payload: dict[str, Any], derived_dir: Path, tmp_path: Path
 ) -> None:
     """A3b review round 3. Each run's payload keeps its time series' peak q row at its own
     release-relative time, so the drawn path passes through it beside the page's max-Q mark
     (since fix round 4 the run's metrics max-Q, ``max_q``). The payload carries the caveat
     line every captured frame shows under its footer (the model in brief, each vehicle's
     calibration as the replay page words it, where every caveat is) and, per pushed run, what
-    structural mass its record charges for the push: none, or a penalty row's assumed stage-1
-    dry mass."""
+    structural mass its own record charges for the push: none, or a penalty row's assumed
+    stage-1 dry mass (A6v fix round 1: asserted on the payload of a pushed penalty row, which
+    the earlier lookup named as uncharged)."""
     for r in real_payload["runs"]:
         frame = run_data.read_series_frame(
             real_dir, r["key"], scene.SCENE_COLUMNS, error=scene.SceneError
@@ -1315,18 +1336,35 @@ def test_peak_q_row_kept_and_frame_caveats(
         derived_dir, ["pad", "light_s1", "light_s1_dry+8.1t"], display_dir=DISPLAY_DIR
     )
     assert all(r["structure_note"] is None for r in derived["runs"] if not r["assisted"])
-    offload = json.loads((derived_dir / run_data.METRICS_FILE).read_text(encoding="utf-8"))[
-        "offload"
-    ]
-    case = {"offload_kind": run_data.OFFLOAD_CASE}
-    assert scene.structure_note(case, offload, "light_s1_dry+8.1t", True) == (
+    assert not any(r["assisted"] for r in derived["runs"])  # the fixture's offload runs: no push
+    # the same block with the solved case and the penalty row flown as pushed runs: the payload's
+    # own structure line names the penalty row's assumed dry mass and the solved case as uncharged
+    penalty = (
         f"an assumed +{PENALTY_T:g} t of stage-1 dry mass is charged for the push: an "
         "assumption, not a sized structure"
     )
-    assert scene.structure_note(case, offload, "light_s1", True) == (
-        "no structural mass is charged for the push"
+    uncharged = "no structural mass is charged for the push"
+    pushed_dir = _pushed_penalty_dir(derived_dir, tmp_path / "pushed")
+    pushed = scene.scene_payload(
+        pushed_dir, ["pad", "light_s1", "light_s1_dry+8.1t"], display_dir=DISPLAY_DIR
     )
-    assert scene.structure_note(case, offload, "light_s1", False) is None
+    by_key = {r["key"]: r for r in pushed["runs"]}
+    assert by_key["light_s1"]["assisted"] and by_key["light_s1_dry+8.1t"]["assisted"]
+    assert by_key["pad"]["structure_note"] is None
+    assert by_key["light_s1"]["structure_note"] == uncharged
+    assert by_key["light_s1_dry+8.1t"]["structure_note"] == penalty
+    assert by_key["light_s1_dry+8.1t"]["offload_kind"] == run_data.OFFLOAD_CASE
+    assert "assumed" in by_key["light_s1_dry+8.1t"]["label"]  # the label and the line agree
+    # the pure function on the records run_payload finds (run_data.offload_role) and on none
+    offload = run_data.read_json(pushed_dir / run_data.METRICS_FILE)["offload"]
+    case = run_data.offload_role(offload, "light_s1_dry+8.1t")
+    solved = run_data.offload_role(offload, "light_s1")
+    assert case is not None and solved is not None
+    assert scene.structure_note(case[1], True) == penalty
+    assert scene.structure_note(solved[1], True) == uncharged
+    assert scene.structure_note(None, True) == uncharged
+    assert scene.structure_note(case[1], False) is None
+    assert scene.structure_note(None, False) is None
 
 
 # ------------------------------------------------------------------ import guard

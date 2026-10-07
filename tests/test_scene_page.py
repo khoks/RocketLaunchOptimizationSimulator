@@ -1001,7 +1001,8 @@ def test_capture_frame_defaults_and_one_band_threshold(template: str) -> None:
     padding and any classic scrollbar)."""
     script = _script(template)
     capture = _function_source(template, "captureFrame")[0]
-    assert capture.startswith("  function captureFrame(t, width, height) {")
+    # the fourth argument (step A6v) is the footer lines; absent, the frame is A3b's
+    assert capture.startswith("  function captureFrame(t, width, height, footerLines) {")
     assert "const CAPTURE_DEFAULT_W_PX = 1280, CAPTURE_DEFAULT_H_PX = 720;" in script
     assert "width === undefined ? CAPTURE_DEFAULT_W_PX : width" in capture
     assert "height === undefined ? CAPTURE_DEFAULT_H_PX : height" in capture
@@ -2103,8 +2104,15 @@ def test_review_round_3_fixes_in_the_source(template: str) -> None:
     assert "const lines = footerLines();" in footer
     assert "if (DATA.frame_caveat) lines.push(DATA.frame_caveat);" in footer
     assert "r.structure_note" in footer
-    assert "frameFooterLines(prs).forEach(" in _function_source(template, "footerWrapped")[0]
-    assert "footerWrapped(ctx, pal, W, panelRuns)" in _function_source(template, "captureFrame")[0]
+    # step A6v: the caller's footer lines (the app server's) replace the payload's frame caveat,
+    # each once; without them the payload's caveat stands (the standalone page has no server)
+    assert "if (Array.isArray(given)) given.forEach(" in footer
+    assert "if (lines.indexOf(text) < 0) lines.push(text);" in footer
+    assert "else if (DATA.frame_caveat) lines.push(DATA.frame_caveat);" in footer
+    assert "frameFooterLines(prs, given).forEach(" in _function_source(template, "footerWrapped")[0]
+    capture = _function_source(template, "captureFrame")[0]
+    assert "footerWrapped(ctx, pal, W, panelRuns, given)" in capture
+    assert 'footerLines.every(s => typeof s === "string")' in capture
     constants = script[
         script.index(
             "// ------------------------------------------------------------------ page constants"
@@ -2117,6 +2125,78 @@ def test_review_round_3_fixes_in_the_source(template: str) -> None:
     ]
     assert "const WRAP_MEMO_MAX = 256;" in constants
     assert script.count("const WRAP_MEMO_MAX") == 1
+
+
+CLIP_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const sched = rateSchedule(input.runs, null);
+const out = { clips: [] };
+const summary = c => ({ natural_s: c.natural_s, seconds: c.seconds, frames: c.frames,
+  n: c.times.length, first: c.times[0], second: c.times[1], last: c.times[c.times.length - 1],
+  before_last: c.times[c.times.length - 2],
+  monotone: c.times.every((t, i) => i === 0 || t >= c.times[i - 1]),
+  decimals: c.times.every(t => Math.abs(t * 1e6 - Math.round(t * 1e6)) < 1e-3) });
+const clip = (fps, seconds) => clipTimesFor(fps, seconds, sched, input.tMin, input.tMax, 6);
+input.fps.forEach(f => out.clips.push(summary(clip(f, null))));
+out.scaled = summary(clip(24, 75));
+out.one = clip(1, 0.4).times;
+out.two = clip(1, 2).times;
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_clip_times_run_from_the_first_row_to_the_end_state_under_node(
+    template: str, tmp_path: Path
+) -> None:
+    """Step A6v, fix round 1: clipTimesFor on the pair's events gives n = round(fps x natural
+    length) frames at every offered rate, spread evenly over the player's wall clock (frame
+    k at wall k x natural / (n - 1): the second frame, in the 0.5x push, is half a wall step
+    after the first), the first at the first row and the last at the scene's end itself
+    (tMax: the end banners and the pad's cutoff marker are in the clip's last frame, where
+    wall k / fps alone stopped one frame short of it), the frame before it one wall step
+    earlier (at most 3x that in scene time, the end hold), the times non-decreasing on the
+    payload's clock; a scaled clip (24 fps over 75 s) has 1800 frames and the same ends; a
+    one-frame clip is the first row alone, a two-frame clip the first row and the end; the
+    natural length agrees across rates."""
+    case = {
+        "runs": [PAD_LIKE, SILO_LIKE],
+        "tMin": -2.607318,
+        "tMax": 536.300685,
+        "fps": [10, 15, 20, 24, 30],
+    }
+    out = _run_pure(template, CLIP_HARNESS, case, tmp_path)
+    naturals = [c["natural_s"] for c in out["clips"]]
+    assert max(naturals) - min(naturals) < 0.05 and min(naturals) > 60.0
+    for fps, clip in zip(case["fps"], out["clips"], strict=True):
+        n = clip["frames"]
+        assert n == clip["n"] == round(fps * clip["natural_s"]), fps
+        assert clip["seconds"] == pytest.approx(clip["natural_s"])
+        assert clip["first"] == pytest.approx(case["tMin"], abs=1e-6)
+        assert clip["last"] == pytest.approx(case["tMax"], abs=1e-6), fps
+        # the wall time between frames: natural / (n - 1), with n within 0.5 of fps x natural
+        step = clip["natural_s"] / (n - 1)
+        assert (n - 0.5) / (fps * (n - 1)) <= step <= (n + 0.5) / (fps * (n - 1)), (fps, step)
+        assert clip["second"] - case["tMin"] == pytest.approx(0.5 * step, abs=2e-6), fps
+        gap = case["tMax"] - clip["before_last"]
+        assert 0.0 < gap <= 3.0 * step + 1e-6, (fps, gap)
+        assert clip["monotone"] and clip["decimals"], fps
+    scaled = out["scaled"]
+    assert scaled["frames"] == scaled["n"] == 1800 and scaled["seconds"] == 75
+    assert scaled["first"] == pytest.approx(case["tMin"], abs=1e-6)
+    assert scaled["last"] == pytest.approx(case["tMax"], abs=1e-6)
+    step = scaled["natural_s"] / 1799
+    assert scaled["second"] - case["tMin"] == pytest.approx(0.5 * step, abs=2e-6)
+    gap = case["tMax"] - scaled["before_last"]
+    assert 0.0 < gap <= 3.0 * step + 1e-6 and scaled["monotone"]
+    assert out["one"] == [pytest.approx(case["tMin"], abs=1e-6)]
+    assert out["two"] == [
+        pytest.approx(case["tMin"], abs=1e-6),
+        pytest.approx(case["tMax"], abs=1e-6),
+    ]
+    source = _function_source(template, "clipTimesFor")[0]
+    assert "sceneTimeAt(map, n > 1 ? natural * k / (n - 1) : 0)" in source
 
 
 FAIRING_HARNESS = """

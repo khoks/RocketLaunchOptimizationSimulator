@@ -56,7 +56,7 @@ from launchsim.phases.planar import (
     LTG_BURN,
     VERTICAL_RISE,
 )
-from launchsim.replay import EXPLORATORY_CAVEAT, EXPLORATORY_LABEL
+from launchsim.replay import EXPLORATORY_CAVEAT, EXPLORATORY_LABEL, penalty_added_kg
 from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
@@ -562,7 +562,11 @@ class AnimationRun:
     acceleration [g0], dynamic pressure q_pa [Pa] (NaN in a vented shaft), mass m_kg [kg]
     and the phase label per row; its drawn events; its payload [kg] and status from
     metrics.json (``runs``, or ``offload.runs`` for a run of the offload block); whether
-    it is the experiment's baseline; for a run of the offload block, its OffloadTag."""
+    it is the experiment's baseline; for a run of the offload block, its OffloadTag and,
+    for a penalty row (an offload case whose record charges an assumed stage-1 dry mass
+    on its run: replay.penalty_added_kg), that mass [kg] (0.0 when unrecorded), else
+    None (A6v fix round 2: the footnote's structural line names what a penalty row
+    charges)."""
 
     name: str
     t_s: FloatArray
@@ -578,6 +582,7 @@ class AnimationRun:
     status: str | None
     baseline: bool
     offload: OffloadTag | None = None
+    penalty_added_kg: float | None = None
 
     @property
     def t_start_s(self) -> float:
@@ -740,6 +745,8 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
     offset_s = run_data.release_offset_s(frame)
     record, tag = animation_record(metrics, name)
     payload = record.get("payload_kg")
+    role = offload_role(run_data.as_mapping(metrics.get("offload")), name)
+    penalty = penalty_added_kg(role[1]) if role is not None and role[0] == OFFLOAD_CASE else None
     return AnimationRun(
         name=name,
         t_s=t,
@@ -755,6 +762,7 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
         status=record.get("status"),
         baseline=name == metrics.get("baseline"),
         offload=tag,
+        penalty_added_kg=penalty,
     )
 
 
@@ -1042,10 +1050,15 @@ def animation_caveats(
     runs: Sequence[AnimationRun], vehicle_name: str | None, label: str | None = None
 ) -> list[str]:
     """The three footnote lines: the model; its limits and, when a run has an assist
-    push, the structural caveat of the push load (the peak felt axial g of the ASSIST
-    rows); the vehicle's calibration and the replay disclaimer. ``label``: the
-    directory's metrics.json ``label``; EXPLORATORY_LABEL puts EXPLORATORY_FOOTNOTE
-    first (four lines), any other value or None adds nothing."""
+    push, the structural caveat of the push load (no sized structural mass for the peak
+    felt axial g of the ASSIST rows) and, when a shown run is a penalty row
+    (``AnimationRun.penalty_added_kg``), that the penalty row charges an assumed stage-1
+    dry mass (A6v fix round 2: the fixed line and the run's own structure line no longer
+    read against each other on a penalty row's frame; one source, D-SP2-23; the clause is
+    kept to what the 1280 px footnote line holds, tested, so 'an assumption' is said by
+    'assumed' alone); the vehicle's calibration and the replay disclaimer. ``label``: the
+    directory's metrics.json ``label``; EXPLORATORY_LABEL puts EXPLORATORY_FOOTNOTE first
+    (four lines), any other value or None adds nothing."""
     first = (
         "Planar 2-D model (rotating spherical Earth, ICAO atmosphere, drag); "
         "sweep-optimized guidance, not optimal control."
@@ -1053,7 +1066,12 @@ def animation_caveats(
     second = "Unthrottled (no max-Q or g limit)"
     peaks = [g for g in (r.push_peak_g() for r in runs) if g is not None]
     if peaks:
-        second += f"; no structural mass for the {max(peaks):.1f} g push load"
+        second += f"; no sized structural mass for the {max(peaks):.1f} g push load"
+    penalties = sum(1 for r in runs if r.penalty_added_kg is not None)
+    if penalties == 1:
+        second += "; the penalty row charges an assumed stage-1 dry mass"
+    elif penalties > 1:
+        second += "; the penalty rows charge an assumed stage-1 dry mass"
     third = calibration_caveat(vehicle_name) + " A model replay, not a design result."
     lines = [first, second + ".", third]
     if label == EXPLORATORY_LABEL:

@@ -19,7 +19,11 @@
    Exit criterion 17: GET / is the one route another site can reach. When the server says the
    request came from another site (from_other_site), the page reads no hash and issues only GET
    requests to /api/form, /api/job and /api/results until the user acts on the page itself (a
-   trusted pointer, key or input event); a launch always follows a click on Launch. */
+   trusted pointer, key or input event); a launch always follows a click on Launch.
+   Step A6v: the Save video (MP4) control beside the frame asks the framed scene for the clip's
+   times (clipTimes) and one PNG per frame (captureFrame with the server's caveat footer), posts
+   each frame awaiting the server's answer, then asks the server to finish and polls for the
+   file's absolute path; a video starts only from its button's click. */
 :root {
   --bg: #f1f2ee;
   --panel: #fbfbf8;
@@ -210,6 +214,14 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
    scene's own body draws no ring, so the frame says where Space, [ and ] go; inset, inside the full-width frame */
 #frame:focus-within { outline: 2px solid var(--focus); outline-offset: -2px; }
 .framebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 6px; }
+/* the video control (step A6v): the frame rate and width selects, the natural length, Save and Cancel, the progress
+   line and, at the end, the file's absolute path with a copy button */
+.video { margin-top: 8px; border-top: 1px solid var(--rule); padding-top: 6px; display: grid; gap: 4px; }
+.videobar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.videobar label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-2); white-space: nowrap; }
+.videobar select { width: auto; }
+.videodone { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; font-size: 0.85rem; }
+.videodone code { font-family: var(--font-data); color: var(--ink); background: var(--code-bg); padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 
 /* the run browser */
 .browserbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
@@ -327,6 +339,22 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
 <ul class="fixedlist" id="pickNotes" aria-label="Notes of the runs shown" hidden></ul>
 <p class="meta" id="sceneStatus">No scene loaded: open a directory from the run list, or launch one.</p>
 <div class="framebar"><a id="openPage" target="_blank" rel="noopener noreferrer" hidden>Open as a page</a><span class="meta">While the scene is on screen, Space plays or pauses, [ and ] jump between events, and Left and Right step the clock 1 s (with Shift 10 s), from anywhere on this page outside a form control; with the scene off screen, Space scrolls the page as usual. The results panel above describes the runs shown here, with their caveats and what the scene draws that the model does not compute.</span></div>
+<div class="video" id="videoBox" aria-labelledby="videoTitle">
+<h3 id="videoTitle" class="grouplabel">Save video (MP4)</h3>
+<div class="videobar">
+<label for="videoFps">Frame rate <select id="videoFps" aria-describedby="videoLength"></select></label>
+<label for="videoWidth">Width <select id="videoWidth" aria-describedby="videoLength"></select></label>
+<button type="button" id="videoStart" disabled>Save video (MP4)</button>
+<button type="button" id="videoCancel" hidden>Cancel</button>
+</div>
+<p class="meta" id="videoLength"></p>
+<p class="why" id="videoWhy" hidden></p>
+<p class="meta" id="videoProgress" hidden></p>
+<p class="vh" id="videoLive" role="status"></p>
+<p class="videodone" id="videoDone" hidden><span>Saved:</span><code id="videoPath"></code><button type="button" id="videoCopy">Copy the path</button><span class="meta" id="videoCopied"></span></p>
+<p class="err" id="videoErr" role="alert" hidden></p>
+<p class="meta" id="videoNote"></p>
+</div>
 <iframe id="frame" title="Launch scene" referrerpolicy="no-referrer" hidden></iframe>
 </section>
 
@@ -1049,6 +1077,49 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     return "Stage 1 never lit: the coast after release peaked at " + fx(Number(m[1]), 2) + " m, " + fx(Number(m[2]), 2) +
       " m below its ramp-start altitude of " + fx(Number(m[3]), 2) + " m. A ramp start below the coast's peak lets it light.";
   }
+  function clipPlan(naturalS, fps, maxFrames) {
+    // The clip the video control offers (step A6v): round(fps x natural length) frames (at least one) over the
+    // natural length; when that passes maxFrames (the server's limit) the clip is scaled to maxFrames / fps
+    // seconds (the wall clock scaled uniformly, so it still runs from the first row to the end). Returns
+    // {frames, seconds, scaled} or null for a length or rate that is not a positive finite number.
+    const L = Number(naturalS), f = Number(fps), cap = Number(maxFrames);
+    if (!Number.isFinite(L) || !(L > 0) || !Number.isFinite(f) || !(f > 0) || !Number.isFinite(cap) || !(cap >= 1)) return null;
+    const n = Math.max(1, Math.round(f * L));
+    if (n <= cap) return { frames: n, seconds: L, scaled: false };
+    return { frames: Math.floor(cap), seconds: Math.floor(cap) / f, scaled: true };
+  }
+  function clipLengthText(plan, naturalS, fps, width, height, maxFrames) {
+    // The line under the video control: the natural length, the frames at this rate and the frame size, the clip
+    // running from the first row to the end state; when the clip is scaled, the limit, the scaled length and how
+    // much faster than the player its clock runs.
+    if (!plan) return "The clip's length could not be measured.";
+    const size = width + " x " + height + " px";
+    if (!plan.scaled) return "Natural length " + fx(naturalS, 1) + " s at " + fps + " fps: " + plan.frames + " frames of " + size + ", from the first row to the end.";
+    return "Natural length " + fx(naturalS, 1) + " s at " + fps + " fps would be " + Math.round(fps * naturalS) + " frames, over the limit of " +
+      maxFrames + ": the clip is scaled to " + fx(plan.seconds, 1) + " s (" + plan.frames + " frames of " + size + ", the same scene from the first row to the end at a clock " +
+      fx(naturalS / plan.seconds, 2) + "x the player's).";
+  }
+  function videoNoteText(folder, scaled) {
+    // The note under the video control (design 4.8, review 06 finding 9: the clip follows the player's default
+    // rate): when the planned clip is scaled (its natural length passes the server's frame limit at the chosen
+    // rate) the note says its clock runs faster than the player's instead, and the length line quantifies it.
+    const pace = scaled ?
+      "at a clock faster than the player's default rate (its natural length at this frame rate passes the frame limit: the length line says by how much)" :
+      "at the player's default rate";
+    return "The clip plays the scene in the frame " + pace + ", from the first row to the end, with the caveat footer on every frame; " +
+      "it is written to " + folder + " (the server's working directory), never into a results tree, and never over an existing file.";
+  }
+  function videoProgressText(sent, frames, elapsedMs) {
+    // "frame n of N" with the elapsed time and the mean time per frame so far
+    const per = sent > 0 ? Math.round(elapsedMs / sent) : null;
+    return "Saving frame " + sent + " of " + frames + "; elapsed " + fmtDuration(elapsedMs / 1000) + (per === null ? "" : ", " + per + " ms per frame") + ".";
+  }
+  function frameTooLarge(k, size, cap) {
+    // the page's own refusal of a captured frame over the server's frame cap, before it is posted (fix round 2: the
+    // server answers such a body 413 without reading it, which the browser can see as a lost connection instead
+    // of the reason)
+    return "frame " + k + " is " + size + " bytes, over the server's " + cap + "-byte frame cap: choose a narrower frame";
+  }
   function jobBlocks(job, ctx) {
     // The job card's text (after its head and stages). ctx: {items: the launched form's expected parts, from its dry
     // run ([name, lo, hi]), or null; headline, flagged: the results panel's headline of the job's directory (its
@@ -1093,6 +1164,9 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
   const DRY_RUN_DEBOUNCE_MS = 250;   // a dry run after the last change (design 4.7)
   const JOB_POLL_MS = 500;           // GET /api/job while a launch runs
   const JOB_RETRY_MS = 2000;         // ... after a poll that failed
+  const VIDEO_POLL_MS = 500;         // GET /api/videos/<id> while the encoder finishes a clip (step A6v)
+  const VIDEO_RETRY_MS = 1000;       // the pause before the record is read after a frame POST got no response
+  const VIDEO_FRAME_RETRIES = 3;     // losses of one frame's POST the capture survives (fix round 3)
   const CONFIRM_ABOVE_S = 60;        // a launch whose upper bound passes this asks first
   const FRAME_MIN_PX = 200, FRAME_MAX_PX = 8000;  // the frame's height: the scene's own height, measured
   const FRAME_START_PX = 640;        // the height a frame starts from while its scene loads
@@ -1182,7 +1256,11 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     listing: null, playableOnly: true,
     dir: null, detail: null, panelAsked: "", dirHeadline: null,
     scene: null, frameState: "blank", frameHeight: 0, playerTouchedAt: 0,
-    theme: "auto", dryTimer: null, drySeq: 0
+    theme: "auto", dryTimer: null, drySeq: 0,
+    // the video control (step A6v): the clip measured for the scene in the frame (plan, keyed by scene and rate),
+    // whether the scene fits the chosen frame size (fit, keyed by scene and width), and the session being saved
+    // (active: id, frames, sent, t0, cancel, timer)
+    video: { plan: null, planKey: "", fit: null, active: null }
   };
 
   function el(tag, cls, text) {
@@ -1525,6 +1603,7 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     $("launchNote").textContent = (info.launch_note || "") + (info.results_root ? " Launches write to " + rootText(info.results_root) + "." : "");
     $("siloNote").textContent = DRIVE_NOTE;
     $("exploratoryNote").textContent = info.exploratory_caveat || "";
+    buildVideoControls(info.video || null);
     renderSp1Reference(info.headline);
     const start = info.server_start || {};
     $("foot").textContent = "launchsim " + (info.version || DATA.version) + "; code at server start: git " +
@@ -1971,6 +2050,7 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     const span = fresh ? fmtRange(S.derived.expected_s) : null;
     btn.textContent = span ? "Launch: expected " + span + ", cannot be cancelled" : "Launch";
     setText("launchWhy", why);
+    renderVideo();
   }
   function launchClicked() {
     setText("launchErr", "");
@@ -2429,6 +2509,7 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     $("sceneStatus").textContent = text;
     syncPickers();
     writeHash();
+    renderVideo();
   }
   function sceneStatusText() {
     return "Scene: " + S.scene.experiment + "/" + S.scene.timestamp + ", " + S.scene.runs.join(" beside ") + ".";
@@ -2482,6 +2563,7 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     link.hidden = false;
     syncPickers();
     writeHash();
+    renderVideo();
   }
   function frameLoaded() {
     // a load of the frame: the scene asked for (loading), or the blank page a failed or cleared scene leaves
@@ -2495,6 +2577,7 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
       frame.src = "about:blank";
       $("sceneStatus").textContent = "No scene was shown for " + S.scene.experiment + "/" + S.scene.timestamp + " (" + S.scene.runs.join(", ") +
         "): the server refused it or the page did not start. Open as a page shows the server's reason.";
+      renderVideo();
       return;
     }
     S.frameState = "ready";
@@ -2504,6 +2587,9 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     $("sceneStatus").textContent = sceneStatusText();
     fitFrame();
     if (S.scene.focus) focusScene();
+    S.video.plan = null;  // a new scene: its clip is measured and its fit checked again
+    S.video.fit = null;
+    renderVideo();
   }
   function frameOnScreen() {
     // whether some of the scene frame is in the window (the keys go to the player only then)
@@ -2557,6 +2643,301 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     const h = Number(d.height);
     if (!Number.isFinite(h)) return;
     fitFrame();
+  }
+
+  // ------------------------------------------------------------------ the video (step A6v)
+  function frameHook() {
+    // the framed scene's hook (window.launchsimScene: stateAt, captureFrame, clipTimes), or null
+    if (S.frameState !== "ready") return null;
+    try { const w = $("frame").contentWindow; return w && w.launchsimScene ? w.launchsimScene : null; } catch (e) { return null; }
+  }
+  function videoInfo() { return S.info && S.info.video && typeof S.info.video === "object" ? S.info.video : null; }
+  function sceneKey(scene) {
+    // which scene a clip was measured or started for (no route: the scene route is scenePath's alone)
+    return scene ? scene.experiment + "|" + scene.timestamp + "|" + scene.runs.join(",") : "";
+  }
+  function buildVideoControls(info) {
+    // the frame rate and width selects from GET /api/form's video block, at its defaults; the folder note
+    const fps = clear($("videoFps")), width = clear($("videoWidth"));
+    if (!info) { renderVideo(); return; }
+    (info.fps_choices || []).forEach(f => { const o = el("option", null, f + " fps"); o.value = String(f); fps.appendChild(o); });
+    (info.sizes || []).forEach(s => { const o = el("option", null, s[0] + " x " + s[1] + " px"); o.value = String(s[0]); width.appendChild(o); });
+    fps.value = String(info.default_fps);
+    width.value = String(info.default_width);
+    renderVideo();  // the note (videoNoteText) follows the planned clip, so renderVideo writes it
+  }
+  function videoChoice() {
+    // the chosen frame rate and frame size, from the selects (the server checks them again)
+    const info = videoInfo();
+    const fps = Number($("videoFps").value);
+    const width = Number($("videoWidth").value);
+    const size = info && Array.isArray(info.sizes) ? info.sizes.find(s => s[0] === width) : null;
+    return { fps: fps, width: width, height: size ? size[1] : null };
+  }
+  function videoPlan(hook) {
+    // the clip of the scene in the frame at the chosen rate (clipTimes of the hook, then clipPlan against the
+    // server's frame limit; the scaled clip's times asked for when the natural one is over it), kept per scene and rate
+    const info = videoInfo();
+    const c = videoChoice();
+    const key = sceneKey(S.scene) + "|" + c.fps;
+    if (S.video.plan && S.video.planKey === key) return S.video.plan;
+    let plan = null;
+    try {
+      const natural = hook.clipTimes(c.fps);
+      const p = clipPlan(natural.natural_s, c.fps, info.max_frames);
+      if (p) {
+        const clip = p.scaled ? hook.clipTimes(c.fps, p.seconds) : natural;
+        plan = { fps: c.fps, frames: clip.frames, seconds: clip.seconds, natural_s: natural.natural_s, scaled: p.scaled, times: clip.times };
+      }
+    } catch (e) { plan = null; }
+    S.video.plan = plan;
+    S.video.planKey = key;
+    return plan;
+  }
+  function videoFit(hook, c, plan) {
+    // Whether the scene in the frame can draw a frame of the chosen size under a caveat footer (two panels under a
+    // long footer do not fit 960 x 540 px): captureFrame of the clip's first time with the page's own footer lines
+    // (the server's are of the same order; a capture that still fails records the server's reason, startVideo),
+    // asked once per scene and size; the answer is kept and the control re-rendered when it arrives.
+    const key = sceneKey(S.scene) + "|" + c.width;
+    const fit = S.video.fit;
+    if (fit && fit.key === key) return fit;
+    const pending = { key: key, state: "checking", error: "" };
+    S.video.fit = pending;
+    hook.captureFrame(plan.times[0], c.width, c.height).then(
+      () => { if (S.video.fit === pending) { pending.state = "ok"; renderVideo(); } },
+      err => { if (S.video.fit === pending) { pending.state = "no"; pending.error = String(err && err.message ? err.message : err); renderVideo(); } });
+    return pending;
+  }
+  function renderVideo() {
+    // the control's state: disabled with its reason, or the clip's length at the chosen rate and size; while a
+    // clip is being saved the note and the length line describe that clip (its own plan: fix round 2)
+    const info = videoInfo();
+    const active = S.video.active;
+    const c = videoChoice();
+    let why = "", length = active ? active.lengthText : "", scaled = active ? active.scaled === true : false;
+    const hook = frameHook();
+    if (!info) why = "Loading the form...";
+    else if (!info.available) why = "The MP4 export is off: " + (info.reason || "no reason given") + ".";
+    else if (active) why = "";
+    else if (jobRunning()) why = "A launch is running: a launch and a video never run together.";
+    else if (!mayActNow()) why = "Use the page first: this page sends nothing until you do.";
+    else if (S.frameState === "loading") why = "The scene is loading.";
+    else if (!hook) why = "Load a scene first: the video films the scene in the frame.";
+    if (info && info.available && hook && !active && why === "") {
+      const plan = videoPlan(hook);
+      length = clipLengthText(plan, plan ? plan.natural_s : null, c.fps, c.width, c.height, info.max_frames);
+      scaled = !!(plan && plan.scaled);
+      if (!plan) why = "The clip's length could not be measured; reload the scene.";
+      else {
+        const fit = videoFit(hook, c, plan);
+        if (fit.state === "checking") why = "Checking that the scene fits a " + c.width + " x " + c.height + " px frame...";
+        else if (fit.state === "no") why = "The scene does not fit a " + c.width + " x " + c.height + " px frame under its caveat footer: choose a wider frame (" + fit.error + ").";
+      }
+    }
+    $("videoNote").textContent = info && info.available ? videoNoteText(info.folder, scaled) : "";
+    const btn = $("videoStart");
+    btn.disabled = why !== "" || !!active;
+    btn.hidden = !!active;
+    $("videoCancel").hidden = !active;
+    $("videoCancel").disabled = !active || active.cancel === true;
+    $("videoFps").disabled = !!active || !info || !info.available;
+    $("videoWidth").disabled = !!active || !info || !info.available;
+    setText("videoWhy", why);
+    $("videoLength").textContent = length;
+  }
+  function renderVideoProgress(v) {
+    const p = $("videoProgress");
+    p.hidden = false;
+    p.textContent = v.phase === "frames" ? videoProgressText(v.sent, v.frames, Date.now() - v.t0) :
+      v.phase === "finishing" ? "All " + v.frames + " frames posted in " + fmtDuration((v.tFrames - v.t0) / 1000) + "; the encoder is finishing the file (elapsed " + fmtDuration((Date.now() - v.t0) / 1000) + ")." :
+      v.phase === "cancelling" ? "Cancelling: the server discards the partial file." : "";
+  }
+  function sameScene(v) {
+    // the capture goes on only while the frame still shows the scene it started with
+    return S.frameState === "ready" && S.scene !== null && v.hook === frameHook() && sceneKey(S.scene) === v.sceneKey;
+  }
+  function videoFailed(text) {
+    setText("videoErr", text);
+    $("videoLive").textContent = "Video not saved.";
+  }
+  function endVideo() {
+    const v = S.video.active;
+    if (v && v.timer !== null) clearTimeout(v.timer);
+    S.video.active = null;
+    $("videoProgress").hidden = true;
+    renderVideo();
+  }
+  function startVideo() {
+    // Save video (MP4): the clip measured in the frame, the session created, then the frames captured and posted one
+    // by one, each POST awaited before the next frame is drawn (never a timer), then finish and a poll for the file.
+    setText("videoErr", "");
+    $("videoDone").hidden = true;
+    $("videoCopied").textContent = "";
+    if ($("videoStart").disabled || S.video.active || !mayActNow() || jobRunning()) return;
+    const hook = frameHook(), info = videoInfo();
+    if (!hook || !info || !S.scene) return;
+    const plan = videoPlan(hook);
+    if (!plan) { videoFailed("The clip's length could not be measured."); return; }
+    const c = videoChoice();
+    const scene = S.scene;
+    // the clip's plan travels with the session (fix round 2): the note and the length line keep saying what the
+    // clip being saved is (scaled or not) while it is saved, and the frame cap is checked before each POST
+    const v = {
+      id: null, hook: hook, sceneKey: sceneKey(scene), fps: c.fps, width: c.width, height: c.height,
+      frames: plan.frames, times: plan.times, footer: null, sent: 0, t0: Date.now(), tFrames: 0, cancel: false, timer: null, phase: "creating",
+      scaled: plan.scaled === true, lengthText: clipLengthText(plan, plan.natural_s, c.fps, c.width, c.height, info.max_frames),
+      maxFrameBytes: Number(info.max_frame_bytes)
+    };
+    S.video.active = v;
+    renderVideo();
+    renderVideoProgress(v);
+    $("videoLive").textContent = "Saving a video of " + plan.frames + " frames.";
+    const request = {
+      experiment: scene.experiment, timestamp: scene.timestamp, runs: scene.runs.slice(), fps: c.fps, width: c.width,
+      frames: plan.frames, times: plan.times
+    };
+    api("/api/videos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) }).then(res => {
+      const body = res.body || {};
+      if (res.status !== 201 || !body.video || typeof body.video.id !== "string") throw new Error(errorText(res));
+      v.id = body.video.id;
+      v.frames = body.video.frames;
+      v.width = body.video.width;
+      v.height = body.video.height;
+      v.times = Array.isArray(body.times) ? body.times : plan.times;
+      v.footer = Array.isArray(body.footer) ? body.footer : [];
+      v.phase = "frames";
+      return captureLoop(v);
+    }).then(outcome => {
+      if (outcome === "cancelled") return cancelSession(v);
+      v.phase = "finishing";
+      v.tFrames = Date.now();
+      renderVideoProgress(v);
+      return api("/api/videos/" + encodeURIComponent(v.id) + "/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(res => {
+        if (res.status !== 202) throw new Error(errorText(res));
+        pollVideo(v);
+      });
+    }).catch(err => recordAfterFailure(v).then(rec => {
+      // the server's own reason when the session failed there (the encoder exited or timed out: the 409 of the
+      // frame in flight can be lost with its connection, and the page would show only "Failed to fetch"), else
+      // the page's error (fix round 1)
+      const failed = rec !== null && rec.state === "failed" && typeof rec.error === "string" && rec.error !== "";
+      videoFailed("Video not saved: " + (failed ? rec.error : err.message));
+      // a frame the scene would not draw at this size: Save stays off for the size until the scene changes
+      if (err.capture === true) S.video.fit = { key: sceneKey(scene) + "|" + c.width, state: "no", error: err.message };
+      const open = rec === null || rec.state === "capturing" || rec.state === "finishing";
+      if (v.id && open) cancelSession(v, true).catch(() => { /* the server times the abandoned session out */ });
+      endVideo();
+    }));
+  }
+  function fetchVideo(v) {
+    // GET /api/videos/<id>: the session's record ({state, path, error, file_name, ...}); rejects with the server's
+    // error text
+    return api("/api/videos/" + encodeURIComponent(v.id)).then(res => {
+      if (!res.ok || !res.body || !res.body.video) throw new Error(errorText(res));
+      return res.body.video;
+    });
+  }
+  function recordAfterFailure(v) {
+    // the session's record once, after the page's side failed (null without a session, or when the record cannot
+    // be read: the page's own error then stands)
+    if (!v.id) return Promise.resolve(null);
+    return fetchVideo(v).catch(() => null);
+  }
+  function retryPause() {
+    // the one timer of a capture: the pause before a lost frame POST is looked into (never the frame cadence)
+    return new Promise(resolve => setTimeout(resolve, VIDEO_RETRY_MS));
+  }
+  function captureLoop(v) {
+    // frame k drawn by the scene (captureFrame with the server's footer lines), checked against the frame cap and
+    // posted; the next only once the server has answered; stops at Cancel or when the frame no longer shows the
+    // scene it started with. A frame POST that gets no response at all (fetch rejects with a TypeError: the
+    // connection was lost) is recoverable (fix round 3): after retryPause the session's record says whether the
+    // server took the frame (received is k + 1) or not (k), and the loop goes on from there; the server's index
+    // rule (409 for any other index) makes that safe. After VIDEO_FRAME_RETRIES losses of one frame, or a record
+    // that does not fit, the save fails and says which frame was lost. A refusal that did arrive stays a failure.
+    const lost = k => new Error("the connection was lost while posting frame " + k + " of " + v.frames);
+    const resume = (k, losses) => retryPause().then(() => fetchVideo(v)).then(rec => {
+      if (rec.state !== "capturing" || (rec.received !== k && rec.received !== k + 1)) throw lost(k);
+      v.sent = rec.received;
+      renderVideoProgress(v);
+      return next(rec.received, rec.received === k ? losses : 0);
+    }, () => { throw lost(k); });
+    const next = (k, losses) => {
+      if (v.cancel) return Promise.resolve("cancelled");
+      if (k >= v.frames) return Promise.resolve("done");
+      if (!sameScene(v)) return Promise.reject(new Error("the scene in the frame changed while the video was being saved"));
+      return v.hook.captureFrame(v.times[k], v.width, v.height, v.footer).catch(err => {
+        const e = new Error("frame " + k + " was not drawn: " + (err && err.message ? err.message : err));
+        e.capture = true;
+        throw e;
+      }).then(blob => {
+        if (Number.isFinite(v.maxFrameBytes) && blob && blob.size > v.maxFrameBytes) {
+          const e = new Error(frameTooLarge(k, blob.size, v.maxFrameBytes));
+          e.capture = true;
+          throw e;
+        }
+        return api("/api/videos/" + encodeURIComponent(v.id) + "/frames/" + k, { method: "POST", headers: { "Content-Type": "image/png" }, body: blob }).then(res => {
+          if (!res.ok) throw new Error("frame " + k + ": " + errorText(res));
+          v.sent = k + 1;
+          renderVideoProgress(v);
+          return next(k + 1, 0);
+        }, err => {
+          if (!(err instanceof TypeError) || losses >= VIDEO_FRAME_RETRIES) throw (err instanceof TypeError) ? lost(k) : err;
+          return resume(k, losses + 1);
+        });
+      });
+    };
+    return next(0, 0);
+  }
+  function cancelSession(v, quiet) {
+    // the server discards the partial file; the page says so (quiet: after a failure, whose message stays)
+    v.phase = "cancelling";
+    renderVideoProgress(v);
+    return api("/api/videos/" + encodeURIComponent(v.id) + "/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(() => {
+      if (quiet === true) return;
+      $("videoLive").textContent = "Video cancelled: nothing was kept.";
+      setText("videoErr", "Cancelled after " + v.sent + " of " + v.frames + " frames: the server discarded the partial file.");
+      endVideo();
+    });
+  }
+  function cancelVideo() {
+    // the page stops posting (the capture loop sees the flag after the frame in flight) and then calls cancel
+    const v = S.video.active;
+    if (!v) return;
+    v.cancel = true;
+    $("videoCancel").disabled = true;
+    if (v.phase === "finishing") { if (v.timer !== null) clearTimeout(v.timer); v.timer = null; cancelSession(v).catch(err => { videoFailed("Cancel failed: " + err.message); endVideo(); }); }
+  }
+  function pollVideo(v) {
+    // GET /api/videos/<id> until the encoder has finished: done shows the absolute path, failed the server's reason
+    v.timer = null;
+    fetchVideo(v).then(rec => {
+      if (rec.state === "done" && typeof rec.path === "string") {
+        $("videoPath").textContent = rec.path;
+        $("videoDone").hidden = false;
+        $("videoLive").textContent = "Video saved: " + rec.file_name + ".";
+        endVideo();
+      } else if (rec.state === "failed") {
+        videoFailed("Video not saved: " + (rec.error || "the encoder failed"));
+        endVideo();
+      } else if (rec.state === "cancelled") {
+        setText("videoErr", "Cancelled: the server discarded the partial file.");
+        endVideo();
+      } else {
+        renderVideoProgress(v);
+        v.timer = setTimeout(() => pollVideo(v), VIDEO_POLL_MS);
+      }
+    }).catch(err => {
+      videoFailed("Video not saved: " + err.message);
+      endVideo();
+    });
+  }
+  function copyVideoPath() {
+    const text = $("videoPath").textContent;
+    const say = ok => { $("videoCopied").textContent = ok ? "Copied." : "Copy failed: select the path and copy it."; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => say(true), () => say(false));
+    else say(false);
   }
 
   // ------------------------------------------------------------------ start
@@ -2619,6 +3000,11 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     $("playableOnly").addEventListener("change", () => { S.playableOnly = $("playableOnly").checked; renderBrowser(); });
     $("refresh").addEventListener("click", () => { loadListing(); });
     $("theme").addEventListener("change", () => { S.theme = $("theme").value; applyTheme(); writeHash(); });
+    $("videoFps").addEventListener("change", renderVideo);
+    $("videoWidth").addEventListener("change", renderVideo);
+    $("videoStart").addEventListener("click", () => { startVideo(); });
+    $("videoCancel").addEventListener("click", () => { cancelVideo(); });
+    $("videoCopy").addEventListener("click", () => { copyVideoPath(); });
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
     // back on the page: one GET /api/job, so a server restart (a new boot id) or a launch from elsewhere shows
     document.addEventListener("visibilitychange", () => { if (!document.hidden && S.form && S.pollTimer === null) pollJob(); });

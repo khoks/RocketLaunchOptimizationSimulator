@@ -46,10 +46,14 @@ survey 07 sections 3 to 6; review 04):
   ``stop_active_job`` refuses later launches (503) and writes FAILED.txt for the running
   launch's directory, or the worker does once it makes one (Ctrl+C or Ctrl+Break on the
   console).
-- ``AppHandler``: only do_GET and do_POST; the whole request must arrive within
-  HANDLER_TIMEOUT_S (``DeadlineReader``); every request passes ``guard`` before any body
-  byte is read (Host, Origin, the target's form, Sec-Fetch-Site, no query, the path
-  split before it is decoded and each segment decoded once); every response carries
+- ``AppHandler``: only do_GET and do_POST; HTTP/1.1 with kept connections (fix round 3 of
+  A6v: one connection carries an export's frame POSTs instead of one per frame), every
+  response with a Content-Length, the connection closed after a refusal or an error (its
+  body may be unread) and once the server is stopping; each request must arrive within
+  HANDLER_TIMEOUT_S of its start (``DeadlineReader``, armed per request); every request
+  passes ``guard`` before any body byte is read (Host, Origin, the target's form,
+  Sec-Fetch-Site, no query, the path split before it is decoded and each segment decoded
+  once); every response carries
   FIXED_HEADERS and a frame policy and Content-Security-Policy (the app page DENY with
   its script by sha256, a scene page SAMEORIGIN, everything else DENY and nothing
   allowed); errors are JSON with a fixed message and never a traceback or a local path.
@@ -74,9 +78,26 @@ survey 07 sections 3 to 6; review 04):
 - SP1_HEADLINE: the headline of docs/findings/RQ1-fuel-offload-2d.md (verbatim) with its
   six caveat groups, in one constant (D-SP2-36; a test finds the headline and every
   number in the note).
+- The MP4 export (step A6v; design 4.8, D-SP2-30; video.py holds the session): POST
+  /api/videos fixes one session (the directory and 1 to PANEL_RUNS of its runs, fps and
+  width from fixed lists, 1 to 1,800 frames, the scene times the page computed, and the
+  caveat footer the server computes: ``video_footer``, plots.animation_caveats of the
+  shown runs; the display-only caveat is the scene page's own footer line on every
+  captured frame) and answers its unguessable id; POST /api/videos/<id>/frames/<n> takes
+  one image/png body (``AppHandler._png_body``: the one exception to the JSON body rule;
+  Host, Origin and Sec-Fetch-Site checks unchanged), checked as a PNG of the session's
+  size before it is piped to ffmpeg; a refusal of a declared body within the frame cap is
+  answered after the body is read and discarded (``_drain``), so the client sees the
+  refusal and not a reset connection; POST /api/videos/<id>/finish (202, then GET
+  /api/videos/<id> is polled for the state and the absolute path) and POST
+  /api/videos/<id>/cancel, each with an empty JSON object (any key is 422, as for every
+  POST). A launch and a video never run together (409 each way). The file goes to the
+  server's working directory, never into a results tree. ffmpeg is resolved once at start
+  (video.find_ffmpeg, from cli.py).
 
 Nothing here writes outside the results root it is given, and nothing under results/
-unless the caller passes it (reviews and gates launch into a scratch root, D-SP2-37).
+unless the caller passes it (reviews and gates launch into a scratch root, D-SP2-37); the
+one other thing it writes is a video in its working directory.
 """
 
 from __future__ import annotations
@@ -111,7 +132,18 @@ from typing import Any
 
 import yaml
 
-from launchsim import __version__, appform, replay, results_io, run_data, scene, sim, summary
+from launchsim import (
+    __version__,
+    appform,
+    plots,
+    replay,
+    results_io,
+    run_data,
+    scene,
+    sim,
+    summary,
+    video,
+)
 from launchsim.compare import BUG_SUSPECT, CHECK_FAIL, CHECK_NA
 from launchsim.config import (
     OFFLOAD_FIXED_MODES,
@@ -1113,9 +1145,10 @@ MAX_JSON_BODY_BYTES = 65_536
 any byte of it is read."""
 HANDLER_TIMEOUT_S = 30.0
 """How long [s] a client has to send its whole request (line, headers and body): one
-deadline from the connection's start (``DeadlineReader``), so neither a client that sends
-nothing nor one that drips a byte at a time holds a handler thread past it; also the
-socket timeout of writing the response."""
+deadline from the request's start on its connection (``DeadlineReader``, armed per
+request on a kept connection), so neither a client that sends nothing nor one that drips
+a byte at a time holds a handler thread past it, and an idle kept connection ends after
+it; also the socket timeout of writing the response."""
 SCENE_LRU_SIZE = 8
 """Rendered scene pages kept, keyed by directory, run selection and metrics.json's
 mtime (review 04 finding 3)."""
@@ -1189,6 +1222,16 @@ JSON_CHARSET_PARAM = "charset=utf-8"
 JSON_CONTENT_TYPE = "application/json; charset=utf-8"
 HTML_CONTENT_TYPE = "text/html; charset=utf-8"
 """Content types of the responses (every text response names its charset)."""
+PNG_MEDIA_TYPE = "image/png"
+"""The one media type of a video frame body (exact, no parameter; step A6v)."""
+VIDEO_RUNS = PANEL_RUNS
+"""The most runs one video shows: the app page's two panels."""
+VIDEO_REQUEST_KEYS: frozenset[str] = frozenset(
+    {"experiment", "timestamp", "runs", "fps", "width", "frames", "seconds", "times"}
+)
+"""The keys POST /api/videos accepts (D-SP2-31: whitelisted keys)."""
+VIDEO_UNAVAILABLE_CODE = "video_unavailable"
+"""The 503 of a video request when ffmpeg was not found or the folder refuses videos."""
 SERVER_VERSION = "launchsim"
 """The Server header: the name only, no Python version."""
 FIXED_HEADERS: tuple[tuple[str, str], ...] = (
@@ -3646,6 +3689,40 @@ Runner = Callable[..., LaunchOutcome]
 """A launch function with run_launch's signature (tests pass a stub)."""
 STOPPING_MESSAGE = "the app server is stopping; no launch starts now"
 """The 503 of a launch request that arrives once the server has begun to stop."""
+VIDEO_BUSY_MESSAGE = "a video is being saved; a launch and a video never run together"
+LAUNCH_RUNNING_MESSAGE = "a launch is running; a launch and a video never run together"
+"""The 409s of a launch during a video and of a video during a launch (step A6v)."""
+VIDEO_LEFTOVER_ERROR = "VideoLeftover"
+"""What ``AppServer.last_error`` takes when a video session reports something it left
+behind (its temporary folder, an encoder process that did not end); the line itself is
+``AppServer.video_leftover`` and the session's record carries it (fix round 2)."""
+
+
+def video_footer(
+    run_dir: Path, names: Sequence[str], metrics: Mapping[str, Any], config: Mapping[str, Any]
+) -> list[str]:
+    """The caveat footer of every frame of a video of ``names`` (design 4.8; honesty
+    review 02 finding 9): the three lines of plots.animation_caveats for the shown runs
+    (the model and its sweep-optimized guidance; unthrottled, no sized structural mass for
+    the runs' own peak push load and, when a shown run is a penalty row, that it charges an
+    assumed stage-1 dry mass (fix round 2); the vehicle's calibration and the replay
+    disclaimer), with the exploratory line first for a directory labelled exploratory. The
+    display-only caveat of design 4.8 is the scene page's own footer line
+    (scene.FOOTER_TEXT), which the page puts on every captured frame before these lines
+    (frameFooterLines), so it is not repeated here (D-SP2-23: one source per caveat; fix
+    round 1); the page also adds each shown pushed run's own structural line. The vehicle
+    is the directory's own
+    (resolved_config.yaml's top vehicle block, as the scene names it). Raises
+    plots.AnimationError for a run without a planar time series."""
+    runs = [plots.read_animation_run(run_dir, n, dict(metrics)) for n in names]
+    vehicle = str(run_data.as_mapping(config.get("vehicle")).get("name", "unknown vehicle"))
+    label = metrics.get("label")
+    return list(plots.animation_caveats(runs, vehicle, None if label is None else str(label)))
+
+
+def _refused_from(exc: video.VideoError) -> Refused:
+    """A video module refusal as the server's Refused (status, code and message kept)."""
+    return Refused(HTTPStatus(exc.status), exc.code, exc.message)
 
 
 def port_unavailable(exc: OSError) -> bool:
@@ -3705,6 +3782,10 @@ class AppServer(http.server.ThreadingHTTPServer):
         display_dir: Path,
         runner: Runner | None = None,
         cache: BaselineCache | None = None,
+        encoder: video.Encoder | None = None,
+        video_reason: str = "",
+        work_dir: Path | None = None,
+        video_limits: video.Limits = video.DEFAULT_LIMITS,
     ) -> None:
         self.basis = basis
         self.server_start = server_start
@@ -3713,6 +3794,20 @@ class AppServer(http.server.ThreadingHTTPServer):
         self.display_dir = Path(display_dir)
         self.cache = BaselineCache() if cache is None else cache
         self.runner: Runner = run_launch if runner is None else runner
+        # the MP4 export (step A6v): the encoder cli.py resolved (None: not found, with the
+        # reason), where videos go (the working directory at start) and the session limits
+        self.encoder = encoder
+        self.work_dir = Path.cwd() if work_dir is None else Path(work_dir)
+        self.video_limits = video_limits
+        folder = video.folder_reason(self.work_dir, self.results_root)
+        if encoder is None:
+            self.video_reason = video_reason or "ffmpeg not found"
+        else:
+            self.video_reason = folder or ""
+        self._video: video.VideoSession | None = None
+        self._video_last: video.VideoSession | None = None
+        self._video_lock = threading.Lock()
+        self.video_leftover: str | None = None
         self.boot_id = secrets.token_hex(BOOT_ID_BYTES)
         self.sp1_same = sp1_files_same(self.repo_root, basis)
         self._sp1_same_by_commit: dict[str, bool | None] = {}
@@ -3799,9 +3894,10 @@ class AppServer(http.server.ThreadingHTTPServer):
     def close(self) -> None:
         """Once (a second call returns at once): refuse later launches
         (``begin_stopping``), shut serve_forever down from a helper thread when it runs
-        (shutdown() from the serving thread would deadlock), close the socket, then join
-        the launch worker for WORKER_JOIN_TIMEOUT_S (a daemon thread: a stopped process
-        abandons it)."""
+        (shutdown() from the serving thread would deadlock), close the socket, close an
+        open video session (the encoder killed, its temporary folder removed, nothing kept),
+        then join the launch worker for WORKER_JOIN_TIMEOUT_S (a daemon thread: a stopped
+        process abandons it)."""
         with self._start_lock:
             self._stopping = True
             if self._closed:
@@ -3812,6 +3908,10 @@ class AppServer(http.server.ThreadingHTTPServer):
             stopper.start()
             stopper.join(SHUTDOWN_TIMEOUT_S)
         self.server_close()
+        with self._video_lock:
+            session = self._video
+        if session is not None:
+            session.close()
         worker = self._worker
         if worker is not None:
             worker.join(WORKER_JOIN_TIMEOUT_S)
@@ -3850,10 +3950,11 @@ class AppServer(http.server.ThreadingHTTPServer):
     def start_launch(self, form: appform.Form) -> tuple[HTTPStatus, dict[str, Any]]:
         """Check and start one launch atomically (one lock): 503 'stopping' once the
         server has begun to stop (nothing checked, nothing started: a request whose body
-        was still arriving when Ctrl+C came); 409 'busy' with the running job; 422
-        'refused' with the field and one line (``preflight``: nothing written); 409
-        'code_changed' (``code_changed`` True); else 202 with the new job, which a daemon
-        worker thread runs (``_work``)."""
+        was still arriving when Ctrl+C came); 409 'busy' with the running job; 409
+        'video_busy' while a video session is open (a launch and a video never run
+        together, step A6v); 422 'refused' with the field and one line (``preflight``:
+        nothing written); 409 'code_changed' (``code_changed`` True); else 202 with the new
+        job, which a daemon worker thread runs (``_work``)."""
         with self._start_lock:
             if self._stopping:
                 return HTTPStatus.SERVICE_UNAVAILABLE, {
@@ -3867,6 +3968,11 @@ class AppServer(http.server.ThreadingHTTPServer):
                     "error": "busy",
                     "message": "a launch is already running; one launch at a time",
                     "job": self.job_snapshot(),
+                }
+            if self.video_busy():
+                return HTTPStatus.CONFLICT, {
+                    "error": "video_busy",
+                    "message": VIDEO_BUSY_MESSAGE,
                 }
             resolved, refused = preflight(self.basis, form)
             if refused is not None:
@@ -4160,6 +4266,195 @@ class AppServer(http.server.ThreadingHTTPServer):
             "headline": SP1_HEADLINE.record(),
             "exploratory_caveat": replay.EXPLORATORY_CAVEAT,
             "launch_note": LAUNCH_NOTE,
+            "video": self.video_info(),
+        }
+
+    def video_info(self) -> dict[str, Any]:
+        """GET /api/form ``video`` (step A6v): whether the MP4 export is available and,
+        when not, the reason (ffmpeg not found, or the working directory inside a results
+        tree); the format, the frame rates and widths offered with their defaults and the
+        height per width, the frame and byte limits, the folder videos are written to (the
+        server's working directory, absolute) and the encoder's path."""
+        limits = self.video_limits
+        return {
+            "available": self.video_reason == "",
+            "reason": self.video_reason,
+            "format": video.FORMAT_MP4,
+            "fps_choices": list(video.FPS_CHOICES),
+            "default_fps": video.DEFAULT_FPS,
+            "widths": list(video.WIDTH_CHOICES),
+            "default_width": video.DEFAULT_WIDTH,
+            "sizes": [[w, video.frame_height(w)] for w in video.WIDTH_CHOICES],
+            "max_runs": VIDEO_RUNS,
+            "max_frames": limits.max_frames,
+            "max_frame_bytes": limits.max_frame_bytes,
+            "byte_budget": limits.byte_budget,
+            "folder": str(self.work_dir),
+            "encoder": None if self.encoder is None else self.encoder.display,
+        }
+
+    # ---------------------------------------------------------- the video session
+
+    def video_busy(self) -> bool:
+        """True while a video session holds the slot (capturing or finishing)."""
+        with self._video_lock:
+            session = self._video
+        return session is not None and session.is_open
+
+    def _video_report(self, text: str) -> None:
+        """A video session left something behind (its temporary folder, an encoder process
+        that did not end): ``last_error`` takes VIDEO_LEFTOVER_ERROR and ``video_leftover``
+        the line (fix round 2; the session's record carries it too)."""
+        self.last_error = VIDEO_LEFTOVER_ERROR
+        self.video_leftover = text
+
+    def video_session(self, token: str) -> video.VideoSession:
+        """The session ``token`` names: the current one, or the last ended one, which is
+        kept beside it (fix round 3: a page polling a done session's record after the next
+        session was created still gets it, with the path), each compared in constant time;
+        Refused 404 for any other token (the id is never part of a path)."""
+        missing = Refused(HTTPStatus.NOT_FOUND, "not_found", "no such video session")
+        if not video.ID_PATTERN.fullmatch(token):
+            raise missing
+        with self._video_lock:
+            candidates = (self._video, self._video_last)
+        for session in candidates:
+            if session is not None and secrets.compare_digest(
+                token.encode("ascii"), session.id.encode("ascii")
+            ):
+                return session
+        raise missing
+
+    def _video_spec(self, obj: Mapping[str, Any]) -> video.SessionSpec:
+        """POST /api/videos' body as a SessionSpec (D-SP2-31: whitelisted keys, enumerated
+        choices, bounded numbers): the directory looked up in the server's own listing
+        (404), not the running launch's and playable (409), 1 to VIDEO_RUNS distinct runs
+        of its run list (422), fps and width from the fixed lists, the frame count from
+        ``frames`` or ``seconds`` (1 to the limit), the optional scene times, and the
+        footer the server computes (``video_footer``). Raises Refused."""
+        unknown = set(obj) - VIDEO_REQUEST_KEYS
+        if unknown:
+            raise Refused(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                "unknown_key",
+                "the request holds a key not accepted",
+            )
+        experiment, timestamp = obj.get("experiment"), obj.get("timestamp")
+        if not isinstance(experiment, str) or not isinstance(timestamp, str):
+            raise Refused(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                "bad_directory",
+                "experiment and timestamp are names",
+            )
+        run_dir = self.find(experiment, timestamp)
+        if self.running_directory() == (experiment, timestamp):
+            raise Refused(HTTPStatus.CONFLICT, "running", "this directory is the running launch's")
+        row = self._row(run_dir, experiment, timestamp, False)
+        if not row["playable"]:
+            raise Refused(
+                HTTPStatus.CONFLICT,
+                "not_playable",
+                f"this directory has no scene to film: {row['reason']}",
+                reason=row["reason"],
+            )
+        try:
+            names = video.check_runs(obj.get("runs"), VIDEO_RUNS)
+            fps = video.check_fps(obj.get("fps"))
+            width = video.check_width(obj.get("width"))
+            frames = video.frame_count(
+                fps, obj.get("frames"), obj.get("seconds"), self.video_limits
+            )
+            times = video.check_times(obj.get("times"), frames)
+        except video.VideoError as exc:
+            raise _refused_from(exc) from exc
+        try:
+            metrics = read_capped_json(run_dir / run_data.METRICS_FILE, MAX_METRICS_BYTES)
+            members = run_folders(run_dir, metrics)
+            if any(n not in members for n in names):
+                raise Refused(
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
+                    "bad_selection",
+                    "a run of the selection is not in the directory's run list",
+                )
+            config = read_capped_yaml(run_dir / run_data.CONFIG_FILE, MAX_CONFIG_BYTES)
+            footer = video_footer(run_dir, names, metrics, config)
+        except (UnreadableError, OSError, ValueError, KeyError) as exc:
+            # RunDataError and pandas' ParserError and EmptyDataError are ValueErrors; a
+            # series of text cells fails its float conversion with one too (fix round 3):
+            # every unreadable file is the same 422, never a 500
+            self.forget_row(run_dir)
+            text = (
+                str(exc)[:FAILED_LINE_MAX]
+                if isinstance(exc, UnreadableError)  # fixed text naming the file only
+                else "the directory's files cannot be read for a video"
+            )
+            raise Refused(HTTPStatus.UNPROCESSABLE_ENTITY, "no_video", text) from exc
+        return video.SessionSpec(
+            experiment=experiment,
+            timestamp=timestamp,
+            runs=tuple(names),
+            run_dir=run_dir,
+            fps=fps,
+            frames=frames,
+            width=width,
+            height=video.frame_height(width),
+            footer=tuple(footer),
+            times=None if times is None else tuple(times),
+        )
+
+    def start_video(self, obj: Mapping[str, Any]) -> tuple[HTTPStatus, dict[str, Any]]:
+        """POST /api/videos: under the start lock (so a launch and a video never start
+        together): 503 'stopping' once the server stops; 503 VIDEO_UNAVAILABLE_CODE with
+        the reason when the export is off; 409 'launch_running' while a launch runs; 409
+        'video_busy' while a session is open; else the request checked (``_video_spec``),
+        the session created (the encoder started) and 201 with its record, the scene times
+        and the footer lines."""
+        with self._start_lock:
+            if self._stopping:
+                return HTTPStatus.SERVICE_UNAVAILABLE, {
+                    "error": "stopping",
+                    "message": STOPPING_MESSAGE,
+                }
+            if self.video_reason or self.encoder is None:
+                return HTTPStatus.SERVICE_UNAVAILABLE, {
+                    "error": VIDEO_UNAVAILABLE_CODE,
+                    "message": f"videos cannot be saved: {self.video_reason}",
+                }
+            with self._job_lock:
+                launching = self._job is not None and self._job.state == JOB_RUNNING
+            if launching:
+                return HTTPStatus.CONFLICT, {
+                    "error": "launch_running",
+                    "message": LAUNCH_RUNNING_MESSAGE,
+                }
+            if self.video_busy():
+                return HTTPStatus.CONFLICT, {
+                    "error": "video_busy",
+                    "message": "a video is being saved; one at a time",
+                }
+            spec = self._video_spec(obj)
+            try:
+                session = video.VideoSession(
+                    spec,
+                    self.encoder,
+                    self.work_dir,
+                    repo_root=self.repo_root,
+                    results_root=self.results_root,
+                    limits=self.video_limits,
+                    report=self._video_report,
+                )
+            except video.VideoError as exc:
+                raise _refused_from(exc) from exc
+            with self._video_lock:
+                # the ended session stays readable as the last one (fix round 3); it is
+                # in a final state here, since the slot was free under the start lock
+                if self._video is not None:
+                    self._video_last = self._video
+                self._video = session
+        return HTTPStatus.CREATED, {
+            "video": session.record(),
+            "times": None if spec.times is None else list(spec.times),
+            "footer": list(spec.footer),
         }
 
     def app_page(self, other_site: bool = False) -> tuple[bytes, str]:
@@ -4542,6 +4837,16 @@ class AppServer(http.server.ThreadingHTTPServer):
                         "no_scene",
                         text[: appform.MAX_REFUSAL_CHARS],
                     ) from exc
+                except (OSError, ValueError, KeyError) as exc:
+                    # a series pandas cannot parse or convert (ParserError, a float
+                    # conversion of text cells) in a directory whose row is playable (fix
+                    # round 3): a fixed text, never the exception's (it can quote a cell)
+                    self.forget_row(run_dir)
+                    raise Refused(
+                        HTTPStatus.UNPROCESSABLE_ENTITY,
+                        "no_scene",
+                        "the directory's files cannot be read for a scene",
+                    ) from exc
                 page = scene.render_page(payload).encode("utf-8")
                 self._scenes.put(key, page)
         return page
@@ -4556,8 +4861,16 @@ ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/api/results/<experiment>/<timestamp>"),
     ("GET", "/api/panel/<experiment>/<timestamp>/<runs>"),
     ("GET", "/scene/<experiment>/<timestamp>/<runs>"),
+    ("POST", "/api/videos"),
+    ("GET", "/api/videos/<id>"),
+    ("POST", "/api/videos/<id>/frames/<n>"),
+    ("POST", "/api/videos/<id>/finish"),
+    ("POST", "/api/videos/<id>/cancel"),
 )
-"""Every route (method, path); any other path is 404, any other method 501."""
+"""Every route (method, path); any other path is 404, any other method 501. Every POST
+body is a JSON object of at most MAX_JSON_BODY_BYTES (``AppHandler._json_body``) but the
+frame route's, one image/png of at most the session's frame cap and remaining budget
+(``AppHandler._png_body``): the one exception to the body rule (step A6v)."""
 
 
 class DeadlineReader(io.RawIOBase):
@@ -4572,6 +4885,11 @@ class DeadlineReader(io.RawIOBase):
         super().__init__()
         self._sock = sock
         self._deadline: float | None = deadline
+
+    def arm(self, deadline: float) -> None:
+        """Set the deadline of the next request on this connection (fix round 3: one per
+        request on a kept connection)."""
+        self._deadline = deadline
 
     def readable(self) -> bool:
         """True: a read-only raw stream."""
@@ -4594,16 +4912,21 @@ class DeadlineReader(io.RawIOBase):
 
 class AppHandler(http.server.BaseHTTPRequestHandler):
     """The app's request handler: only do_GET and do_POST (every other method gets the
-    standard library's 501, answered as JSON by ``send_error``); HTTP/1.0 (one request
-    per connection, an unread body never read as a next request), also for a malformed
-    request line; the whole request (line, headers, body) must arrive within
-    HANDLER_TIMEOUT_S of the connection's start (``DeadlineReader``; the response is
-    written under the same socket timeout); a Server header without the Python version;
-    no log line. Every request passes ``guard`` first; any exception gives a JSON 500
-    with a fixed message."""
+    standard library's 501, answered as JSON by ``send_error``); HTTP/1.1 with kept
+    connections (fix round 3: an export posts up to 1,800 frames, and one connection per
+    frame let Windows' loopback stack refuse a connection now and then, which the page saw
+    as a lost frame POST), every response with a Content-Length, and the connection closed
+    after any refusal or error (its body may be unread, and an unread body is never read as
+    the next request), after a request line of HTTP/1.0 (``default_request_version``: also
+    a malformed one) and once the server is stopping; each request (line, headers, body)
+    must arrive within HANDLER_TIMEOUT_S of its start (``DeadlineReader``, armed per
+    request, so an idle kept connection ends after HANDLER_TIMEOUT_S, as a silent one did
+    before; the response is written under the same socket timeout); a Server header
+    without the Python version; no log line. Every request passes ``guard`` first; any
+    exception gives a JSON 500 with a fixed message."""
 
     server: AppServer
-    protocol_version = "HTTP/1.0"
+    protocol_version = "HTTP/1.1"
     default_request_version = "HTTP/1.0"
     timeout = HANDLER_TIMEOUT_S
     server_version = SERVER_VERSION
@@ -4614,12 +4937,24 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
 
     def setup(self) -> None:
         """The standard library's setup, then the request read through a DeadlineReader
-        whose deadline is HANDLER_TIMEOUT_S (read now, so a test may change it) from
-        now."""
+        (armed per request by ``handle_one_request``)."""
         super().setup()
         self.rfile.close()  # the buffered socket file the standard library made
         self._reader = DeadlineReader(self.connection, time.monotonic() + HANDLER_TIMEOUT_S)
         self.rfile = io.BufferedReader(self._reader)
+
+    def handle_one_request(self) -> None:
+        """One request of the connection: the deadline armed HANDLER_TIMEOUT_S (read now,
+        so a test may change it) from now, the per-request state cleared, then the
+        standard library's handle_one_request; the connection is closed afterwards when
+        the server is stopping (fix round 3)."""
+        if self._reader is not None:
+            self._reader.arm(time.monotonic() + HANDLER_TIMEOUT_S)
+        self._responded = False
+        self._frame = None
+        super().handle_one_request()
+        if self.server._stopping:
+            self.close_connection = True
 
     def _request_read(self) -> None:
         """End the request's deadline before a response is written; the socket's timeout
@@ -4700,9 +5035,13 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             else:
                 self._route_post(parts)
         except Refused as exc:
+            # the body may be unread (a 413 before any byte, a refusal of the headers):
+            # the connection ends with the response, so it is never read as a request
+            self.close_connection = True
             if not self._responded:
                 self._json(exc.status, exc.body())
         except Exception as exc:  # no traceback ever reaches a client
+            self.close_connection = True
             self.server.last_error = type(exc).__name__
             if not self._responded:
                 self._json(
@@ -4733,16 +5072,142 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             page = server.scene_page(parts[1], parts[2], parts[3])
             frame = (FRAME_SAMEORIGIN, server.scene_csp())
             self._send(HTTPStatus.OK, page, HTML_CONTENT_TYPE, frame)
+        elif len(parts) == 3 and parts[:2] == ["api", "videos"]:
+            self._json(HTTPStatus.OK, {"video": server.video_session(parts[2]).record()})
         else:
             raise Refused(HTTPStatus.NOT_FOUND, "not_found", "no such route")
 
     def _route_post(self, parts: list[str]) -> None:
-        """POST /api/launches only (its body by ``_json_body``, then ``AppServer.launch``);
-        any other path is Refused 404."""
-        if parts != ["api", "launches"]:
-            raise Refused(HTTPStatus.NOT_FOUND, "not_found", "no such route")
-        status, body = self.server.launch(self._json_body())
+        """POST /api/launches (its body by ``_json_body``, then ``AppServer.launch``); the
+        video routes (step A6v): POST /api/videos (JSON, ``AppServer.start_video``), POST
+        /api/videos/<id>/frames/<n> (the header checks of one image/png body first,
+        ``_png_headers``; then the session by its id and the index, a miss 404 answered
+        after the declared body has been read and discarded, like every refusal past the
+        length check (fix round 2: a 404 sent with the body unread is a reset the page saw
+        as a lost connection after a server restart); then the body by ``_png_body`` and
+        ``VideoSession.accept_frame``), POST /api/videos/<id>/finish and /cancel (an empty
+        JSON object, ``_empty_json_body``: a key is 422, as an unknown key is for every
+        POST); any other path is Refused 404. A VideoError is answered with its own
+        status."""
+        server = self.server
+        try:
+            if parts == ["api", "launches"]:
+                status, body = server.launch(self._json_body())
+            elif parts == ["api", "videos"]:
+                status, body = server.start_video(self._json_body())
+            elif len(parts) == 5 and parts[:2] == ["api", "videos"] and parts[3] == "frames":
+                n = self._png_headers(server.video_limits.max_frame_bytes)
+                try:
+                    session = server.video_session(parts[2])
+                    if not video.FRAME_INDEX_PATTERN.fullmatch(parts[4]):
+                        raise Refused(HTTPStatus.NOT_FOUND, "not_found", "no such route")
+                except Refused:
+                    self._drain(n)
+                    raise
+                index = int(parts[4])
+                data = self._png_body(session, index, n)
+                received = session.accept_frame(index, data)
+                status, body = HTTPStatus.OK, {"received": received, "frames": session.spec.frames}
+            elif len(parts) == 4 and parts[:2] == ["api", "videos"] and parts[3] == "finish":
+                session = server.video_session(parts[2])
+                self._empty_json_body()
+                session.finish()
+                status, body = HTTPStatus.ACCEPTED, {"video": session.record()}
+            elif len(parts) == 4 and parts[:2] == ["api", "videos"] and parts[3] == "cancel":
+                session = server.video_session(parts[2])
+                self._empty_json_body()
+                session.cancel()
+                status, body = HTTPStatus.OK, {"video": session.record()}
+            else:
+                raise Refused(HTTPStatus.NOT_FOUND, "not_found", "no such route")
+        except video.VideoError as exc:
+            raise _refused_from(exc) from exc
         self._json(status, body)
+
+    def _png_headers(self, cap: int) -> int:
+        """The frame route's header checks (the one exception to the JSON rule; review 04
+        finding 1), before a byte is read and before the session is looked up (fix round
+        2): exactly one Content-Type of PNG_MEDIA_TYPE with no parameter (415); no
+        Transfer-Encoding (400); exactly one Content-Length of ASCII digits (411 when
+        missing, 400 otherwise); at most ``cap`` bytes, the server's frame cap (413, the
+        body unread: the one refusal answered without reading the body). Returns the
+        declared length."""
+        types = self.headers.get_all("Content-Type") or []
+        if len(types) != 1 or types[0].strip().lower() != PNG_MEDIA_TYPE:
+            raise Refused(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                "unsupported_media_type",
+                f"a frame body must be {PNG_MEDIA_TYPE}",
+            )
+        if self.headers.get_all("Transfer-Encoding"):
+            raise Refused(
+                HTTPStatus.BAD_REQUEST, "bad_request", "Transfer-Encoding is not accepted"
+            )
+        lengths = self.headers.get_all("Content-Length") or []
+        if not lengths:
+            raise Refused(
+                HTTPStatus.LENGTH_REQUIRED, "length_required", "Content-Length is required"
+            )
+        if len(lengths) != 1 or not CONTENT_LENGTH_PATTERN.fullmatch(lengths[0].strip()):
+            raise Refused(HTTPStatus.BAD_REQUEST, "bad_request", "one Content-Length of digits")
+        n = int(lengths[0].strip())
+        if n > cap:
+            raise Refused(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "frame_too_large",
+                f"a frame body is at most {cap} bytes",
+            )
+        return n
+
+    def _png_body(self, session: video.VideoSession, index: int, n: int) -> bytes:
+        """The frame route's body of ``n`` declared bytes (``_png_headers`` passed them):
+        the remaining budget (413) and the index the session expects (409), each answered
+        only after the declared body has been read and discarded (``_drain``; fix round 1:
+        a refusal sent with the body unread closes the socket on unread data, which
+        Windows turns into a reset the client sees as a lost connection, not the refusal);
+        then exactly that many bytes under the handler timeout (400 when short)."""
+        try:
+            if n > session.remaining_bytes:
+                raise Refused(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    "budget",
+                    "the frame would pass the session's byte budget",
+                )
+            session.check_next(index)
+        except (Refused, video.VideoError):
+            self._drain(n)
+            raise
+        try:
+            data = self.rfile.read(n)
+        except OSError as exc:  # the handler timeout, a reset
+            raise Refused(
+                HTTPStatus.BAD_REQUEST, "bad_request", "the request body did not arrive"
+            ) from exc
+        if len(data) != n:
+            raise Refused(
+                HTTPStatus.BAD_REQUEST, "bad_request", "the request body is shorter than declared"
+            )
+        return data
+
+    def _drain(self, n: int) -> None:
+        """Read and discard the ``n`` declared body bytes (at most a frame's cap, already
+        checked) before a refusal is answered, under the handler deadline; a short or
+        failed read is ignored, since the refusal is sent either way (fix round 1)."""
+        try:
+            self.rfile.read(n)
+        except OSError:
+            pass
+
+    def _empty_json_body(self) -> None:
+        """The body of POST /api/videos/<id>/finish and /cancel: a JSON object
+        (``_json_body``) with no key; any key is Refused 422 unknown_key, the rule every
+        other POST applies to a key it does not accept (D-SP2-31; fix round 1)."""
+        if self._json_body():
+            raise Refused(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                "unknown_key",
+                "the request holds a key not accepted",
+            )
 
     def _json_body(self) -> dict[str, Any]:
         """The request body as a JSON object, every check before a byte is read: exactly

@@ -67,7 +67,7 @@ from typing import Any
 
 import pytest
 
-from launchsim import app, appform
+from launchsim import app, appform, video
 
 
 def _load_support() -> ModuleType:
@@ -2210,3 +2210,385 @@ def test_preset_label_reset_footer_and_push_start_default(
     # 100 m at 3 g0 net: the push lasts sqrt(2 L / a) = 2.6073 s, so +0.5 s after release
     # is 3.1073 s after the push starts
     assert default["value"] == pytest.approx(3.1073181789953295, abs=1e-6)
+
+
+# ------------------------------------------------------------------ the video control (step A6v)
+
+
+def test_video_control_structure_and_routes(template: str) -> None:
+    """Step A6v (design 4.8, D-SP2-30, review 06 finding 9): the Save video (MP4) control
+    sits in the scene card beside the frame with fps and width selects, the natural
+    length, Save, Cancel, a progress line, the path with a copy button and an error line;
+    the frame rate and width come from GET /api/form's video block at its defaults; a
+    video starts only from its button's click; the frame loop captures each frame with the
+    server's footer lines and awaits each POST (no timer in it); the finish is followed
+    by a poll; every video route is a literal /api/ path; the control is disabled with a
+    reason while a launch runs or when the export is off."""
+    card = template[
+        template.index('<section class="card" id="sceneCard"') : template.index(
+            '<section class="card" id="browser"'
+        )
+    ]
+    for part in (
+        '<div class="video" id="videoBox" aria-labelledby="videoTitle">',
+        '<h3 id="videoTitle" class="grouplabel">Save video (MP4)</h3>',
+        '<select id="videoFps" aria-describedby="videoLength">',
+        '<select id="videoWidth" aria-describedby="videoLength">',
+        '<button type="button" id="videoStart" disabled>Save video (MP4)</button>',
+        '<button type="button" id="videoCancel" hidden>Cancel</button>',
+        '<p class="meta" id="videoLength"></p>',
+        '<p class="why" id="videoWhy" hidden></p>',
+        '<p class="meta" id="videoProgress" hidden></p>',
+        '<code id="videoPath"></code><button type="button" id="videoCopy">Copy the path</button>',
+        '<p class="err" id="videoErr" role="alert" hidden></p>',
+    ):
+        assert part in card, part
+    assert card.index('id="videoBox"') < card.index('<iframe id="frame"')
+    script = _script(template)
+    build = _body(script, "buildVideoControls")
+    assert "fps.value = String(info.default_fps);" in build
+    assert "width.value = String(info.default_width);" in build
+    # a video only from the button's click
+    clicks = _click_spans(script)
+    for pos in _calls_outside_definition(script, "startVideo"):
+        assert any(a < pos < b for a, b in clicks), pos
+    start = _body(script, "startVideo")
+    assert (
+        'if ($("videoStart").disabled || S.video.active || !mayActNow() || jobRunning()) return;'
+        in start
+    )
+    assert 'api("/api/videos", { method: "POST"' in start
+    assert "frames: plan.frames, times: plan.times" in start
+    assert "return captureLoop(v);" in start
+    assert 'encodeURIComponent(v.id) + "/finish"' in start and "pollVideo(v);" in start
+    loop = _body(script, "captureLoop")
+    assert "v.hook.captureFrame(v.times[k], v.width, v.height, v.footer)" in loop
+    assert (
+        'api("/api/videos/" + encodeURIComponent(v.id) + "/frames/" + k, '
+        '{ method: "POST", headers: { "Content-Type": "image/png" }, body: blob })' in loop
+    )
+    assert "return next(k + 1, 0);" in loop and "if (v.cancel) return Promise.resolve" in loop
+    # no timer drives the frame cadence: each POST is awaited; the one timer of a capture is
+    # the pause before a lost POST is looked into (retryPause, outside the loop; fix round 3)
+    assert (
+        "setTimeout" not in loop
+        and "setInterval" not in loop
+        and "requestAnimationFrame" not in loop
+    )
+    assert "if (!res.ok) throw new Error" in loop
+    # fix round 3 (compliance pass 3 finding 5, honesty pass 3): a frame POST that gets no
+    # response (a TypeError from fetch: the connection was lost) is looked into after
+    # retryPause through the session's record, and the loop resumes at received (k or k + 1);
+    # after VIDEO_FRAME_RETRIES losses of one frame the save fails naming the frame
+    assert "const VIDEO_RETRY_MS = 1000;" in script and "const VIDEO_FRAME_RETRIES = 3;" in script
+    assert "setTimeout(resolve, VIDEO_RETRY_MS)" in _body(script, "retryPause")
+    assert "retryPause().then(() => fetchVideo(v))" in loop
+    assert (
+        'if (rec.state !== "capturing" || (rec.received !== k && rec.received !== k + 1)) '
+        "throw lost(k);" in loop
+    )
+    assert "return next(rec.received, rec.received === k ? losses : 0);" in loop
+    assert "if (!(err instanceof TypeError) || losses >= VIDEO_FRAME_RETRIES) throw" in loop
+    assert '"the connection was lost while posting frame " + k + " of " + v.frames' in loop
+    assert "return next(0, 0);" in loop
+    poll = _body(script, "pollVideo")
+    assert "fetchVideo(v).then(rec =>" in poll
+    assert "setTimeout(() => pollVideo(v), VIDEO_POLL_MS)" in poll
+    assert '$("videoPath").textContent = rec.path;' in poll
+    fetch = _body(script, "fetchVideo")
+    assert 'api("/api/videos/" + encodeURIComponent(v.id))' in fetch
+    assert "if (!res.ok || !res.body || !res.body.video) throw new Error(errorText(res));" in fetch
+    # fix round 1: after a failure on the page's side (a frame POST whose refusal was lost with
+    # its connection) the server's own record is read once, and a failed session's error shown
+    assert ".catch(err => recordAfterFailure(v).then(rec =>" in start
+    assert 'videoFailed("Video not saved: " + (failed ? rec.error : err.message));' in start
+    assert "if (v.id && open) cancelSession(v, true)" in start
+    after = _body(script, "recordAfterFailure")
+    assert "if (!v.id) return Promise.resolve(null);" in after
+    assert "return fetchVideo(v).catch(() => null);" in after
+    assert 'encodeURIComponent(v.id) + "/cancel"' in _body(script, "cancelSession")
+    # the literals: create, frames, finish, cancel, the record (comments name the routes too)
+    assert len(re.findall(r'"/api/videos', script)) == 5
+    # the note follows the planned clip (fix round 1: "the player's default rate" only when the
+    # clip is not scaled), so renderVideo writes it, not buildVideoControls
+    assert '$("videoNote")' not in build
+    render = _body(script, "renderVideo")
+    assert '$("videoNote").textContent = info && info.available ? videoNoteText(' in render
+    assert "videoNoteText(info.folder, scaled)" in render
+    assert "scaled = !!(plan && plan.scaled);" in render
+    # fix round 2 (compliance pass 2): while a clip is being saved the note and the length
+    # line describe that clip's own plan (scaled or not), carried on the active record
+    assert (
+        'let why = "", length = active ? active.lengthText : "", '
+        "scaled = active ? active.scaled === true : false;" in render
+    )
+    assert (
+        "scaled: plan.scaled === true, lengthText: clipLengthText(plan, plan.natural_s, " in start
+    )
+    assert "maxFrameBytes: Number(info.max_frame_bytes)" in start
+    # fix round 2 (security pass 2): a captured frame over the server's frame cap is refused
+    # on the page before the POST (the server answers such a body 413 unread, which the
+    # browser can report as a lost connection), with capture=true so Save stays off for the
+    # size until the scene changes
+    assert "if (Number.isFinite(v.maxFrameBytes) && blob && blob.size > v.maxFrameBytes) {" in loop
+    assert "const e = new Error(frameTooLarge(k, blob.size, v.maxFrameBytes));" in loop
+    assert loop.count("e.capture = true;") == 2
+    assert loop.index("blob.size > v.maxFrameBytes") < loop.index('"/frames/" + k')
+    assert '"A launch is running: a launch and a video never run together."' in render
+    assert '"The MP4 export is off: " + (info.reason || "no reason given")' in render
+    assert '"Load a scene first: the video films the scene in the frame."' in render
+    assert "const plan = videoPlan(hook);" in render
+    # the fit check: a frame of the chosen size drawn once per scene and size before Save is
+    # offered (two panels under the caveat footer do not fit 960 x 540 px); a capture that
+    # fails during a save keeps the size off and its message on the page
+    assert "const fit = videoFit(hook, c, plan);" in render
+    assert "hook.captureFrame(plan.times[0], c.width, c.height)" in _body(script, "videoFit")
+    assert "if (err.capture === true) S.video.fit = " in start
+    assert "cancelSession(v, true)" in start
+    assert "if (quiet === true) return;" in _body(script, "cancelSession")
+    assert "hook.clipTimes(c.fps)" in _body(script, "videoPlan")
+    assert "clipPlan(natural.natural_s, c.fps, info.max_frames)" in _body(script, "videoPlan")
+    assert "renderVideo();" in _body(script, "renderLaunch")
+    assert "renderVideo();" in _body(script, "frameLoaded")
+    assert "renderVideo();" in _body(script, "clearScene")
+    assert "navigator.clipboard.writeText(text)" in _body(script, "copyVideoPath")
+    assert "scenePath(" not in _body(script, "sceneKey")
+
+
+VIDEO_HARNESS = (
+    HARNESS_HEAD
+    + """
+const out = {};
+out.plans = input.plans.map(c => clipPlan(c[0], c[1], c[2]));
+out.texts = input.plans.map(c => {
+  const p = clipPlan(c[0], c[1], c[2]);
+  return clipLengthText(p, c[0], c[1], 1280, 720, c[2]);
+});
+out.progress = [videoProgressText(0, 1800, 0), videoProgressText(12, 1800, 1020),
+  videoProgressText(1800, 1800, 150000)];
+out.notes = [videoNoteText("C:\\\\work", false), videoNoteText("C:\\\\work", true)];
+const g = input.gate;
+out.gate = [clipPlan(g[0], g[1], g[2]), clipPlan(g[0], 24, g[2])];
+out.gateText24 = clipLengthText(clipPlan(g[0], 24, g[2]), g[0], 24, 1280, 720, g[2]);
+out.tooLarge = frameTooLarge(7, input.cap + 1, input.cap);
+process.stdout.write(JSON.stringify(out));
+"""
+)
+
+CAPTURE_LOOP_HARNESS = """
+const calls = [];
+function api(path, opts) {
+  calls.push(path);
+  return Promise.resolve({ ok: true, status: 200, body: {} });
+}
+function sameScene(v) { return true; }
+function renderVideoProgress(v) {}
+function errorText(res) { return "HTTP " + res.status; }
+const cap = input.cap;
+const base = { id: "abc", frames: 3, times: [0, 1, 2], width: 1280, height: 720, footer: [],
+  sent: 0, cancel: false, maxFrameBytes: cap };
+const hookOf = size => ({ captureFrame: () => Promise.resolve({ size: size }) });
+const over = Object.assign({}, base, { hook: hookOf(cap + 1) });
+const fits = Object.assign({}, base, { hook: hookOf(cap) });
+const out = {};
+captureLoop(over)
+  .then(r => { out.over = { outcome: r }; },
+        e => { out.over = { error: e.message, capture: e.capture === true }; })
+  .then(() => { out.callsAfterOver = calls.length; return captureLoop(fits); })
+  .then(r => { out.fits = { outcome: r, sent: fits.sent, calls: calls.slice() }; },
+        e => { out.fits = { error: e.message }; })
+  .then(() => process.stdout.write(JSON.stringify(out)));
+"""
+
+
+def _function_source(script: str, name: str) -> str:
+    """The whole text of ``function name(...) { ... }`` in the page's script."""
+    start = re.search(rf"\bfunction {re.escape(name)}\(", script)
+    assert start is not None, name
+    _brace, end = _function_span(script, name)
+    return script[start.start() : end + 1]
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: the clip plan is not run")
+def test_clip_plan_under_node(template: str, tmp_path: Path) -> None:
+    """clipPlan: round(fps x natural) frames over the natural length; over the server's
+    limit the clip is scaled to limit / fps seconds with the limit's frames; bad inputs
+    give null; the length line (the clip from the first row to the end; a scaled clip's
+    clock against the player's) and the progress line say so; the note promises the player's
+    default rate only for an unscaled clip (fix round 1); the gate pair's natural clip (86.4
+    s) is not scaled at the default frame rate, and would be at 24 fps."""
+    plans = [
+        [72.63, 24, 1800],
+        [72.63, 30, 1800],
+        [75.0, 24, 1800],
+        [75.1, 24, 1800],
+        [0.01, 10, 1800],
+        [0, 24, 1800],
+        [None, 24, 1800],
+        [72.63, 24, 0],
+        ["x", 24, 1800],
+    ]
+    gate = [86.4, video.DEFAULT_FPS, video.MAX_FRAMES]
+    out = _run_pure(
+        template,
+        VIDEO_HARNESS,
+        {"plans": plans, "gate": gate, "cap": video.MAX_FRAME_BYTES},
+        tmp_path,
+    )
+    # fix round 2: the length line of the gate pair at 24 fps (what the page keeps showing
+    # while such a clip is saved) and the page's own frame-cap refusal
+    assert out["gateText24"] == (
+        "Natural length 86.4 s at 24 fps would be 2074 frames, over the limit of 1800: the clip "
+        "is scaled to 75.0 s (1800 frames of 1280 x 720 px, the same scene from the first row to "
+        "the end at a clock 1.15x the player's)."
+    )
+    assert out["tooLarge"] == (
+        f"frame 7 is {video.MAX_FRAME_BYTES + 1} bytes, over the server's "
+        f"{video.MAX_FRAME_BYTES}-byte frame cap: choose a narrower frame"
+    )
+    assert out["plans"][0] == {"frames": 1743, "seconds": 72.63, "scaled": False}
+    assert out["plans"][1] == {"frames": 1800, "seconds": 60.0, "scaled": True}
+    assert out["plans"][2] == {"frames": 1800, "seconds": 75.0, "scaled": False}
+    assert out["plans"][3] == {"frames": 1800, "seconds": 75.0, "scaled": True}
+    assert out["plans"][4] == {"frames": 1, "seconds": 0.01, "scaled": False}
+    assert out["plans"][5:] == [None, None, None, None]
+    assert out["texts"][0] == (
+        "Natural length 72.6 s at 24 fps: 1743 frames of 1280 x 720 px, from the first row to "
+        "the end."
+    )
+    assert out["texts"][1] == (
+        "Natural length 72.6 s at 30 fps would be 2179 frames, over the limit of 1800: the clip "
+        "is scaled to 60.0 s (1800 frames of 1280 x 720 px, the same scene from the first row to "
+        "the end at a clock 1.21x the player's)."
+    )
+    assert out["texts"][5] == "The clip's length could not be measured."
+    assert out["gate"][0] == {"frames": 1728, "seconds": 86.4, "scaled": False}
+    assert out["gate"][1]["scaled"] is True and out["gate"][1]["frames"] == 1800
+    assert out["notes"][0].startswith(
+        "The clip plays the scene in the frame at the player's default rate, from the first row "
+        "to the end, with the caveat footer on every frame; it is written to C:\\work (the "
+        "server's working directory)"
+    )
+    assert out["notes"][1].startswith(
+        "The clip plays the scene in the frame at a clock faster than the player's default rate "
+        "(its natural length at this frame rate passes the frame limit: the length line says by "
+        "how much), from the first row to the end,"
+    )
+    assert "player's default rate" in out["notes"][0] and "faster than" not in out["notes"][0]
+    for note in out["notes"]:
+        assert note.endswith(", never into a results tree, and never over an existing file.")
+    assert out["progress"] == [
+        "Saving frame 0 of 1800; elapsed 0 s.",
+        "Saving frame 12 of 1800; elapsed 1 s, 85 ms per frame.",
+        "Saving frame 1800 of 1800; elapsed 2 min 30 s, 83 ms per frame.",
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: the capture loop is not run")
+def test_capture_loop_refuses_an_oversized_frame_under_node(template: str, tmp_path: Path) -> None:
+    """Fix round 2 (security pass 2): captureLoop, run under node with a stub hook and a
+    recording api: a captured frame of max_frame_bytes + 1 rejects the loop with the frame-cap
+    text (capture=true, so Save stays off for the size) and posts nothing; frames at the cap
+    are posted in order and the loop ends 'done'."""
+    harness = (
+        HARNESS_HEAD + _function_source(_script(template), "captureLoop") + CAPTURE_LOOP_HARNESS
+    )
+    cap = video.MAX_FRAME_BYTES
+    out = _run_pure(template, harness, {"cap": cap}, tmp_path)
+    assert out["over"] == {
+        "error": f"frame 0 is {cap + 1} bytes, over the server's {cap}-byte frame cap: choose a "
+        "narrower frame",
+        "capture": True,
+    }
+    assert out["callsAfterOver"] == 0
+    assert out["fits"] == {
+        "outcome": "done",
+        "sent": 3,
+        "calls": [f"/api/videos/abc/frames/{k}" for k in range(3)],
+    }
+
+
+RESUME_HARNESS = """
+const VIDEO_RETRY_MS = 10;
+const VIDEO_FRAME_RETRIES = 3;
+const log = [];
+let plan = null;
+function api(path, opts) {
+  if (opts && opts.method === "POST") {
+    const k = Number(path.slice(path.lastIndexOf("/") + 1));
+    log.push("post " + k);
+    if (plan.rejectFrame === k && plan.rejects > 0) {
+      plan.rejects -= 1;
+      plan.received = plan.took ? k + 1 : k;  // the server took the frame, or did not
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }
+    plan.received = k + 1;
+    return Promise.resolve({ ok: true, status: 200, body: { received: k + 1 } });
+  }
+  log.push("get");
+  const video = { state: plan.state, received: plan.received };
+  return Promise.resolve({ ok: true, status: 200, body: { video: video } });
+}
+function sameScene(v) { return true; }
+function renderVideoProgress(v) {}
+function errorText(res) { return "HTTP " + res.status; }
+const hook = { captureFrame: () => Promise.resolve({ size: 100 }) };
+const base = { id: "abc", frames: 3, times: [0, 1, 2], width: 1280, height: 720, footer: [],
+  sent: 0, cancel: false, maxFrameBytes: 1000, hook: hook };
+const out = {};
+const run = (name, p) => {
+  const defaults = { state: "capturing", received: 0, took: false, rejectFrame: -1, rejects: 0 };
+  plan = Object.assign(defaults, p);
+  log.length = 0;
+  const v = Object.assign({}, base);
+  return captureLoop(v).then(
+    r => { out[name] = { outcome: r, sent: v.sent, log: log.slice() }; },
+    e => { out[name] = { error: e.message, sent: v.sent, log: log.slice() }; });
+};
+run("lostResponse", { rejectFrame: 1, rejects: 1, took: true })
+  .then(() => run("lostRequest", { rejectFrame: 1, rejects: 1, took: false }))
+  .then(() => run("fourLosses", { rejectFrame: 1, rejects: 4, took: false }))
+  .then(() => run("threeLosses", { rejectFrame: 2, rejects: 3, took: false }))
+  .then(() => run("sessionGone", { rejectFrame: 0, rejects: 1, took: false, state: "failed" }))
+  .then(() => process.stdout.write(JSON.stringify(out)));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: the capture loop is not run")
+def test_capture_loop_resumes_after_a_lost_frame_post_under_node(
+    template: str, tmp_path: Path
+) -> None:
+    """Fix round 3 (compliance pass 3 finding 5; honesty pass 3): captureLoop with a stub api
+    whose POST of one frame rejects with a TypeError (no response). The record then says
+    received 2 (the response was lost: the loop goes on at 2 without re-posting 1) or
+    received 1 (the request was lost: frame 1 is posted again); both end 'done' with the
+    posted indices recorded. Four losses of one frame end with the error naming the frame;
+    three are survived (VIDEO_FRAME_RETRIES). A record that is not capturing fails too."""
+    harness = (
+        HARNESS_HEAD
+        + _function_source(_script(template), "retryPause")
+        + _function_source(_script(template), "fetchVideo")
+        + _function_source(_script(template), "captureLoop")
+        + RESUME_HARNESS
+    )
+    out = _run_pure(template, harness, {}, tmp_path)
+    assert out["lostResponse"] == {
+        "outcome": "done",
+        "sent": 3,
+        "log": ["post 0", "post 1", "get", "post 2"],
+    }
+    assert out["lostRequest"] == {
+        "outcome": "done",
+        "sent": 3,
+        "log": ["post 0", "post 1", "get", "post 1", "post 2"],
+    }
+    assert out["fourLosses"]["error"] == "the connection was lost while posting frame 1 of 3"
+    assert out["fourLosses"]["sent"] == 1
+    assert out["fourLosses"]["log"] == ["post 0"] + ["post 1", "get"] * 3 + ["post 1"]
+    assert out["threeLosses"] == {
+        "outcome": "done",
+        "sent": 3,
+        "log": ["post 0", "post 1"] + ["post 2", "get"] * 3 + ["post 2"],
+    }
+    assert out["sessionGone"]["error"] == "the connection was lost while posting frame 0 of 3"
+    assert out["sessionGone"]["log"] == ["post 0", "get"]

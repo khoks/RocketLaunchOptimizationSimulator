@@ -1132,7 +1132,7 @@ def run_payload(
         "offload_note": offload_note,
         "flags": flags,
         "structure_note": structure_note(
-            source, run_data.as_mapping(metrics.get("offload")), name, assisted
+            case_record if kind == run_data.OFFLOAD_CASE else None, assisted
         ),
         "yardstick": replay.is_yardstick(dict(m)),
         "compared_to": source["compared_to"],
@@ -1293,18 +1293,19 @@ def frame_caveat(vehicles: Sequence[str]) -> str:
     return " ".join([FRAME_MODEL_TEXT, *calibration, FRAME_MORE_TEXT])
 
 
-def structure_note(
-    source: Mapping[str, Any], offload: Mapping[str, Any], name: str, assisted: bool
-) -> str | None:
-    """What structural mass the record of run ``name`` charges for the push, for a
-    captured frame's footer: None for a run with no push; for a penalty row (an offload
-    case whose record charges an assumed stage-1 dry mass, replay.penalty_added_kg) that
-    assumed mass, 'an assumption, not a sized structure'; else that none is charged
-    (replay.structure_caveat's wording, per run). Pure."""
+def structure_note(case_record: Mapping[str, Any] | None, assisted: bool) -> str | None:
+    """What structural mass a run's record charges for the push, for a captured frame's
+    footer: None for a run with no push (``assisted`` false); for a penalty row (an
+    offload case whose ``offload.cases`` record, ``case_record`` as run_data.offload_role
+    finds it for the run, charges an assumed stage-1 dry mass: replay.penalty_added_kg)
+    that assumed mass, 'an assumption, not a sized structure'; else (``case_record`` None,
+    or a case without a penalty) that none is charged (replay.structure_caveat's wording,
+    per run). Pure. Fix round 1 of A6v: the record is the one ``run_payload`` found, not
+    looked up again from a run_source without ``offload_kind`` (which named every penalty
+    row as uncharged)."""
     if not assisted:
         return None
-    record = replay.case_record(source, offload, name)
-    added = None if record is None else replay.penalty_added_kg(record)
+    added = None if case_record is None else replay.penalty_added_kg(case_record)
     if added is None:
         return "no structural mass is charged for the push"
     return (

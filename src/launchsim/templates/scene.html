@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-MPjJioPWYRgvE/IF+9zYFfaEveEkmRWMrgEJGBXmhvs='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Zv9ZF/+eyoUC9GwMsqcYSEEI6yNsd0NoukS3eQD/Y6E='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Launch Scene</title>
@@ -555,6 +555,52 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     sched.holds.forEach(h => { l = Math.min(l, Math.log(RATE_HOLD) + down * gap(h[0], h[1])); });
     (sched.caps || []).forEach(c => { l = Math.min(l, Math.log(c[2]) + down * gap(c[0], c[1])); });
     return Math.min(RATE_TOP, Math.exp(l));
+  }
+  // A clip of the scene under the Auto rate law (step A6v, design 4.8: the video follows the player's default
+  // rate): the law integrated from the first row to the end gives the natural length, and each frame's scene time.
+  const CLIP_SUBSTEPS = 20;     // wall-clock steps per frame when the rate law is integrated (clipMap)
+  function clipMap(sched, tMin, tMax, hWall) {
+    // The scene clock under the rate law from tMin, every hWall wall seconds (the midpoint rule on dt/dw = rate(t);
+    // the last step is cut at tMax): [[wall s, scene s], ...], the last pair at tMax exactly, so the last wall
+    // time is the clip's natural length. The rate is never under RATE_PUSH, so every step advances.
+    const out = [[0, tMin]];
+    let w = 0, t = tMin;
+    while (t < tMax) {
+      const mid = Math.min(tMax, t + 0.5 * hWall * rateLaw(t, sched));
+      const r = rateLaw(mid, sched);
+      const next = t + hWall * r;
+      if (next >= tMax) { w += (tMax - t) / r; t = tMax; } else { w += hWall; t = next; }
+      out.push([w, t]);
+    }
+    return out;
+  }
+  function sceneTimeAt(map, w) {
+    // The scene time at wall time w [s] of a clipMap (linear between its pairs; clamped at its ends).
+    if (!(w > 0)) return map[0][1];
+    const last = map[map.length - 1];
+    if (w >= last[0]) return last[1];
+    let lo = 0, hi = map.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (map[m][0] <= w) lo = m; else hi = m; }
+    const a = map[lo], b = map[hi], f = b[0] > a[0] ? (w - a[0]) / (b[0] - a[0]) : 0;
+    return a[1] + f * (b[1] - a[1]);
+  }
+  function clipTimesFor(fps, seconds, sched, tMin, tMax, decimals) {
+    // The scene times of a clip's frames: n = round(fps x seconds) frames (at least one) spread evenly over the
+    // player's wall clock from the first row to the end, frame k at wall time k x natural / (n - 1), mapped to
+    // scene time by the rate law from tMin (clipMap), so the last frame is the end state itself (tMax: the end
+    // banners and markers; A6v fix round 1, where frame k at wall k / fps stopped one frame short of it). Shown at
+    // fps, the n frames cover the natural length in (n - 1) / fps s, within 1.5 frame periods of it. seconds
+    // undefined or null takes the natural length (the law's own wall time from tMin to tMax), and another value
+    // scales the wall clock uniformly (the clip still runs from the first row to the end). Each time snapped to the
+    // payload's clock (decimals). Returns {natural_s, seconds, frames, times}.
+    const map = clipMap(sched, tMin, tMax, 1 / (fps * CLIP_SUBSTEPS));
+    const natural = map[map.length - 1][0];
+    const span = seconds === undefined || seconds === null ? natural : Number(seconds);
+    if (!Number.isFinite(span) || !(span > 0)) throw new RangeError("a clip's length must be a positive number of seconds");
+    const n = Math.max(1, Math.round(fps * span));
+    const times = [];
+    for (let k = 0; k < n; k++) times.push(snapTime(sceneTimeAt(map, n > 1 ? natural * k / (n - 1) : 0), decimals));
+    return { natural_s: natural, seconds: span, frames: n, times: times };
   }
   function recordedMaxQ(m) {
     // {t, v}: a run's recorded max-Q from its payload record m ({t [s after release], q_pa [Pa]}: metrics.json's
@@ -2456,22 +2502,27 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     lines.push("Data: " + DATA.source + ", experiment " + DATA.experiment + ", " + DATA.timestamp + ", git " + git.hash + " (" + state + ").");
     return lines;
   }
-  function frameFooterLines(prs) {
+  function frameFooterLines(prs, given) {
     // A captured frame's caveat footer (it travels without the page's caveat list; D-SP2-36, A3b review round 3):
-    // the page's footer, then the payload's frame caveat (the model, the vehicle's calibration, where every caveat
-    // is) and what structural mass each shown pushed run's record charges for the push.
+    // the page's footer (whose provenance line is the display-only caveat's one source, D-SP2-23), then the caveat
+    // lines given by the caller (step A6v: the app server's three lines of plots.animation_caveats, one copy of
+    // each, a line the footer already holds, such as the exploratory line, not repeated), else the payload's frame
+    // caveat (the model, the vehicle's calibration, where every caveat is: a frame captured from the standalone
+    // page, with no server to compute the lines), and what structural mass each shown pushed run's own record
+    // charges for the push (the line that tells a penalty row from an uncharged run).
     const lines = footerLines();
-    if (DATA.frame_caveat) lines.push(DATA.frame_caveat);
+    if (Array.isArray(given)) given.forEach(s => { const text = String(s); if (lines.indexOf(text) < 0) lines.push(text); });
+    else if (DATA.frame_caveat) lines.push(DATA.frame_caveat);
     const pushed = prs.filter(r => r.structure_note).map(r => r.name + ": " + r.structure_note + ".");
     if (pushed.length) lines.push(pushed.join(" "));
     return lines;
   }
-  function footerWrapped(ctx, pal, w, prs) {
+  function footerWrapped(ctx, pal, w, prs, given) {
     // A captured frame's caveat footer (frameFooterLines) wrapped to a frame w px wide, every line kept.
     ctx.save();
     ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
     const out = [];
-    frameFooterLines(prs).forEach(text => wrapLines(ctx, text, Math.max(1, w - 2 * TEXT_INSET_PX)).forEach(s => out.push(s)));
+    frameFooterLines(prs, given).forEach(text => wrapLines(ctx, text, Math.max(1, w - 2 * TEXT_INSET_PX)).forEach(s => out.push(s)));
     ctx.restore();
     return out;
   }
@@ -2749,10 +2800,20 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     if (!Number.isFinite(tt)) throw new TypeError("stateAt needs a finite time in seconds after release");
     return panelStates(snapTime(tt, TIME_DECIMALS), sceneBox());
   }
-  function captureFrame(t, width, height) {
+  function clipTimes(fps, seconds) {
+    // The scene times of the frames of a clip of the shown panels under the default (Auto) rate law, from the first
+    // row to the end (clipTimesFor; step A6v): seconds defaults to the natural length, another value scales the wall
+    // clock uniformly. Returns {natural_s, seconds, frames, times}.
+    const f = Number(fps);
+    if (!Number.isFinite(f) || !(f > 0)) throw new RangeError("clipTimes needs a positive frame rate");
+    return clipTimesFor(f, seconds, SCHED, T_MIN, T_MAX, TIME_DECIMALS);
+  }
+  function captureFrame(t, width, height, footerLines) {
     // A PNG of the shown panels at t, the clock band over them and the caveat footer under them, drawn by the
     // page's own functions; captureFrame(t) (design 4.5) is a frame of CAPTURE_DEFAULT_W_PX x
     // CAPTURE_DEFAULT_H_PX, and an even width and height may be given (a video frame's sides are even).
+    // footerLines (step A6v): the caveat lines the app server computed for the shown runs, drawn in the footer in
+    // place of the payload's frame caveat (frameFooterLines); without them the frame carries the payload's.
     return new Promise((resolve, reject) => {
       const tt = Number(t);
       const W = Math.round(Number(width === undefined ? CAPTURE_DEFAULT_W_PX : width));
@@ -2763,10 +2824,15 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
           " px and a height of " + minH + " to " + CAPTURE_MAX_PX + " px"));
         return;
       }
+      if (footerLines !== undefined && footerLines !== null && !(Array.isArray(footerLines) && footerLines.every(s => typeof s === "string"))) {
+        reject(new TypeError("captureFrame's footer lines must be an array of strings"));
+        return;
+      }
+      const given = Array.isArray(footerLines) ? footerLines : null;
       const cv = document.createElement("canvas");
       cv.width = W; cv.height = H;
       const ctx = cv.getContext("2d"), pal = scenePalette();
-      const lines = footerWrapped(ctx, pal, W, panelRuns);
+      const lines = footerWrapped(ctx, pal, W, panelRuns, given);
       const footerH = Math.max(CAPTURE_FOOTER_PX, lines.length * LINE_SMALL_PX + 2 * BAND_PAD_PX);
       const box = { x: 0, y: CAPTURE_HUD_PX, w: W, h: H - footerH - CAPTURE_HUD_PX };
       const lays = box.h >= CAPTURE_MIN_PX ? sharedLayouts(ctx, pal, panelRuns, panelBoxes(box, panelRuns.length, TWO_UP_MIN_PX, PANEL_GAP_PX)) : null;
@@ -2961,7 +3027,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     new MutationObserver(() => draw()).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
     draw();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
-    window.launchsimScene = Object.freeze({ stateAt: stateAt, captureFrame: captureFrame });
+    window.launchsimScene = Object.freeze({ stateAt: stateAt, captureFrame: captureFrame, clipTimes: clipTimes });
     if (hash.qa !== null) {
       document.getElementById("qa-state").textContent = JSON.stringify(hash.qa.map(t => stateAt(t))).replace(/</g, "\\u003c");
     }

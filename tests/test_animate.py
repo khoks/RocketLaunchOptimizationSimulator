@@ -292,8 +292,48 @@ def test_runs_are_read_on_the_time_after_release(tmp_path: Path) -> None:
     lines = plots.animation_caveats(runs, "toy_2d")
     assert len(lines) == 3
     caveats = " ".join(lines)
-    assert "no calibration record" in caveats and "3.0 g push load" in caveats
+    assert "no calibration record" in caveats
+    assert "no sized structural mass for the 3.0 g push load." in caveats  # A6v fix round 2
+    assert "penalty row" not in caveats  # neither run is one
+    assert (pad.penalty_added_kg, silo.penalty_added_kg) == (None, None)
     assert "+14.3% high" in " ".join(plots.animation_caveats(runs, "generic_f9_class_2d"))
+
+
+def test_footnote_names_what_a_penalty_row_charges(tmp_path: Path) -> None:
+    """A6v fix round 2 (honesty review pass 2): the footnote's structural line says 'no
+    sized structural mass' for the push load and, when a shown run is a penalty row (an
+    offload case whose record charges an assumed stage-1 dry mass: AnimationRun's
+    penalty_added_kg from replay.penalty_added_kg), that the penalty row charges an assumed
+    stage-1 dry mass, so the fixed line and the run's own structure line on a frame no longer
+    read against each other; a selection without a penalty row gets no such clause. The
+    longest such line (the penalty clause) still ends left of the 1280 px frame's right edge
+    in the animation's footnote."""
+    run_dir = _make_offload_run_dir(tmp_path)
+    runs, _ = plots.load_animation_runs(run_dir, ["pad", "silo_fix5"])
+    pad, penalty = runs
+    assert pad.penalty_added_kg is None and penalty.penalty_added_kg == PENALTY_ADDED_KG
+    second = plots.animation_caveats(runs, "toy_2d")[1]
+    assert second == (
+        "Unthrottled (no max-Q or g limit); no sized structural mass for the 3.0 g push load; "
+        "the penalty row charges an assumed stage-1 dry mass."
+    )
+    # two penalty rows shown: the plural (the fixed case beside itself, for the wording only)
+    assert plots.animation_caveats([pad, penalty, penalty], "toy_2d")[1].endswith(
+        "; the penalty rows charge an assumed stage-1 dry mass."
+    )
+    plain, _ = plots.load_animation_runs(run_dir, ["pad", "silo_s1"])
+    assert plain[1].penalty_added_kg is None
+    assert plots.animation_caveats(plain, "toy_2d")[1] == (
+        "Unthrottled (no max-Q or g limit); no sized structural mass for the 3.0 g push load."
+    )
+    assert plots.animation_caveats([pad], "toy_2d")[1] == "Unthrottled (no max-Q or g limit)."
+    size_in, dpi, (width_px, _height_px) = plots.frame_geometry(1280)
+    fig = Figure(figsize=size_in, dpi=dpi)
+    canvas = FigureCanvasAgg(fig)
+    artist = fig.text(plots.ANIMATION_GRID["left"], 0.0, second, fontsize=plots.FONT_FOOTNOTE_PT)
+    canvas.draw()
+    right_px = artist.get_window_extent(renderer=canvas.get_renderer()).x1
+    assert right_px < width_px * plots.ANIMATION_GRID["right"], second
 
 
 def test_calibration_record_matches_its_findings_note() -> None:
@@ -535,6 +575,8 @@ def test_help_names_the_specified_metavars_and_defaults(
 
 P_REF_KG = 1000.0
 """The synthetic offload block's reference payload: the baseline pad's P*."""
+PENALTY_ADDED_KG = 2000.0
+"""The assumed stage-1 dry mass the fixed case silo_fix5 charges (a penalty row)."""
 CASE_OFFLOAD_KG = 41262.9
 FIXED_OFFLOAD_KG = 20000.0
 FIXED_PAYLOAD_KG = 1030.0
@@ -580,6 +622,9 @@ def _make_offload_run_dir(root: Path, orbit: bool = False) -> Path:
                 "total_offload_kg": FIXED_OFFLOAD_KG,
                 "payload_kg": FIXED_PAYLOAD_KG,
                 "paired_pad": None,
+                # a penalty row: an assumed stage-1 dry mass charged on the run (A6v fix round 2)
+                "stage1_dry_mass_added_kg": PENALTY_ADDED_KG,
+                "assumed_penalty": True,
             },
             {
                 "name": "silo_none",

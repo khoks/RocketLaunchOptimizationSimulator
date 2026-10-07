@@ -13,7 +13,9 @@ Fast:
   %5C, %00, non-ASCII and %252e%252e refused), query strings, absolute-form and asterisk
   targets, Transfer-Encoding, Content-Length rules, 64 KiB + 1 refused without reading
   and 64 KiB accepted, nested, repeated-key and non-finite JSON refused, a malformed and a
-  two-word request line answered with a status line;
+  two-word request line answered with a status line; a kept connection (HTTP/1.1 since
+  fix round 3 of A6v) carries two requests, is closed by a refusal, by an HTTP/1.0
+  request line and after HANDLER_TIMEOUT_S idle;
 - a header table per route (the frame and CSP headers of /, /scene/... and the API, the
   standard library's own errors included; no CORS header; the Server header);
 - only 127.0.0.1 is bound, with no option to change it; a second server on the port
@@ -58,7 +60,7 @@ Fast:
   the URL once (faked); missing display files are one error line.
 
 Slow (Windows only): ``python -m launchsim app --port 0`` in a new process group, a
-launch of the shipped silo_cold preset, Ctrl+Break: exit 0, exactly seven stdout lines
+launch of the shipped silo_cold preset, Ctrl+Break: exit 0, exactly eight stdout lines
 ending with the stopped line, nothing on stderr, FAILED.txt.
 """
 
@@ -252,24 +254,39 @@ def serving(
     assert not thread.is_alive()
 
 
+def read_response(sock: socket.socket) -> bytes:
+    """One HTTP response from ``sock``: read until the server closes, or (a kept
+    connection, since fix round 3 of A6v) until the head and its Content-Length of body
+    bytes have arrived."""
+    chunks: list[bytes] = []
+    need: int | None = None
+    while True:
+        try:
+            data = sock.recv(65536)
+        except ConnectionResetError:
+            break
+        if not data:
+            break
+        chunks.append(data)
+        response = b"".join(chunks)
+        head, sep, body = response.partition(b"\r\n\r\n")
+        if sep and need is None:
+            found = re.search(rb"(?im)^content-length:[ \t]*([0-9]+)[ \t]*\r?$", head)
+            need = int(found.group(1)) if found else None
+        if need is not None and len(body) >= need:
+            break
+    return b"".join(chunks)
+
+
 def raw(
     port: int, payload: bytes, timeout: float = TIMEOUT_S
 ) -> tuple[int, dict[str, list[str]], bytes]:
-    """Send ``payload`` to 127.0.0.1:port over a raw socket and read until the server
-    closes: (status, headers lower-cased with every value, body). Status 0: no status
-    line."""
-    chunks: list[bytes] = []
+    """Send ``payload`` to 127.0.0.1:port over a raw socket and read one response
+    (``read_response``): (status, headers lower-cased with every value, body). Status 0:
+    no status line."""
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as sock:
         sock.sendall(payload)
-        while True:
-            try:
-                data = sock.recv(65536)
-            except ConnectionResetError:
-                break
-            if not data:
-                break
-            chunks.append(data)
-    response = b"".join(chunks)
+        response = read_response(sock)
     head, _, body = response.partition(b"\r\n\r\n")
     lines = head.decode("latin-1").split("\r\n")
     match = re.match(r"HTTP/1\.[01] (\d{3})", lines[0]) if lines else None
@@ -723,7 +740,7 @@ def test_oversized_body_is_refused_without_reading(tmp_path: Path, basis: appfor
             reply = b""
             while chunk := sock.recv(65536):
                 reply += chunk
-        assert reply.startswith(b"HTTP/1.0 400 ")
+        assert reply.startswith(b"HTTP/1.1 400 ")  # a refusal closes the connection
 
 
 # ------------------------------------------------------------------ headers per route
@@ -1053,7 +1070,7 @@ def test_a_launch_post_arriving_during_the_stop_starts_nothing(
             while chunk := sock.recv(65536):
                 reply += chunk
     status_line, _, rest = reply.partition(b"\r\n")
-    assert status_line.startswith(b"HTTP/1.0 503 ")
+    assert status_line.startswith(b"HTTP/1.1 503 ")  # a stopping server closes the connection
     assert strict(rest.partition(b"\r\n\r\n")[2])["error"] == "stopping"
     assert runner.calls == 0
     assert not (root / appform.APP_EXPERIMENT_NAME).exists()
@@ -1255,7 +1272,41 @@ def test_a_client_that_drips_its_request_is_cut_off_at_the_deadline(
                 reply += chunk
         elapsed = time.monotonic() - t0
     assert closed and elapsed < 3.5, elapsed
-    assert not reply.startswith(b"HTTP/1.0 200")
+    assert not reply.startswith((b"HTTP/1.0 200", b"HTTP/1.1 200"))
+
+
+def test_a_kept_connection_carries_requests_and_idles_out_at_the_deadline(
+    tmp_path: Path, basis: appform.Basis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix round 3 of A6v (HTTP/1.1): two GETs on one connection are both answered 200
+    without a close between them; a refusal (403) closes the connection with its response;
+    an HTTP/1.0 request line closes it; an idle kept connection is closed after
+    HANDLER_TIMEOUT_S (2 s here), armed anew for each request."""
+    monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", 2.0)
+    with serving(tmp_path / "root", basis) as server:
+        own = b"127.0.0.1:%d" % server.port
+        get = b"GET /api/job HTTP/1.1\r\nHost: " + own + b"\r\n\r\n"
+        with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
+            sock.sendall(get)
+            first = read_response(sock)
+            time.sleep(1.2)  # within the deadline: the connection is still kept
+            sock.sendall(get)
+            second = read_response(sock)
+            t0 = time.monotonic()
+            closed = sock.recv(65536) == b""  # idle: closed at the deadline, nothing sent
+            idle = time.monotonic() - t0
+        assert first.startswith(b"HTTP/1.1 200 ") and second.startswith(b"HTTP/1.1 200 ")
+        assert closed and 1.0 < idle < 3.5, idle
+        with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
+            sock.sendall(b"GET /api/job HTTP/1.1\r\nHost: evil.example:1\r\n\r\n")
+            reply = read_response(sock)
+            assert reply.startswith(b"HTTP/1.1 403 ")
+            assert sock.recv(65536) == b""  # a refusal closes the connection
+        with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
+            sock.sendall(b"GET /api/job HTTP/1.0\r\nHost: " + own + b"\r\n\r\n")
+            reply = read_response(sock)
+            assert reply.startswith(b"HTTP/1.1 200 ")
+            assert sock.recv(65536) == b""  # an HTTP/1.0 request line: one request
 
 
 # ------------------------------------------------------------------ the run browser
@@ -3099,6 +3150,7 @@ def test_cli_app_ctrl_c_marks_the_running_launch_and_exits_0(
     assert out[1] == f"  results root: {root}"
     assert out[2].startswith("  code: git ")
     assert out[4] == "  Ctrl+C stops the server; a running launch is stopped and marked FAILED"
+    assert out[5].startswith("  video: ")  # step A6v: ffmpeg's absolute path, or why it is off
     assert out[-2] == cli.stopping_line()
     assert out[-1].startswith("launchsim app: stopped; the running launch is marked FAILED in ")
     assert all(line.isascii() for line in out)
@@ -3352,9 +3404,9 @@ def test_cli_app_port_held_on_the_wildcard_is_busy(
 def test_ctrl_break_stops_the_app_and_marks_the_launch(tmp_path: Path) -> None:
     """``python -m launchsim app --port 0 --results-root <tmp>`` in a new process group
     with the shipped basis: read the URL, launch the silo_cold preset, wait for its
-    directory, send CTRL_BREAK_EVENT: exit 0, exactly the five start lines, the stopping
-    line and the stopped line on stdout, nothing on stderr, FAILED.txt (review 05
-    finding 7)."""
+    directory, send CTRL_BREAK_EVENT: exit 0, exactly the six start lines (the video line
+    since step A6v), the stopping line and the stopped line on stdout, nothing on stderr,
+    FAILED.txt (review 05 finding 7)."""
     root = tmp_path / "root"
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     lines: list[str] = []
@@ -3405,9 +3457,10 @@ def test_ctrl_break_stops_the_app_and_marks_the_launch(tmp_path: Path) -> None:
         err_reader.join(timeout=30)
     assert code == 0, (lines, errors)
     assert errors == []  # nothing on stderr: no warning, no traceback, through a real launch
-    assert len(lines) == 7, lines  # the five start lines, the stopping line, the stopped line
+    assert len(lines) == 8, lines  # the six start lines, the stopping line, the stopped line
     assert lines[4] == "  Ctrl+C stops the server; a running launch is stopped and marked FAILED"
-    assert lines[5] == cli.stopping_line()
-    assert lines[6].startswith("launchsim app: stopped; the running launch is marked FAILED")
+    assert lines[5].startswith("  video: ")  # step A6v: ffmpeg's path, or why the export is off
+    assert lines[6] == cli.stopping_line()
+    assert lines[7].startswith("launchsim app: stopped; the running launch is marked FAILED")
     marker = root / directory["experiment"] / directory["timestamp"] / results_io.FAILED_MARKER
     assert app.failed_line(marker).startswith(STOPPED)
