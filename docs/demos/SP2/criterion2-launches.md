@@ -1,8 +1,13 @@
-<!-- Copied into docs/demos/SP2/ at step A7 (part 1) from the session's scratch record of step A5's independent
-gate (2026-10-07, working tree of commit ed0f4bb): a driver posted every preset and every setting of exit
-criterion 2 to an app server on a scratch results root (never the repository's results/), and re-read each
-directory. Unchanged apart from this comment and the scratch root's local path, replaced by a placeholder;
-every launch it lists is exploratory and none is a finding. -->
+<!-- Exit criterion 2 of SP2 (docs/phases/SP2-launch-app-2d-scene.md, section 8): the record of step A5's
+independent gate (2026-10-07), copied into docs/demos/SP2/ at step A7 from the session's scratch files. These 26
+launches were made by the A5 gate's driver (a script posting each preset and each setting of criterion 2 to the
+app's API, one at a time) into a scratch results root outside the repository, on the working tree at HEAD
+7f36e8d (step A4b's tracker commit) with step A5's changes uncommitted, the tree step A5 then committed as
+ed0f4bb; every directory records git 7f36e8dffdb0, dirty: NOT from a clean tree, so none of them records a clean git state,
+none of their directories is in the repository, and none is demo material (the demo launches of README.md,
+"Demo launches", were made later from the clean tree at fb34b24 into results/app/). Every launch listed here is
+exploratory and none is a finding. The text is unchanged apart from this comment and the scratch root's local
+path, replaced by a placeholder. -->
 
 # SP2 A5 gate G3: criterion 2 by a launch driver
 
