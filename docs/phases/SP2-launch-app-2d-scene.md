@@ -1247,7 +1247,7 @@ decision.
 | A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [x] | ed0f4bb |
 | | Checkpoint 2: the request is met | | | | | |
 | A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [x] | 637994a |
-| A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [ ] | |
+| A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [~] | part 1: 7cb440f |
 | A8 | Close | docs, TODO.md, memory | full suite | The 17 exit criteria; close-out question to the user; SP7's file fact-checked after the last code commit; handoff, memory, cold read; push and Pages | [ ] | |
 
 "Criterion" in the table means an exit criterion of section 8; "survey 06" and "the
@@ -1807,8 +1807,18 @@ Also from the design's section 8:
   line and the run's own structure line agree (one caveat source). The payload's
   frame_caveat field stays for frames captured from the standalone page, where no server
   supplies the footer. Fast suite 1665 passed, 41 deselected. Commit 637994a.
-- Next: step A7 (full visual QA through the app, QA fixes, the gallery scene page and
-  video, the demo README; then the demo launches from the clean tree).
+- Step A7, part 1 (2026-10-07): the QA table through the app (1,994 rows, 0 failing, and a
+  watchability scan of 3,396 states), 38 screenshots in both themes, three QA fixes in
+  scene.html with node tests, the gallery scene page with its frame rule and entry, the
+  scene video (MP4 5.0 MB, GIF 6.1 MB, poster), the lede reworded, the demo README with
+  its commands. Workflow: implementer; visual-QA, honesty and compliance reviewers, three
+  passes; three fix rounds. Gate (independent): pass on G1-G5 and S1-S5 (own re-derivation
+  of 40 QA rows; the site build clean with 1,152 links checked; the video as stated).
+  Observation for the record: a panel frozen at its run's end draws no other-panel marker
+  and no ring key, by design. Fast suite 1678 passed, 41 deselected. Commit 7cb440f.
+- Next: step A7, part 2: the demo launches of section 9 through the app from this clean
+  tree into results/app/ (their summaries tracked, committed in their own commit per
+  D-SP2-37), with the API record, wall times and launch screenshots in docs/demos/SP2/.
 
 ## 12. Deviations from the plan
 

@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-07 (SP2 in progress: steps A1 to A6v done; next A7).
+Last updated: 2026-10-07 (SP2 in progress: steps A1 to A6v done, A7 part 1 done; next A7 part 2, the demo launches).
 
 ## Program
 
