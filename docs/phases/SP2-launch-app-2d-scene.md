@@ -1247,7 +1247,7 @@ decision.
 | A5 | App page | app.html, app.py | form mapping per field; disabled-state matrix; panel text per launch kind | Every preset fills the form and passes the dry run; three launches by click (plain, stage-1 solve, refusal); a driver posts every preset and every setting of criterion 2 to a scratch root and records directory, resolved config and wall time; honesty review of the panel | [x] | ed0f4bb |
 | | Checkpoint 2: the request is met | | | | | |
 | A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [x] | 637994a |
-| A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [~] | part 1: 7cb440f |
+| A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [x] | 7cb440f (part 1), 3a1b243 (part 2) |
 | A8 | Close | docs, TODO.md, memory | full suite | The 17 exit criteria; close-out question to the user; SP7's file fact-checked after the last code commit; handoff, memory, cold read; push and Pages | [ ] | |
 
 "Criterion" in the table means an exit criterion of section 8; "survey 06" and "the
@@ -1816,9 +1816,20 @@ Also from the design's section 8:
   of 40 QA rows; the site build clean with 1,152 links checked; the video as stated).
   Observation for the record: a panel frozen at its run's end draws no other-panel marker
   and no ring key, by design. Fast suite 1678 passed, 41 deselected. Commit 7cb440f.
-- Next: step A7, part 2: the demo launches of section 9 through the app from this clean
-  tree into results/app/ (their summaries tracked, committed in their own commit per
-  D-SP2-37), with the API record, wall times and launch screenshots in docs/demos/SP2/.
+- Step A7, part 2 (2026-10-07): the demo launches of section 9 through the app in headless
+  Edge with real clicks, from the clean tree at fb34b24: six directories under results/app/
+  (silo_cold 29 s; the stage-1 solve 70 s with the pad cached, offload 41,262.908 kg at
+  P_ref 26,054.396 kg, identical to the recorded run to every digit; the +8.1 t penalty
+  row 1,980 kg; ramp start by depth 50 m and by height by event 40 m; the failed ignition),
+  one refusal that wrote nothing, the recorded directories browsed and played, one MP4
+  export (1,727 frames at 20 fps, 86.35 s, 6.0 MB; not in the repository). Record:
+  docs/demos/SP2/README.md, api-record.md, criterion2-launches.md, 85 screenshots. An
+  honesty and visual reviewer (7 minor record fixes) and an independent gate (pass on
+  G1-G6). The summaries are committed in their own commit per D-SP2-37: 3a1b243.
+- Close-out question (protocol 7.7), put to the user on 2026-10-07 while the demo ran: the
+  next phase is SP7, as D-SP1-18 ordered (D-SP2-40).
+- Next: step A8 (documents and the public face; the exit-criteria gate; the full suite;
+  SP7's fact-check; the handoff; memory; the cold read; the closing commit).
 
 ## 12. Deviations from the plan
 

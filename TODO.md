@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-07 (SP2 in progress: steps A1 to A6v done, A7 part 1 done; next A7 part 2, the demo launches).
+Last updated: 2026-10-07 (SP2 in progress: steps A1 to A7 done; A8 the close; next phase SP7, D-SP2-40).
 
 ## Program
 
@@ -254,6 +254,7 @@ SP2 planning (2026-10-05; Q1 to Q7 answered by the user in step A0, the design a
 - **D-SP2-37** 2026-10-05 Commits: app summaries are results and go in their own commit (`SP2 step <k>: app summaries`), never in a tracker or bookkeeping commit. Reviewers and gates launch into a scratch results root; only the demo launches, made from a clean tree after the last code commit, go to results/app/. Gallery, deck and manual material comes only from the two recorded directories. Reason: protocol sections 4 and 7; a review launch would otherwise be a permanent public file from a dirty tree. Amends docs/process/SESSION_PROTOCOL.md (section 4, "App runs") (design, approved with the plan).
 - **D-SP2-38** 2026-10-05 SP2 has 17 exit criteria (docs/phases/SP2-launch-app-2d-scene.md, section 8), with their changes against the brief's 14 listed there. Reason: three of the brief's tolerances were unmeasurable or vacuous on recorded data (design, approved with the plan).
 - **D-SP2-39** 2026-10-06 (SP2 step A4): D-SP2-31's neutral run names gain a third, `pad_variant`, for a pad launch whose ignition or startup equals no committed variant (naming it `silo` would be wrong: it has no push). Extends D-SP2-31; recorded by the A4 compliance review (design, recorded with the step).
+- **D-SP2-40** 2026-10-07 (SP2 close-out): SP7 (the structural mass of the push load and a force-limited drive) runs next, as D-SP1-18 ordered; then SP3 to SP6. SP2's close fact-checks SP7's phase file and writes its prompt (user, the recommended option).
 
 Notes on the SP2 planning group:
 
