@@ -982,7 +982,7 @@ def test_the_drawing_reports_what_it_painted(template: str) -> None:
     assert "drawHud(ctx, pal, view.hud, p.hud)" in _function_source(template, "drawPanel")[0]
     label = _function_source(template, "drawCarriageLabel")[0]
     assert (
-        "sideLabel(" in label
+        "sideLabelClear(" in label  # sideLabel's plate, kept clear of the close-up (round 2)
         and "view.x + VIEW_MARGIN_PX, view.x + view.w - VIEW_MARGIN_PX" in label
     )
     assert "carriage_label: pm.carriageLabel" in state
@@ -1044,10 +1044,14 @@ def test_what_the_page_says_matches_what_it_draws(template: str) -> None:
         '"own scale"',
         '"zooming in for staging"',
         '"zooming in for the fairing"',
-        '"fairing halves opening"',
-        '"fairing halves leaving"',
     ):
         assert why in frame, why
+    # step A7 (logged edit of this test): the halves' words moved into the pure halvesWord,
+    # which closeupFrame calls while the halves' framing holds
+    word = _function_source(template, "halvesWord")[0]
+    for why in ('"fairing halves opening"', '"fairing halves leaving"'):
+        assert why in word, why
+    assert "halvesWord(t - tF, halvesInDrawing(run, t))" in frame
     assert "scale changes at staging and at the fairing drop" in template
     # A3b review round 3: the title is drawn as fitted (cut to the box, ending in ...) and the
     # hook reports what is drawn; no reason is long enough to cut the scale it states (the QA
@@ -1738,8 +1742,10 @@ def test_separations_labels_and_event_steps_under_node(
     draws them on until they have wholly left it), at the
     close-up axes of the recorded fairing drops and a few degrees round them (review round 3:
     their hinge behind the drawing's centre, a slower slide). At MECO the
-    close-up frames the stage-1 engines at the scale that draws stage 2 at least 121 px long,
-    then pans to stage 2 after the separation; the spent stage carries a tag.
+    close-up frames stage 2 whole, its base STAGING_BASE_BACK_PX behind the drawing's centre
+    at the scale that draws it at least 121 px long (step A7 review round 1; before, it framed
+    the stage-1 engines and stage 2 lay outside the drawing for the first seconds of the
+    coast), then eases to stage 2's own framing; the spent stage carries a tag.
     Label plates lie inside the view and over no plate, marker or other label, or are left
     out; previous and next event step by the clock. The page names the drawings so: the
     close-up's captions, the bodies' labels and the markers' sizes (criterion 16: at least
@@ -1803,9 +1809,13 @@ def test_separations_labels_and_event_steps_under_node(
 
     script = _script(template)
     frame = _function_source(template, "closeupFrame")[0]
-    assert "kcE = CLOSEUP_MIN_STACK_PX / upper.L" in frame  # stage 2 >= 121 px from staging on
-    assert "const engines = { kc: kcE, up: ENGINES_BACK_PX / kcE };" in frame
-    assert "ease({ kc: kcE, up: engines.up - s1 }, own, tS, tS + STAGING_PAN_S)" in frame
+    # step A7 review round 1 (logged edit of this test): the staging framing keeps stage 2 whole
+    # in the drawing (stagingFrame, STAGING_BASE_BACK_PX) instead of framing the stage-1 engines
+    assert "stagingFrame(upper.L, s1, CLOSEUP_MIN_STACK_PX, STAGING_BASE_BACK_PX)" in frame
+    assert "stagingFrame(upper.L, 0, CLOSEUP_MIN_STACK_PX, STAGING_BASE_BACK_PX)" in frame
+    assert "ease(own, whole, tS - CLOSEUP_ZOOM_S, tS)" in frame
+    assert "ease(second, own, tS, tS + STAGING_PAN_S)" in frame
+    assert "ENGINES_BACK_PX" not in script
     assert "const hf = halvesFraming(run, g), halves = { kc: hf.kc, up: hf.up };" in frame
     assert (
         "halvesFrame(pre.L, post.L, below + v.stage2_length_m,"
@@ -2282,7 +2292,10 @@ def test_fairing_seen_from_the_drop_until_clear_under_node(template: str, tmp_pa
     end = _function_source(template, "fairingEnd")[0]
     assert "halvesEndTime(hf.tF + FAIRING_SHOW_S, capT, HALVES_SCAN_S, gone)" in end
     assert "cameraAt" not in end and "onVehicle" not in end  # the view's separation is not a term
-    assert "!overlaps(halvesAt(" in end and "closeupDrawing(lay.inset)" in end
+    # step A7 review round 1 (logged edit of this test): the exit is judged half by half
+    # (halfHitsRect), not by the box round both halves
+    assert "!overlaps(halvesAt(" not in end and "closeupDrawing(lay.inset)" in end
+    assert ".halves.some(q => halfHitsRect(q, draw))" in end
     assert "body.path.t[body.path.t.length - 1]" in end and "lastT(run)" in end
     assert "fairEnd: fairingEnd(run, lays[i])" in _function_source(template, "sceneFrames")[0]
     assert "t <= fairEnd" in _function_source(template, "fairingAt")[0]
@@ -2306,7 +2319,10 @@ def test_fairing_seen_from_the_drop_until_clear_under_node(template: str, tmp_pa
     assert "drawLeaderLabels(ctx, pal, L.view, late, used(), null, it => it.short)" in panel
     assert panel.index("placedB = drawLabels(") < panel.index("placedR = drawLabels(")
     leader = _function_source(template, "drawLeaderLabels")[0]
-    assert "firstFree(leaderSpots(it.px, it.r + k * LEADER_PX, w, h), avoid, inner)" in leader
+    # step A7 (logged edit of this test): the spots whose leader would cross a rect to avoid
+    # are filtered out before the first free one is taken (leaderCrosses)
+    assert "leaderSpots(it.px, it.r + k * LEADER_PX, w, h).filter(" in leader
+    assert "const at = firstFree(clear, avoid, inner);" in leader
     assert "{ x: inner.x, y: inner.y, w: w, h: h }" in leader  # the last resort: never null
     assert "haloStroke(ctx, pal, pal.ink3, HAIRLINE_PX, PATH_HALO_PX, null)" in leader
     assert 'const ON_VEHICLE_TEXT = ": drawn, display only";' in script
@@ -2323,3 +2339,574 @@ def test_fairing_seen_from_the_drop_until_clear_under_node(template: str, tmp_pa
     light, dark, _ = _blocks(template)
     for tokens in (light, {**light, **dark}):
         assert _contrast(tokens["--sc-body-line"], tokens["--sc-halo"]) >= SHAPE_CONTRAST
+
+
+# ------------------------------------------------------------------ step A7: QA fixes
+
+
+def _rect(x: float, y: float, w: float = 60.0, h: float = 18.0) -> dict[str, float]:
+    return {"x": x, "y": y, "w": w, "h": h}
+
+
+HALVES_WORD_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+// the close-up title's word for the halves: [tau since the drop, whether a half is in the drawing]
+out.words = input.cases.map(c => halvesWord(c[0], c[1]));
+out.openS = FAIRING_OPEN_S;
+// a leader through a rect: [a, b, rect]; a leader from a marker to a plate through a rect to avoid
+out.hits = input.segments.map(c => segmentHitsRect(c[0], c[1], c[2]));
+out.crosses = input.leaders.map(c => leaderCrosses(c[0], c[1], c[2], c[3]));
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_closeup_title_follows_the_halves_and_a_stopped_body_keeps_a_label_under_node(
+    template: str, tmp_path: Path
+) -> None:
+    """Step A7 (the two items A3b left for it). The close-up title's word for the fairing
+    halves follows the drawn motion, not a fixed time: 'opening' while they turn out (the
+    first FAIRING_OPEN_S after the drop), 'leaving' while they slide and drift inside the
+    drawing, 'gone' once their outline has wholly left it while the framing is
+    still held (halvesWord, with the exit time fairingEnd now records beside the hold's end,
+    halvesGoneT; the hook reports it as closeup_halves_gone_s). Before this the title said
+    'opening' for FAIRING_SHOW_S (5 s) although the halves open in 1.5 s, and would have kept
+    'leaving' past an exit within those 5 s. And a separated body that has stopped (its own
+    impact, or the run's end) is never left unlabelled: its impact time made both its label
+    texts too wide for the view beside the marker (the QA probe at 448 to 456 s and 478 to
+    504 s of pad beside silo_cold_s1), so a third, shortest text ('S1 (display only)',
+    'fairing (display only)') goes on a leader relaxed to the opaque plates, as a body drawn
+    on its vehicle is; the ticker states the impact time. And a leader never passes through
+    an earlier label's plate or a marker (the A7 screenshot at silo_cold_s1's cutoff had the
+    fairing's leader crossing the spent stage's label text): a leader spot whose segment from
+    the marker's edge would cross a rect to avoid is skipped (segmentHitsRect, leaderCrosses;
+    the marker's own rect, which holds the marker, is not a crossing)."""
+    case = {
+        "cases": [
+            [0.0, True],
+            [1.4999, True],
+            [1.5, True],
+            [5.0, True],
+            [17.8, True],
+            [17.9, False],
+            [20.0, False],
+            [3.0, False],  # left within the first FAIRING_SHOW_S: out, not leaving
+            [0.5, False],  # still turning out: opening, whatever the drawing holds
+        ],
+        "segments": [
+            [[0, 0], [10, 10], {"x": 4, "y": 4, "w": 2, "h": 2}],  # through the middle
+            [[0, 0], [10, 0], {"x": 4, "y": 4, "w": 2, "h": 2}],  # passes beside it
+            [[0, 0], [3, 3], {"x": 4, "y": 4, "w": 2, "h": 2}],  # stops short of it
+            [[0, 4], [10, 4], {"x": 4, "y": 4, "w": 2, "h": 2}],  # along an edge: a touch
+            [[5, 0], [5, 10], {"x": 4, "y": 4, "w": 2, "h": 2}],  # vertical, through
+            [[0, 0], [0, 0], {"x": 4, "y": 4, "w": 2, "h": 2}],  # a point outside
+            [[5, 5], [5, 5], {"x": 4, "y": 4, "w": 2, "h": 2}],  # a point inside: a hit
+        ],
+        "leaders": [
+            # the marker at (100, 100), clearance 6, the plate 40 px below it, a plate between
+            [[100, 100], 6, {"x": 80, "y": 140, "w": 60, "h": 18}, [_rect(70, 115)]],
+            # the same with the plate beside the leader's path
+            [[100, 100], 6, {"x": 80, "y": 140, "w": 60, "h": 18}, [_rect(110, 115)]],
+            # the marker's own rect holds the marker: not a crossing
+            [[100, 100], 6, {"x": 80, "y": 140, "w": 60, "h": 18}, [_rect(95, 95, 10, 10)]],
+            # nothing to avoid
+            [[100, 100], 6, {"x": 80, "y": 140, "w": 60, "h": 18}, []],
+        ],
+    }
+    out = _run_pure(template, HALVES_WORD_HARNESS, case, tmp_path)
+    assert out["hits"] == [True, False, False, False, True, False, True]
+    assert out["crosses"] == [True, False, False, False]
+    leader = _function_source(template, "drawLeaderLabels")[0]
+    assert ".filter(c => !leaderCrosses(it.px, it.r, c, avoid))" in leader
+    assert "const at = firstFree(clear, avoid, inner);" in leader
+    assert out["openS"] == 1.5
+    assert out["words"] == [
+        "fairing halves opening",
+        "fairing halves opening",
+        "fairing halves leaving",
+        "fairing halves leaving",
+        "fairing halves leaving",
+        "fairing halves gone",
+        "fairing halves gone",
+        "fairing halves gone",
+        "fairing halves opening",
+    ]
+    script = _script(template)
+    word = _function_source(template, "halvesWord")[0]
+    # review round 1 (logged edit of this test): the word follows whether a half is in the
+    # drawing at this very time (halvesInDrawing), not the sampled exit time
+    assert "tau < FAIRING_OPEN_S" in word and 'drawn ? "fairing halves leaving"' in word
+    frame = _function_source(template, "closeupFrame")[0]
+    assert "why: halvesWord(t - tF, halvesInDrawing(run, t))" in frame
+    assert "inDrawing: tt => !gone(tt)" in _function_source(template, "fairingEnd")[0]
+    assert "run._fairEnd.inDrawing(t) : true" in _function_source(template, "halvesInDrawing")[0]
+    assert "t <= tF + FAIRING_SHOW_S ?" not in frame  # the fixed-time word is gone
+    end = _function_source(template, "fairingEnd")[0]
+    # the hold's end as before (at least FAIRING_SHOW_S), and the exit time scanned from the drop
+    assert "halvesEndTime(hf.tF + FAIRING_SHOW_S, capT, HALVES_SCAN_S, gone)" in end
+    assert "gone: halvesEndTime(hf.tF, capT, HALVES_SCAN_S, gone)" in end
+    assert "run._fairEnd ? run._fairEnd.gone : null" in _function_source(template, "halvesGoneT")[0]
+    hook = _function_source(template, "panelState")[0]
+    assert "closeup_halves_gone_s: halvesGoneT(run)" in hook
+    # the stopped body's last-resort label: the shortest text, relaxed, never null
+    body = _function_source(template, "drawBodyMarker")[0]
+    assert 'shortest: tag + " (display only)"' in body
+    panel = _function_source(template, "drawPanel")[0]
+    assert "placedB.plates[k] === null && it.stopped === true" in panel
+    assert "drawLeaderLabels(ctx, pal, L.view, still, used(), covers, it => it.shortest)" in panel
+    assert panel.index("it => it.short)") < panel.index("it => it.shortest)")
+    assert "fairing halves gone" in script
+
+
+# ------------------------------------------------------------------ step A7 review round 1
+
+
+REVIEW_ROUND_1_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+// polygons against rects: [points, rect]; points in polygons: [p, points]; reach: [p, rect, reach]
+out.poly = input.poly.map(c => polygonHitsRect(c[0], c[1]));
+out.inside = input.inside.map(c => pointInPolygon(c[0], c[1]));
+out.reach = input.reach.map(c => withinReach(c[0], c[1], c[2]));
+// the fairing halves in a side x side drawing (its centre the axis's pivot) for the fixture's
+// vehicle: when they have left it judged half by half (halfHitsRect) against the box round
+// both (overlaps), at the recorded axes
+const h = input.halves, v = h.v, side = h.side;
+const preL = v.stage2_length_m + v.fairing_length_m;
+const postL = v.stage2_length_m + h.stub * v.fairing_length_m;
+const fr = halvesFrame(preL, postL, v.stage2_length_m, h.stack, h.minStack, h.hinge);
+const D = v.body_diameter_m, Df = Math.max(D, v.fairing_diameter_m);
+const dims = { u0: v.stage2_length_m, half: D / 2, dy: Df / 2 - D / 2, F: v.fairing_length_m,
+  flare: h.flare, cylinder: h.cyl };
+const draw = { x: 0, y: 0, w: side, h: side };
+out.exits = h.axes.map(deg => {
+  const a = deg * Math.PI / 180, dir = [Math.cos(a), -Math.sin(a)];
+  // a small square round the closed fairing's nose: a drawing the halves leave as they open
+  const sm = h.smallSide, noseU = (v.stage2_length_m + v.fairing_length_m - fr.up) * fr.kc;
+  const c = [side / 2 + noseU * dir[0], side / 2 + noseU * dir[1]];
+  const small = { x: c[0] - sm / 2, y: c[1] - sm / 2, w: sm, h: sm };
+  const at = tau => fairingHalves(fairingOpen(tau), dims, fr.kc).map(q => q.map(p => {
+    const u = p[0] - fr.up * fr.kc;
+    return [side / 2 + u * dir[0] - p[1] * dir[1], side / 2 + u * dir[1] + p[1] * dir[0]];
+  }));
+  const box = halves => {
+    const all = halfReach(halves[0]).concat(halfReach(halves[1]));
+    const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+  };
+  const goneHalf = r => tau => !at(tau).some(q => halfHitsRect(q, r));
+  const goneBox = r => tau => !overlaps(box(at(tau)), r);
+  const byHalf = halvesEndTime(0, h.cap, h.step, goneHalf(draw));
+  const byBox = halvesEndTime(0, h.cap, h.step, goneBox(draw));
+  const hold = halvesEndTime(h.show, h.cap, h.step, goneHalf(draw));
+  const smallGone = halvesEndTime(0, h.cap, h.step, goneHalf(small));
+  const smallHold = halvesEndTime(h.show, h.cap, h.step, goneHalf(small));
+  const word = (t, gone) => halvesWord(t, t < gone);
+  return {
+    deg: deg, byHalf: byHalf, byBox: byBox, hold: hold,
+    boxStillOver: overlaps(box(at(byHalf)), draw),
+    halfBefore: at(byHalf - h.step).some(q => halfHitsRect(q, draw)),
+    words: [word(byHalf - h.step, byHalf), word(byHalf, byHalf)],
+    smallGone: smallGone, smallHold: smallHold,
+    smallWords: [word(smallGone - h.step, smallGone),
+      word(Math.max(smallGone + h.step, FAIRING_OPEN_S), smallGone), word(h.show, smallGone)]
+  };
+});
+// the staging framing: the fixture's stack from its own framing to stagingFrame over the zoom,
+// then stage 2 from stagingFrame to its own framing over the pan (blendFrame, smooth01); where
+// the nose, stage 2's base and the stack's base land along the axis [px from the centre], and
+// stage 2's drawn length
+const s = input.staging, L = s.whole, s1 = s.s1, upper = s.upper;
+const own = { kc: s.stack / L, up: L * (1 - s.plume) / 2 };
+const own2 = { kc: s.stack / upper, up: upper * (1 - s.plume) / 2 };
+const whole = stagingFrame(upper, s1, s.minStack, s.back);
+const second = stagingFrame(upper, 0, s.minStack, s.back);
+out.stagingLen = upper * whole.kc;
+out.frameContinuous = Math.abs((whole.up - s1) * whole.kc - second.up * second.kc) < 1e-9 &&
+  whole.kc === second.kc;
+const zoom = { nose: -Infinity, stage2: -Infinity, base: Infinity };
+const pan = { nose: -Infinity, base: -Infinity };
+for (let i = 0; i <= 1000; i++) {
+  const f = blendFrame(own, whole, smooth01(i / 1000));
+  zoom.nose = Math.max(zoom.nose, (L - f.up) * f.kc);
+  zoom.stage2 = Math.max(zoom.stage2, Math.abs((f.up - s1) * f.kc));
+  zoom.base = Math.min(zoom.base, -f.up * f.kc);
+  const g = blendFrame(second, own2, smooth01(i / 1000));
+  pan.nose = Math.max(pan.nose, (upper - g.up) * g.kc);
+  pan.base = Math.max(pan.base, g.up * g.kc);
+}
+out.zoom = zoom; out.pan = pan;
+out.atStaging = { nose: (L - whole.up) * whole.kc, stage2: (whole.up - s1) * whole.kc };
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def _blend(over: str, under: str, alpha: float) -> str:
+    """The colour of ``over`` drawn at ``alpha`` on ``under`` (both #rrggbb)."""
+    a = [int(over[i : i + 2], 16) for i in (1, 3, 5)]
+    b = [int(under[i : i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(
+        f"{round(alpha * x + (1 - alpha) * y):02x}" for x, y in zip(a, b, strict=True)
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_review_round_1_staging_frame_halves_exit_caption_readout_and_key_under_node(
+    template: str, payload: dict[str, Any], tmp_path: Path
+) -> None:
+    """Step A7 review round 1 (the visual QA's findings on the close-up and the panel). (1) The
+    close-up frames stage 2 whole at staging: stagingFrame puts stage 2's base
+    STAGING_BASE_BACK_PX behind the drawing's centre at the scale that draws stage 2 at least
+    CLOSEUP_MIN_STACK_PX long, the same picture on the whole stack before the separation and on
+    stage 2 after it (no jump), and through the zoom before staging and the pan after it stage
+    2's base and nose stay inside the drawing (before, the stage-1 engines were framed at MECO
+    and stage 2 lay outside the drawing for about 2.5 s of every coast). (2) The halves' exit
+    from the drawing is judged half by half (halfHitsRect: each half's outline hull against the
+    drawing, polygonHitsRect), so the close-up title says 'leaving' only while a half is in the
+    drawing: for the fixture's vehicle at the recorded axes the box round both halves still
+    spans the drawing when both have left it, so the old test (the box) ran to the hold's end
+    under a 'leaving' title over an empty drawing; and in a drawing the halves leave within
+    FAIRING_SHOW_S the title reads 'gone' from their exit to the hold's end.
+    (3) The close-up's caption plates have a see-through fill (CLOSEUP_CAPTION_ALPHA) so a half
+    sliding out behind one, or the plume under it, stays in view, and the text keeps 4.5:1 over
+    the blend with the plume, the body and its outline in both themes. (4) In the overlay layout
+    the readout's first corner is the top left, under the close-up, where the flown path never
+    is (the readout moved corner three times in the 75 s video frame). (5) The other panel's
+    marker gets no label plate while the ring key, which names it, lies within KEY_REACH_PX of
+    its edge (withinReach); the hook says so (key_near) and reports stage 2's painted base and
+    whether a half is in the drawing (closeup_stage2_base_px, closeup_halves_drawn)."""
+    script = _script(template)
+    halves = _halves_case(template, payload)
+    halves.update({"cap": 200.0, "step": 0.1, "smallSide": 30.0})
+    v = payload["display"]["vehicle"]
+    case = {
+        "poly": [
+            # a triangle through the rect's inside; one beside it; one wholly round it; one
+            # touching an edge from outside
+            [[[0, 0], [10, 0], [0, 10]], {"x": 2, "y": 2, "w": 2, "h": 2}],
+            [[[0, 0], [10, 0], [0, 10]], {"x": 20, "y": 20, "w": 2, "h": 2}],
+            [[[-50, -50], [50, -50], [50, 50], [-50, 50]], {"x": 2, "y": 2, "w": 2, "h": 2}],
+            [[[0, 0], [10, 0], [0, -10]], {"x": 2, "y": 0, "w": 2, "h": 2}],
+        ],
+        "inside": [
+            [[1, 1], [[0, 0], [10, 0], [0, 10]]],
+            [[9, 9], [[0, 0], [10, 0], [0, 10]]],
+            [[0, 0], [[-50, -50], [50, -50], [50, 50], [-50, 50]]],
+        ],
+        "reach": [
+            [[0, 0], {"x": 10, "y": 0, "w": 5, "h": 5}, 10.0],
+            [[0, 0], {"x": 10, "y": 0, "w": 5, "h": 5}, 9.9],
+            [[12, 2], {"x": 10, "y": 0, "w": 5, "h": 5}, 0.0],
+        ],
+        "halves": halves,
+        "staging": {
+            "whole": v["stage1_length_m"]
+            + v["interstage_length_m"]
+            + v["stage2_length_m"]
+            + v["fairing_length_m"],
+            "s1": v["stage1_length_m"] + v["interstage_length_m"],
+            "upper": v["stage2_length_m"] + v["fairing_length_m"],
+            "stack": halves["stack"],
+            "plume": float(payload["drawing"]["plume_of_stack"]),
+            "minStack": halves["minStack"],
+            "back": _page_number(script, "STAGING_BASE_BACK_PX"),
+        },
+    }
+    out = _run_pure(template, REVIEW_ROUND_1_HARNESS, case, tmp_path)
+    assert out["poly"] == [True, False, True, False]
+    assert out["inside"] == [True, False, True]
+    assert out["reach"] == [True, False, True]
+    half_side = halves["side"] / 2
+    for ex in out["exits"]:
+        # (2) half by half the halves leave before the box round both does, and when they have
+        # left, that box still spans the drawing; the hold ends when they have left (after
+        # FAIRING_SHOW_S here); the title changes word exactly then
+        assert ex["byHalf"] < ex["byBox"] <= halves["cap"], ex
+        assert ex["boxStillOver"] is True and ex["halfBefore"] is True, ex
+        assert ex["hold"] == pytest.approx(ex["byHalf"]) and ex["byHalf"] > halves["show"], ex
+        assert ex["words"] == ["fairing halves leaving", "fairing halves gone"], ex
+        # a drawing they leave within FAIRING_SHOW_S: the hold runs to FAIRING_SHOW_S and the
+        # title reads 'gone' from their exit to the hold's end
+        assert ex["smallGone"] < halves["show"], ex
+        assert ex["smallHold"] == pytest.approx(halves["show"]), ex
+        assert ex["smallWords"][0] in ("fairing halves opening", "fairing halves leaving"), ex
+        assert ex["smallWords"][1:] == ["fairing halves gone"] * 2, ex
+    # (1) the staging framing: stage 2 CLOSEUP_MIN_STACK_PX long, the same picture before and
+    # after the separation, stage 2's base and nose inside the drawing through the zoom and the
+    # pan, at any angle (the distances along the axis are under the half side less a pixel)
+    assert out["stagingLen"] == pytest.approx(halves["minStack"])
+    assert out["frameContinuous"] is True
+    assert out["atStaging"]["stage2"] == pytest.approx(case["staging"]["back"])
+    assert 0 < out["atStaging"]["nose"] <= half_side - 1
+    assert out["zoom"]["nose"] <= half_side - 1 and out["zoom"]["stage2"] <= half_side - 1
+    assert out["zoom"]["base"] < -half_side  # the stage-1 engines leave the drawing in the zoom
+    assert out["pan"]["nose"] <= half_side - 1 and out["pan"]["base"] <= half_side - 1
+    frame = _function_source(template, "closeupFrame")[0]
+    assert "stagingFrame(upper.L, s1, CLOSEUP_MIN_STACK_PX, STAGING_BASE_BACK_PX)" in frame
+    assert "ease(own, whole, tS - CLOSEUP_ZOOM_S, tS)" in frame
+    assert "ease(second, own, tS, tS + STAGING_PAN_S)" in frame
+    end = _function_source(template, "fairingEnd")[0]
+    assert ".halves.some(q => halfHitsRect(q, draw))" in end and "overlaps(" not in end
+    drawn = _function_source(template, "drawFairingHalves")[0]
+    assert "function drawFairingHalves(ctx, pal, L, fr, draw)" in drawn
+    assert "drawn: h.halves.some(q => halfHitsRect(q, draw))" in drawn
+    closeup = _function_source(template, "drawCloseup")[0]
+    assert "drawFairingHalves(ctx, pal, L, fr, draw)" in closeup
+    assert "painted.halvesDrawn = halves ? halves.drawn : null;" in closeup
+    # (3) the see-through caption fill: the plate call, textPlate's alpha and the text's
+    # contrast over what can lie under the plate
+    assert "{ size: FONT_SMALL_PX, alpha: CLOSEUP_CAPTION_ALPHA }" in closeup
+    plate = _function_source(template, "textPlate")[0]
+    assert "if (o.alpha !== undefined) ctx.globalAlpha = o.alpha;" in plate
+    assert plate.index("ctx.globalAlpha = o.alpha") < plate.index("ctx.fillRect(left, top, w, h)")
+    assert plate.index("ctx.fillRect(left, top, w, h)") < plate.index("ctx.globalAlpha = 1;")
+    assert plate.index("ctx.globalAlpha = 1;") < plate.index("ctx.strokeRect(")
+    alpha = _page_number(script, "CLOSEUP_CAPTION_ALPHA")
+    assert 0.6 <= alpha < 1.0
+    light, dark, _ = _blocks(template)
+    for tokens in (light, {**light, **dark}):
+        for under in ("--sc-plume", "--sc-body", "--sc-body-line", "--sc-plume-line", "--panel"):
+            fill = _blend(tokens["--panel"], tokens[under], alpha)
+            assert _contrast(tokens["--ink"], fill) >= TEXT_CONTRAST, (under, fill)
+    # (4) the readout's corner order
+    readout = _function_source(template, "drawReadout")[0]
+    assert "const corners = (over ? [topLeft, topRight] : [topRight, topLeft]).concat([" in readout
+    assert "const over = closeupOver(L.lay);" in readout
+    assert (
+        'name: "top left", x: left, y: over ? L.inset.y + L.inset.h + VIEW_MARGIN_PX / 2' in readout
+    )
+    assert "h: over ? usualH : h" in readout and "HUD_USUAL_LINES" in readout
+    # (5) the other panel's marker named once
+    panel = _function_source(template, "drawPanel")[0]
+    assert "withinReach(o.px, view.ringKey, o.r + KEY_REACH_PX)" in panel
+    assert "view.others.filter(o => !o.keyNear)" in panel
+    assert "const KEY_REACH_PX = 2 * LEADER_STEPS * LEADER_PX;" in script
+    assert script.index("const LEADER_STEPS = 4;") < script.index("const KEY_REACH_PX = ")
+    hook = _function_source(template, "panelState")[0]
+    for key in (
+        "closeup_stage2_base_px: pm.closeup.stage2Base",
+        "closeup_halves_drawn: pm.closeup.halvesDrawn",
+        "key_near: o.keyNear === true",
+    ):
+        assert key in hook, key
+    vehicle = _function_source(template, "drawVehicle")[0]
+    assert (
+        "stage2Base: painted((s.parts.first ? v.stage1_length_m + v.interstage_length_m : 0) * k)"
+        in vehicle
+    )
+    constants = script[
+        script.index(
+            "// ------------------------------------------------------------------ page constants"
+        ) : script.index(
+            "// ------------------------------------------------------------------ helpers"
+        )
+    ]
+    for name in ("STAGING_BASE_BACK_PX", "CLOSEUP_CAPTION_ALPHA", "KEY_REACH_PX"):
+        assert re.search(rf"^  const {name} = .*// ", constants, re.M), name
+
+
+REVIEW_ROUND_2_HARNESS = """
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const out = {};
+// the carriage label beside the rails, kept clear of the close-up inset: each case gives the
+// measured geometry of a panel (walls, span, the inset, the plate's middle) and a width per
+// character standing in for measureText; sideLabel's own choice beside it for comparison
+const measure = c => s => c.charPx * s.length;
+const height = c => n => n * c.lineH + 2 * c.pad - (c.lineH - c.size);
+const rectOf = (a, c) => a === null ? null : (() => { const h = height(c)(a.lines.length);
+  return { x: a.side === "left" ? a.x - a.w : a.x, y: c.yMid - h / 2, w: a.w, h: h }; })();
+const over = (a, c) => a !== null && c.inset !== null && overlaps(rectOf(a, c), c.inset);
+out.clear = input.clear.map(c => {
+  const plain = sideLabel(measure(c), c.text, c.walls, c.span, c.gap, c.pad);
+  const kept = sideLabelClear(measure(c), c.text, c.walls, c.span, c.gap, c.pad, c.yMid,
+    height(c), c.inset);
+  return { plain: plain, plainRect: rectOf(plain, c), plainOver: over(plain, c),
+    kept: kept, keptRect: rectOf(kept, c), keptOver: over(kept, c) };
+});
+// the other panel's label plate against the ring key: the same item placed with and without
+// the key's rect grown by the reach among its own avoid rects
+const a = input.avoid;
+const place = avoid => placeLabels([Object.assign({}, a.item, avoid)], a.taken, a.bounds, a.gap);
+out.grown = grownRect(a.key, a.reach);
+out.without = place({ avoid: null });
+out.withKey = place({ avoid: [out.grown] });
+out.plain = place({});
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def _gap_px(a: dict[str, float], b: dict[str, float]) -> float:
+    """The gap between two rects [px] (0 when they touch or overlap)."""
+    dx = max(b["x"] - (a["x"] + a["w"]), a["x"] - (b["x"] + b["w"]), 0.0)
+    dy = max(b["y"] - (a["y"] + a["h"]), a["y"] - (b["y"] + b["h"]), 0.0)
+    return math.hypot(dx, dy)
+
+
+@pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
+def test_review_round_2_carriage_label_clear_of_the_inset_and_plate_clear_of_the_key_under_node(
+    template: str, tmp_path: Path
+) -> None:
+    """Step A7 review round 2 (the visual QA's findings on the view's labels). (1) After release
+    the carriage's label keeps clear of the close-up inset where the inset lies over the view
+    (sideLabelClear, used by drawCarriageLabel in the overlay and column layouts): at the
+    geometry measured through the app's scene route at 1280 x 900 (the column layout: the
+    view 605 px wide at x 617, the inset 236 x 286 px at its top left, the rails at 1042 to
+    1053, the one-line plate 223 px wide), sideLabel alone puts the one-line plate left of
+    the rails, under the inset (its first 56 px hidden for about the first second after
+    release in every pushed pair); sideLabelClear cuts the left span back to the inset's
+    right edge and the plate takes the right side on two lines, clear of the inset. A plate
+    whose row does not meet the inset, or no inset at all, gives sideLabel's own plate; when
+    nothing fits clear of the inset the label is dropped (null), never cut. (2) The other
+    panel's label plate never lands within KEY_REACH_PX of the ring key, which names the
+    same marker (placeLabels: an item's own avoid rects; drawPanel gives the other panel's
+    item the key's rect grown by the reach): at the pad panel's geometry of pad beside
+    silo_failed at T+18 s in the overlay layout (1280 x 720 through the scene route: the key
+    at x 10 to 188 on the view's bottom left, the marker at (427, 511), the gauges at the
+    bottom right), the plate without the avoid rect lands beside the key, 69 px from it on
+    the same line (the review saw 64 px in the app page), and with it at least the reach
+    away; an item without avoid rects is placed as before."""
+    script = _script(template)
+    lh = round(11 * _page_number(script, "PLATE_LINE_OF_FONT"))
+    pad = _page_number(script, "PLATE_PAD_PX")
+    gap = _page_number(script, "LABEL_GAP_PX")
+    reach = 2 * _page_number(script, "LEADER_STEPS") * _page_number(script, "LEADER_PX")
+    assert reach == 128.0  # KEY_REACH_PX
+    char_px = (223.1 - 2 * pad) / len(LABEL_TEXT)  # the measured one-line plate at 11 px
+    inset = {"x": 627.0, "y": 56.0, "w": 236.0, "h": 286.0}
+    base = {
+        "text": LABEL_TEXT,
+        "span": [627.0, 1212.0],
+        "gap": gap,
+        "pad": pad,
+        "charPx": char_px,
+        "lineH": lh,
+        "size": 11.0,
+    }
+    clear = [
+        # the three pushed pairs at the first time the label is drawn (silo_cold 0.9 s,
+        # silo_hot_ramp_on_track 0.8 s, silo_cold_s1 1.0 s with the view 40 px lower)
+        {**base, "name": "silo_cold", "walls": [1042.05, 1052.95], "yMid": 253.7, "inset": inset},
+        {
+            **base,
+            "name": "silo_hot_ramp_on_track",
+            "walls": [1041.76, 1052.77],
+            "yMid": 256.7,
+            "inset": inset,
+        },
+        {
+            **base,
+            "name": "silo_cold_s1",
+            "walls": [1042.58, 1052.42],
+            "yMid": 279.1,
+            "inset": {**inset, "y": 96.0},
+        },
+        # the plate's row below the inset's bottom (342): sideLabel's own plate is kept
+        {
+            **base,
+            "name": "row below the inset",
+            "walls": [1042.05, 1052.95],
+            "yMid": 400.0,
+            "inset": inset,
+        },
+        # no inset over the view (the side and band layouts)
+        {**base, "name": "no inset", "walls": [1042.05, 1052.95], "yMid": 253.7, "inset": None},
+        # the inset reaches past the rails' left room: nothing fits clear of it on either side
+        {
+            **base,
+            "name": "nothing fits",
+            "walls": [300.0, 310.0],
+            "span": [10.0, 330.0],
+            "yMid": 50.0,
+            "inset": {"x": 10.0, "y": 0.0, "w": 280.0, "h": 100.0},
+        },
+    ]
+    key = {"x": 10.0, "y": 510.0, "w": 178.5, "h": 23.0}
+    taken = [
+        {"x": 8.0, "y": 566.0, "w": 114.2, "h": 26.0},  # the scale bar
+        {"x": 8.0, "y": 538.0, "w": 197.4, "h": 23.0},  # the marker note
+        {"x": 10.0, "y": 56.0, "w": 236.0, "h": 286.0},  # the close-up
+        {"x": 480.1, "y": 514.0, "w": 114.9, "h": 76.0},  # the gauges
+        {"x": 10.0, "y": 347.0, "w": 207.2, "h": 104.0},  # the readout
+        key,
+    ]
+    case = {
+        "clear": clear,
+        "avoid": {
+            "key": key,
+            "reach": reach,
+            "taken": taken,
+            "item": {"x": 427.23, "y": 510.97, "r": 8.5, "w": 161.0, "h": 23.0},
+            "bounds": {"x": 5.0, "y": 51.0, "w": 595.0, "h": 544.0},
+            "gap": _page_number(script, "LABEL_PLATE_GAP_PX"),
+        },
+    }
+    out = _run_pure(template, REVIEW_ROUND_2_HARNESS, case, tmp_path)
+    by_name = {c["name"]: r for c, r in zip(clear, out["clear"], strict=True)}
+    for name in ("silo_cold", "silo_hot_ramp_on_track", "silo_cold_s1"):
+        r = by_name[name]
+        # (1) sideLabel alone: one line, left of the rails, under the inset
+        assert r["plain"]["side"] == "left" and len(r["plain"]["lines"]) == 1, name
+        assert r["plainOver"] is True, name
+        assert r["plainRect"]["x"] < inset["x"] + inset["w"] - 50, name  # its first 56 px hidden
+        # kept clear: right of the rails on two lines, every word kept, clear of the inset
+        assert r["kept"]["side"] == "right" and len(r["kept"]["lines"]) == 2, name
+        assert " ".join(r["kept"]["lines"]) == LABEL_TEXT, name
+        assert r["keptOver"] is False, name
+        walls = clear[[c["name"] for c in clear].index(name)]["walls"]
+        assert r["keptRect"]["x"] >= walls[1] + gap - 1e-9, name  # right of the right rail
+        assert r["keptRect"]["x"] + r["keptRect"]["w"] <= base["span"][1] + 1e-9, name  # never cut
+    for name in ("row below the inset", "no inset"):
+        assert by_name[name]["kept"] == by_name[name]["plain"], name
+        assert (
+            by_name[name]["plain"]["side"] == "left" and len(by_name[name]["plain"]["lines"]) == 1
+        ), name
+    assert (
+        by_name["nothing fits"]["plain"]["side"] == "left"
+        and by_name["nothing fits"]["plainOver"] is True
+    )
+    assert by_name["nothing fits"]["kept"] is None
+    # (2) the plate against the key
+    assert out["grown"] == {
+        "x": key["x"] - reach,
+        "y": key["y"] - reach,
+        "w": key["w"] + 2 * reach,
+        "h": key["h"] + 2 * reach,
+    }
+    without, with_key, plain = out["without"][0], out["withKey"][0], out["plain"][0]
+    assert without is not None and plain == without  # no avoid rects: placed as before
+    assert without["y"] == pytest.approx(key["y"] + 4.97, abs=0.1)  # on the key's line
+    assert 60.0 < _gap_px(without, key) < 75.0  # beside the key: the name read twice
+    assert with_key is not None
+    assert _gap_px(with_key, key) >= reach - 1e-9
+    assert (
+        with_key["x"] + with_key["w"] <= 600.0 + 1e-9 and with_key["y"] >= 51.0
+    )  # inside the view
+    for t in taken:
+        assert not _hit(with_key, t), t
+    # the sources: drawCarriageLabel keeps clear of the inset where it lies over the view; the
+    # other panel's item carries the grown key as its own avoid rect; the hook reports its plate
+    carriage = _function_source(template, "drawCarriageLabel")[0]
+    assert "const at = sideLabelClear(s => ctx.measureText(s).width, CARRIAGE_LABEL, " in carriage
+    assert (
+        "c.top[1], n => plateHeight(n, FONT_SMALL_PX), closeupOver(L.lay) ? L.inset : null);"
+        in carriage
+    )
+    panel = _function_source(template, "drawPanel")[0]
+    assert (
+        "const keyClear = view.ringKey !== null ? [grownRect(view.ringKey, KEY_REACH_PX)] : null;"
+        in panel
+    )
+    assert "o.avoid = keyClear;" in panel
+    labels = _function_source(template, "drawLabels")[0]
+    assert "avoid: it.avoid || null" in labels
+    place = _function_source(template, "placeLabels")[0]
+    assert "firstFree(tries, it.avoid ? rects.concat(it.avoid) : rects, bounds)" in place
+    pure = _pure_block(template)
+    assert "function sideLabelClear(" in pure and "function grownRect(" in pure
+    hook = _function_source(template, "panelState")[0]
+    assert "label_rect: labelRect(o), key_near: o.keyNear === true" in hook

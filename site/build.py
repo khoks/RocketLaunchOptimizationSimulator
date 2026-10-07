@@ -14,9 +14,12 @@ The site is static. This script:
    to the simulator) get the site's frame added on the way: a favicon, a top bar back to the
    gallery and the home page, the all-rights-reserved notice and the site's contrast tokens
    (``site/templates/replay-frame.html``), plus the template patches in
-   ``REPLAY_TEXT_FIXES`` and the editorial additions in ``REPLAY_PAGE_FIXES``;
-   the files in ``site/examples/`` stay as written. Command code blocks in the manual wrap
-   at spaces; console output, the usage synopsis and file trees scroll sideways;
+   ``REPLAY_TEXT_FIXES`` and the editorial additions in ``REPLAY_PAGE_FIXES``; scene pages
+   in ``examples/`` (written by ``launchsim scene``) get the same frame in the form their
+   Content-Security-Policy allows (the logo as a ``data:`` image, no icon link) and no text
+   fix, and the build fails for one written from ``results/app/`` or flagged exploratory
+   (D-SP2-37); the files in ``site/examples/`` stay as written. Command code blocks in the
+   manual wrap at spaces; console output, the usage synopsis and file trees scroll sideways;
 4. writes the "Last updated" stamp (commit date and hash) between the
    ``<!-- stamp -->`` and ``<!-- /stamp -->`` markers of every copied page (the landing page
    must have them) and into every manual page;
@@ -39,7 +42,9 @@ Copyright (c) 2026 Rahul Singh Khokhar. All rights reserved (see LICENSE).
 """
 
 import argparse
+import base64
 import html
+import json
 import re
 import shutil
 import subprocess
@@ -84,8 +89,28 @@ MANUAL_INDEX_SOURCE = "README.md"
 NAV_LINE_TEXT = "Manual contents"  # each chapter's own GitHub navigation line starts so
 BUILD_MARKER = ".launchsim-site-build"  # marks an output folder this script may replace
 STAMP_RE = re.compile(r"(<!-- stamp -->)(.*?)(<!-- /stamp -->)", re.DOTALL)
-REPLAY_DIR = "examples"  # replay pages live here, next to the gallery's index.html
+REPLAY_DIR = "examples"  # replay and scene pages live here, next to the gallery's index.html
 REPLAY_MARKER = "Written by launchsim replay"  # in the CSS comment of every replay page
+# Scene pages (written by `launchsim scene`, SP2) get the same frame as the replay pages and no
+# text fix: their caveats and provenance footer come from the command itself. A scene page
+# carries a meta Content-Security-Policy (default-src 'none'; img-src data:; a sha256 pin on its
+# one script), which the build leaves as it is: the frame it inserts adds no script and no
+# same-origin URL (scene_frame_parts: no icon link, the page keeps its own data: icon, and the
+# bar's logo as a data: image), so the framed page loads with no policy violation
+# (check_scene_frame). A framed scene page must come from a recorded experiment directory, never
+# from an app launch (results/app/, every one exploratory and never public material: design
+# D-SP2-37): the build reads the page's data block and refuses a source path under
+# APP_RESULTS_PREFIX (with either slash) and a block flagged exploratory (`exploratory` true or
+# `label` "exploratory", which an app launch keeps when its directory is copied elsewhere).
+SCENE_MARKER = "Written by launchsim scene"  # in the CSS comment of every scene page
+SCENE_DATA_RE = re.compile(
+    r'<script type="application/json" id="scene-data">(.*?)</script>', re.DOTALL
+)
+APP_RESULTS_PREFIX = "results/app/"
+EXPLORATORY_LABEL = "exploratory"  # the data block's label of an app launch (results_io)
+SCENE_FRAME_ICON_RE = re.compile(r'<link rel="icon"[^>]*>\n?')  # the frame's icon link
+FRAME_LOGO_SRC = 'src="{{root}}assets/brand/logo-mark.svg"'  # the frame's logo image
+SCENE_FRAME_FORBIDDEN = ('src="../', 'href="../assets')  # never in a framed scene page
 FRAME_PART_RE = re.compile(r"<!-- (head|top|bottom) -->\n(.*?)<!-- /\1 -->", re.DOTALL)
 BODY_OPEN_RE = re.compile(r"<body\b[^>]*>")
 EM_COMMA_RE = re.compile(r"<em>([^<]*,[^<]*)</em>")
@@ -961,26 +986,110 @@ def check_gallery_index(out: Path, log: BuildLog) -> None:
         )
 
 
-def frame_replays(out: Path, log: BuildLog) -> int:
-    """Add the site's frame to every replay page copied into ``out/examples`` and apply the
-    template patches of ``REPLAY_TEXT_FIXES`` and the editorial additions of
-    ``REPLAY_PAGE_FIXES``; then check the gallery index beside them
-    (``check_gallery_index``)."""
+def scene_data(text: str) -> dict | None:
+    """A scene page's data block as a dict, or None when the page has no readable one."""
+    match = SCENE_DATA_RE.search(text)
+    if match is None:
+        return None
+    try:
+        data = json.loads(match.group(1))
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def scene_source(text: str) -> str | None:
+    """The results directory a scene page was written from (its data block's ``source``, as
+    results/<experiment>/<timestamp>), or None when the page has no readable data block."""
+    data = scene_data(text)
+    source = data.get("source") if data else None
+    return source if isinstance(source, str) else None
+
+
+def check_scene_source(text: str, label: str, log: BuildLog) -> None:
+    """Fail the build for a scene page without a readable source, one written from an app
+    launch (``APP_RESULTS_PREFIX``, with either slash) or one whose data block is flagged
+    exploratory (``exploratory`` true or ``label`` "exploratory": an app launch keeps the flag
+    when its directory is copied or moved elsewhere): gallery material comes only from recorded
+    experiment directories (D-SP2-37)."""
+    data = scene_data(text) or {}
+    source = data.get("source")
+    if not isinstance(source, str):
+        log.errors.append(f"{label}: scene page without a readable data block (no source path)")
+        return
+    posix = source.replace("\\", "/")
+    if posix.startswith(APP_RESULTS_PREFIX) or f"/{APP_RESULTS_PREFIX}" in f"/{posix}":
+        log.errors.append(
+            f"{label}: written from {source}, an app launch (exploratory, never gallery "
+            "material); export the scene from a recorded experiment directory instead"
+        )
+    if data.get("exploratory") is True or data.get("label") == EXPLORATORY_LABEL:
+        log.errors.append(
+            f"{label}: written from an exploratory app run (data block exploratory/label); "
+            "gallery material comes only from recorded experiment directories (D-SP2-37)"
+        )
+
+
+def scene_frame_parts(parts: dict[str, str]) -> dict[str, str]:
+    """The frame parts for a scene page (``read_replay_frame``'s, with two changes): no icon
+    link (the page keeps its own data: icon) and the bar's logo as a data: image, which the
+    page's policy (img-src data:) allows; nothing else changes. A frame template whose icon link
+    or logo image has moved is an error, so a same-origin URL never reaches a scene page."""
+    head = SCENE_FRAME_ICON_RE.sub("", parts["head"], count=1)
+    logo = base64.b64encode((BRAND_SRC / "logo-mark.svg").read_bytes()).decode("ascii")
+    top = parts["top"].replace(FRAME_LOGO_SRC, f'src="data:image/svg+xml;base64,{logo}"', 1)
+    if head == parts["head"] or top == parts["top"]:
+        raise BuildError(
+            f"{REPLAY_FRAME.name}: no icon link in its head part or no {FRAME_LOGO_SRC} in its "
+            "top part; scene_frame_parts must replace both for a scene page"
+        )
+    return {**parts, "head": head, "top": top}
+
+
+def check_scene_frame(text: str, label: str, log: BuildLog) -> None:
+    """Fail the build when a framed scene page carries a same-origin image or icon URL
+    (``SCENE_FRAME_FORBIDDEN``), which its policy would block (a broken logo, console errors)."""
+    for needle in SCENE_FRAME_FORBIDDEN:
+        if needle in text:
+            log.errors.append(
+                f"{label}: a framed scene page carries {needle!r}, which its "
+                "Content-Security-Policy blocks; the frame must use data: images only"
+            )
+
+
+def frame_replays(out: Path, log: BuildLog) -> tuple[int, int]:
+    """Add the site's frame to every replay page and every scene page copied into
+    ``out/examples``; a replay page also gets the template patches of ``REPLAY_TEXT_FIXES``
+    and the editorial additions of ``REPLAY_PAGE_FIXES``; a scene page gets the frame in the
+    form its policy allows (``scene_frame_parts``), no text fix, a check of its source directory
+    and flags (``check_scene_source``) and of the framed page's URLs (``check_scene_frame``);
+    then check the gallery index beside them (``check_gallery_index``). Returns the counts
+    (replay pages, scene pages)."""
     parts = read_replay_frame()
-    count = 0
+    scene_parts = scene_frame_parts(parts)
+    replays = scenes = 0
     for page in sorted((out / REPLAY_DIR).glob("*.html")):
         text = page.read_text(encoding="utf-8")
-        if REPLAY_MARKER not in text:
+        is_replay, is_scene = REPLAY_MARKER in text, SCENE_MARKER in text
+        if not (is_replay or is_scene):
             continue
         label = f"site/{REPLAY_DIR}/{page.name}"
-        framed = frame_replay(text, parts, "../" * len(Path(REPLAY_DIR).parts))
+        kind = "replay" if is_replay else "scene"
+        root = "../" * len(Path(REPLAY_DIR).parts)
+        framed = frame_replay(text, parts if is_replay else scene_parts, root)
         if framed is None:
-            log.errors.append(f"{label}: replay page without head and body")
+            log.errors.append(f"{label}: {kind} page without head and body")
             continue
-        page.write_text(fix_replay_text(framed, label, log), encoding="utf-8", newline="\n")
-        count += 1
+        if is_replay:
+            framed = fix_replay_text(framed, label, log)
+            replays += 1
+        else:
+            check_scene_source(framed, label, log)
+            check_scene_frame(framed, label, log)
+            scenes += 1
+        page.write_text(framed, encoding="utf-8", newline="\n")
     check_gallery_index(out, log)
-    return count
+    return replays, scenes
 
 
 def write_stamps(out: Path, stamp: Stamp, log: BuildLog) -> int:
@@ -1114,9 +1223,9 @@ class LinkChecker:
 # entry point
 
 
-def build(out: Path, log: BuildLog) -> tuple[Stamp, int, int, int]:
-    """Build the whole site into ``out``; return the stamp and the manual page, framed replay
-    page and link counts."""
+def build(out: Path, log: BuildLog) -> tuple[Stamp, int, tuple[int, int], int]:
+    """Build the whole site into ``out``; return the stamp and the manual page, framed
+    (replay, scene) page and link counts."""
     stamp = read_stamp()
     prepare_out(out)
     labels = copy_sources(out)
@@ -1171,7 +1280,11 @@ def main(argv: list[str] | None = None) -> int:
     report(log.warnings, f"warnings ({len(log.warnings)}):", err)
     print(f"built {out}")
     print(f"  manual: {manual_pages} pages from docs/manual, {len(log.images)} images copied")
-    print(f"  replay: {framed} pages in {REPLAY_DIR}/ framed with the site bar and notice")
+    print(f"  replay: {framed[0]} pages in {REPLAY_DIR}/ framed with the site bar and notice")
+    print(
+        f"  scene:  {framed[1]} pages in {REPLAY_DIR}/ framed the same way, in the form their "
+        "policy allows (no text fix)"
+    )
     print(f"  stamp:  {stamp.as_text()}")
     print(f"  links:  {links} checked")
     if log.errors:

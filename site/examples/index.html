@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Animation Examples · launch-assist-sim</title>
-<meta name="description" content="Interactive replays and a video of SP1's fuel offload at fixed payload (silo_offload_2d), and replays, videos and GIFs of Phase 2's silo_screening_2d, each with the command that made it and the caveats it must be read with.">
+<meta name="description" content="Interactive replays, a video and SP2's 2-D launch scene (a page and a video) of SP1's fuel offload at fixed payload (silo_offload_2d), and replays, videos and GIFs of Phase 2's silo_screening_2d, each with the command that made it and the caveats it must be read with.">
 <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -230,7 +230,7 @@ footer p { margin: 0; max-width: 100ch; }
   <section class="hero" aria-labelledby="page-title">
     <p class="kicker">Examples</p>
     <h1 id="page-title">Animation examples</h1>
-    <p class="lede">Replays of two recorded runs: SP1's fuel offload at fixed payload and Phase 2's silo screening. Each comes with the command that made it and the caveats it has to be read with. Every replay page here is the command's own output with the site's frame and three drawing patches of the replay template added when the site is built (<code>site/build.py</code>, <code>REPLAY_TEXT_FIXES</code>; the template is frozen for SP2); the three pages that also carry editorial additions (SP1.1, SP1.2 and 2.1) say in their entries what was added and where; 2.2 and 2.3 carry none. Every frame is drawn from the run's recorded time series; nothing is re-simulated in the browser or in the videos.</p>
+    <p class="lede">Replays of two recorded runs: SP1's fuel offload at fixed payload and Phase 2's silo screening, and, since SP2, the launch scene of SP1's pair as a page and a video. Each comes with the command that made it and the caveats it has to be read with. Every replay page here is the command's own output with the site's frame and three drawing patches of the replay template added when the site is built (<code>site/build.py</code>, <code>REPLAY_TEXT_FIXES</code>; the template is frozen for SP2); the three pages that also carry editorial additions (SP1.1, SP1.2 and 2.1) say in their entries what was added and where; 2.2 and 2.3 carry none; the scene page (SP1.3) gets the frame in the form its own content-security policy allows (the bar's logo as a data: image, no second icon link) and no text change. On the replay pages and in the <code>animate</code> videos every frame is drawn from the run's recorded time series; nothing is re-simulated in the browser or in those videos. The scene page and its video replay the vehicle's path, thrust and mass from the same recorded time series, and draw display-only reconstructions beside them that are not model output: the spent stage's and the fairing halves' drag-free coasts (integrated once by the scene builder, the <code>launchsim scene</code> command or the app's scene route, from the recorded separation state; nothing is integrated in the browser), the carriage after release, the held attitude when the engines are off, and every shape; SP1.3 names each of them.</p>
     <ul class="tags" aria-label="What every example shares">
       <li>concept A: vertical silo</li>
       <li>planar <span class="nb">2-D</span>, rotating Earth</li>
@@ -263,6 +263,7 @@ footer p { margin: 0; max-width: 100ch; }
       <li><a href="#sp1">SP1: fuel offload</a></li>
       <li><a href="#pad-vs-silo-offload">SP1.1 · Pad against offloaded silo</a></li>
       <li><a href="#offload-vs-paired-pad">SP1.2 · Offloaded silo against its paired pad</a></li>
+      <li><a href="#pad-vs-silo-offload-scene">SP1.3 · The same pair as a launch scene</a></li>
       <li><a href="#phase2">Phase 2: payload gain</a></li>
       <li><a href="#pad-vs-silo-cold">2.1 · Pad against cold-start silo</a></li>
       <li><a href="#ignition-timing">2.2 · Ignition timing</a></li>
@@ -417,6 +418,61 @@ footer p { margin: 0; max-width: 100ch; }
       <div class="cmd-body">
         <p>From the repository root, against the run directory (git <code>b3150c1754ee</code>, clean); the replay was rendered on 2026-10-05 with launch-assist-sim 0.1.0 at SP2 step A1a (commit in <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/SP2-launch-app-2d-scene.md">docs/phases/SP2-launch-app-2d-scene.md</a>, section 7). <code>replay</code> accepts a paired pad by name: it is a run of the offload block.</p>
         <div class="codeblock"><pre><code>uv run python -m launchsim replay results/silo_offload_2d/20261003T112934Z --runs silo_cold_s1__pad silo_cold_s1 --out site/examples/offload-vs-paired-pad.html</code></pre></div>
+      </div>
+    </details>
+  </article>
+
+  <!-- SP1 example 3: the launch scene (SP2) -->
+  <article class="example" id="pad-vs-silo-offload-scene" aria-labelledby="sp1-ex3-h">
+    <header>
+      <p class="kicker">SP1.3 · the same pair as a launch scene (SP2)</p>
+      <h2 id="sp1-ex3-h">Pad against the offloaded silo, drawn as a launch</h2>
+      <p class="summary">SP1.1's two runs again, this time as SP2's <span class="nb">2-D</span> scene: a cross-section of the pad and of the silo side by side on one clock, the rocket drawn to scale with its tank levels, the push, release, kick, staging, fairing drop and cutoff, with the model's caveats and the drawing's own under the picture.</p>
+    </header>
+    <figure>
+      <video class="media" controls preload="none" playsinline poster="media/pad-vs-silo-offload-scene_poster.jpg" width="1280" height="720">
+        <source src="media/pad-vs-silo-offload-scene.mp4" type="video/mp4">
+        Your browser cannot play this MP4. <a href="media/pad-vs-silo-offload-scene.gif">Open the GIF instead.</a>
+      </video>
+      <figcaption>Left the pad (<code>pad</code>), right the offloaded silo run (<code>silo_cold_s1</code>). Each panel has a true-scale view (the rocket while its body is at least 3 px wide, then a position marker on the flown path) and a close-up at a scale of its own. The clock is time after release; the playback runs at 0.5x through the push and the ramp and 1x through the kick, then rises toward 30x, held at 3x from just before MECO to just after stage-2 ignition and around cutoff, at 2x around the fairing drop and 5x near max-Q, all 1.15x faster in this clip than under the page's default rate. Every frame prints the caveat footer: the display-only line, the data line, the three model lines and the run's structure note. The poster is the last frame (T+536.30 s), both runs in orbit.</figcaption>
+    </figure>
+    <div class="actions">
+      <a class="btn" href="pad-vs-silo-offload-scene.html">Open the scene page</a>
+      <a class="btn ghost" href="media/pad-vs-silo-offload-scene.mp4">MP4 <span class="size">4.8 MiB</span></a>
+      <a class="btn ghost" href="media/pad-vs-silo-offload-scene.gif">GIF <span class="size">5.8 MiB</span></a>
+    </div>
+    <div class="col">
+      <h3>What it shows</h3>
+      <p><code>pad</code> is held down with stage 1 lit two seconds before release and its 2 s ramp running, then let go. <code>silo_cold_s1</code> starts with its <span class="nb">stage-1</span> tank at <span class="num">89.96%</span> (the never-loaded <span class="num">41.26 t</span> is a hatched band on its gauge for the whole flight), is pushed 100 m up the shaft at 3 g net on the carriage with its engines off (2.6 s, felt <span class="num">4.0 g</span>), leaves the mouth at <span class="num">76.7 m/s</span> and lights 0.5 s later; its kick is the model's pitch step at ignition. The recorded events then come in order: MECO at <span class="num">138.5 s</span> after release against the pad's <span class="num">151.3 s</span>, staging (the gap and the falling spent stage are drawn, not computed), <span class="nb">stage-2</span> ignition after the 11 s coast, the fairing drop at <span class="num">184.3 s</span> against <span class="num">196.8 s</span>, and cutoff in the 200 km orbit at <span class="num">523.5 s</span> against <span class="num">536.3 s</span>, both carrying the same <span class="num">26,054.4 kg</span> payload (the event times from the runs' events.csv, the payload from each run's metrics.json <code>payload_kg</code>; the numbers of the comparison itself are SP1.1's). Position, speed, the engines' vacuum thrust, the attitude while the engines run, and the propellant are replayed from the recorded time series; the scene's state hook, through the app's scene route (the same template and data builder as this export), was checked against the CSVs at every recorded event and in between (docs/demos/SP2/qa-table.md, 1,994 checks, all within the tolerances of the phase's exit criteria 5 and 6).</p>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h3>For the hypothesis</h3>
+        <ul class="for">
+          <li>The same comparison as <a href="#pad-vs-silo-offload">SP1.1</a>, now visible as a launch: the lighter stack leaves the silo with its engines off, lights after release, and reaches every milestone sooner than the pad while carrying the same payload to the same orbit (<span class="num">41.26 t</span> of <span class="nb">stage-1</span> propellant left out, <span class="num">10.04%</span> of stage 1, sweep-optimized and unthrottled, before any structural mass).</li>
+          <li>The tank gauge makes the offload concrete: the band that is never filled is on screen from the first frame, and the <span class="nb">stage-1</span> tank reads empty at MECO (under 1 kg against the recorded mass).</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>Against it, stated as plainly</h3>
+        <ul class="against">
+          <li>Everything SP1.1 says against the offload applies unchanged: no structural mass is charged for the <span class="num">4.0 g</span> push (<span class="num">+8.1 t</span> of assumed <span class="nb">stage-1</span> dry mass leaves <span class="num">1.98 t</span>), most of the offload reads as the lighter stack's thrust-to-weight under the pre-registered reading (28 to 29% of the removed ideal delta-v on the delta-v reading chosen after the run; RQ1 and SP1.1 give both), the baseline's hold-down convention is part of it, <span class="nb">max-Q</span> is <span class="num">3.35%</span> above the pad's and <span class="nb">q-alpha</span> at the kick <span class="num">3.0×</span> it, the gate vehicle calibrates <span class="num">+14.3%</span> high, and the figure depends on the vehicle masses: <span class="num">9.10%</span> of stage 1 (<span class="num">36.01 t</span>) on the README-loads fork, which calibrates inside the band (RQ1: read it as 9 to 10% of stage 1, not as a Falcon 9 figure). The drive is a prescribed acceleration with a massless carriage in a vented shaft, and the tanks are partly filled with every dry mass unchanged: an under-filled vehicle, not one redesigned around the smaller load. The page's "Read before quoting" list carries the calibration, structure (the push load, without the penalty figures), drive and free-kick (<span class="nb">q-alpha</span> <span class="num">226.9</span> against the pad's <span class="num">74.7 Pa rad</span>), sweep-optimized caveats word for word as <code>replay</code> does, plus the directory's seven recorded offload caveats (among them the partly filled tanks, <span class="nb">max-Q</span> beside the pad's and stage 1 as the only headline); the <span class="num">+8.1 t</span> figure, the pre-registered reading, the hold-down convention, the <span class="num">3.35%</span> and the bridge are SP1.1's and RQ1's, not on the page.</li>
+          <li>The drawing shows things the model does not have (design section 4.9 of docs/phases/inputs/2026-10-05-SP2-design.md, named on the page): every shape and length (the display files under <code>configs/display/</code>, each number sourced or marked assumed); the body attitude (the model has a thrust direction; when the engines are off the drawn angle is held and the close-up says so); the altitude drawn at the rocket's base; the spent stage and the fairing halves on drag-free coasts integrated from the recorded separation state and labelled with their own computed ground-impact time (no re-entry drag, so not a landing prediction; both halves follow one path; the staging gap and the halves opening are drawn); the carriage after release and where it brakes; one propellant level per stage, read empty at depletion with no residual or reserve; the pad's liftoff marker (the model logs release); the marker that replaces the rocket once it is under 3 px wide. The plume in the shaft and the carriage under lit engines, which a hot start would show, a failed ignition's obstacle-free fall-back (the model has no contact with the carriage, the mouth or the shaft) and a body still in flight when its run ends (drawn stopped there; here both bodies impact before cutoff) are not in this pair.</li>
+          <li>The video runs 75 s for an 86.4 s scene: at 24 fps the natural length is 2,072 frames, over the app's 1,800-frame cap, so the clip plays the same scene at 1.15x the player's default rate (the app says so when the length is chosen).</li>
+        </ul>
+      </div>
+    </div>
+    <details class="cmd">
+      <summary>Commands that made it</summary>
+      <div class="cmd-body">
+        <p>From the repository root, against the run directory (git <code>b3150c1754ee</code>, clean); the scene page was rendered on 2026-10-07 with launch-assist-sim 0.1.0 at SP2 step A7 (commit in <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/SP2-launch-app-2d-scene.md">docs/phases/SP2-launch-app-2d-scene.md</a>, section 7). The copy here differs from the command's own output only by the site's frame, inserted in the form the page's own content-security policy allows (the bar's logo as a data: image and no second icon link; the policy and the script are the command's, unchanged); no text fix: the page's caveats, display-only list and provenance footer are the command's. The page's own Data line names the run's git state; the render date and version are this entry's record, and the page and the video were exported from the working tree that became step A7's commit (part 1 of docs/demos/SP2/README.md).</p>
+        <div class="codeblock"><pre><code>uv run python -m launchsim scene results/silo_offload_2d/20261003T112934Z --runs pad silo_cold_s1 --out site/examples/pad-vs-silo-offload-scene.html</code></pre></div>
+        <p>The MP4 was exported on 2026-10-07 at the same step from the local app's Save video control (<code>uv run python -m launchsim app</code>, the directory opened from its run list with <code>pad</code> beside <code>silo_cold_s1</code>, 24 fps, 1,280 px): the app page captures each frame from the scene with the caveat footer and pipes it to ffmpeg, 1,800 frames posted in 31 s, the file finished at 32 s. The app's file (6.10 MB, written to its working directory) was re-encoded for the gallery with ffmpeg at crf 22 (5.05 MB; frames and timing unchanged):</p>
+        <div class="codeblock"><pre><code>ffmpeg -i silo_offload_2d_20261003T112934Z_pad-vs-silo_cold_s1_scene.mp4 -c:v libx264 -preset slow -crf 22 -pix_fmt yuv420p -movflags +faststart -an site/examples/media/pad-vs-silo-offload-scene.mp4</code></pre></div>
+        <p>The GIF is the whole clip from the same app file at 8 fps, 720 px wide and a 64-colour palette (6.07 MB): at 12 fps, 960 px and 128 colours it came to 17.3 MB, because the camera pans and zooms continuously, so every frame changes.</p>
+        <div class="codeblock"><pre><code>ffmpeg -i silo_offload_2d_20261003T112934Z_pad-vs-silo_cold_s1_scene.mp4 -vf "fps=8,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" site/examples/media/pad-vs-silo-offload-scene.gif</code></pre></div>
+        <p>The poster is the MP4's last frame, frame 1,799 of the 1,800 (a seek by time from the end lands two frames early at 24 fps, so the frame is selected by number):</p>
+        <div class="codeblock"><pre><code>ffmpeg -i site/examples/media/pad-vs-silo-offload-scene.mp4 -vf "select=eq(n\,1799)" -frames:v 1 -q:v 2 -update 1 site/examples/media/pad-vs-silo-offload-scene_poster.jpg</code></pre></div>
       </div>
     </details>
   </article>
@@ -638,7 +694,7 @@ footer p { margin: 0; max-width: 100ch; }
 <footer>
   <div class="wrap">
     <p><a href="../index.html">Home</a> · <a href="../manual/index.html">User manual</a> · <a href="../deck/index.html">Slide deck</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator">Source on GitHub</a> · <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md">Findings index</a></p>
-    <p>Data: <code>results/silo_offload_2d/20261003T112934Z</code> (git b3150c1754ee, clean) for SP1, whose replay pages were rendered on 2026-10-05 with launch-assist-sim 0.1.0 at SP2 step A1a (commit in docs/phases/SP2-launch-app-2d-scene.md, section 7) and whose animation on 2026-10-04 at commit cfd9059 with SP1 step 10a's animate change on top of it; <code>results/silo_screening_2d/20260930T175743Z</code> (git 7ad381f227a9, clean) for Phase 2, whose replay pages were rendered on 2026-10-05 at SP2 step A1a (commit in docs/phases/SP2-launch-app-2d-scene.md, section 7) and whose ignition-timing and failed-ignition animations on 2026-10-02 at commit e4f36ee; the pad against silo_cold animation is the README capture.</p>
+    <p>Data: <code>results/silo_offload_2d/20261003T112934Z</code> (git b3150c1754ee, clean) for SP1, whose replay pages were rendered on 2026-10-05 with launch-assist-sim 0.1.0 at SP2 step A1a (commit in docs/phases/SP2-launch-app-2d-scene.md, section 7), whose animation on 2026-10-04 at commit cfd9059 with SP1 step 10a's animate change on top of it, and whose scene page and scene video (SP1.3, display-only reconstructions named in the entry) on 2026-10-07 at SP2 step A7 (commit in the same file, section 7); <code>results/silo_screening_2d/20260930T175743Z</code> (git 7ad381f227a9, clean) for Phase 2, whose replay pages were rendered on 2026-10-05 at SP2 step A1a (commit in docs/phases/SP2-launch-app-2d-scene.md, section 7) and whose ignition-timing and failed-ignition animations on 2026-10-02 at commit e4f36ee; the pad against silo_cold animation is the README capture.</p>
     <p class="license">© 2026 Rahul Singh Khokhar. All rights reserved. This work is public to read, but no license is granted: you may not copy, modify, share or use any part of it, commercially or otherwise, without written permission. It is not open source. See <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE">LICENSE</a>.</p>
   </div>
 </footer>

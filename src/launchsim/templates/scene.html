@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Zv9ZF/+eyoUC9GwMsqcYSEEI6yNsd0NoukS3eQD/Y6E='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-AFBjg9EdZCOpmmxhVFeIZg0d+0V4D+XuT3oCQU15FkU='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Launch Scene</title>
@@ -17,9 +17,12 @@
    Tokens: the site's set (site/assets/site.css), then the scene's own (--sc-*): every drawn
    shape has a fill and an outline token; tests/test_scene_page.py checks their contrast.
    The Content-Security-Policy above allows the one inline script by its sha256; the same test
-   prints the new value whenever the script changes. site/build.py must not insert elements
-   into, or patch the script of, a scene page: frame it from an outer page with an iframe; the
-   meta CSP blocks same-origin images and links, and the script-src hash pins the script. */
+   prints the new value whenever the script changes. site/build.py must not patch the script of
+   a scene page or change this policy: the script-src hash pins the script, and the policy
+   blocks every same-origin image and link. The site's frame (site/build.py frame_replay, step
+   A7) may add elements that the policy allows: its style, its bar and footer with navigation
+   links, and its logo as a data: image; it adds no script, no icon link (the page keeps its
+   own data: icon) and no element with a same-origin URL. */
 :root {
   --bg: #f1f2ee;
   --panel: #fbfbf8;
@@ -417,6 +420,21 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     }
     return null;
   }
+  function sideLabelClear(measure, text, walls, span, gap, pad, yMid, height, clear) {
+    // sideLabel's plate kept clear of the rect clear ({x, y, w, h} [px]; null: nothing to clear): the plate's
+    // middle lies at yMid [px] and height(n) is an n-line plate's height [px]. When the plate sideLabel chooses
+    // would overlap clear, the span is cut back to clear's far edge plus gap on that side of the walls and the
+    // choice is made again, so the plate takes the other side, wraps short of clear, or is dropped (null).
+    // Step A7, review round 2: left of the rails the carriage label ran under the close-up inset for the first
+    // second after release in the column and overlay layouts (its first 56 px hidden at 1280 x 900).
+    const at = sideLabel(measure, text, walls, span, gap, pad);
+    if (at === null || clear === null) return at;
+    const rectOf = a => { const h = height(a.lines.length); return { x: a.side === "left" ? a.x - a.w : a.x, y: yMid - h / 2, w: a.w, h: h }; };
+    if (!overlaps(rectOf(at), clear)) return at;
+    const cut = at.side === "left" ? [Math.max(span[0], clear.x + clear.w + gap), span[1]] : [span[0], Math.min(span[1], clear.x - gap)];
+    const again = sideLabel(measure, text, walls, cut, gap, pad);
+    return again !== null && !overlaps(rectOf(again), clear) ? again : null;
+  }
   function splitCaveats(caveats, recorded) {
     // The payload's caveats as two lists: those built for the runs shown (payload order, each once) and the
     // directory's recorded offload caveats (word for word, each once); together they hold every caveat.
@@ -676,6 +694,10 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   function overlaps(a, b) {
     return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
   }
+  function grownRect(r, m) {
+    // The rect r ({x, y, w, h} [px]) grown by m [px] on every side.
+    return { x: r.x - m, y: r.y - m, w: r.w + 2 * m, h: r.h + 2 * m };
+  }
   function firstFree(candidates, taken, bounds) {
     // The first candidate rect [px] that lies inside bounds and overlaps no taken rect; null when none does.
     for (let i = 0; i < candidates.length; i++) {
@@ -686,18 +708,19 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     return null;
   }
   function placeLabels(items, taken, bounds, gap) {
-    // A label plate for each item ({x, y: its anchor, r: the anchor's clearance, w, h: the plate} [px]), in
-    // order: right of the anchor and below it, above it, level with it; then left of it in the same three;
-    // then under it and over it, centred; the first that lies inside bounds and overlaps neither a taken rect
-    // nor an earlier plate. null where none fits (the marker stays, unlabelled). Plates never cover what is
-    // taken, so they are never cut.
+    // A label plate for each item ({x, y: its anchor, r: the anchor's clearance, w, h: the plate, avoid: rects
+    // this item's plate alone keeps clear of, or null} [px]), in order: right of the anchor and below it, above
+    // it, level with it; then left of it in the same three; then under it and over it, centred; the first that
+    // lies inside bounds and overlaps neither a taken rect, nor one of its own avoid rects, nor an earlier
+    // plate. null where none fits (the marker stays, unlabelled). Plates never cover what is taken, so they are
+    // never cut.
     const rects = taken.slice();
     return items.map(it => {
       const right = it.x + it.r + gap, left = it.x - it.r - gap - it.w, below = it.y + gap, above = it.y - gap - it.h;
       const level = it.y - it.h / 2, centre = it.x - it.w / 2, under = it.y + it.r + gap, over = it.y - it.r - gap - it.h;
       const tries = [[right, below], [right, above], [right, level], [left, below], [left, above], [left, level], [centre, under], [centre, over]]
         .map(p => ({ x: p[0], y: p[1], w: it.w, h: it.h }));
-      const at = firstFree(tries, rects, bounds);
+      const at = firstFree(tries, it.avoid ? rects.concat(it.avoid) : rects, bounds);
       if (at) rects.push(at);
       return at;
     });
@@ -731,6 +754,15 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     // [m] back along the axis, lateral [m] out from it}. Continuous; all zero at the drop.
     const s = Math.min(1, Math.max(0, tau / FAIRING_OPEN_S)), ease = s * s * (3 - 2 * s), u = Math.max(0, tau);
     return { angle: FAIRING_OPEN_DEG * Math.PI / 180 * ease, slide: 0.5 * FAIRING_SLIDE_MPS2 * u * u, lateral: FAIRING_LATERAL_MPS * u };
+  }
+  function halvesWord(tau, drawn) {
+    // The close-up title's word for the fairing halves while their framing holds (step A7: the title follows the
+    // drawn motion, not a fixed time): "opening" while they turn out (tau [s] since the drop under FAIRING_OPEN_S),
+    // "leaving" while either half's outline is in the drawing (drawn: halvesInDrawing at this very time, so the
+    // word never outlives the drawing; review round 1), "gone" once both have left it while the framing is still
+    // held (short, so the title's scale line is never cut).
+    if (tau < FAIRING_OPEN_S) return "fairing halves opening";
+    return drawn ? "fairing halves leaving" : "fairing halves gone";
   }
   function smooth01(x) {
     // 0 to 1 as x goes from 0 to 1, with zero slope at both ends (smoothstep); clamped outside.
@@ -799,6 +831,31 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     // The point of the rect r ({x, y, w, h} [px]) nearest to p (p itself when it lies inside).
     return [Math.min(r.x + r.w, Math.max(r.x, p[0])), Math.min(r.y + r.h, Math.max(r.y, p[1]))];
   }
+  function segmentHitsRect(a, b, r) {
+    // Whether the segment from a to b [px] passes through the inside of the rect r ({x, y, w, h}): Liang-Barsky
+    // clipping on the open rect, so a segment that only runs along or touches an edge does not count (a point
+    // inside does).
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    let t0 = 0, t1 = 1;
+    const edges = [[-dx, a[0] - r.x], [dx, r.x + r.w - a[0]], [-dy, a[1] - r.y], [dy, r.y + r.h - a[1]]];
+    for (let i = 0; i < edges.length; i++) {
+      const p = edges[i][0], q = edges[i][1];
+      if (p === 0) { if (q <= 0) return false; continue; }
+      const u = q / p;
+      if (p < 0) { if (u > t1) return false; if (u > t0) t0 = u; }
+      else { if (u < t0) return false; if (u < t1) t1 = u; }
+    }
+    return t0 < t1;
+  }
+  function leaderCrosses(p, r0, c, avoid) {
+    // Whether a leader from the marker at p (its clearance r0 [px]: the leader starts at its edge) to the nearest
+    // point of the plate c would pass through a rect of avoid other than one holding p (the marker's own rect).
+    // Step A7: a leader to a lower plate crossed the text of an earlier label (the spent stage's beside the
+    // fairing's after both impacts).
+    const q = nearestOnRect(p, c), d = Math.hypot(q[0] - p[0], q[1] - p[1]), s = d > r0 ? r0 / d : 0;
+    const a = [p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s];
+    return avoid.some(r => !(p[0] >= r.x && p[0] <= r.x + r.w && p[1] >= r.y && p[1] <= r.y + r.h) && segmentHitsRect(a, q, r));
+  }
   function leaderSpots(p, r, w, h) {
     // The plates [px] (w x h) a label on a leader from the point p could take, r out along eight directions in
     // placeLabels' order (right and below, right and above, right, then the same on the left, then below, above),
@@ -808,6 +865,45 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
       const k = u[0] !== 0 && u[1] !== 0 ? d : r, ax = p[0] + u[0] * k, ay = p[1] + u[1] * k;
       return { x: u[0] > 0 ? ax : u[0] < 0 ? ax - w : ax - w / 2, y: u[1] > 0 ? ay : u[1] < 0 ? ay - h : ay - h / 2, w: w, h: h };
     });
+  }
+  function pointInPolygon(p, pts) {
+    // Whether the point p [px] lies inside the closed polygon through pts (even-odd rule; a point on an edge may
+    // fall either way).
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+    }
+    return inside;
+  }
+  function polygonHitsRect(pts, r) {
+    // Whether the closed polygon through pts [px] overlaps the inside of the rect r ({x, y, w, h}): one of its
+    // edges passes through the inside (segmentHitsRect: a vertex inside counts), or the rect lies wholly inside
+    // the polygon (its centre does). A polygon that only touches the rect's edge does not count.
+    for (let i = 0; i < pts.length; i++) if (segmentHitsRect(pts[i], pts[(i + 1) % pts.length], r)) return true;
+    return pointInPolygon([r.x + r.w / 2, r.y + r.h / 2], pts);
+  }
+  function halfHitsRect(q, r) {
+    // Whether a fairing half of fairingHalves (its six outline points [px]; the nose curve lies inside their hull,
+    // so the hull stands for the drawn half) overlaps the inside of the rect r. Step A7: the halves' exit from the
+    // close-up's drawing is judged half by half, not by the box round both (the two leave in opposite directions,
+    // and that box spans the drawing long after both have gone).
+    return polygonHitsRect(q, r);
+  }
+  function withinReach(p, r, reach) {
+    // Whether the rect r ({x, y, w, h} [px]) comes within reach [px] of the point p (its nearest point does).
+    const q = nearestOnRect(p, r);
+    return Math.hypot(q[0] - p[0], q[1] - p[1]) <= reach;
+  }
+  function stagingFrame(upperL, s1, minStackPx, backPx) {
+    // The close-up's framing at staging ({kc [px per m], up [m]}, as blendFrame's): the scale that draws stage 2
+    // with its fairing (upperL [m]) minStackPx long, with stage 2's base backPx behind the drawing's centre, so
+    // stage 2 is whole in the drawing while the spent stage separates below it. On the whole stack (up from stage
+    // 1's base: s1 [m], stage 1 with its interstage) before the separation; on stage 2 (s1 = 0) after it: the same
+    // picture, so the frame does not jump at staging. Step A7: before, the frame put the stage-1 engines in the
+    // drawing at MECO and stage 2 outside it for the first seconds of the coast.
+    const kc = minStackPx / upperL;
+    return { kc: kc, up: s1 + backPx / kc };
   }
   // ------------------------------------------------------------------ pure functions: end
 
@@ -893,6 +989,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   const GAUGE_W_PX = 12, GAUGE_H_PX = 64;  // the S1 and S2 gauges
   const NARROW_PLATE_OF_VIEW = 0.55;    // a gauge plate wider than this share of the view goes above the scale bar
   const HUD_MAX_LINES = 7;              // the readout: phase, frozen, engines, altitude or depth, speed, felt g, drive force
+  const HUD_USUAL_LINES = 6;            // ... and its lines in flight (no frozen line): the height the slot under the close-up is tested with (drawReadout, step A7)
   const IMPACT_NOTE_MAX_PX = 360;       // width of the impact caution plate over the view: at most this
   const IMPACT_NOTE_OF_VIEW = 0.42;     // ... and at most this share of the view
   const BANNER_MAX_PX = 380;            // width of the end banner: at most this
@@ -953,8 +1050,9 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   const CLOSEUP_ZOOM_S = 3;             // the close-up eases to the next framing over this long before staging and the fairing drop [s]
   const FAIRING_EASE_S = 2;             // ... and to the stack's own scale over this long once the halves have gone [s]
   const STAGING_PAN_S = 6;              // after staging, the close-up pans from the stage-1 engines to stage 2 over this long [s]
-  const ENGINES_BACK_PX = 50;           // at MECO the stage-1 nozzles sit this far behind the drawing's centre (the plume in view)
+  const STAGING_BASE_BACK_PX = 46;      // at staging stage 2's base sits this far behind the drawing's centre (stagingFrame: stage 2 whole in the drawing at any angle, its nose 75 px ahead, under the caption's band of 77; the spent stage leaves at the bottom)
   const CLOSEUP_MIN_STACK_PX = 121;     // the least drawn stack (criterion 16: 120 px, a pixel to spare): stage 2 at MECO, the stack while the halves open
+  const CLOSEUP_CAPTION_ALPHA = 0.72;   // the close-up's separation captions: the plate's fill is this opaque, so a half or the plume passing behind it stays in view (step A7); text and border are opaque
   const KICK_ARC_GAP_PX = 8;            // the close-up's kick arc runs this far past the nose (inside the drawing)
   const FAIRING_HINGE_BACK_PX = 28;     // while the halves open, their hinge sits this far behind the drawing's centre (halves in the drawing, clear of its caption)
   const ZOOM_ASPECT = 0.85;             // the frame aspect the Auto rate's zoom cap assumes: about the two-panel default's (the rate does not follow the window)
@@ -963,6 +1061,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   const WRAP_MEMO = new Map();          // ... the memo itself: wrapLines' results by font, width and text (the bands re-wrap every frame)
   const LEADER_PX = 16;                 // a separated body drawn on its vehicle: its label sits this far out from its marker, on a leader ...
   const LEADER_STEPS = 4;               // ... or 2, 3 ... up to this many times as far, where the nearer spots are taken
+  const KEY_REACH_PX = 2 * LEADER_STEPS * LEADER_PX;  // the other panel's marker gets no label when the ring key, which names it, lies within this of its edge, and its label never lands within this of the key (step A7: the name was read twice, a few dozen pixels apart)
   const SPENT_TAG = "spent stage 1: drawn";  // the close-up's tag on the separating spent stage ...
   const SPENT_TAG_BACK_PX = 40;         // ... beside the stage this far behind its top (or at its middle, if nearer)
   // display units only; the payload is SI
@@ -1404,13 +1503,28 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const capT = Math.min(lastT(run), body ? body.path.t[body.path.t.length - 1] : lastT(run));
     const draw = closeupDrawing(lay.inset), pivot = closeupPivot(lay.inset);
     const gone = t => {
+      // neither half's outline overlaps the drawing (halfHitsRect, half by half: step A7 review round 1; the box
+      // round both halves spans the drawing diagonally long after both have left it)
       const st = stateValues(run, t), angC = st.angleDeg / DEG_PER_RAD + st.d / R_E, dirC = [Math.cos(angC), -Math.sin(angC)];
       const baseC = [pivot[0] - hf.up * hf.kc * dirC[0], pivot[1] - hf.up * hf.kc * dirC[1]];
-      return !overlaps(halvesAt(g.vehicle, hf.u0, hf.kc, baseC, dirC, t - hf.tF).bbox, draw);
+      return !halvesAt(g.vehicle, hf.u0, hf.kc, baseC, dirC, t - hf.tF).halves.some(q => halfHitsRect(q, draw));
     };
     const t = halvesEndTime(hf.tF + FAIRING_SHOW_S, capT, HALVES_SCAN_S, gone);
-    run._fairEnd = { key: key, t: t };
+    // when the halves' outline first leaves the drawing (step A7: the close-up title changes then, halvesWord; it
+    // is before the hold's end when they leave within FAIRING_SHOW_S, else the hold's end)
+    run._fairEnd = { key: key, t: t, gone: halvesEndTime(hf.tF, capT, HALVES_SCAN_S, gone), inDrawing: tt => !gone(tt) };
     return t;
+  }
+  function halvesGoneT(run) {
+    // When the fairing halves' outline has wholly left the close-up's drawing [s] (fairingEnd, for the layout it
+    // was last computed for, sampled every HALVES_SCAN_S); null before that computation or for a run with no
+    // fairing drop.
+    return run._fairEnd ? run._fairEnd.gone : null;
+  }
+  function halvesInDrawing(run, t) {
+    // Whether either fairing half's outline is in the close-up's drawing at t [s] (fairingEnd's test at this very
+    // time, not its sampled exit; the title's word follows it: halvesWord); true before that computation.
+    return run._fairEnd ? run._fairEnd.inDrawing(t) : true;
   }
   function carriageS(run, t) {
     const a = run.assist, s = valAt(run, "s_m", t);
@@ -1457,12 +1571,14 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     // The close-up's framing at t ({kc [px per m], up [m from the drawn stack's base, at the drawing's centre], why:
     // the title's word for it}): the stack's own (ownFrame), except around a separation, where it eases with no jump
     // (blendFrame, smooth01) so a separation is not a sudden zoom. Staging (MECO at the same time): over
-    // CLOSEUP_ZOOM_S before it, from the whole stack's own framing to the stage-1 engines' (the nozzles
-    // ENGINES_BACK_PX behind the centre, so the plume is in the drawing when it goes out, at the scale that draws
-    // stage 2 CLOSEUP_MIN_STACK_PX long, so the vehicle after staging is never shorter: criterion 16); then over
-    // STAGING_PAN_S after it, up along the separating stages to stage 2's own framing (A3b review round 3). The
-    // fairing drop: to the halves' framing (halvesFraming) over CLOSEUP_ZOOM_S before the drop, held while the halves
-    // are drawn (to fairEnd: fairingEnd, at least FAIRING_SHOW_S after the drop), then back to the stack's own over
+    // CLOSEUP_ZOOM_S before it, from the whole stack's own framing to the staging framing (stagingFrame: stage 2's
+    // base STAGING_BASE_BACK_PX behind the centre at the scale that draws stage 2 CLOSEUP_MIN_STACK_PX long, so the
+    // vehicle after staging is never shorter, criterion 16, and stage 2's base and nose are in the drawing at every
+    // time while the spent stage separates and leaves at the bottom; the stage-1 engines leave the drawing during
+    // the zoom: step A7, after A3b review round 3 had framed them at MECO and put stage 2 outside the drawing for
+    // the first seconds of the coast); then over STAGING_PAN_S after it, to stage 2's own framing. The fairing
+    // drop: to the halves' framing (halvesFraming) over CLOSEUP_ZOOM_S before the drop, held while the halves are
+    // drawn (to fairEnd: fairingEnd, at least FAIRING_SHOW_S after the drop), then back to the stack's own over
     // FAIRING_EASE_S.
     const v = g.vehicle, own = ownFrame(stackParts(g, st.stage, st.fairingOn));
     const tF = firstEventT(run, "fairing"), tS = firstEventT(run, "staging");
@@ -1471,16 +1587,17 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     if (tF !== null && t >= tF - CLOSEUP_ZOOM_S && t < hEnd + FAIRING_EASE_S) {
       const hf = halvesFraming(run, g), halves = { kc: hf.kc, up: hf.up };
       if (t < tF) return Object.assign(ease(own, halves, tF - CLOSEUP_ZOOM_S, tF), { why: "zooming in for the fairing" });
-      if (t <= hEnd) return Object.assign(halves, { why: t <= tF + FAIRING_SHOW_S ? "fairing halves opening" : "fairing halves leaving" });
+      if (t <= hEnd) return Object.assign(halves, { why: halvesWord(t - tF, halvesInDrawing(run, t)) });
       return Object.assign(ease(halves, own, hEnd, hEnd + FAIRING_EASE_S), { why: "after the fairing drop" });
     }
     if (tS !== null && t >= tS - CLOSEUP_ZOOM_S && t < tS + STAGING_PAN_S) {
       const s1 = v.stage1_length_m + v.interstage_length_m;  // stage 2's base above stage 1's base [m]
-      const upper = stackParts(g, 1, stepAt(run, "fairing_on", tS)), kcE = CLOSEUP_MIN_STACK_PX / upper.L;
-      const engines = { kc: kcE, up: ENGINES_BACK_PX / kcE };  // on the whole stack: from stage 1's base
-      if (st.stage === 0) return Object.assign(ease(own, engines, tS - CLOSEUP_ZOOM_S, tS), { why: "zooming in for staging" });
+      const upper = stackParts(g, 1, stepAt(run, "fairing_on", tS));
+      // on the whole stack (from stage 1's base) before the separation, on stage 2 (from its base) after it
+      const whole = stagingFrame(upper.L, s1, CLOSEUP_MIN_STACK_PX, STAGING_BASE_BACK_PX), second = stagingFrame(upper.L, 0, CLOSEUP_MIN_STACK_PX, STAGING_BASE_BACK_PX);
+      if (st.stage === 0) return Object.assign(ease(own, whole, tS - CLOSEUP_ZOOM_S, tS), { why: "zooming in for staging" });
       const why = st.fairingOn ? "after staging" : "after the fairing drop";
-      return Object.assign(ease({ kc: kcE, up: engines.up - s1 }, own, tS, tS + STAGING_PAN_S), { why: why });
+      return Object.assign(ease(second, own, tS, tS + STAGING_PAN_S), { why: why });
     }
     const why = !st.fairingOn ? "after the fairing drop" : st.stage > 0 ? "after staging" : "own scale";
     return Object.assign(own, { why: why });
@@ -1539,7 +1656,10 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const w = Math.max(...lines.map(s => ctx.measureText(s).width)) + 2 * PLATE_PAD_PX, h = plateHeight(lines.length, size);
     const left = o.alignRight ? x - w : x, top = o.alignBottom ? y - h : y;
     ctx.fillStyle = o.fill || pal.panel; ctx.strokeStyle = o.line || pal.ink3; ctx.lineWidth = HAIRLINE_PX;
-    ctx.fillRect(left, top, w, h); ctx.strokeRect(left + CRISP_PX, top + CRISP_PX, w - HAIRLINE_PX, h - HAIRLINE_PX);
+    if (o.alpha !== undefined) ctx.globalAlpha = o.alpha;  // a see-through fill (the close-up's captions); the border and text stay opaque
+    ctx.fillRect(left, top, w, h);
+    ctx.globalAlpha = 1;
+    ctx.strokeRect(left + CRISP_PX, top + CRISP_PX, w - HAIRLINE_PX, h - HAIRLINE_PX);
     ctx.fillStyle = o.ink || pal.ink; ctx.textAlign = "left"; ctx.textBaseline = "top";
     lines.forEach((s, i) => ctx.fillText(s, left + PLATE_PAD_PX, top + PLATE_PAD_PX + i * lh));
     ctx.restore();
@@ -1585,8 +1705,9 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   function drawVehicle(ctx, pal, s) {
     // s: {x, y} the base [canvas px], dir the unit axis from base to nose [canvas px, y down], k [px per m],
     // g (display geometry), parts (stackParts), fill1, fill2, start1, start2, plumeM [m], dashed (a yardstick).
-    // Returns where the base and the nose were painted [canvas px of the box], read back through the very
-    // transform the drawing used, so the state hook reports the painted axis.
+    // Returns where the base, the nose and stage 2's base were painted [canvas px of the box], read back through
+    // the very transform the drawing used, so the state hook reports the painted axis (stage 2's base: the part
+    // the close-up frames at staging; step A7).
     const v = s.g.vehicle, k = s.k, D = v.body_diameter_m, half = D / 2, Df = Math.max(D, v.fairing_diameter_m);
     const wall = TANK_WALL_OF_BODY * D, end = TANK_END_OF_BODY * D;
     ctx.save();
@@ -1618,7 +1739,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     } else {
       pathPx(ctx, [[u * k, -STUB_HALF_OF_BODY * D * k], [(u + F) * k, 0], [u * k, STUB_HALF_OF_BODY * D * k]]); paint(ctx, pal.body, pal.bodyLine);
     }
-    const out = { base: painted(0), nose: painted(s.parts.L * k) };
+    const out = { base: painted(0), nose: painted(s.parts.L * k), stage2Base: painted((s.parts.first ? v.stage1_length_m + v.interstage_length_m : 0) * k) };
     ctx.restore();
     return out;
   }
@@ -1732,14 +1853,17 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   function drawCarriageLabel(ctx, pal, L, c, view) {
     // After release: the carriage's label beside the rails (sideLabel: right of them, else left, else wrapped
     // on the roomier side, never cut by the view's edge), with a leader from the carriage's top corner on
-    // that side; the rails at Ds/2 already clear the body and the plume's widest half-width. Shown while the
+    // that side; the rails at Ds/2 already clear the body and the plume's widest half-width. Where the close-up
+    // lies over the view (the overlay and column layouts) the plate keeps clear of it (sideLabelClear: the plate
+    // at the carriage's top, which a vertical shaft's corners share; step A7, review round 2). Shown while the
     // carriage is tall enough to see and the vehicle's base is above the carriage's top by more than the
     // label's height (canvas y grows downward). Returns the plate's box [canvas px] and the rails' x, or null.
     if (L.cam.ppm * c.height_m < CARRIAGE_LABEL_MIN_PX) return null;
     ctx.save();
     ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
-    const at = sideLabel(s => ctx.measureText(s).width, CARRIAGE_LABEL, [c.rails[0][0], c.rails[1][0]],
-      [view.x + VIEW_MARGIN_PX, view.x + view.w - VIEW_MARGIN_PX], LABEL_GAP_PX, PLATE_PAD_PX);
+    const at = sideLabelClear(s => ctx.measureText(s).width, CARRIAGE_LABEL, [c.rails[0][0], c.rails[1][0]],
+      [view.x + VIEW_MARGIN_PX, view.x + view.w - VIEW_MARGIN_PX], LABEL_GAP_PX, PLATE_PAD_PX,
+      c.top[1], n => plateHeight(n, FONT_SMALL_PX), closeupOver(L.lay) ? L.inset : null);
     ctx.restore();
     if (at === null) return null;
     const h = plateHeight(at.lines.length, FONT_SMALL_PX), from = at.side === "right" ? c.corners[1] : c.corners[0];
@@ -1836,9 +1960,11 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     // prediction)
     const tag = b.name === STAGE1_BODY ? "S1" : b.name === FAIRING_BODY ? "fairing" : b.name;
     const short = tag + " (display only)" + (impact ? ", drag-free impact " + clockText(b.impact.t) : at.stopped ? ", drag-free coast stopped" : "");
+    // the shortest label, the last resort once a body has stopped (step A7: a body kept its short label until its
+    // own impact, whose time made both texts too wide for the view beside the marker; the ticker states the impact)
     return {
       name: b.name, px: p, r: r + RING_PX, size_px: BODY_MARKER_PX + RING_PX, t: at.t, stopped: at.stopped,
-      text: (BODY_TEXT[b.name] || b.name) + ": drag-free coast (display only)" + how, short: short
+      text: (BODY_TEXT[b.name] || b.name) + ": drag-free coast (display only)" + how, short: short, shortest: tag + " (display only)"
     };
   }
   function otherWord(o) {
@@ -2119,12 +2245,14 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   function drawReadout(ctx, pal, run, L, box, hud, t, plates, keep, gauge) {
     // The readout over the view, under the impact caution plate when the run has one (one column): in the first
     // corner where it covers no plate and none of keep (this panel's vehicle, the separated bodies, the other
-    // panel's vehicle, the launch site, the marks on the flown path), tried in order: the top right; the top left (in
-    // the overlay layout directly under the close-up); the bottom right, directly above the gauges. Else the first
-    // corner clear of the plates and this panel's vehicle, else of the plates; else the top right. A corner is
-    // tested with the largest readout the run can show (hudWidth, HUD_MAX_LINES), so the plate changes corner
-    // only as the markers move, not as its own lines change. Pushes the plates drawn onto plates; returns the
-    // readout's rect and its corner.
+    // panel's vehicle, the launch site, the marks on the flown path), tried in order: in the overlay layout the top
+    // left first, directly under the close-up (the column left of the camera's frame, where the flown path, the
+    // bodies and the other panel's vehicle never are: step A7, after the readout had moved corner three times in a
+    // 75 s video frame when the vehicle neared the top right); then the top right; the bottom right, directly
+    // above the gauges; the bottom left. Else the first corner clear of the plates and this panel's vehicle, else
+    // of the plates; else the first corner. A corner is tested with the largest readout the run can show
+    // (hudWidth, HUD_MAX_LINES), so the plate changes corner only as the markers move, not as its own lines
+    // change. Pushes the plates drawn onto plates; returns the readout's rect and its corner.
     let caution = null;
     if (impactNote(run) && t >= 0) {
       ctx.save();
@@ -2138,13 +2266,19 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const h = Math.max(hs.h, plateHeight(HUD_MAX_LINES, FONT_TEXT_PX)) + (caution ? caution.h + VIEW_MARGIN_PX : 0);
     const right = box.x + box.w - VIEW_MARGIN_PX, left = box.x + VIEW_MARGIN_PX;
     const lowLeft = Math.min(box.y + box.h, ...plates.filter(p => p.kind === "scale" || p.kind === "marker note").map(p => p.y));
-    const corners = [
-      { name: "top right", x: right - w, y: box.y + VIEW_MARGIN_PX, alignRight: true, low: false },
-      { name: "top left", x: left, y: closeupOver(L.lay) ? L.inset.y + L.inset.h + VIEW_MARGIN_PX : box.y + VIEW_MARGIN_PX, alignRight: false, low: false },
-      { name: "bottom right", x: right - w, y: gauge.y - VIEW_MARGIN_PX - h, alignRight: true, low: true },
-      { name: "bottom left", x: left, y: lowLeft - VIEW_MARGIN_PX / 2 - h, alignRight: false, low: true }
-    ];
-    const rects = corners.map(c => ({ x: c.x, y: c.y, w: w, h: h }));
+    const over = closeupOver(L.lay);
+    // the slot under the close-up (half a margin under it, as the bottom corners sit half a margin over the
+    // plates at the view's bottom) is tested with the readout's usual height (HUD_USUAL_LINES, or its own lines
+    // when more: a frozen panel's), since the column between the close-up and those plates is too short for the
+    // largest readout in a 1280 x 720 video frame; the other corners with the largest, as before
+    const usualH = Math.max(hs.h, plateHeight(Math.max(hud.length, HUD_USUAL_LINES), FONT_TEXT_PX)) + (caution ? caution.h + VIEW_MARGIN_PX : 0);
+    const topRight = { name: "top right", x: right - w, y: box.y + VIEW_MARGIN_PX, alignRight: true, low: false, h: h };
+    const topLeft = { name: "top left", x: left, y: over ? L.inset.y + L.inset.h + VIEW_MARGIN_PX / 2 : box.y + VIEW_MARGIN_PX, alignRight: false, low: false, h: over ? usualH : h };
+    const corners = (over ? [topLeft, topRight] : [topRight, topLeft]).concat([
+      { name: "bottom right", x: right - w, y: gauge.y - VIEW_MARGIN_PX - h, alignRight: true, low: true, h: h },
+      { name: "bottom left", x: left, y: lowLeft - VIEW_MARGIN_PX / 2 - h, alignRight: false, low: true, h: h }
+    ]);
+    const rects = corners.map(c => ({ x: c.x, y: c.y, w: w, h: c.h }));
     // clear of everything kept; else of this panel's vehicle (keep[0]) at least; else of the plates; else the top right
     const at = firstFree(rects, plates.concat(keep), box) || firstFree(rects, plates.concat(keep.slice(0, 1)), box) || firstFree(rects, plates, box);
     const c = corners[at ? rects.indexOf(at) : 0];
@@ -2216,11 +2350,12 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const x0 = Math.min(...xs), y0 = Math.min(...ys);
     return { o: o, halves: halves, bbox: { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 } };
   }
-  function drawFairingHalves(ctx, pal, L, fr) {
+  function drawFairingHalves(ctx, pal, L, fr, draw) {
     // The fairing halves in the close-up, fr.tau after the drop: each half of the fairing's outline, turned out
     // about its base edge, slid back and drifted out (halvesAt); drawn, not computed, and cut at the drawing's edge as
-    // they leave it. Returns the angle [deg], how far along the axis from the vehicle's base the halves reach [px] and
-    // the box [canvas px] the halves' outlines fill.
+    // they leave it. Returns the angle [deg], how far along the axis from the vehicle's base the halves reach [px],
+    // the box [canvas px] the halves' outlines fill and whether either half's outline is in the drawing (draw
+    // [canvas px]: halfHitsRect, the test fairingEnd uses; step A7).
     const v = L.g.vehicle, k = L.kc, F = v.fairing_length_m;
     const u0 = (L.st.stage === 0 ? v.stage1_length_m + v.interstage_length_m : 0) + v.stage2_length_m;
     const h = halvesAt(v, u0, k, L.baseC, L.dirC, fr.tau);
@@ -2234,7 +2369,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
       paint(ctx, pal.body, pal.bodyLine);
     });
     ctx.restore();
-    return { deg: h.o.angle * DEG_PER_RAD, tipPx: (u0 - h.o.slide + F * Math.cos(h.o.angle)) * k, bbox: h.bbox };
+    return { deg: h.o.angle * DEG_PER_RAD, tipPx: (u0 - h.o.slide + F * Math.cos(h.o.angle)) * k, bbox: h.bbox, drawn: h.halves.some(q => halfHitsRect(q, draw)) };
   }
   function closeupScaleText(L) {
     // The close-up title's second line: its scale (how many metres CAM.closeup_stack_px stand for: the drawn
@@ -2315,13 +2450,14 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const stg = stagingAt(run, t), fr = fairingAt(run, t, L.fairEnd), kickNow = kickAt(run, t);
     const spent = stg ? drawSpentStage(ctx, pal, L, run, stg) : null, gapPx = spent ? spent.gap : null;
     const painted = drawVehicle(ctx, pal, vehicleSpec(run, L, L.baseC, L.dirC, L.kc));
-    const halves = fr ? drawFairingHalves(ctx, pal, L, fr) : null;
+    const halves = fr ? drawFairingHalves(ctx, pal, L, fr, draw) : null;
     const kickText = kickNow ? drawKickArc(ctx, pal, run, L, kickNow, draw) : null;
     const caption = stg ? stagingCaption(stg) : fr ? FAIRING_CAPTION : null;
     let captionRect = null, spentTag = null;
     if (caption) {
       // the staging caption at the drawing's top (the spent stage leaves at the bottom left); the fairing's at its
-      // bottom (the halves turn out towards the top)
+      // bottom (the halves turn out towards the top); the plate's fill is CLOSEUP_CAPTION_ALPHA opaque, so a half
+      // sliding out behind it, or the plume under it, stays in view (step A7)
       ctx.save();
       ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
       const lines = wrapLines(ctx, caption, Math.max(1, draw.w - 2 * CLOSEUP_TEXT_INSET_PX - 2 * PLATE_PAD_PX));
@@ -2343,7 +2479,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
       }
       ctx.restore();
     }
-    if (captionRect) textPlate(ctx, pal, captionRect.lines, captionRect.x, captionRect.y, { size: FONT_SMALL_PX });
+    if (captionRect) textPlate(ctx, pal, captionRect.lines, captionRect.x, captionRect.y, { size: FONT_SMALL_PX, alpha: CLOSEUP_CAPTION_ALPHA });
     painted.carriageLabel = carriageLabel;
     painted.title = title;
     painted.caption = caption;
@@ -2351,6 +2487,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     painted.fairingDeg = halves ? halves.deg : null;
     painted.halvesTipPx = halves ? halves.tipPx : null;
     painted.halvesBox = halves ? halves.bbox : null;
+    painted.halvesDrawn = halves ? halves.drawn : null;
     painted.captionRect = captionRect ? { x: captionRect.x, y: captionRect.y, w: captionRect.w, h: captionRect.h } : null;
     painted.drawing = draw;
     painted.spentTag = spentTag;
@@ -2391,7 +2528,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     ctx.save();
     ctx.font = FONT_SMALL_PX + "px " + pal.fontBody;
     const h = plateHeight(1, FONT_SMALL_PX);
-    const req = (it, s) => ({ x: it.px[0], y: it.px[1], r: it.r, w: ctx.measureText(s).width + 2 * PLATE_PAD_PX, h: h });
+    const req = (it, s) => ({ x: it.px[0], y: it.px[1], r: it.r, w: ctx.measureText(s).width + 2 * PLATE_PAD_PX, h: h, avoid: it.avoid || null });
     const inner = { x: view.x + VIEW_MARGIN_PX / 2, y: view.y + VIEW_MARGIN_PX / 2, w: view.w - VIEW_MARGIN_PX, h: view.h - VIEW_MARGIN_PX };
     const at = placeLabels(items.map(it => req(it, it.text)), taken, inner, LABEL_PLATE_GAP_PX), texts = items.map(it => it.text);
     const rest = [];
@@ -2417,8 +2554,11 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const h = plateHeight(1, FONT_SMALL_PX), rects = [], texts = [];
     const inner = { x: view.x + VIEW_MARGIN_PX / 2, y: view.y + VIEW_MARGIN_PX / 2, w: view.w - VIEW_MARGIN_PX, h: view.h - VIEW_MARGIN_PX };
     const spot = (it, w, avoid) => {
+      // a spot whose leader would pass through a rect to avoid (an earlier label's plate, a marker) is skipped
+      // (leaderCrosses, step A7); the relaxed calls keep their shorter avoid lists
       for (let k = 1; k <= LEADER_STEPS; k++) {
-        const at = firstFree(leaderSpots(it.px, it.r + k * LEADER_PX, w, h), avoid, inner);
+        const clear = leaderSpots(it.px, it.r + k * LEADER_PX, w, h).filter(c => !leaderCrosses(it.px, it.r, c, avoid));
+        const at = firstFree(clear, avoid, inner);
         if (at) return at;
       }
       return null;
@@ -2467,13 +2607,27 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const shown = it => !covers.some(r => inRect(it.px, r));
     const all = fairingAt(run, t, L.fairEnd) ? view.bodies.slice().sort((p, q) => (q.name === FAIRING_BODY) - (p.name === FAIRING_BODY)) : view.bodies;
     const lead = drawLeaderLabels(ctx, pal, L.view, all.filter(b => b.onVehicle === true).filter(shown), taken, covers, onVehicleText);
-    const bodies = all.filter(b => b.onVehicle !== true).filter(shown), rest = view.others.concat(view.marks.slice().reverse()).filter(shown);
+    // the other panel's marker gets no label plate while the ring key, which carries the same text, lies within
+    // KEY_REACH_PX of its edge (step A7: the name was read twice a few dozen pixels apart), and its plate never
+    // lands within KEY_REACH_PX of the key either (review round 2: the plate sat 64 px from the key while the
+    // marker was 236 px from it): the key's rect grown by that reach is kept clear for this plate alone, so the
+    // plate takes a farther spot or the key alone names the marker; the key is always drawn
+    const keyClear = view.ringKey !== null ? [grownRect(view.ringKey, KEY_REACH_PX)] : null;
+    view.others.forEach(o => { o.keyNear = view.ringKey !== null && withinReach(o.px, view.ringKey, o.r + KEY_REACH_PX); o.avoid = keyClear; });
+    const bodies = all.filter(b => b.onVehicle !== true).filter(shown), rest = view.others.filter(o => !o.keyNear).concat(view.marks.slice().reverse()).filter(shown);
     const placedB = drawLabels(ctx, pal, L.view, bodies, taken.concat(lead.plates));
     const used = () => taken.concat(lead.plates, placedB.plates.filter(r => r !== null));
     const late = bodies.filter((it, k) => placedB.plates[k] === null);
     if (late.length) {
       const more = drawLeaderLabels(ctx, pal, L.view, late, used(), null, it => it.short);
       late.forEach((it, j) => { const k = bodies.indexOf(it); if (more.plates[j]) { placedB.plates[k] = more.plates[j]; placedB.texts[k] = more.texts[j]; } });
+    }
+    // step A7: a separated body that has stopped (its impact, or the run's end) is never left unlabelled: its
+    // shortest label on a leader, relaxed to the opaque plates as a body on its vehicle is
+    const still = bodies.filter((it, k) => placedB.plates[k] === null && it.stopped === true);
+    if (still.length) {
+      const last = drawLeaderLabels(ctx, pal, L.view, still, used(), covers, it => it.shortest);
+      still.forEach((it, j) => { const k = bodies.indexOf(it); placedB.plates[k] = last.plates[j]; placedB.texts[k] = last.texts[j]; });
     }
     const placedR = drawLabels(ctx, pal, L.view, rest, used());
     const items = bodies.concat(rest);
@@ -2768,11 +2922,11 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
       header_last: lastMark(run, t),
       painted: {
         base_px: pm.main.base, nose_px: pm.main.nose, ground_px: L.ground, px_per_m: L.cam.ppm, mode: L.mode, stack_length_m: L.parts.L,
-        closeup_base_px: pm.closeup.base, closeup_nose_px: pm.closeup.nose,
+        closeup_base_px: pm.closeup.base, closeup_nose_px: pm.closeup.nose, closeup_stage2_base_px: pm.closeup.stage2Base,
         closeup_len_px: Math.hypot(pm.closeup.nose[0] - pm.closeup.base[0], pm.closeup.nose[1] - pm.closeup.base[1]),
         closeup_px_per_m: L.kc, closeup_framing: L.cf.why, closeup_halves_tip_px: pm.closeup.halvesTipPx, closeup_kick: pm.closeup.kick,
         closeup_title: pm.closeup.title, closeup_caption: pm.closeup.caption, staging_gap_px: pm.closeup.gapPx, fairing_open_deg: pm.closeup.fairingDeg,
-        closeup_halves_bbox_px: pm.closeup.halvesBox, closeup_caption_rect: pm.closeup.captionRect, closeup_drawing: pm.closeup.drawing,
+        closeup_halves_bbox_px: pm.closeup.halvesBox, closeup_halves_drawn: pm.closeup.halvesDrawn, closeup_caption_rect: pm.closeup.captionRect, closeup_drawing: pm.closeup.drawing,
         closeup_spent_tag: pm.closeup.spentTag,
         carriage_label: pm.carriageLabel, closeup_carriage_label: pm.closeup.carriageLabel,
         camera: { x0_m: L.cam.x0, y0_m: L.cam.y0, view_height_m: L.cam.H, view_width_m: L.cam.W, extent_m: L.cam.E, view: L.view, frame: L.lay.frame },
@@ -2783,8 +2937,8 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
           name: b.name, px: b.px, size_px: b.size_px, t: b.t, stopped: b.stopped, text: b.text, on_vehicle: b.onVehicle === true, labelled: labelled(b), label: labelText(b),
           label_rect: labelRect(b)
         })),
-        closeup_fairing_end_s: L.fairEnd,
-        others: v.others.map(o => ({ run: o.run, px: o.px, size_px: o.size_px, text: o.text, labelled: labelled(o), label: labelText(o) })),
+        closeup_fairing_end_s: L.fairEnd, closeup_halves_gone_s: halvesGoneT(run),
+        others: v.others.map(o => ({ run: o.run, px: o.px, size_px: o.size_px, text: o.text, labelled: labelled(o), label: labelText(o), label_rect: labelRect(o), key_near: o.keyNear === true })),
         legend: L.lay.legend
       }
     };
