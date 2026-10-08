@@ -16,7 +16,7 @@
 
 A research simulator for giving rockets a ground-powered head start, and for finding out what that head start is really worth.
 
-**Status:** Phases 0–2 and SP1 done. Work now runs as one phase per session; [`docs/phases/README.md`](docs/phases/README.md) is the program board. SP1 (closed 2026-10-04) answered the headline question of how much rocket propellant the silo push can replace at a fixed payload on the 2-D model, and added the launch settings it needs (silo depth with exit speed, and where the thrust ramp starts). Its preliminary finding, [`docs/findings/RQ1-fuel-offload-2d.md`](docs/findings/RQ1-fuel-offload-2d.md): on the gate vehicle model (which calibrates +14.3% high), sweep-optimized and unthrottled, the 3 g, 100 m cold-start silo lets the rocket leave out 41.26 t of stage-1 propellant at the pad's payload and orbit (10.04% of stage 1, 7.96% of the total; 36.01 t, 9.10% of stage 1, on the README-loads fork, which calibrates inside the band), before any structural mass for the 4 g push: an assumed +8.1 t of stage-1 structure leaves 1.98 t, and about 8.5 t (an extrapolation) cancels it. How much of it is the push itself is contested (read as the pre-registration worded it, most of the offload is the lighter stack's thrust-to-weight; in ideal delta-v, a reading chosen after the run, 28–29% is the lighter stack and the rest the push), the offloaded run's max-Q is 3.4% above the pad's, and the stage-2 case failed its verification. Next: a local app with an animated 2-D launch scene (SP2), then SP7, the structural mass of the push load and a force-limited drive (taken out of roadmap Phase 3 and moved ahead of the 3-D work on 2026-10-04, because the structural cost decides whether the 10% survives), then 3-D dynamics in three stages (a point mass on a rotating sphere, an oblate Earth, a 6-DOF fly-out; SP3–SP6, with the 3-D scene in SP4). The rest of roadmap Phase 3 (curved ramp, cable winch, air column and the other assist models) comes after that unless it is moved up. A new session starts from `docs/handoff/NEXT_SESSION.md`. The simulator has a 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%), and that miss is accepted and documented (`docs/findings/CAL-f9-leo-2d.md`). The first concept-A findings are preliminary; they are summarised under [Results so far](#results-so-far) and indexed in [`docs/findings/README.md`](docs/findings/README.md). `TODO.md` is the program-level tracker, and each phase's steps are in its file under `docs/phases/`. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
+**Status:** Phases 0–2, SP1 and SP2 done. Work now runs as one phase per session; [`docs/phases/README.md`](docs/phases/README.md) is the program board. SP1 (closed 2026-10-04) answered the headline question of how much rocket propellant the silo push can replace at a fixed payload on the 2-D model, and added the launch settings it needs (silo depth with exit speed, and where the thrust ramp starts). Its preliminary finding, [`docs/findings/RQ1-fuel-offload-2d.md`](docs/findings/RQ1-fuel-offload-2d.md): on the gate vehicle model (which calibrates +14.3% high), sweep-optimized and unthrottled, the 3 g, 100 m cold-start silo lets the rocket leave out 41.26 t of stage-1 propellant at the pad's payload and orbit (10.04% of stage 1, 7.96% of the total; 36.01 t, 9.10% of stage 1, on the README-loads fork, which calibrates inside the band), before any structural mass for the 4 g push: an assumed +8.1 t of stage-1 structure leaves 1.98 t, and about 8.5 t (an extrapolation) cancels it. How much of it is the push itself is contested (read as the pre-registration worded it, most of the offload is the lighter stack's thrust-to-weight; in ideal delta-v, a reading chosen after the run, 28–29% is the lighter stack and the rest the push), the offloaded run's max-Q is 3.4% above the pad's, and the stage-2 case failed its verification. SP2 (closed 2026-10-07) added the local app, `launchsim app`: a launch form built from the committed experiments, a results panel, a run browser and the 2-D launch scene, which draws the pad and the silo side by side from a run's recorded time series, with an MP4 export; and `launchsim scene`, the same scene as a standalone page ([`docs/manual/07b-app.md`](docs/manual/07b-app.md); the recorded demo is [`docs/demos/SP2/`](docs/demos/SP2/README.md)). Every run launched from the app is **exploratory and never a finding**: it goes to `results/app/<timestamp>/` with that label and a banner, and findings come only from committed experiment files run from a clean tree. The app's launch of its `silo_cold_s1` preset reproduces SP1's 41.26 t within 0.002 kg (the same configuration on the same model: a reproduction, not new evidence). Next: SP7, the structural mass of the push load and a force-limited drive (taken out of roadmap Phase 3 and moved ahead of the 3-D work on 2026-10-04, because the structural cost decides whether the 10% survives; the order confirmed at SP2's close, decision D-SP2-40), then 3-D dynamics in three stages (a point mass on a rotating sphere, an oblate Earth, a 6-DOF fly-out; SP3–SP6, with the 3-D scene in SP4). The rest of roadmap Phase 3 (curved ramp, cable winch, air column and the other assist models) comes after that unless it is moved up. A new session starts from `docs/handoff/NEXT_SESSION.md`. The simulator has a 1-D vertical model, the constant-acceleration vertical silo push (concept A), and a 2-D rotating-Earth ascent to orbit with drag, guidance and payload search. The Falcon 9-class calibration missed high (+14.3%), and that miss is accepted and documented (`docs/findings/CAL-f9-leo-2d.md`). The first concept-A findings are preliminary; they are summarised under [Results so far](#results-so-far) and indexed in [`docs/findings/README.md`](docs/findings/README.md). `TODO.md` is the program-level tracker, and each phase's steps are in its file under `docs/phases/`. This README is the research brief; `CLAUDE.md` holds the build rules for Claude Code.
 
 ## Why this exists
 
@@ -34,7 +34,7 @@ This project builds a simulator in which the launch-assist phase is a swappable 
 
 The full user manual is in [`docs/manual/`](docs/manual/README.md), and it is also on the [project site](https://khoks.github.io/RocketLaunchOptimizationSimulator/manual/): installing, running the shipped experiments, every experiment and vehicle key, every command and flag, the outputs and how to read them. This section is the short version.
 
-There is no graphical interface. `launchsim` is a command-line program: every output is a file (Markdown, JSON, CSV and PNG), the `animate` command turns a finished 2-D run into a video you can watch, and the `replay` command turns it into an interactive page you open in a browser.
+`launchsim` is a command-line program whose outputs are files (Markdown, JSON, CSV and PNG), plus one local app. The `animate` command turns a finished 2-D run into a video, `replay` turns it into an interactive page you open in a browser, `scene` draws it as a launch scene (the pad and the silo side by side, from the recorded time series) on a standalone page, and `app` serves that scene with a launch form, a results panel and a run browser on `127.0.0.1` for this machine only. Every run launched from the app is exploratory and never a finding ([`docs/manual/07b-app.md`](docs/manual/07b-app.md)).
 
 ### Set up
 
@@ -54,7 +54,7 @@ pip install -e ".[dev]"
 
 The second line is for Windows PowerShell. In Git Bash use `source .venv/Scripts/activate`; on Linux or macOS use `source .venv/bin/activate`.
 
-ffmpeg is optional. It is needed only to write MP4 animations; GIFs work without it.
+ffmpeg is optional. It is needed only to write MP4 animations and the app's MP4 export; GIFs work without it, and the app runs without it with the export switched off.
 
 ### Test
 
@@ -81,13 +81,15 @@ Each file in `experiments/` defines a pad baseline and its variants on one vehic
 | `silo_bridge_2d_readme.yaml` | planar_2d | pad, pad_instant, silo_instant and silo_cold on the README masses |
 | `guidance_trigger_2d.yaml` | planar_2d | Kick-trigger fairness study (pad and silo_cold) |
 | `calibration_f9_2d.yaml` | planar_2d | Calibration against the published Falcon 9 payload (labelled calibration) |
+| `silo_offload_2d.yaml` | planar_2d | Propellant offload at fixed payload (SP1, pre-registered): pad, three silo variants, eleven offload cases, pad controls, sensitivity arms, five sweeps |
+| `silo_offload_2d_readme.yaml` | planar_2d | The offload headline case repeated on the README masses (the calibration bridge) |
 
 ```text
 uv run python -m launchsim run experiments/silo_screening_2d.yaml
 uv run python -m launchsim sweep experiments/silo_screening_2d.yaml
 ```
 
-`run` flies the baseline and every variant; `sweep` flies every sweep the file declares. Both take `--no-plots` and `--results-root DIR`. Only `run` takes `--variant NAME` (only that variant, plus the baseline) and `--no-sensitivity` (skip the ±10% re-runs). A searched 2-D run takes about 7–10 s for the pad and 25–28 s for the lag variants (`TODO.md`, step 23), so a full experiment with its sensitivity cases takes minutes.
+`run` flies the baseline and every variant; `sweep` flies every sweep the file declares. Both take `--no-plots`, `--no-offload` (skip the offload block or the offload cases a sweep names) and `--results-root DIR`. Only `run` takes `--variant NAME` (only that variant, plus the baseline) and `--no-sensitivity` (skip the ±10% re-runs). A searched 2-D run takes about 7–10 s for the pad and 25–28 s for the lag variants (`TODO.md`, step 23), so a full experiment with its sensitivity cases takes minutes.
 
 ### What a results directory contains
 
@@ -113,6 +115,18 @@ A sweep directory holds `baseline/`, one `sweep_<n>/run_<nnnn>/` directory per p
 - Start with `summary.md`. Its header gives the git hash and the comparison basis; its tables compare each variant with the pad, then list checks, flags and assumptions.
 - `plots/` has one PNG per run and kind.
 - The CSVs load straight into pandas or a spreadsheet: `pandas.read_csv("<run>/timeseries.csv")`.
+- `uv run python -m launchsim app` opens the directory in the local app: pick it from the run list and watch the pad beside the silo in the 2-D launch scene, with the results panel and its caveats beside it; `Save video (MP4)` exports the scene as a video (ffmpeg). The app also launches new runs from a form; every one of them is exploratory, never a finding. Without the app, `launchsim scene <run_dir>` writes the same scene as a standalone page.
+
+### The app and the scene
+
+```text
+uv run python -m launchsim app [--port N] [--results-root PATH] [--open]
+uv run python -m launchsim scene <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--display PATH]
+```
+
+- `app` serves `http://127.0.0.1:8765/` (this machine only; `--port 0` picks a free port) until Ctrl+C: a launch form built from the committed experiments with 17 presets, Launch (one at a time, cannot be cancelled), a progress card, a results panel that prints every caveat beside every number, a browser over the results directories on disk, the scene, and the MP4 export. A launch writes `results/app/<timestamp>/`, labelled `exploratory` with a banner in its `summary.md` and no PNG plots; the scene, the replay and every video frame of it carry the mark.
+- `scene` writes `./<experiment>_<timestamp>_scene.html`, never inside `results/` (the one output-path rule of `animate`, `replay` and `scene`): the same page the app frames, playing from the file with no server. What it draws that the model does not compute (every shape, the held attitude when the engines are off, the spent stage's and fairing halves' drag-free coasts, the carriage after release, the tank levels) is named on the page as display-only; the vehicle's path, thrust and mass are replayed from the recorded time series, nothing is re-simulated.
+- The manual's chapter [`docs/manual/07b-app.md`](docs/manual/07b-app.md) has the form group by group, the presets with their expected durations, the refusals, the scene's keys and the security notes; the recorded demo with screenshots in both themes is [`docs/demos/SP2/`](docs/demos/SP2/README.md); the recorded SP1 pair as a scene page and a video is example SP1.3 of the [animation gallery](https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/).
 
 ### Animate a 2-D run
 
@@ -139,7 +153,7 @@ For an interactive view, `replay` writes a single HTML page you open in a browse
 uv run python -m launchsim replay results/silo_screening_2d/20260930T175743Z --runs pad silo_cold
 ```
 
-The default output is `./<experiment>_<timestamp>_replay.html`, never inside `results/`.
+The default output is `./<experiment>_<timestamp>_replay.html`, never inside `results/` (one rule for `animate`, `replay` and `scene`: no output inside the run's results tree or any folder named `results`).
 
 ## The concepts
 
@@ -235,13 +249,13 @@ The simulator's real job is to measure these penalties against the ideal numbers
 | Sideways loads | A fueled rocket lying on a horizontal track, or turning through a curve, carries sideways loads along its whole length. Supports along the body concentrate loads at new points. | Report sideways loads from the start; do structural analysis later. |
 | Aerodynamics | Extra speed low in the dense atmosphere raises drag loss and possibly peak dynamic pressure (max-Q). | Only a trajectory simulation answers this. |
 
-**Simulation updates to the rows above.** These are measured values; the hand numbers in the table are kept as the first-order record. Every one is preliminary: concept A only, a prescribed-acceleration drive, and (in 2-D) sweep-optimized, unthrottled, on the gate vehicle that calibrates +14.3% high.
+**Simulation updates to the rows above.** These are measured values, except the "Silo air" row, which is an estimate and says so; the hand numbers in the table are kept as the first-order record. Every one is preliminary: concept A only, a prescribed-acceleration drive, and (in 2-D) sweep-optimized, unthrottled, on the gate vehicle that calibrates +14.3% high.
 
 - **Axial load on a full stack** ([RQ3-1d](docs/findings/RQ3-silo-screening-1d.md), [RQ3-2d](docs/findings/RQ3-silo-screening-2d.md)). Measured: 3.999 g felt and 21.28 MN at the interface on the 542.57 t 1-D stack (the table's 21.5 MN uses 549 t and g0); 3.996 g and 22.49 MN on the 573.9 t 2-D stack. No structural mass is charged for this load, and about 8.1 t of silo-only strengthening would cancel the whole 2-D gain (a linear extrapolation, not a sized structure; see [Results so far](#results-so-far)).
 - **Lighting engines after release** ([RQ2-1d](docs/findings/RQ2-ignition-timing-1d.md), [RQ2-2d](docs/findings/RQ2-ignition-timing-2d.md)). The 5–25 m/s band is the 1-D linear-ramp band (4.90–24.50 m/s by the formula). A first-order lag with τ = 1–3 s after the same 0–1 s delay gives 9.8–39.2 m/s in 1-D, because a lag of τ costs as much as a ramp of 2τ. In 2-D the loss is larger: on the README masses the 0.5 s delay + 2 s ramp costs 32.30 m/s (301.3 kg), 2.14× the 1-D 15.12 m/s.
 - **Interface hardware on the rocket** ([RQ3-2d](docs/findings/RQ3-silo-screening-2d.md)). On the gate vehicle in 2-D, 1 kg on stage 1 costs about 0.18 kg of payload (184 kg per tonne), so the cold silo's break-even is about 8.1 t of extra stage-1 mass, not ~5.5 t.
 - **Peak power** ([RQ3-1d](docs/findings/RQ3-silo-screening-1d.md), [RQ3-2d](docs/findings/RQ3-silo-screening-2d.md)). Measured: 2.128 GJ with a 1.632 GW peak in 1-D; 2.249 GJ with a 1.725 GW peak on the heavier 2-D stack.
-- **Silo air** ([RQ3-2d](docs/findings/RQ3-silo-screening-2d.md)). Every run so far vents the shaft, with no shaft drag; that biases drive energy, peak power and interface force low by about 0.04%, 0.08% and 0.08%, and leaves payload unchanged.
+- **Silo air** ([RQ3-2d](docs/findings/RQ3-silo-screening-2d.md)). Not measured: every run so far vents the shaft, with no shaft drag, and the air column is not modelled. The note's own estimate (from q = 3.6 kPa at the 76.7 m/s exit, C_D 0.46 and a drag growing with the stroke) is that the missing shaft drag biases drive energy, peak power and interface force low by about 0.04%, 0.08% and 0.08%, and leaves the release speed and the payload unchanged under the prescribed drive.
 - **Carriage braking** ([RQ3-1d](docs/findings/RQ3-silo-screening-1d.md)). Braking at 5 g adds 60.0 m, so the 100 m stroke needs a 160 m facility. Braking is added to the length, not modelled as a phase (Phase 3).
 - **Failed ignition** ([RQ3-1d](docs/findings/RQ3-silo-screening-1d.md), [RQ3-2d](docs/findings/RQ3-silo-screening-2d.md)). In 1-D the apex is 300.27 m at 7.829 s, and the stack is back at the mouth at 15.658 s. Unless the carriage is withdrawn within about 14.8 s, the stack first hits its own carriage, parked 60 m above the mouth (its braking distance), at 14.83 s and 68.6 m/s (1-D; not re-computed in 2-D). In 2-D the apex is 300.65 m at 7.843 s, and the stack is back at the mouth at 15.689 s at 76.60 m/s, only 0.4 m west of the axis. No abort is modelled.
 - **Aerodynamics** ([RQ6](docs/findings/RQ6-aero-2d-preliminary.md)). Unthrottled max-Q falls 16.0%, q-alpha at the kick rises to 1.7–3.4× the pad's, and the drag loss falls 3.5 m/s.
@@ -369,7 +383,7 @@ Preliminary notes exist for questions 1, 2, 3 and 6 (concept A only; question 1 
 - **Phases:** hold → assist (1-DOF motion along a track) → release → ignition (step, linear ramp or first-order lag) → ascent → staging (and fairing jettison) → orbit insertion. The ascent is either 1-D vertical (`vertical_1d`) or 2-D planar (`planar_2d`): spherical rotating Earth, standard atmosphere, drag varying with Mach, back-pressure, a vertical rise and kick, a gravity turn on stage 1 and linear-tangent steering on stage 2, with payload capacity found by bisection.
 - **Assist models built now:** none (pad), and constant acceleration (`constant_accel`, screening) on a straight track, used so far as a vertical silo. The drive force is whatever the prescribed acceleration needs, with no force or power limit.
 - **Assist models planned for Phase 3:** linear motor (force- and power-limited), curved track geometry, cable winch (elastic cable, drum inertia, pulleys), the silo air column, friction, modelled carriage braking, release at a target speed, and a tilted-exit abort.
-- **Outputs for every run:** payload or propellant margin versus baseline; gravity, drag, steering and back-pressure losses; max-Q; peak felt axial and sideways g, and the interface force; assist energy, peak power and facility length. They come as `summary.md`, `metrics.json`, CSV time series and PNG plots, and `launchsim animate` turns a 2-D run into an MP4 or GIF ([Quick start](#quick-start)).
+- **Outputs for every run:** payload or propellant margin versus baseline; gravity, drag, steering and back-pressure losses; max-Q; peak felt axial and sideways g, and the interface force; assist energy, peak power and facility length. They come as `summary.md`, `metrics.json`, CSV time series and PNG plots; `launchsim animate` turns a 2-D run into an MP4 or GIF, `replay` into an interactive page, `scene` into a launch scene page, and the local app (`launchsim app`) shows the scene beside the results panel and exports it as an MP4 ([Quick start](#quick-start)).
 - **Validation first:** every physics piece gets an analytic test before any experiment is trusted. The list lives in `CLAUDE.md`; every test it requires for Phases 0–2 passes.
 
 ## What you need to start
@@ -387,7 +401,7 @@ Preliminary notes exist for questions 1, 2, 3 and 6 (concept A only; question 1 
 
 ### Software
 
-Python 3.12 managed with uv; numpy, scipy, pandas and matplotlib; PyYAML and pydantic for configs; pytest and ruff; `ambiance` for the ICAO standard atmosphere (valid to about 81 km); RocketPy for 6-DOF hobby-scale comparisons; later, Dymos/OpenMDAO or CasADi for trajectory optimization; JupyterLab for exploration. Git, with the repository public on GitHub at [khoks/RocketLaunchOptimizationSimulator](https://github.com/khoks/RocketLaunchOptimizationSimulator) (public to read, all rights reserved; see [License](#license)). Its [GitHub Pages site](https://khoks.github.io/RocketLaunchOptimizationSimulator/) is built from `site/`, `assets/brand/` and `docs/manual/` by `site/build.py`, which `.github/workflows/pages.yml` runs and deploys on every push to `main`. The build uses Python-Markdown, installed only in CI and for local previews (`uvx --with markdown==3.11 python site/build.py`); it is not a project dependency.
+Python 3.12 managed with uv; numpy, scipy, pandas and matplotlib; PyYAML and pydantic for configs; pytest, ruff and Pillow (the dev extra; Pillow also comes with matplotlib); `ambiance` for the ICAO standard atmosphere (valid to about 81 km); RocketPy for 6-DOF hobby-scale comparisons; later, Dymos/OpenMDAO or CasADi for trajectory optimization; JupyterLab for exploration. Git, with the repository public on GitHub at [khoks/RocketLaunchOptimizationSimulator](https://github.com/khoks/RocketLaunchOptimizationSimulator) (public to read, all rights reserved; see [License](#license)). Its [GitHub Pages site](https://khoks.github.io/RocketLaunchOptimizationSimulator/) is built from `site/`, `assets/brand/` and `docs/manual/` by `site/build.py`, which `.github/workflows/pages.yml` runs and deploys on every push to `main`. The build uses Python-Markdown, installed only in CI and for local previews (`uvx --with markdown==3.11 python site/build.py`); it is not a project dependency.
 
 ### Data
 
@@ -411,7 +425,7 @@ This is a simulation project. Before building any physical assist device at hobb
 | 0. Scaffold | Package, constants, atmosphere wrapper, CLI stub, test harness | Tests pass and the commands in `CLAUDE.md` work | Done |
 | 1. Vertical 1-D | Rocket equation, gravity and staging in one dimension | Rocket-equation, gravity-loss and coast-apex tests pass | Done (plus the constant-acceleration vertical silo push) |
 | 2. Ascent to orbit | Spherical rotating Earth, drag, thrust versus ambient pressure, gravity turn, loss budget, payload search | Orbit, loss-budget and convergence tests pass; the generic Falcon 9-class vehicle lands within ±10% of 22.8 t to low Earth orbit at a stated reference altitude | Done, with the calibration miss noted: the tests pass, but the gate vehicle lands +14.3% high (26,054.4 kg to 200 km), outside the band. The user accepted it as a documented miss ([CAL-f9-leo-2d](docs/findings/CAL-f9-leo-2d.md)) |
-| 3. Assist models | Constant acceleration, linear motor, track geometry (vertical, straight, curved), cable winch, ignition timing; the structural mass for the 4 g full-stack push (added with the plan of 2026-09-30) | Track, ramp-energy, release-mapping, energy-balance and cable tests pass | Structural-mass part scheduled: the structural mass for the 4 g push, with a force-limited drive, is now phase SP7, next after SP2 and before the 3-D phases (decision D-SP1-18, 2026-10-04). The rest is planned after SP1–SP6 unless moved up (see [`docs/phases/README.md`](docs/phases/README.md)); constant acceleration, the straight track, ignition timing and the release mapping already exist |
+| 3. Assist models | Constant acceleration, linear motor, track geometry (vertical, straight, curved), cable winch, ignition timing; the structural mass for the 4 g full-stack push (added with the plan of 2026-09-30) | Track, ramp-energy, release-mapping, energy-balance and cable tests pass | Structural-mass part scheduled: the structural mass for the 4 g push, with a force-limited drive, is phase SP7, the next phase (after SP2, closed 2026-10-07) and before the 3-D phases (decisions D-SP1-18, 2026-10-04, and D-SP2-40, 2026-10-07). The rest is planned after SP1–SP7 unless moved up (see [`docs/phases/README.md`](docs/phases/README.md)); constant acceleration, the straight track, ignition timing and the release mapping already exist |
 | 4. Experiments | Sweeps for research questions 1–8 | Each question has a write-up in `docs/findings/` with plots and caveats | Planned (preliminary concept-A notes for RQ1, RQ2, RQ3 and RQ6 exist) |
 | 5. Fair comparison | Optimized ascent for each configuration (Dymos or CasADi) | Headline results re-run with optimized guidance | Planned |
 | 6. Hobby scale in 6-DOF | RocketPy model of a real rocket with an assist before the rail | Baseline apogee matches RocketPy within ±5%, and the assist's effect is quantified | Planned |
@@ -428,24 +442,26 @@ launch-assist-sim/
 ├── TODO.md                   program-level tracker: milestones, priorities, backlog, decisions
 │                             log, known issues
 ├── pyproject.toml
-├── src/launchsim/            physics, models, simulation, CLI (run, sweep, animate)
+├── src/launchsim/            physics, models, simulation, CLI (run, sweep, animate, replay, scene, app),
+│                             the local app and the scene with their page templates
 ├── configs/vehicles/         vehicle definitions with sources
 ├── experiments/              one YAML file per experiment
 ├── results/                  generated output, never hand-edited; only each run's
 │                             top-level summary.md is tracked in git
 ├── docs/physics.md           equations and assumptions
-├── docs/manual/              user manual: README.md (contents) and chapters 01-12; the source
-│                             of the manual pages on the project site
+├── docs/manual/              user manual: README.md (contents) and chapters 01-12 (with 05b and 07b);
+│                             the source of the manual pages on the project site
 ├── docs/findings/            one write-up per research question, plus the calibration record;
 │   │                         README.md indexes them
 │   └── probes/               labelled probes cited by the notes (not shipped runs)
 ├── docs/media/               animations captured with `launchsim animate`
 ├── docs/process/             SESSION_PROTOCOL.md: how every session runs
-├── docs/phases/              program board (README.md), one file per phase (SP1 to SP6),
-│                             inputs/ (the approved plan, designs, code surveys)
+├── docs/phases/              program board (README.md), one file per phase (SP1 to SP7, in the
+│                             planned order SP1, SP2, SP7, SP3 to SP6), inputs/ (the approved
+│                             plan, designs, code surveys)
 ├── docs/handoff/             NEXT_SESSION.md (read first by a new session), archive/
-├── docs/demos/               recorded demo of each finished phase (created when the first
-│                             phase closes; none yet)
+├── docs/demos/               recorded demo of each finished phase (SP1/, SP2/: a README with the
+│                             commit and the commands, screenshots, console and API records)
 ├── assets/brand/             logo, mark, favicon, banner and social preview (SVG and PNG);
 │                             build_brand.py and render_png.py regenerate them
 ├── site/                     GitHub Pages source: landing page, slide deck (deck/), animation

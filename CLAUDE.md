@@ -6,7 +6,7 @@ launch-assist-sim is a research simulator for ground-powered launch assist. A ro
 
 - Background, prior art, first-order numbers and research questions: README.md. Read it before planning experiments.
 - Report findings plainly, including ones that undercut the hypothesis that every m/s of assist helps.
-- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Work now runs as one session per phase (program board: docs/phases/README.md). SP1 done (2026-10-04: launch settings, the fuel-offload solver and the RQ1 finding in docs/findings/RQ1-fuel-offload-2d.md, the tracking system, the public repository). SP2 (local app with the 2-D launch scene) is next, then SP7 (structural mass of the push load and a force-limited drive), then the 3-D phases SP3-SP6 (D-SP1-18). The next session starts from docs/handoff/NEXT_SESSION.md; see TODO.md. Update this line when a phase's exit criteria pass (docs/phases/README.md, README roadmap).
+- Status: Phases 0 and 1 done (scaffold, atmosphere, configs, CLI, results I/O; 1-D vertical model with staging; constant-acceleration vertical silo push pulled forward from Phase 3; 346 tests; first concept-A numbers in docs/findings/). Phase 2 done (2-D rotating-Earth ascent with drag, guidance and payload search; calibration missed high by +14.3% and the user accepted the documented miss; first 2-D concept-A findings in docs/findings/). Work now runs as one session per phase (program board: docs/phases/README.md). SP1 done (2026-10-04: launch settings, the fuel-offload solver and the RQ1 finding in docs/findings/RQ1-fuel-offload-2d.md, the tracking system, the public repository). SP2 done (2026-10-07: the local app `launchsim app` with the 2-D launch scene, the standalone `launchsim scene` page and the MP4 export; every app run is exploratory, never a finding). Next SP7 (structural mass of the push load and a force-limited drive; D-SP1-18, confirmed by D-SP2-40), then the 3-D phases SP3-SP6. The next session starts from docs/handoff/NEXT_SESSION.md; see TODO.md. Update this line when a phase's exit criteria pass (docs/phases/README.md, README roadmap).
 
 ## Commands
 
@@ -66,7 +66,7 @@ docs/findings/     one write-up per research question
 docs/process/      SESSION_PROTOCOL.md: how every session runs (start checklist, step loop, end checklist, ID conventions)
 docs/phases/       program board (README.md), one file per phase (SP<n>-<slug>.md: brief, step table, exit criteria, session log), inputs/ (dated plans, designs and code surveys)
 docs/handoff/      NEXT_SESSION.md (the live handoff, read first by a new session) and archive/ (earlier handoffs)
-docs/demos/        recorded demo of each finished phase (SP<n>/; created when a phase closes; SP1 so far)
+docs/demos/        recorded demo of each finished phase (SP<n>/; created when a phase closes; SP1 and SP2 so far)
 notebooks/         exploration only; nothing experiments depend on
 tests/
 ```

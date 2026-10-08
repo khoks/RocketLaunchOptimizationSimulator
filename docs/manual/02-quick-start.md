@@ -2,9 +2,11 @@
 
 [Manual contents](README.md) · Previous: [1. Install](01-install.md) · Next: [3. Concepts](03-concepts.md)
 
-There is no graphical interface yet (a local app is planned for phase SP2). `launchsim` is
-a command-line program: every output is a file. This chapter runs two shipped experiments,
-shows where the results go, and turns a 2-D run into an interactive page.
+`launchsim` is a command-line program whose outputs are files, plus one local app:
+`launchsim app` serves a launch form, a results panel, a run browser and the 2-D launch
+scene on this machine, and `launchsim scene` writes that scene as a standalone page
+([7b](07b-app.md)). This chapter runs two shipped experiments, shows where the results go,
+turns a 2-D run into an interactive page and a launch scene, and opens the app.
 
 ## The shipped experiments
 
@@ -102,6 +104,31 @@ scrub the flight, switch runs on and off, and read live telemetry, strip charts 
 run's payload beside the caveats. Nothing is re-simulated in the page; it replays the
 recorded time series.
 
+## Step 4b: watch it as a launch scene, or open the app
+
+```text
+uv run python -m launchsim scene results/silo_screening_2d/<timestamp> --runs pad silo_cold
+```
+
+This writes `./silo_screening_2d_<timestamp>_scene.html` (never inside `results/`): the pad
+and the silo side by side as a cross-section of the launch site, drawn from the recorded
+time series, with a close-up of the vehicle, the events and the caveats. The page plays from
+the file with no server. The spent stage, the fairing halves, the carriage after release and
+the attitude while the engines are off are display-only reconstructions, named as such on
+the page; nothing is re-simulated ([7b](07b-app.md#the-standalone-scene-page-launchsim-scene)).
+
+The same scene is inside the local app, which also launches runs from a form:
+
+```text
+uv run python -m launchsim app
+```
+
+Open the printed address (`http://127.0.0.1:8765/`, this machine only), pick a preset (the
+page opens on `silo_cold`), press Launch and watch the scene open by itself when the launch
+is done; or open a recorded directory from the run list. Every run launched from the app is
+exploratory and never a finding: it is written to `results/app/<timestamp>/` with that label
+and a banner. Ctrl+C in the console stops the app ([7b](07b-app.md)).
+
 ## Step 5 (optional): an animation
 
 ```text
@@ -136,12 +163,14 @@ the caveats that must travel with it, in
 ## On a fresh clone
 
 Only each run's top-level `summary.md` is tracked in git; the CSVs and plots are not. To
-replay or animate a run, run the experiment first and point the command at the new
-timestamped directory.
+replay, animate or draw a run as a scene, run the experiment first and point the command at
+the new timestamped directory; the app's run list shows such a directory as not playable
+until then, and a launch from the app writes a complete directory of its own.
 
 ## Where to go next
 
 - What the runs are and what "payload capacity" means: [3. Concepts](03-concepts.md).
 - How to change the silo, the ignition or the sweeps: [4. Experiment files](04-experiments.md)
   and [5. Assist and ignition](05-assist-and-ignition.md).
-- Every flag of every command: [7. Commands](07-commands.md).
+- Every flag of every command: [7. Commands](07-commands.md); the app and the scene, group
+  by group: [7b](07b-app.md).

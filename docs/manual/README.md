@@ -36,22 +36,30 @@ lighter stack's thrust-to-weight (the pad flown with the same offload falls only
 of the payload), while a delta-v reading chosen after the run gives the lighter stack 28 to
 29%; the offloaded run's max-Q is 3.4% above the pad's; the stage-2 case failed its
 verification; and the heat-to-electricity ratio of about 128 is not an efficiency claim
-([9. Reading results](09-reading-results.md#what-the-shipped-offload-run-says)). The program
-board is [docs/phases/README.md](../phases/README.md).
+([9. Reading results](09-reading-results.md#what-the-shipped-offload-run-says)). Phase SP2
+(closed 2026-10-07) added the local app, `launchsim app`: a launch form built from the
+committed experiments, a results panel, a run browser and the 2-D launch scene, which draws
+the pad and the silo side by side from a run's recorded time series, with an MP4 export;
+and `launchsim scene`, the same scene as a standalone page
+([7b. The local app and the launch scene](07b-app.md)). Every run launched from the app is
+exploratory and never a finding; the app's launch of the `silo_cold_s1` preset reproduces
+SP1's 41.26 t within 0.002 kg (the same configuration on the same model: a reproduction,
+not new evidence). The program board is [docs/phases/README.md](../phases/README.md).
 
 ## Contents
 
 | Chapter | What it covers |
 |---|---|
 | [1. Install](01-install.md) | Python, uv, the virtual environment, ffmpeg, checking the install |
-| [2. Quick start](02-quick-start.md) | Run a shipped experiment, open the summary, replay a 2-D run |
+| [2. Quick start](02-quick-start.md) | Run a shipped experiment, open the summary, replay a 2-D run, watch it as a launch scene, open the app |
 | [3. Concepts](03-concepts.md) | The phases of a run, pad baseline against silo, payload capacity, residual propellant, the loss budget |
 | [4. Experiment files](04-experiments.md) | Every block of an experiment YAML: shared blocks, baseline, variants, sweeps, sensitivity, bounds, cases, the merge rules |
 | [5. Assist and ignition](05-assist-and-ignition.md) | The `none` and `constant_accel` assist models, the carriage, braking, efficiency, impingement; ignition timing, startup shapes, failed ignition, ramp start by depth, speed or height (closed form or altitude event) |
 | [5b. Propellant offload at fixed payload](05b-offload.md) | The `offload:` block: every key, the runs it writes, pad controls, paired pads, sensitivity arms, sweeps that solve an offload at every point, the summary section, replaying an offloaded run, `--no-offload` and `--no-sensitivity` |
 | [6. Vehicle files](06-vehicles.md) | Stages, engines, sourced quantities, aerodynamics, fairing, screening; why calibrated files are forked, never edited |
-| [7. Commands](07-commands.md) | `run`, `sweep`, `animate`, `replay`: every flag, default and output location |
-| [8. Outputs](08-outputs.md) | The results directory, `summary.md`, `metrics.json` (with the offload record), `resolved_config.yaml`, `sweep_index.csv` (with the offload columns), `timeseries.csv` and `events.csv` columns with units, plots |
+| [7. Commands](07-commands.md) | `run`, `sweep`, `animate`, `replay`, `scene`, `app`: every flag, default and output location; the one output-path rule |
+| [7b. The local app and the launch scene](07b-app.md) | `launchsim app`: starting and stopping it, the form group by group, the presets, the checks and refusals, Launch, the progress card, the results panel, the run browser, the scene and its keys, the MP4 export, the exploratory regime, the security notes; `launchsim scene`, the standalone page |
+| [8. Outputs](08-outputs.md) | The results directory, `summary.md`, `metrics.json` (with the offload record), `resolved_config.yaml`, `sweep_index.csv` (with the offload columns), `timeseries.csv` and `events.csv` columns with units, plots; an app launch's directory, the scene page and the MP4 |
 | [9. Reading results](09-reading-results.md) | The loss identity, payload capacity, the screening yardstick and the screening-beat rule, statuses and flags; reading an offload result (the cross-vehicle decomposition, the pad control, the paired pad); the caveats |
 | [10. Validation](10-validation.md) | Validation first: the analytic tests, calibration against validation, running the tests |
 | [11. Troubleshooting](11-troubleshooting.md) | Windows notes, common errors and what they mean |
@@ -59,7 +67,8 @@ board is [docs/phases/README.md](../phases/README.md).
 
 ## How to read it
 
-- **You want to see something run:** chapters 1 and 2, then chapter 7 for the flags.
+- **You want to see something run:** chapters 1 and 2, then chapter 7 for the flags and
+  7b for the app and the launch scene.
 - **You want to set up your own study:** chapters 3, 4 and 5, then 5b for a
   propellant-offload study and 6 if you need another vehicle.
 - **You have a results directory and want to know what it says:** chapters 8 and 9.
@@ -92,8 +101,14 @@ configuration key, default, metric and column named in those additions was check
 against `src/launchsim/cli.py`, `config.py`, `results_io.py`, `summary.py`, `compare.py`,
 `offload.py`, `metrics_planar.py`, `plots.py` and `replay.py`, the shipped files under
 `experiments/` and `configs/vehicles/`, and the recorded results of the pre-registered SP1
-runs. Where the code and the docs move on, the code wins; [docs/physics.md](../physics.md)
-is the source of truth for the equations.
+runs. It was brought up to date for what SP2 delivered (the app, the scene, the MP4 export,
+the one output-path rule and the display files) at commit `705025f` (2026-10-07): every
+command, option, field, preset, refusal and output named in those additions was checked
+against `src/launchsim/cli.py`, `app.py`, `appform.py`, `scene.py`, `display.py`,
+`video.py`, `run_data.py`, the templates under `src/launchsim/templates/`, the files under
+`configs/display/` and the recorded demo in `docs/demos/SP2/`. Where the code and the docs
+move on, the code wins; [docs/physics.md](../physics.md) is the source of truth for the
+equations.
 
 Features that are planned but not in that code are marked with the phase that brings them
 (for example README roadmap Phase 3 for the force-limited drives).

@@ -45,7 +45,7 @@ tree after step A7's commit, so that the launches record a clean git state.
 |---|---|
 | 931b19b | HEAD when part 1 was made (SP2 step A6v's tracker commit); the app, the scene and the video export as committed. The app served the working tree, which held step A7's QA fixes of src/launchsim/templates/scene.html (below) and nothing else that changes a drawing or a value |
 | fb34b24 (fb34b2417c56) | HEAD when part 2 was made (step A7 part 1's tracker commit), the tree clean: the app served exactly this commit, and every demo launch directory under results/app/ records it as both its server-start and its launch-time git state (dirty false) |
-| (pending) | the commit of the six app summaries, `SP2 step A7: app summaries` (D-SP2-37), made after this record was written; its hash is in the phase file's session log |
+| 3a1b243 | the commit of the six app summaries and this record, `SP2 step A7: demo launches (app summaries and their record)` (D-SP2-37), made after part 2 was written; step A8's additions to this record (the deck-PDF section, this row, the closing section below) follow in A8's commit |
 
 Step A7's QA fixes, each with a test in tests/test_scene_page.py. From the step's own QA: a
 separated body that has stopped (its own impact, or the run's end) keeps a label (before,
@@ -534,7 +534,29 @@ The scripts and the raw records (the job snapshots, the state-hook values of eve
 screenshot, the wire logs, the server's stamped output) are the session's scratch files;
 their method is described here so that the record can be reproduced.
 
-## Left for step A8
+### Commands (step A8: the deck PDF)
+
+The slide deck's PDF (`site/deck/launch-assist-sim-deck.pdf`, 20 pages after the new slide
+18 on the app and the scene) was printed on 2026-10-07 at 18:34 PDT (2026-10-08 01:34:46
+UTC, the PDF's CreationDate; an earlier print at 17:46 PDT preceded the last review round's
+wording fix on slide 17) by headless Microsoft Edge from
+PowerShell (not Git Bash: started from Git Bash while Edge is running, headless Edge writes
+no file; the handoff's gotcha), with its own profile folder, against the built site served
+on 127.0.0.1 (`uvx --with markdown==3.11 python site/build.py`, then
+`uv run python -m http.server 8766 --directory _site --bind 127.0.0.1`), so that the slide's
+screenshot resolves; the deck's `?print` layout lays every slide out as one 1280 x 720 px
+page (its `@page` rule):
+
+    "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --no-default-browser-check --disable-extensions --user-data-dir=<own folder> --virtual-time-budget=15000 --no-pdf-header-footer --print-to-pdf=site\deck\launch-assist-sim-deck.pdf "http://127.0.0.1:8766/deck/index.html?print"
+
+The page count was read back from the file (20 objects of `/Type /Page`; 1,095,954 bytes
+after the final re-print, which followed the round-1 review's shorter slide-18 caption and
+source line and the last round's slide-17 pointer to the gallery's scene page).
+The screenshot on slide 18 is `docs/demos/SP2/shots/03-solve-done-tank-part-full-light.png`
+copied to `site/examples/media/app-pad-vs-silo-cold-s1-scene.png` for the landing page and
+the deck, captioned exploratory on both.
+
+## Left open at SP2's close (KI-038)
 
 - The scene page's data block and its Data line name only the run directory's git state
   (`git b3150c1754ee (clean)` for the gallery page and the video frames; `git fb34b2417c56
@@ -543,4 +565,6 @@ their method is described here so that the record can be reproduced.
   (`"version": "0.1.0"`). The gallery entry says so and records them itself. Add the
   renderer's `version` and git state to the scene data block and Data line
   (src/launchsim/scene.py, outside part 1's and part 2's edit lists) as replay's meta does
-  (review round 1 of this step, honesty finding). Part 2 changed no code.
+  (review round 1 of this step, honesty finding). Part 2 changed no code, and step A8
+  edited documents only: carried to TODO.md as KI-038 at the close, owner the phase that
+  next edits scene.py; SP2 made no code change for it.

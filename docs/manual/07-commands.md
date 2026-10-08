@@ -1,8 +1,8 @@
 # 7. Commands
 
-[Manual contents](README.md) · Previous: [6. Vehicle files](06-vehicles.md) · Next: [8. Outputs](08-outputs.md)
+[Manual contents](README.md) · Previous: [6. Vehicle files](06-vehicles.md) · Next: [7b. The local app and the launch scene](07b-app.md)
 
-`launchsim` has four commands. Run them from the repository root as
+`launchsim` has six commands. Run them from the repository root as
 `uv run python -m launchsim <command> ...` (or `uv run launchsim <command> ...`).
 
 ```text
@@ -10,8 +10,14 @@ launchsim run     <experiment.yaml> [--results-root DIR] [--variant NAME] [--no-
 launchsim sweep   <experiment.yaml> [--results-root DIR] [--no-plots] [--no-offload]
 launchsim animate <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--fps N] [--seconds S] [--width PX]
 launchsim replay  <run_dir> [--runs NAME [NAME ...]] [--out PATH]
+launchsim scene   <run_dir> [--runs NAME [NAME ...]] [--out PATH] [--display PATH]
+launchsim app     [--port N] [--results-root PATH] [--open]
 launchsim --version
 ```
+
+`scene` (the standalone 2-D launch scene page) and `app` (the local app that serves the
+form, the results panel, the run browser and the scene) have a chapter of their own,
+[7b](07b-app.md); their options are summarised here.
 
 `-h` or `--help` after any command prints its help.
 
@@ -90,9 +96,8 @@ never writes into it.
 | `--seconds S` | 20.0 | Length of the video [s] |
 | `--width PX` | 1280 | Frame width in pixels: even, at least 320. The frame is 16:9 |
 
-The default output goes to the current directory; if the current directory is inside the
-run's results tree, the file goes next to that tree instead. An explicit `--out` inside the
-results tree is refused, and its folder must exist.
+Where the default output goes, and which `--out` is refused, follows the one rule below
+("Where the default output goes"); the output folder must exist.
 
 The video shows the first 30 s of flight slowly, so the push and liftoff are visible, and
 the rest of the ascent much faster, with the current playback speed in the corner
@@ -116,9 +121,49 @@ is re-simulated.
 | `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | At most four. Experiment runs, bound re-runs (compared with their paired baseline), calibration cases (compared with nothing) and runs of the offload block, labelled by kind: a case's recorded run "(offload)", a paired pad "(paired pad)" or a pad control "(pad control)" ([5b](05b-offload.md#replaying-an-offloaded-run)) can be named |
 | `--out PATH` | `./<experiment>_<timestamp>_replay.html` | Output `.html` file |
 
-The output may not lie inside the run's results tree or inside any folder named `results`;
-if the current directory is inside one, the default goes next to the outermost such folder.
-The console prints `replay: <path> (<size> KiB)`.
+The output follows the one rule below. The console prints `replay: <path> (<size> KiB)`.
+
+## `scene`
+
+Writes the 2-D launch scene of planar_2d runs of a results directory as one standalone HTML
+page: a true-scale cross-section of the launch site with a fixed-scale close-up of the
+vehicle, two runs side by side on one clock, telemetry, events and the caveats. The page
+replays the recorded time series and names what it draws that the model does not compute.
+It only reads the directory.
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `run_dir` | required | One results directory of a `planar_2d` `run` |
+| `--runs NAME [NAME ...]` | the baseline and the first solved stage-1 offload case, else the first assisted variant that is not a yardstick | The runs the page can show, at most four; the first two open side by side |
+| `--out PATH` | `./<experiment>_<timestamp>_scene.html` | Output `.html` file, under the one rule below |
+| `--display PATH` | `configs/display` of the repository above the working directory, else above the installed package | The display files the shapes come from ([6](06-vehicles.md#display-files-configsdisplay)) |
+
+The console prints `scene: <path> (<size> KiB)`. Everything the page shows, and what it
+refuses, is in [7b](07b-app.md#the-standalone-scene-page-launchsim-scene).
+
+## `app`
+
+Serves the local app on `http://127.0.0.1:<port>/` (this machine only) until Ctrl+C.
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `--port N` | 8765 | The port on 127.0.0.1; `0` picks a free one. A busy port is one `error:` line and exit 1, never another port |
+| `--results-root PATH` | `<repo root>/results` | The results tree the app lists and launches into (`<PATH>/app/<timestamp>/`) |
+| `--open` | off | Open the page in a new browser tab |
+
+It needs a checkout of the repository (above the working directory, or the one holding the
+installed package). Every launch it makes is exploratory,
+never a finding. The start lines, the page and how to stop it are in [7b](07b-app.md).
+
+## Where the default output goes
+
+One rule for `animate`, `replay` and `scene` (since SP2; before it `animate` had a weaker
+one): the output may not lie inside the run's results tree or inside any folder named
+`results` (in any letter case); such an explicit `--out` is refused with
+`output ... is inside the results tree`. The default goes to the current directory, and if
+the current directory is inside such a folder, next to the outermost one. The app's MP4
+export follows the same idea: the file goes to the folder the app was started from, never
+into a results tree ([7b](07b-app.md#save-video-mp4)).
 
 ## Exit codes and messages
 
@@ -131,6 +176,11 @@ The console prints `replay: <path> (<size> KiB)`.
 Anything else (a bug in the simulator) keeps its Python traceback. If a run fails after its
 results directory was created, the directory gets a `FAILED.txt` with the traceback and no
 `summary.md`, so a partial directory is never mistaken for a good one.
+
+`app` exits 0 when stopped with Ctrl+C (a running launch is marked FAILED first) and 1 for
+a busy port or a missing file at start; under `uv run`, Ctrl+Break makes `uv` itself exit
+with a console-interrupt code although the server stopped cleanly
+([7b](07b-app.md#starting-it), TODO.md KI-037).
 
 Console output is ASCII only, so it prints on a cp1252 Windows console; characters outside
 ASCII (in a path, say) are shown as backslash escapes. The files themselves are UTF-8.
@@ -149,8 +199,10 @@ These are the project's own command list, kept in [CLAUDE.md](../../CLAUDE.md):
 | Sweep | `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]` |
 | Animate a 2-D run | `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]` |
 | Replay page | `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]` |
+| Local app (127.0.0.1 only, Ctrl+C stops it) | `uv run python -m launchsim app [--port N] [--results-root PATH] [--open]` |
+| 2-D launch scene page (standalone HTML) | `uv run python -m launchsim scene results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH] [--display PATH]` |
 
 The `&&` in the pip fallback does not work in Windows PowerShell 5.1; run the two parts
 separately ([11. Troubleshooting](11-troubleshooting.md#windows)).
 
-Next: [8. Outputs](08-outputs.md)
+Next: [7b. The local app and the launch scene](07b-app.md)

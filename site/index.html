@@ -17,6 +17,15 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="assets/site.css">
+<style>
+  /* the app-and-scene section (SP2): one demo screenshot beside what the app does */
+  .app-sec { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .app-sec figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+  .app-sec img { width: 100%; height: auto; display: block; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); }
+  .app-sec figcaption { font-size: 0.88rem; color: var(--ink-2); max-width: none; }
+  .app-sec .box ul { font-size: 0.95rem; }
+  @media (max-width: 820px) { .app-sec { grid-template-columns: minmax(0, 1fr); } }
+</style>
 <script>
   (function () {
     try {
@@ -119,7 +128,7 @@
                 <tr class="extra"><td>about 8.5 t</td><td class="n">0</td><td class="n" colspan="2">extrapolated</td></tr>
               </tbody>
             </table>
-            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure: no structural model exists yet (phase SP7, after SP2).</p>
+            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure: no structural model exists yet (phase SP7, next).</p>
           </section>
           <section class="fcard" aria-labelledby="fc-pair">
             <h4 id="fc-pair">Head start or lighter stack?</h4>
@@ -179,7 +188,7 @@
         <span class="n">Step 1</span>
         <h3>The push</h3>
         <p>The rocket stands in an underground shaft lined with electromagnetic rings that act as a vertical linear motor. In the reference case the drive pushes the full stack 100 m at 3 g net and releases it at 76.7 m/s after 2.6 s. Engines light in the shaft (a hot start) or just after release (a cold start).</p>
-        <p class="src">Today the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; a force- and power-limited linear motor is planned for phase SP7, after SP2.</p>
+        <p class="src">Today the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; a force- and power-limited linear motor is planned for phase SP7, the next phase.</p>
       </li>
       <li class="step">
         <svg class="ill" viewBox="0 0 300 170" role="img" aria-labelledby="ill2-t">
@@ -221,6 +230,29 @@
         <p>The baseline is the same vehicle launched from a pad, with the same guidance law, sweep grid and search budget. Every number is a difference against it. The losses are booked so that speed gained equals vacuum Δv minus gravity, drag, steering and back-pressure losses; a validation test requires that budget to close within 0.01 m/s over a full ascent, and it passes.</p>
       </li>
     </ol>
+  </section>
+
+  <section class="block" id="app" aria-labelledby="app-h">
+    <div class="block-head">
+      <h2 id="app-h">The app and the launch scene</h2>
+      <p>Since phase SP2 the simulator has a local app: set the silo's depth and push, where the thrust ramp starts, the startup, an offload or a structural penalty, press Launch, and watch the pad and the silo side by side in a <span class="nb">2-D</span> launch scene drawn from the run's recorded time series. It runs on <code>127.0.0.1</code> for this machine only, and <strong>every run launched from it is exploratory, never a finding</strong>: findings come only from committed experiment files run from a clean tree.</p>
+    </div>
+    <div class="app-sec">
+      <figure>
+        <img src="examples/media/app-pad-vs-silo-cold-s1-scene.png" width="1280" height="900" loading="lazy" alt="The app's launch scene 1.3 seconds before release: the pad held down on the left, the silo run on its carriage in the shaft on the right with its stage-1 gauge at 89.96 percent, each panel under the banner EXPLORATORY app run, not a finding">
+        <figcaption><strong>Exploratory, not a finding.</strong> A screenshot of the app from the recorded demo (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/demos/SP2/README.md">docs/demos/SP2</a>, the <code>silo_cold_s1</code> preset), at T−1.30 s: left the pad held down with its engines starting, right the silo run on its carriage 75 m down the shaft with its <span class="nb">stage-1</span> tank at 89.96% (the hatched band is the 41.26 t never loaded). The banner on each panel is the mark every app run carries; the caption under each view names what is drawn and not computed.</figcaption>
+      </figure>
+      <div class="box">
+        <h3>What it does, and what it is not</h3>
+        <ul>
+          <li><code>launchsim app</code>: a form built from the committed experiments (17 presets, every field with its config key and range, every refusal one line under its field), Launch (one at a time, cannot be cancelled), a progress card, a results panel that prints every caveat beside every number, a browser over the results directories on disk, the scene, and an MP4 export of it through ffmpeg.</li>
+          <li><code>launchsim scene</code>: the same scene as a standalone page that plays from the file. The vehicle's path, thrust and mass are replayed from the recorded time series; the spent stage and fairing halves (drag-free coasts), the carriage after release, the attitude while the engines are off and every shape are display-only reconstructions, named on the page and on every video frame. Nothing is re-simulated.</li>
+          <li>A launch writes <code>results/app/&lt;timestamp&gt;/</code>, labelled exploratory with a banner in its summary and no plots. The app's launch of its <code>silo_cold_s1</code> preset gives SP1's 41.26 t and the pad's 26,054.4 kg within 0.002 kg: the same configuration on the same model, a reproduction of the finding above, not new evidence, with all of SP1's caveats.</li>
+          <li>No physics changed in SP2: the recorded payload capacities, SP1's solver and the shipped experiment and vehicle files are pinned unchanged by the tests.</li>
+        </ul>
+        <p class="src">The recorded SP1 pair as a scene: <a href="examples/pad-vs-silo-offload-scene.html">the scene page</a> and <a href="examples/index.html#pad-vs-silo-offload-scene">its video</a> in the gallery (made from the recorded directory, not from an app run). The manual: <a href="manual/07b-app.html">7b. The local app and the launch scene</a> (starting and stopping it, the form group by group, the presets with their expected durations, the keys, the security notes). Phase record: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/phases/SP2-launch-app-2d-scene.md">docs/phases/SP2-launch-app-2d-scene.md</a>.</p>
+      </div>
+    </div>
   </section>
 
   <section class="block" id="results" aria-labelledby="results-h">
@@ -273,7 +305,7 @@
         <h3>Ground power</h3>
         <p class="big">1.725 GW peak</p>
         <p class="sub">drive power at release, after a 2.6 s push. Each launch takes <span class="num">2.249 GJ</span> (<span class="num">1,249.5 kWh</span> of electricity at an assumed 50%), and the facility is 160 m long: a 100 m stroke plus 60 m of braking at 5 g. The facility is sized by power, not energy.</p>
-        <p class="caveat"><strong>Caveat:</strong> the drive force is unbounded, the carriage is massless and the vented shaft has no air drag (which biases energy, peak power and interface force low by about 0.04%, 0.08% and 0.08%).</p>
+        <p class="caveat"><strong>Caveat:</strong> the drive force is unbounded, the carriage is massless and the vented shaft has no air drag (RQ3's own estimate, not a measured value: the missing shaft drag would bias energy, peak power and interface force low by about 0.04%, 0.08% and 0.08%).</p>
         <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a></p>
       </article>
 
@@ -281,7 +313,7 @@
         <h3>Loads on the full stack</h3>
         <p class="big">4.0 g felt</p>
         <p class="sub">by the fully fuelled stack during the push: 3.996 g and 22.49 MN at the interface on the 573.9 t <span class="nb">2-D</span> stack. Rockets normally see such g only near burnout, with nearly empty tanks (the <span class="nb">1-D</span> stage 1 feels 5.71 g at burnout, at 146.87 t).</p>
-        <p class="caveat"><strong>Caveat:</strong> there is no structural model yet. The strengthening this load needs is the open item that decides whether the gain survives (phase SP7, after SP2).</p>
+        <p class="caveat"><strong>Caveat:</strong> there is no structural model yet. The strengthening this load needs is the open item that decides whether the gain survives (phase SP7, next).</p>
         <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-1d.md">RQ3-silo-screening-1d</a></p>
       </article>
 
@@ -385,8 +417,8 @@
         <tbody>
           <tr><td class="phase">Phases 0–2</td><td>Scaffold; the <span class="nb">1-D</span> vertical model with staging and the silo push; the <span class="nb">2-D</span> rotating-Earth ascent to orbit with drag, guidance and payload search. The calibration missed high (+14.3%), accepted and documented.</td><td><span class="label done">Done</span></td></tr>
           <tr><td class="phase">SP1</td><td>Launch settings (silo depth with exit speed, where the thrust ramp starts) and the fuel offload at fixed payload on the planar model: the findings note <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-fuel-offload-2d.md">RQ1-fuel-offload-2d</a> (41.26 t, 10.04% of <span class="nb">stage-1</span> propellant, preliminary and before structural mass), the pre-registered run that reproduces it, and a replay of the full pad against the offloaded silo.</td><td><span class="label done">Done 2026-10-04</span></td></tr>
-          <tr><td class="phase">SP2</td><td>A local app with an animated <span class="nb">2-D</span> launch scene: set depth, ramp start and offload, press Launch, watch pad and silo side by side.</td><td><span class="label wip">Next</span></td></tr>
-          <tr><td class="phase">SP7</td><td>Structural mass for the 4 g full-stack push, charged with a first-order sizing model, and the drive realism that bears on it (a force- and power-limited linear motor and carriage mass; modelled braking and the silo air column are proposed, to be confirmed in its Plan mode), on the planar model. It decides whether the 10% survives. Runs after SP2 and before the <span class="nb">3-D</span> work.</td><td><span class="label planned">Planned</span></td></tr>
+          <tr><td class="phase">SP2</td><td>The local app with the <span class="nb">2-D</span> launch scene (<a href="#app">above</a>): set depth, push, ramp start, startup, offload and penalty, press Launch, watch pad and silo side by side, browse the results on disk, export an MP4; <code>launchsim scene</code> for the standalone page. Every app run exploratory, never a finding; the <code>silo_cold_s1</code> preset reproduces SP1's 41.26 t within 0.002 kg (a reproduction, not new evidence). No physics changed; the recorded payload capacities and SP1's solver are pinned unchanged.</td><td><span class="label done">Done 2026-10-07</span></td></tr>
+          <tr><td class="phase">SP7</td><td>Structural mass for the 4 g full-stack push, charged with a first-order sizing model, and the drive realism that bears on it (a force- and power-limited linear motor and carriage mass; modelled braking and the silo air column are proposed, to be confirmed in its Plan mode), on the planar model. It decides whether the 10% survives. Runs next, before the <span class="nb">3-D</span> work (decision D-SP2-40, 2026-10-07).</td><td><span class="label wip">Next</span></td></tr>
           <tr><td class="phase">SP3</td><td><span class="nb">3-D</span> dynamics, stage 1: a <span class="nb">3-DOF</span> point mass over a rotating sphere, validated against the planar model.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP4</td><td>The launch shown on a globe in the app, and the offload question re-checked on the <span class="nb">3-D</span> model.</td><td><span class="label planned">Planned</span></td></tr>
           <tr><td class="phase">SP5</td><td><span class="nb">3-D</span> dynamics, stage 2: an oblate Earth (ellipsoid and J2).</td><td><span class="label planned">Planned</span></td></tr>
@@ -404,7 +436,8 @@
     <ul class="links">
       <li><a href="manual/index.html"><b>User manual</b><span>Install, run the shipped experiments, write your own experiment and vehicle files, and read what comes out.</span></a></li>
       <li><a href="deck/index.html"><b>Slide deck</b><span>The idea, the model and the results so far, with their caveats, in slides.</span></a></li>
-      <li><a href="examples/index.html"><b>Animation examples</b><span>Replays, videos and GIFs of recorded runs, each with the command that made it.</span></a></li>
+      <li><a href="examples/index.html"><b>Animation examples</b><span>Replays, videos and GIFs of recorded runs, and the launch scene of SP1's pair as a page and a video, each with the command that made it.</span></a></li>
+      <li><a href="manual/07b-app.html"><b>The app and the scene</b><span>How to start the local app, what every field and preset does, the scene's keys, the MP4 export, and why every app run is exploratory.</span></a></li>
       <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/README.md"><b>Findings</b><span>One note per research question, each with a "Caveats (read first)" section, on GitHub.</span></a></li>
       <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator"><b>Repository</b><span>khoks/RocketLaunchOptimizationSimulator: the source, the research brief and the trackers.</span></a></li>
       <li><a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/LICENSE"><b>License: all rights reserved</b><span>Public to read. No permission to copy, modify, share or use, commercially or otherwise. Not open source.</span></a></li>

@@ -306,6 +306,26 @@ pad control (a resolution effect, not a failure) and its run table reads "~inser
 fresh clone the CSVs are not in git: run the experiment first and point the command at the
 new directory.
 
+`launchsim scene` and the app's scene put the pad beside the first solved stage-1 case by
+default (silo_cold_s1 for this directory), so for the scene the offload run is the default
+right panel; `--runs` and the pickers choose any other run of the block
+([7b](07b-app.md#the-scene)).
+
+## The offload fields in the app
+
+The local app's form ([7b](07b-app.md#the-form-group-by-group)) writes a one-case offload
+block from its Propellant group: Full load (no block), Imposed offload (a `fixed` case, one
+of the five keys above) or Solve the largest offload (a `solve` case along `stage1`; the
+`stage2` and `both` modes under its Advanced box, each quoted net of the pad control as a
+property of the vehicle model), with the stage-2 pre-offload, the paired pad and the
+assumed structural penalty as optional fields and the committed `energy` block copied in.
+Every solve runs its pad control, stage 1 included; the pad control is never cached. The
+presets `silo_cold_s1`, `silo_cold_fix5pct`, `silo_cold_fix10pct` and the three penalty rows
+are this file's cases, read from their committed fragments: launched unchanged, each
+reproduces its case's configuration and the page says "a reproduction, not new evidence".
+No sensitivity arm and no sweep can be launched from the form, and every launch is
+exploratory, never a finding.
+
 ## Skipping parts of it
 
 | Command and flag | Effect |

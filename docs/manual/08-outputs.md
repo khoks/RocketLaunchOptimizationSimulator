@@ -1,9 +1,9 @@
 # 8. Outputs
 
-[Manual contents](README.md) · Previous: [7. Commands](07-commands.md) · Next: [9. Reading results](09-reading-results.md)
+[Manual contents](README.md) · Previous: [7b. The local app and the launch scene](07b-app.md) · Next: [9. Reading results](09-reading-results.md)
 
-Every `run` and `sweep` writes a new directory under the results root; nothing is ever
-overwritten. Results are generated, never edited by hand.
+Every `run` and `sweep`, and every launch from the local app, writes a new directory under
+the results root; nothing is ever overwritten. Results are generated, never edited by hand.
 
 ## Where results go
 
@@ -55,9 +55,52 @@ results/<experiment>/<timestamp>/
 
 The flat layout of `baseline/` and of each point holds `summary.md`, `metrics.json`,
 `resolved_config.yaml`, `timeseries.csv`, `events.csv` and `plots/` in one folder. There is
-no top-level `metrics.json` in a sweep directory, so `animate` and `replay` cannot take one
-([11. Troubleshooting](11-troubleshooting.md#animate-and-replay)). Offload cases solved at a
-sweep point write no folder of their own; their results are columns of `sweep_index.csv`.
+no top-level `metrics.json` in a sweep directory, so `animate`, `replay` and `scene` cannot
+take one, and the app's run list shows it as "no scene: sweep"
+([11. Troubleshooting](11-troubleshooting.md#animate-replay-and-scene)). Offload cases solved
+at a sweep point write no folder of their own; their results are columns of `sweep_index.csv`.
+
+## An app launch
+
+A launch from the local app ([7b](07b-app.md#the-exploratory-regime)) writes
+`<results root>/app/<timestamp>/` with the run layout above (`summary.md`, `metrics.json`,
+`resolved_config.yaml`, one folder per run: the pad, the variant and, with an offload, the
+case, its paired pad and the pad control) and **no `plots/`**: an app launch writes no PNG,
+because a plot of an exploratory run would carry no mark; the scene replaces it. What marks
+it:
+
+- `summary.md` opens with the banner `EXPLORATORY app run, not a finding. Launched from the
+  local app's form, not from a committed experiment file, and not pre-registered. Code: the
+  commit imported at server start (<hash>, clean or dirty); working tree at launch: clean or
+  dirty. Do not cite; findings are in docs/findings/. Calibration +14.3%, no structural mass
+  for the push, sweep-optimized, unthrottled.`, followed by which names are reproductions
+  of committed runs and cases and that no sensitivity check ran;
+- `metrics.json` and `resolved_config.yaml` carry `label: exploratory` (the third label
+  value beside the experiment labels of [4](04-experiments.md)); the `git` record holds the
+  launch-time state (`launch_dirty`), the server-start state (`server_start`) and the
+  combined `dirty` flag, says whether the code check was made (`code_check`) and names the
+  commit the experiment files were read from (`basis_commit`; the keys in
+  [metrics.json](#metricsjson));
+- the experiment name is `app`, the variant keeps its committed name only when it
+  reproduces that variant's configuration (else `silo` or `pad_variant`), and a case
+  likewise (else `silo_<tag>`);
+- `replay`, `animate` and `scene` of such a directory prepend one exploratory line to their
+  caveats, and the app's video frames carry it.
+
+Each launch's `summary.md` is tracked in git like every other run's; the rest is local.
+
+## The scene page and the MP4
+
+`launchsim scene` writes one self-contained `.html` page (default
+`./<experiment>_<timestamp>_scene.html`, under the one output rule of
+[7](07-commands.md#where-the-default-output-goes)); the app serves the same page and frames
+it. Its data block holds the selected rows of the runs' time series, the events, the
+display-only coasts of the separated bodies, the caveats and the directory's provenance
+(the git state recorded in the directory). The app's Save-video control writes
+`<experiment>_<timestamp>_<left>-vs-<right>_scene.mp4` (h264, 16:9, the chosen frame rate
+and width) into the folder the app was started from, with the caveat footer on every
+frame ([7b](07b-app.md#save-video-mp4)). Git ignores `*_scene.html` and `*_scene.mp4`, as it
+ignores the default outputs of `animate` and `replay`.
 
 ### sweep_index.csv
 
@@ -139,13 +182,13 @@ UTF-8 JSON with no NaN (non-finite numbers are written as `null`).
 | Key | What it holds |
 |---|---|
 | `experiment`, `timestamp_utc` | Identify the run |
-| `git` | `{hash, dirty, error}`: the commit (12 characters), whether the tree was dirty, and git's message if it failed |
+| `git` | `{hash, dirty, error}`: the commit (12 characters), whether the tree was dirty, and git's message if it failed. An app launch adds `launch_dirty` (the working tree at launch), `server_start` (`{hash, dirty, error}` of the commit imported at server start), `code_check` (the comparison's sentence, or that it was skipped because git was not available at server start) and `basis_commit` (the full hash of the commit the experiment files were read from) ([An app launch](#an-app-launch)); `dirty` is then true if either state was, and `null` if either is unknown |
 | `comparison_basis` | The basis line of the summary header |
 | `baseline` | The baseline's name |
 | `runs` | Per run: every metric, plus `status` and `flags` |
 | `comparison` | Per variant: its comparison with the baseline |
 | `sensitivity` | One record per case: the parameter, the fraction, the value (SI and YAML units), status, flags, the case's metrics and its comparisons |
-| `model`, `label`, `search_budget_id` | 2-D only |
+| `model`, `label`, `search_budget_id` | 2-D only (`label` is `exploratory` for an app launch) |
 | `bounds` | 2-D only: per bound run, its overrides, both runs' metrics and the comparisons with the paired and the unchanged baseline |
 | `cases` | 2-D only: each calibration case's metrics |
 | `offload` | Only with an `offload:` block: the offload record (below) |
@@ -268,7 +311,7 @@ The vehicle dict and every run's dict as it ran: variants merged over the baseli
 shared blocks injected, in the YAML units of the input files (degrees, tonnes, g), with
 `experiment`, `timestamp_utc`, `git`, `comparison_basis` and `baseline`. A run whose vehicle
 differs (a vehicle sensitivity case, a vehicle sweep point) carries its own vehicle dict. A
-2-D file adds `model`, `label`, `bound_runs` and `cases`, and, with an `offload:` block,
+2-D file adds `model`, `label` (`exploratory` for an app launch, [An app launch](#an-app-launch)), `bound_runs` and `cases`, and, with an `offload:` block,
 `offload_runs`: every offload run it wrote, each with its run dict and its offloaded vehicle
 dict (the changed masses restated as `{value, assumed: true, note}`). With `--no-offload`
 `offload_runs` is empty.

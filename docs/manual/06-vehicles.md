@@ -29,6 +29,9 @@ vehicle never looks sourced.
 
 ## Keys
 
+(The display files under `configs/display/`, which the launch scene draws from and the
+run path never reads, are described at the end of this chapter.)
+
 ### Top level
 
 | Key | Required | Meaning |
@@ -121,6 +124,20 @@ reaches 24,700.0 kg (+8.33%), set B 25,416.3 kg (+11.48%). Every 2-D finding res
 gate vehicle and inherits the miss; the fuel-offload note
 ([RQ1-fuel-offload-2d](../findings/RQ1-fuel-offload-2d.md)) repeats its headline case on
 set A as a robustness row (9.10% of stage 1 there, against 10.04% on the gate vehicle).
+
+## Display files (configs/display/)
+
+`configs/display/` holds the shapes the 2-D launch scene draws ([7b](07b-app.md#the-scene)):
+`f9_class.yaml`, the Falcon 9-class geometry (body diameter from the reference area, the
+stage, interstage and fairing lengths that sum to the published 70 m, the fairing diameter,
+the drawn shaft, rings, carriage, rails, mount and clamps), with an `applies_to` list naming
+the four shipped vehicles; and `scene.yaml`, the camera law, the pixel thresholds and the
+proportions of the generic shape drawn for a vehicle no display file lists. Every number is
+written like a vehicle-file quantity, `{value, source}` or `{value, assumed: true, note}`,
+and a bare number or an unknown key is refused. **Nothing in these files enters the model:
+the run path never reads them** (an import guard keeps the display and scene modules out of
+it), and no result changes if they change. `launchsim scene --display PATH` points the
+scene at another folder; the app reads the repository's.
 
 ## Never edit a calibrated file; fork it
 

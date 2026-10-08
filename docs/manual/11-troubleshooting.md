@@ -32,8 +32,9 @@ the folder tree can still hit it.
 `uv run ...`, which runs inside the environment without activating it.
 
 **`uv run --directory DIR` changes the working directory to DIR.** The default outputs of
-`animate` and `replay` go to the working directory, so they land in DIR. Pass `--out` to put
-them somewhere else.
+`animate`, `replay` and `scene` go to the working directory, so they land in DIR, and so
+does the app's MP4 export. Pass `--out` to put a page or video elsewhere; start the app
+from the folder its videos should go to.
 
 **Drive-relative paths are refused.** A vehicle path like `C:configs\x.yaml` (a drive with
 no backslash after the colon) depends on a hidden per-drive current directory, so it is
@@ -44,6 +45,8 @@ refused: `vehicle path 'C:...' is drive-relative and ambiguous; use an absolute 
 `.mp4` needs ffmpeg on `PATH`. Without it the default `animate` output becomes a `.gif`, and
 an explicit `.mp4` stops with
 `error: writing .mp4 needs ffmpeg on PATH (or matplotlib's animation.ffmpeg_path); install ffmpeg or ask for a .gif`.
+The app's Save-video control needs it too: without it the app starts with the line
+`video: MP4 export off (<why>)` and the control says why it is off; everything else works.
 [1. Install](01-install.md#optional-ffmpeg) shows how to check.
 
 ## Configuration errors
@@ -127,23 +130,52 @@ key path.
   `--no-plots`. Sweeps fly every point one after another (there is no parallel option
   yet; backlog B-011).
 
-## animate and replay
+## animate, replay and scene
 
 | Message (shortened) | Cause | Fix |
 |---|---|---|
 | `run directory not found` | Wrong path | Pass `results/<experiment>/<timestamp>` |
 | `... has no metrics.json; pass one results directory` | You passed a sweep directory (it has no top-level `metrics.json`) or a run's subfolder | Pass the directory of a `run` |
-| `... is not an experiment results directory (its metrics.json lists no runs ...)` (replay) | You passed a sweep point folder | Use `run` on the experiment, then replay that directory |
-| `... is a vertical_1d run; animate draws planar_2d runs only` | A 1-D run. animate also says this for a sweep point folder of a 2-D sweep, because a point's `metrics.json` does not record the model | Use a 2-D `run` directory |
+| `... is not an experiment results directory (its metrics.json lists no runs ...)` | You passed a sweep point folder (all three commands say so since SP2) | Use `run` on the experiment, then replay that directory |
+| `... is a vertical_1d run; ... draws planar_2d runs only` | A 1-D run | Use a 2-D `run` directory |
+| `... has FAILED.txt: the run raised before it was written out` (scene) | The directory's run crashed | Pick another directory |
 | `unknown run(s) ...; available: ...` | A name not in the directory | Use one of the listed names |
-| `N runs requested; at most 4 fit one animation` (or replay) | More than four runs | Pick four |
-| `output ... is inside the results tree` | `--out` points into the results root (replay also refuses any folder named `results`) | Write elsewhere |
+| `N runs requested; at most 4 fit ...` | More than four runs | Pick four |
+| `output ... is inside the results tree` | `--out` points into the run's results tree or into any folder named `results`: the one rule of all three commands ([7](07-commands.md#where-the-default-output-goes)) | Write elsewhere |
 | `output folder does not exist` | The `--out` folder is missing | Create it first |
-| `--width must be an even number of pixels >= 320` | Odd or too small | Use an even width of 320 or more |
+| `--width must be an even number of pixels >= 320` | Odd or too small (animate) | Use an even width of 320 or more |
 | `a .gif plays at most 50 fps ...` | `--fps` above 50 for a GIF | Lower it, or write `.mp4` |
 | `... is empty (a failed search writes no trajectory)` | The run's search failed | Pick another run |
 
 On a fresh clone the CSVs are not in git, so the shipped results directories cannot be
-replayed or animated; run the experiment first and use the new directory.
+replayed, animated or drawn as a scene; run the experiment first and use the new directory.
+
+## The app and the scene
+
+Every answer of the app is one line, on the console at start or under the field or control
+it concerns on the page ([7b](07b-app.md)).
+
+| Where | Message (shortened) | Cause | Fix |
+|---|---|---|---|
+| console | `error: port 8765 on 127.0.0.1 is in use or reserved (another launchsim app or another program on that port?); stop it or pass --port N (0 picks a free one)` | The port is busy, or reserved by Windows | Stop the other app, or `--port 0` |
+| console | `error: experiments/silo_offload_2d.yaml not found in a repository above the working directory or the installed package: start the app from a checkout of the repository` | Neither the working directory nor the installed package lies in a checkout | Start it inside the repository, or install the package from a checkout (`uv sync`) |
+| console | `error: configs/display not found in <root>: the scene pages need it` | The checkout lacks the display files | Restore `configs/display/` |
+| console | `video: MP4 export off (<why>)` | No usable ffmpeg (above) | Install ffmpeg; the rest of the app works |
+| the form | one line under a marked field, Launch disabled with `The server refused this form (see the marked field).` | The dry run refused the form: a value outside its range or not a number, a depth deeper than the stroke, a speed above the exit speed, a height at or above the drag-free apex, an offload on a pad-only or failed-ignition launch, a stage-2 or both-stage form without Advanced, a paired pad with a penalty, an imposed mass at or beyond the load | Change the marked field; nothing was written |
+| the form | `Use the form first: this page sends nothing until you do.` | The page was opened from a link on another site and has had no click yet | Click in the form |
+| Launch | `A launch is running: one at a time, and it cannot be cancelled. ...` | A launch is in progress | Wait; the form, the run list and the scene stay usable |
+| Launch | `the code under src, configs, experiments, pyproject.toml or uv.lock differs from the commit the app imported at its start, or git could not compare them: restart the app` | A commit changed one of those since the server started (committing documents or app summaries does not count) | Ctrl+C and start the app again |
+| Launch | `the app server is stopping; no launch starts now` | Ctrl+C was pressed | Start the app again |
+| the job card | `Crashed (FAILED.txt)` with the file's last line | The run raised after its directory was made (a bug, or the server was stopped during the launch) | The directory keeps `FAILED.txt` and no `summary.md`; launch again |
+| the job card | `Complete: the run did not fly` with the kind | A failed search or guidance, for example a height-by-event ramp start just under the drag-free apex (`no_ignition`) | Change the setting; the pad alone is shown |
+| Runs on disk | `no scene: sweep`, `no scene: 1-D`, `no scene: failed`, `no scene: incomplete`, `no scene: unreadable` | The directory holds no planar run with a time series: a sweep, a 1-D run, a crashed, half-written or unreadable directory, or a run whose CSVs are not on disk (a fresh clone) | Open a complete planar `run` directory, or run the experiment first |
+| Save video | the control is off, with its reason | No ffmpeg; or a launch is running; or the directory has no scene | Install ffmpeg; wait for the launch |
+| Save video | the file is named `..._scene-2.mp4` | A file of the default name already exists in the folder the app was started from; the app never overwrites | Nothing to fix; the "Saved:" line names the file written |
+| the console, on Ctrl+Break under `uv run` | the shell reports a failure after `launchsim app: stopped` | `uv` exits with a console-interrupt code (3221225786) although the server stopped cleanly and marked a running launch FAILED (TODO.md KI-037) | Use Ctrl+C to stop the app |
+
+A launch cannot be cancelled from the page; stopping the server with Ctrl+C marks it
+FAILED. A launch into the repository's own `results/` is public once its `summary.md` is
+committed: use `--results-root <a scratch folder>` for anything that is not meant to be
+kept ([7b](07b-app.md#the-exploratory-regime)).
 
 Next: [12. FAQ and glossary](12-faq-glossary.md)

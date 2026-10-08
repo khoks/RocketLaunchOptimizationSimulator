@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Slide Deck · launch-assist-sim</title>
-<meta name="description" content="A 19-slide deck on launch-assist-sim: the fuel-replacement question, the concepts, first-order numbers, prior art, the simulator, calibration, the preliminary 2-D results, what goes against the hypothesis, the preliminary fuel-offload finding with its caveats, and the roadmap. All rights reserved.">
+<meta name="description" content="A 20-slide deck on launch-assist-sim: the fuel-replacement question, the concepts, first-order numbers, prior art, the simulator, calibration, the preliminary 2-D results, what goes against the hypothesis, the preliminary fuel-offload finding with its caveats, and the roadmap. All rights reserved.">
 <meta name="author" content="Rahul Singh Khokhar">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22 viewBox=%220 0 64 64%22 role=%22img%22 aria-label=%22launch-assist-sim%22%3E%3Ctitle%3Elaunch-assist-sim%3C/title%3E%3CclipPath id=%22fc%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2212%22/%3E%3C/clipPath%3E%3CclipPath id=%22fr%22%3E%3Cpath d=%22M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V47H28Z%22/%3E%3C/clipPath%3E%3Cg clip-path=%22url(%23fc)%22%3E%3Crect width=%2264%22 height=%2241%22 fill=%22%232d5f8f%22/%3E%3Crect y=%2241%22 width=%2264%22 height=%2223%22 fill=%22%231c2226%22/%3E%3Crect x=%2225%22 y=%2241%22 width=%2214%22 height=%2223%22 fill=%22%232b3238%22/%3E%3Cpath d=%22M0 42.25H25M39 42.25H64%22 stroke=%22%23b09a78%22 stroke-width=%222.5%22/%3E%3Cpath d=%22M19.5 48.5h5.5M39 48.5h5.5%22 stroke=%22%23f08a4b%22 stroke-opacity=%221.0%22 stroke-width=%223.6%22/%3E%3Cpath d=%22M19.5 56.5h5.5M39 56.5h5.5%22 stroke=%22%23f08a4b%22 stroke-opacity=%220.5%22 stroke-width=%223.6%22/%3E%3Cpath d=%22M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V47H28Z%22 fill=%22%23fbfbf8%22/%3E%3Crect x=%2233.6%22 y=%224%22 width=%223%22 height=%2244%22 fill=%22%23dfe4e1%22 clip-path=%22url(%23fr)%22/%3E%3Crect x=%2228%22 y=%2227%22 width=%228%22 height=%222.2%22 fill=%22%231c2226%22/%3E%3Cpath d=%22M0 41V52A12 12 0 0 0 12 64H52A12 12 0 0 0 64 52V41%22 fill=%22none%22 stroke=%22%234c565c%22 stroke-width=%225%22/%3E%3C/g%3E%3C/svg%3E" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -364,6 +364,10 @@ table.pa td:nth-child(4) { color: var(--ink-2); }
 .s-road .road .st { font-size: 15px; }
 .s-road .card .small { font-size: 17px; line-height: 1.5; }
 .s-fly .small { font-size: 16.5px; }
+.s-app .shot { margin: 0; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.s-app .shot img { width: 100%; height: auto; display: block; border: 1px solid var(--rule); border-radius: 6px; }
+.s-app .facts { font-size: 15.5px; }
+.s-app .facts li { margin: 0 0 7px; }
 .s-more .linkcards ul { font-size: 17px; }
 .s-scr .body { align-content: center; }
 .s-ag .against { font-size: 14.5px; line-height: 1.34; }
@@ -589,8 +593,8 @@ html.pp .controls, html.pp .progress { display: none; }
     <p class="sub">A vertical maglev silo pushes a Falcon 9-class rocket out of the ground at about 77 m/s, before or while its engines light. The simulator measures what that is worth, always against the same rocket launched from a pad.</p>
     <div class="chips">
       <span class="badge accent">Preliminary results</span>
-      <span class="badge">Phases 0–2 and SP1 done · SP2 next</span>
-      <span class="badge">Status as of 4 October 2026</span>
+      <span class="badge">Phases 0–2, SP1 and SP2 done · SP7 next</span>
+      <span class="badge">Status as of 7 October 2026</span>
     </div>
     <p class="author">Rahul Singh Khokhar <span>· October 2026</span></p>
   </div>
@@ -956,7 +960,7 @@ html.pp .controls, html.pp .progress { display: none; }
           <div class="count"><span class="v">269</span><span class="k">at the Phase 1 gate</span></div>
           <div class="count"><span class="v">951</span><span class="k">928 fast + 23 slow at the Phase 2 handoff</span></div>
         </div>
-        <p class="facts" style="margin-top:12px">Every run writes <code>summary.md</code>, <code>metrics.json</code>, CSV time series and plots. <code>animate</code> makes an MP4 or GIF; <code>replay</code> an interactive HTML page.</p>
+        <p class="facts" style="margin-top:12px">Every run writes <code>summary.md</code>, <code>metrics.json</code>, CSV time series and plots. <code>animate</code> makes an MP4 or GIF; <code>replay</code> an interactive HTML page; <code>scene</code> the <span class="nb">2-D</span> launch scene as a page; <code>app</code> serves the local app with the scene (slide 18).</p>
       </div>
     </div>
   </div>
@@ -1173,7 +1177,7 @@ html.pp .controls, html.pp .progress { display: none; }
       </ul>
     </div>
   </div>
-  <p class="cav"><b>Assumptions</b>The rows add an assumed dry mass to the silo run only; they are not a sized structure. No structural model exists yet: phase SP7, after SP2, decides whether the headline survives.</p>
+  <p class="cav"><b>Assumptions</b>The rows add an assumed dry mass to the silo run only; they are not a sized structure. No structural model exists yet: phase SP7, the next phase, decides whether the headline survives.</p>
   <footer class="foot"><span class="src">Source: docs/findings/RQ1-fuel-offload-2d.md, "Structural penalty rows and break-even", "Energy" and "Max-Q and loads"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
@@ -1187,15 +1191,15 @@ html.pp .controls, html.pp .progress { display: none; }
       <div class="st done"><span class="when">Done</span><b>Phase 1</b><span>Vertical <span class="nb">1-D</span> model and the silo push</span></div>
       <div class="st done"><span class="when">Done</span><b>Phase 2</b><span><span class="nb">2-D</span> ascent to orbit; calibration miss accepted</span></div>
       <div class="st done"><span class="when">Done · 4 Oct</span><b>SP1</b><span>Launch settings and fuel offload at fixed payload (planar)</span></div>
-      <div class="st now"><span class="when">Next</span><b>SP2</b><span>Local app with a <span class="nb">2-D</span> launch scene</span></div>
-      <div class="st"><span class="when">Planned</span><b>SP7</b><span>Structural mass for the 4 g push; force-limited drive</span></div>
+      <div class="st done"><span class="when">Done · 7 Oct</span><b>SP2</b><span>Local app with a <span class="nb">2-D</span> launch scene (slide 18)</span></div>
+      <div class="st now"><span class="when">Next</span><b>SP7</b><span>Structural mass for the 4 g push; force-limited drive</span></div>
       <div class="st"><span class="when">Planned</span><b>SP3</b><span><span class="nb">3-D</span> dynamics: point mass over a rotating sphere</span></div>
       <div class="st"><span class="when">Planned</span><b>SP4</b><span><span class="nb">3-D</span> scene; headline re-checked in <span class="nb">3-D</span></span></div>
       <div class="st"><span class="when">Planned</span><b>SP5</b><span>Oblate Earth: J2 and the ellipsoid</span></div>
       <div class="st"><span class="when">Planned</span><b>SP6</b><span><span class="nb">6-DOF</span> verification fly-out</span></div>
     </div>
     <div class="cols-3" style="display:grid;gap:16px">
-      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small">Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g push. <span class="strong">This decides whether the headline survives:</span> about 8.5 t of assumed <span class="nb">stage-1</span> dry mass cancels SP1's 41.26 t (extrapolated). The structural mass and the linear motor are now SP7, after SP2; the rest is not scheduled.</p></div>
+      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small">Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g push. <span class="strong">This decides whether the headline survives:</span> about 8.5 t of assumed <span class="nb">stage-1</span> dry mass cancels SP1's 41.26 t (extrapolated). The structural mass and the linear motor are SP7, the next phase (SP2 closed 7 October 2026); the rest is not scheduled.</p></div>
       <div class="card"><h3>README Phase 5 · fair comparison</h3><p class="small">Optimal-control ascent for every configuration; the headline results re-run with optimized guidance instead of sweep-optimized.</p></div>
       <div class="card"><h3>README Phase 6 · hobby scale</h3><p class="small">A RocketPy <span class="nb">6-DOF</span> model of a real rocket with an assist before the rail; baseline apogee within ±5% of RocketPy.</p></div>
     </div>
@@ -1222,19 +1226,41 @@ html.pp .controls, html.pp .progress { display: none; }
       <p class="small">At 8 s after release the silo stack is at 578 m and 85 m/s; the pad at 120 m and 31 m/s.</p>
       <h3 style="margin-top:6px">Animation examples</h3>
       <ul class="small" style="line-height:1.45">
-        <li><span class="strong">SP1 fuel offload</span>: the pad against the offloaded silo at the same payload and orbit, and the offloaded silo against its paired pad (interactive replays).</li>
+        <li><span class="strong">SP1 fuel offload</span>: the pad against the offloaded silo at the same payload and orbit, and the offloaded silo against its paired pad (interactive replays), and the same pair as SP2's launch scene (a page and a video in the gallery, made from the recorded directory; the app itself is on the next slide).</li>
         <li><span class="strong">Pad against cold-start silo</span>: both flown to a 200 km orbit.</li>
         <li><span class="strong">Ignition timing</span>: four ways to light stage 1.</li>
         <li><span class="strong">Failed ignition</span>: the push with no engines, back at the mouth at 15.7 s.</li>
       </ul>
-      <p class="small">Videos, GIFs and interactive replays: <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/">khoks.github.io/…/examples/</a></p>
+      <p class="small">Videos, GIFs, interactive replays and the launch scene: <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/">khoks.github.io/…/examples/</a></p>
       <p class="xsmall">Point-mass planar model, sweep-optimized and unthrottled, gate vehicle +14.3% high, no structural mass for the 4 g push. A model replay, not a design result.</p>
     </div>
   </div>
   <footer class="foot"><span class="src">Source: results/silo_screening_2d/20260930T175743Z, pad and silo_cold timeseries.csv and events.csv · site/examples/</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 18 ─ Read more -->
+<!-- 18 ─ The app and the scene -->
+<section class="slide s-app" data-title="The app and the scene">
+  <p class="kicker">SP2 · the local app and the launch scene</p>
+  <h2>Set the silo, press Launch, watch pad and silo side by side</h2>
+  <div class="badges"><span class="badge accent">Every app run exploratory · never a finding</span><span class="badge">Local only · 127.0.0.1</span><span class="badge">Done · 7 October 2026</span></div>
+  <div class="body cols-ab" style="grid-template-columns:minmax(0,600px) minmax(0,1fr);gap:28px">
+    <figure class="shot">
+      <img src="../examples/media/app-pad-vs-silo-cold-s1-scene.png" width="1280" height="900" alt="The app's launch scene 1.3 seconds before release: the pad held down on the left, the silo run on its carriage in the shaft on the right with its stage-1 gauge at 89.96 percent, each panel under the banner EXPLORATORY app run, not a finding">
+      <figcaption class="xsmall"><span class="strong">Exploratory, not a finding.</span> An app screenshot from the recorded demo (silo_cold_s1 preset) at T−1.30 s: left the pad held down, right the silo run on its carriage with 41.26 t not loaded (the hatched band on its <span class="nb">stage-1</span> gauge). The banner on each panel marks every app run.</figcaption>
+    </figure>
+    <div class="stack-v" style="gap:10px">
+      <ul class="facts">
+        <li><code>launchsim app</code>: a form built from the committed experiments (depth, push, ramp start, startup, offload, penalty; 17 presets), Launch, a progress card, a results panel with every caveat beside every number, a browser over the results on disk, the scene, an MP4 export.</li>
+        <li><code>launchsim scene</code>: the same scene as a standalone page. The vehicle's path, thrust and mass are replayed from the recorded time series; the spent stage, the fairing halves, the carriage after release and the unpowered attitude are display-only reconstructions, named on the page and on every video frame.</li>
+        <li>Every launch writes <code>results/app/</code>, labelled exploratory with a banner and no plots; findings come only from committed experiment files run from a clean tree. No physics changed in SP2.</li>
+      </ul>
+      <p class="cav"><b>Reproduction, not evidence</b>The app's launch of its <code>silo_cold_s1</code> preset gives SP1's 41.26 t and the pad's 26,054.4 kg within 0.002 kg: the same configuration on the same model, so a reproduction of slide 13, not new evidence, with all of its caveats (gate vehicle +14.3% high, no structural mass for the 4 g push, sweep-optimized and unthrottled).</p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: docs/demos/SP2/README.md (launch 3) · docs/manual/07b-app.md · docs/phases/SP2-launch-app-2d-scene.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 19 ─ Read more -->
 <section class="slide s-more" data-title="Read more">
   <p class="kicker">Read more</p>
   <h2>Where the full numbers and their caveats live</h2>
@@ -1246,15 +1272,15 @@ html.pp .controls, html.pp .progress { display: none; }
       <ul>
         <li><span class="strong">README.md</span>: the research brief, prior art, hand numbers and results so far.</li>
         <li><span class="strong">docs/findings/</span>: one note per research question, caveats first.</li>
-        <li><span class="strong">docs/phases/</span>: the program board, SP1 to SP6.</li>
+        <li><span class="strong">docs/phases/</span>: the program board, SP1 to SP7; <span class="strong">docs/demos/</span>: the recorded demo of each closed phase.</li>
       </ul>
     </div>
     <div class="card">
       <h3>On the site</h3>
       <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/">khoks.github.io/<wbr>RocketLaunchOptimizationSimulator</a>
       <ul>
-        <li><span class="strong">User manual</span>: install, run, experiment and vehicle files, outputs.</li>
-        <li><span class="strong">Animation examples</span>: replays of the recorded <span class="nb">2-D</span> runs.</li>
+        <li><span class="strong">User manual</span>: install, run, the app and the scene, experiment and vehicle files, outputs.</li>
+        <li><span class="strong">Animation examples</span>: replays and the launch scene of the recorded <span class="nb">2-D</span> runs.</li>
         <li><span class="strong">This deck</span>, also as a <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/deck/launch-assist-sim-deck.pdf" style="font-family:inherit;font-size:inherit">PDF</a>.</li>
       </ul>
     </div>
@@ -1264,6 +1290,7 @@ html.pp .controls, html.pp .progress { display: none; }
       <div class="cmd">uv sync</div>
       <div class="cmd"><span class="nw">uv</span> <span class="nw">run</span> <span class="nw">python</span> <span class="nw">-m</span> <span class="nw">launchsim</span> <span class="nw">run</span> <span class="nw">experiments/</span><wbr><span class="nw">silo_screening_2d.yaml</span></div>
       <div class="cmd"><span class="nw">uv</span> <span class="nw">run</span> <span class="nw">python</span> <span class="nw">-m</span> <span class="nw">launchsim</span> <span class="nw">replay</span> <span class="nw">results/</span><wbr><span class="nw">silo_screening_2d/</span><wbr><span class="nw">&lt;timestamp&gt;</span> <span class="nw">--runs</span> <span class="nw">pad</span> <span class="nw">silo_cold</span></div>
+      <div class="cmd"><span class="nw">uv</span> <span class="nw">run</span> <span class="nw">python</span> <span class="nw">-m</span> <span class="nw">launchsim</span> <span class="nw">app</span></div>
       <p class="xsmall">Reading is free. Any other use needs written permission (next slide).</p>
     </div>
   </div>
@@ -1282,7 +1309,7 @@ html.pp .controls, html.pp .progress { display: none; }
   <footer class="foot"><span class="src">Source: README.md, "Quick start" · docs/manual/ · docs/findings/README.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 19 ─ License -->
+<!-- 20 ─ License -->
 <section class="slide dark" data-title="License">
   <p class="kicker">License</p>
   <h2>All rights reserved</h2>
@@ -1307,7 +1334,7 @@ html.pp .controls, html.pp .progress { display: none; }
 
 <nav class="controls" id="controls" aria-label="Slide controls">
   <button type="button" id="prev" aria-label="Previous slide">‹ Prev</button>
-  <span class="count-now" id="countNow" aria-live="polite">1 / 19</span>
+  <span class="count-now" id="countNow" aria-live="polite">1 / 20</span>
   <button type="button" id="next" aria-label="Next slide">Next ›</button>
   <span class="sep" aria-hidden="true"></span>
   <button type="button" id="themeBtn" aria-label="Switch colour theme">auto</button>

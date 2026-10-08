@@ -8,8 +8,10 @@ the SP1 session (step 10, the close-out) after decision D-SP1-18, which added th
 and ordered it after SP2 and before the 3-D phases SP3-SP6. The number is an identifier,
 not a position (board, "How to add a phase"). Nothing in this file has been built or run.
 No design input exists under docs/phases/inputs/ yet: SP7's own Plan mode makes the
-design and saves it there. The session before SP7 (SP2's close-out in the planned order)
-re-checks sections 4, 6 and 13 against the code as it then is and finalises the prompt.
+design and saves it there. Sections 4, 6 and 13 were re-checked against the code at
+commit 705025f on 2026-10-07 by SP2's close-out (protocol section 7, item 8): the
+corrections are listed at the top of section 6, the entry criteria carry their state, and
+the prompt of section 13 is final.
 
 This file is a brief, not the detailed design. Where it offers options, it gives a
 recommendation; SP7's Plan mode settles them with the user before any code is written.
@@ -74,7 +76,9 @@ cancels most of the offload). That result is reported as plainly as any other (C
 5. `linear_motor`: F = min(F_max, P_max / sdot) with efficiency eta, a stated force rise
    time (finite jerk), carriage mass, and release at s = L or at a target speed
    (CLAUDE.md, "Physics model", items 2 and 3). It replaces the `PlannedAssistConfig`
-   placeholder for that key (config.py 78, 708).
+   placeholder for that key (config.py 78, 713; the refusal at 723; tests/test_config.py
+   219-220 and 283-289 pin the placeholder and change with it; appform.py 187 builds
+   `ASSIST_UNION_TAGS` from `PLANNED_MODELS` and follows automatically).
 6. Modelled carriage braking after release (distance, time, energy) instead of the closed
    form added to the facility length, and a sealed-shaft air column (adiabatic trapped
    column) beside the vented default. Proposed, and the first items to cut if the session
@@ -86,6 +90,15 @@ cancels most of the offload). That result is reported as plainly as any other (C
 8. A pre-registered experiment (committed before it is run), the runs from a clean
    commit, the findings, and SP7's close per the protocol (public face, SP3's file
    fact-checked, handoff, memory).
+9. KI-030 (TODO.md, medium, owner SP7 since SP2 step A0): the config accepts `true`,
+   numeric strings, inf and NaN for several numbers. Closed on the existing models by
+   strict types, `allow_inf_nan=False` and bounds, which validate and change no resolved
+   dict (section 5.10, risk R4): `ConstantAccelConfig` (config.py 618: `stroke_m`,
+   `net_accel_g`, `brake_decel_g`, `carriage_mass_t`), `TrackConfig` (589:
+   `exit_altitude_m`), the ignition and startup models (`t_ign_s`, `t_ramp_s`) and
+   `OffloadCaseConfig` (1624: `paired_pad`, the fixed block's `stage1_fraction`);
+   `LinearMotorConfig` is born with them. Proposed for step S4's config change; Plan mode
+   confirms (added at the re-check of 2026-10-07).
 
 **Out of scope (each has a home)**
 
@@ -104,9 +117,14 @@ cancels most of the offload). That result is reported as plainly as any other (C
 - A resized vehicle (tanks shrunk around the offload; RQ7) and interface hardware on
   stage 2.
 - Throttling and a max-Q constraint (TODO.md B-003, README Phase 5).
-- The 3-D models (SP3-SP6) and the app's form: SP2's app exposes the penalty field
-  (D-SP1-04), not the structural model; adding it to the form is a backlog item unless the
-  user asks for it in Plan mode.
+- The 3-D models (SP3-SP6) and the app's form: SP2's app offers `stage1_dry_mass_added_t`
+  as its only structural input (appform.py 398-405, "Assumed structural penalty, stage-1
+  dry mass added (0: none)", D-SP1-04) and a `constant_accel` push only (appform.py
+  104-105); a modelled-structure switch or a linear-motor launch in the form is a backlog
+  item unless the user asks for it in Plan mode (section 10). The app copies the shared
+  blocks and the baseline of experiments/silo_offload_2d.yaml at server start, so a
+  change to that file changes what the app launches: allowed, but stated (entry
+  criterion 8).
 - Any change to a validated number: the pad baseline, the 1-D golden outputs, the planar
   digests, SP1's recorded runs (section 5.10).
 
@@ -138,33 +156,101 @@ Cited by id; the text is in TODO.md's decisions log.
 
 ## 4. Entry criteria
 
-1. SP2 is "done" on the program board (the planned order, D-SP1-18). SP7 uses nothing from
-   SP2: if the user moves SP7 ahead of SP2, SP1 "done" is enough, the move is logged as a
-   decision in TODO.md, and SP2's file is re-checked afterwards (SP7 edits config.py, the
-   assist package and the offload reporting, which SP2's inventory names).
+Checked 2026-10-07 at 705025f by SP2's close-out (protocol section 7, item 8); each item
+carries its state at that check. SP7's start checklist (protocol section 3) re-runs entry
+criteria 2, 3, 6 and 7 against the HEAD it finds: the Close SP2 commit follows 705025f, so
+the inventory's stated commit is not that HEAD and protocol section 3, item 5 re-checks
+section 6 (the prompt of section 13 asks for it).
+
+1. SP2 is "done" on the program board (the planned order, D-SP1-18, confirmed at SP2's
+   close by D-SP2-40). SP7's physics uses nothing from SP2's app, but SP2's readers now
+   display what SP7 produces and the app copies an experiment file (item 8), so the order
+   matters: had the user moved SP7 ahead of SP2, SP1 "done" would have been enough, logged
+   as a decision, with SP2's file re-checked afterwards.
+   State at this check (705025f, before the close-out's remaining items): the board row
+   and the SP2 phase file still read "in progress (session 2026-10-05)"; SP2's session
+   log ended at step A7 part 2 with step A8 (the exit-criteria gate, the full suite, this
+   fact-check, the handoff) named as next and its section 8 held no pass/fail record;
+   docs/handoff/NEXT_SESSION.md was still SP1's (closing commit 5007515). The last commit
+   that changed code or results was 3a1b243 (the demo launches); HEAD was 705025f (SP2
+   step A7's tracker commit, D-SP2-40). Protocol section 7, items 1, 4, 5 and 9 record
+   the 17-criterion gate in SP2's section 8, set the board to "done (2026-10-07, commit
+   3a1b243)" and write the new handoff naming 3a1b243, all before the Close SP2 commit;
+   the start checklist confirms the three, and this criterion fails if any is missing.
 2. Clean tree; HEAD is the bookkeeping commit that follows the closing commit the handoff
-   names (SESSION_PROTOCOL.md section 3, item 3).
+   names (SESSION_PROTOCOL.md section 3, item 3), subject "Close SP2: trackers, handoff,
+   next phase file"; `git diff --stat <closing commit> HEAD` touches only docs/, TODO.md,
+   CLAUDE.md, README.md, .gitignore and site/ (the public-face refresh, as at SP2's start).
+   State: the tree was clean at 705025f when this check ran; the start checklist confirms
+   the subject and the ancestry.
 3. Fast suite green (`uv run pytest -q -m "not slow"`); ruff clean; the 1-D golden tier,
    SP1's planar digest pin
-   (`tests/test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`)
-   and the planar output capture
-   (`tests/test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`)
-   pass; the pad and silo_cold payload capacities reproduce 26,054.3962 and 27,553.2271 kg
-   within 0.002 kg (SP1 step 5 gate).
+   (`tests/test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`,
+   323; `PLANAR_EXPERIMENTS` at 62) and the planar output capture
+   (`tests/test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`,
+   1146) pass; the pad and silo_cold payload capacities reproduce 26,054.3962 and
+   27,553.2271 kg within 0.002 kg (SP1 step 5 gate).
+   State: the last recorded fast run before the close is 1678 passed, 41 deselected (SP2
+   step A7 part 1, 7cb440f); the close-out's full-suite count is recorded in the handoff
+   written at the close (docs/handoff/NEXT_SESSION.md, section 7). The two
+   capacities are pinned at full precision in tests/data/silo_screening_2d_record.json
+   (pad 26054.396243494975 kg, silo_cold 27553.227114190096 kg; git 7ad381f, the recorded
+   results/silo_screening_2d/20260930T175743Z) and re-solved within `PAYLOAD_TOL_KG` =
+   0.002 kg by the slow
+   `tests/test_silo_screening_record.py::test_recorded_payload_capacity_reproduces`
+   (40-57); tests/test_planar_pipeline.py 1290-1322 checks the record's provenance
+   (`RECORDED_SILO_COLD_PAYLOAD_KG` at 1293). SP2's step A4 gate reproduced both and the
+   headline offload (41,262.908 kg) through the app's launch function with every
+   difference 0.000 kg (6f22046); the app pins them as `SP1_HEADLINE` with
+   `REPRODUCTION_TOL_KG` 0.002 kg (app.py 1420, 1542).
 4. SP1's offload solver and pipeline exist as SP1 left them: `OffloadProblem` built from a
    problem factory (offload.py 151, 256), the `offload:` block with
-   `stage1_dry_mass_added_t` (config.py 1637), the cross-vehicle decomposition with a
+   `stage1_dry_mass_added_t` (config.py 1642), the cross-vehicle decomposition with a
    dry-mass difference (compare.py 1534), and the slow test that re-solves the headline
    (`tests/test_offload.py::test_gate_silo_offload_recorded_run_and_verification`, 795).
+   State: confirmed at 705025f. SP2 changed none of offload.py, vehicle.py, sim.py,
+   results_io.py, compare.py, search.py, guidance.py, dynamics.py, losses.py, metrics.py,
+   metrics_planar.py, the phases and assist packages, tests/test_offload.py,
+   tests/test_config.py, tests/test_config_planar.py, tests/test_planar_pipeline.py, the
+   experiment files or the vehicle files (`git diff --stat a5b8133 705025f`). Of the
+   inventoried run-path files only config.py (+13 lines net, the `exploratory` label) and
+   summary.py (+191 lines net, 205 changed; the exploratory banner) moved.
 5. SP1's run data on disk for comparison: `results/silo_offload_2d/20261003T112934Z` (the
    headline and the penalty rows) and `results/silo_offload_2d/20261003T112949Z` (sweep 2,
    the fixed-exit-speed strokes), or re-runs of them from SP1's closing commit (CSVs are
    not tracked).
+   State: both on disk at this check. 20261003T112934Z holds metrics.json,
+   resolved_config.yaml, summary.md, plots/ and the run folders (pad, the three pad
+   controls pad__offload_stage1, _stage2 and _both, silo_cold, silo_cold_200m,
+   silo_cold_200m_s1, silo_cold_both, silo_cold_fix5pct, silo_cold_fix10pct, silo_cold_s1,
+   silo_cold_s1__pad, silo_cold_s1_dry+2t, +4t and +8.1t, silo_cold_s1_s2pre2t,
+   silo_cold_s2, ...), each with timeseries.csv and events.csv (silo_cold_s1 checked);
+   20261003T112949Z holds baseline/, sweep_1 to sweep_5 and summary.md. results/app/
+   holds SP2's six demo launches (20261007T125946Z to 20261007T131031Z): exploratory,
+   never cited (D-SP2-37).
 6. Section 6 of this file has been re-checked at the current HEAD and its commit and date
-   updated by the session before SP7. SP2 edits `plots.py`, `replay.py`, `cli.py` and adds
-   modules; it may touch `config.py` (a display block) and `results_io.py` (a hook) if its
-   Plan mode chose to.
+   updated by the session before SP7.
+   State: done 2026-10-07 at 705025f (the block at the top of section 6). SP2 edited
+   plots.py, replay.py, cli.py, summary.py and config.py (the label value only; no display
+   block, D-SP2-18) and added modules; it did not touch results_io.py.
 7. `gh` is authenticated and the last Pages deployment is green (push cadence, D-SP1-15).
+   State: checked by SP2's close-out at its push; the handoff written at the close records
+   the Pages run (docs/handoff/NEXT_SESSION.md, section 1).
+8. SP2's app and scene exist and SP7 keeps the app's basis valid (added at the re-check).
+   `launchsim app` (app.py; cli.py 217) copies the six shared blocks and the baseline of
+   experiments/silo_offload_2d.yaml, which must agree with experiments/silo_screening_2d.yaml,
+   at server start (`app.OFFLOAD_EXPERIMENT` 164, `load_basis` 296 reads them at the
+   server-start HEAD; `appform.make_basis` 582-633 checks the agreement and that every
+   preset names a committed run or case). A change to silo_offload_2d.yaml therefore
+   changes what the app launches and ends the app's "reproduction of SP1's headline" mark
+   (`app.SP1_HEADLINE` 1420; `app.sp1_files_same` 2632-2657 and `app.sp1_comparison`
+   2660): allowed, as a pre-registration amendment, but stated in the
+   step that makes it, in the manual and in the findings; SP7's own experiment is a new
+   file, so the default leaves the basis untouched. The display files under
+   configs/display/ are never read by the run path (tests/test_scene.py 1373). The label
+   `exploratory` (config.py 157-164) is reserved for app runs; no SP7 experiment uses it.
+   State: `launchsim scene` and `launchsim app` present at 705025f with their tests;
+   the demo record in docs/demos/SP2/.
 
 ## 5. Design
 
@@ -194,6 +280,36 @@ Falcon 9's liftoff thrust, and the hydrostatic pressure at the tank bottoms rise
 
 Both notes say plainly that the needed mass is unknown. SP7's model supplies an estimate
 of it with an uncertainty band; it does not make the rows obsolete.
+
+Where the code and the documents say "nothing structural" today (re-check of 2026-10-07
+at 705025f). Each is a sentence SP7's modelled structure must change, at its source,
+because SP2 step A1a made the replay page and the scene share one caveat source
+(D-SP2-23) and regenerated the gallery pages when it reworded them: the run path's
+`summary.OFFLOAD_CAVEATS` (summary.py 1680-1682: "no structural mass is charged for the
+push load ...; the penalty rows add an assumed stage-1 dry mass, a parametric
+assumption, not a sized structure"), `sim.offload_penalty_assumption` (sim.py
+1690-1696: "not a structure sized for the push load", quoted in docs/physics.md
+5997-6000) and the note `config.offload_overrides` (config.py 2671) writes on the penalty
+case's stage-1 dry mass (2702-2705: "an assumed structural penalty, not a sized
+structure"; it enters the case's resolved vehicle dict, outside the digest pin, which
+covers the four pinned experiments and they declare no offload block,
+tests/planar_pin_support.py 142-143); the replay and scene pages'
+`replay.uncharged_structure_sentence` (replay.py 966: "No structural mass is charged for
+the assist load case") and
+`replay.penalty_structure_sentence` (1004-1008: "a parametric assumption, not a sized
+structure; no structural model exists"), composed by `replay.structure_caveat` (1011);
+the animation footnote `plots.animation_caveats` (plots.py 1069: "no sized structural
+mass for the <peak> g push load", 1070-1074 the penalty-row clause); the exploratory
+banner's `EXPLORATORY_PUSH_CAVEAT` (summary.py 761: "no structural mass for the push");
+the manual (docs/manual/05b-offload.md 100: "not a sized structure"; 12-faq-glossary.md,
+the glossary row **penalty row**, line 191 at the close: "a parametric stand-in for
+structure, not a sized one"); and the app form's field text
+(templates/app.html 1216: "a parametric stand-in for the structure a push needs, not a
+sized structure"). Tests pin this wording in eight files (section 6: the six SP2 tests,
+tests/test_offload_pipeline.py 232 on config.py's note and tests/test_app_page.py 1937 on
+the form's text), so rewording it is a deliverable of step S3 with an
+honesty review, not a side effect. A run with the structure charged says what was charged
+and by which model; a run without it keeps today's sentences.
 
 ### 5.2 The load case the push adds
 
@@ -319,6 +435,25 @@ P_max, rise time, carriage mass) are design choices marked `assumed: true`, chos
 mode by a rule stated before any run (for example: the limits that reach the headline's
 76.7 m/s at 100 m with a stated rise time), never adjusted toward a better offload.
 
+What SP2's readers do with a drive that is not `constant_accel` (re-check of 2026-10-07):
+`replay.drive_caveat` (replay.py 1172; docstring 1177-1195, "no bias direction is
+claimed" at 1190-1191) already puts such a run in its other-drive branch: the
+classification loop 1209-1232 files a run whose `assist.model` is not `constant_accel`
+under `others`, and the clause built for it at 1278-1291 says the carriage mass and the
+shaft drag change the release speed and that their size "is not established here";
+tests/test_caveat_wording.py 479-489 and 689-712 exercise it with `model: linear_motor`.
+The replay labels read the push's acceleration from the metric `net_accel_g`, else the
+assist block's `net_accel_g` (`replay.push_accel_g` 699-706); the scene reads
+`net_accel_mps2`, `exit_speed_mps` and `stroke_m` from the metrics, else the assist
+block, and derives the missing one of acceleration and exit speed from the stroke
+(scene.py 513-528; `PUSH_SETTING_METRICS`, metrics_planar.py 933, names the push as a
+setting). Under a
+linear motor the exit speed is a result and the acceleration is not constant, so step S4
+decides what those metrics hold for it (for example the mean acceleration and the
+measured exit speed, named as such) and its gate looks at the replay and scene pages of a
+linear-motor run; the scene's carriage and tank levels come from the time series and need
+nothing new.
+
 ### 5.8 Experiments (proposed; pre-registered in step S6)
 
 1. The headline case (3 g0, 100 m, cold start, stage-1 solve) with the modelled structure:
@@ -370,6 +505,11 @@ the three SP1 commands running at once); Plan mode budgets the design against th
   models (`LinearMotorConfig`, the structure file) or are left out of `model_dump` when
   unset, as SP1 did for `exit_speed_mps`; a default added to `ConstantAccelConfig` would
   change every resolved dict and break the digest pin (the same risk as SP3's risk 5).
+- `templates/replay.html`'s sha256 (the template is frozen since SP2, D-SP2-34; KI-019
+  and KI-031 wait for the phase that edits it, which SP7 does not) and the six committed
+  gallery pages under site/examples/ (five replay pages and the scene page
+  pad-vs-silo-offload-scene.html, D-SP2-23), unless a deliberate wording change regenerates them
+  with the diff recorded, as SP2 step A1a did (added at the re-check of 2026-10-07).
 
 ### 5.11 Module layout (proposed)
 
@@ -382,6 +522,10 @@ the three SP1 commands running at once); Plan mode budgets the design against th
 | `src/launchsim/results_io.py`, `summary.py`, `compare.py`, `metrics_planar.py` | structural rows in the offload block, metrics keys, assumptions; the decomposition already takes a dry-mass difference |
 | `configs/structures/` (new) | coefficients and mass breakdown, sourced or assumed |
 | `docs/physics.md` | sections for the structural model, the linear motor, braking and the air column; the assumptions; the test-to-equation map |
+| `src/launchsim/replay.py`, `plots.py`, `summary.py` (the exploratory banner), `config.py` (the penalty note of `offload_overrides`, 2702-2705), `templates/app.html` (the form's field text, 1216), `docs/manual/` | the structural sentences of section 5.1 reworded at source for a run with the structure charged, and the tests of section 6 that pin them (added at the re-check of 2026-10-07) |
+| `src/launchsim/run_data.py` (SP2, read-only reader) | unchanged unless a new metric needs a reader (the replay and the scene read through it); a new vehicle fork needs a `CALIBRATION_RECORDS` entry (run_data.py 958) or gets the no-record caveat |
+| tests/test_scaffold.py `PHYSICS_MODULES` (27-39), tests/test_scene.py `RUN_PATH_MODULES` (108-125) | extended with `structure` and `assist/linear_motor` (docstring check; no import of display or scene) |
+| tests/test_config.py 219-220 and 283-289, appform.py 187 | `PLANNED_MODELS` loses `linear_motor`: the pin at 220 and the parametrized refusal change; `ASSIST_UNION_TAGS` follows |
 
 CLAUDE.md's layout lists the new modules at SP7's close.
 
@@ -389,10 +533,168 @@ CLAUDE.md's layout lists the new modules at SP7's close.
 
 The code, and the documents whose numbers SP7 builds on.
 
-Checked at commit cfd9059 on 2026-10-04 by the SP1 close-out (every `def`, `class` and
-constant line below found by grep at that commit; the working tree then held only
-document, site and `plots.py` edits). SP2 runs before SP7 in the planned order and edits
-some of these files; the session before SP7 re-checks every line.
+First checked at commit cfd9059 on 2026-10-04 by the SP1 close-out (every `def`, `class`
+and constant line found by grep at that commit; the working tree then held only
+document, site and `plots.py` edits). Re-checked at commit 705025f on 2026-10-07 by the
+SP2 close-out (protocol section 7, item 8): every symbol below was grepped again in the
+working tree, which held only SP2's close-out document edits (none under src/ or tests/).
+The block below lists every correction with its old value, the files SP2 added that SP7
+must know about, and the facts the design relies on; the tables after it are corrected in
+place and hold the 705025f values.
+
+### Re-check of 2026-10-07 at 705025f (SP2 close)
+
+**Method and what did not move.** `git diff --stat a5b8133 705025f -- src tests configs
+experiments pyproject.toml .gitignore` (SP2's start commit to its last tracker commit)
+lists 32 files: the new modules, templates and tests, `cli.py`, `config.py` (+13 lines
+net), `plots.py`, `replay.py`, `summary.py`, `tests/test_animate.py`,
+`tests/test_offload_pipeline.py` (one note assertion), `tests/test_scaffold.py` (one list
+entry), `.gitignore`, `pyproject.toml` (Pillow in the dev extra, KI-018) and
+`configs/display/`. Every other inventoried file is byte-identical to cfd9059 and every
+line of it below holds: the assist package, `offload.py`, `vehicle.py`, `sim.py`,
+`results_io.py`, `compare.py`, `dynamics.py`, `phases/prelude.py`, `phases/engine.py`,
+`metrics.py`, `metrics_planar.py`, `tests/test_silo.py` (1,223 lines),
+`tests/test_offload.py` (the slow gate-fork tier from 725, the gate test at 795),
+`tests/test_config.py`, `tests/test_config_planar.py`, `tests/test_planar_pipeline.py`,
+`tests/test_assist_energy.py`, the experiment files and the vehicle files.
+`docs/findings/RQ3-silo-screening-2d.md` is unchanged ("Caveats" bullet 82-91, "Loads"
+494-517).
+
+**Corrections (symbol: old line -> line at 705025f).**
+
+- `src/launchsim/config.py`, 16 moved (+5 from the `exploratory` label at 157-164; +13
+  after the `ExperimentConfig` docstring at 1859-1862 and its validator at 1986-1990;
+  `PlannedModel` 78 and `PLANNED_MODELS` 79 unchanged): `StageConfig` 434 -> 439;
+  `TrackConfig` 584 -> 589; `NoAssistConfig` 607 -> 612; `ConstantAccelConfig` 613 ->
+  618; `PlannedAssistConfig` 708 -> 713 (also section 2, item 5); `AssistConfig` 721 ->
+  726; `OFFLOAD_STAGE1_INDEX` 1542 -> 1547; `OFFLOAD_DRY_MASS_KEY` 1547 -> 1552;
+  `OffloadCaseConfig` 1619 -> 1624; the field `stage1_dry_mass_added_t` 1637 -> 1642
+  (also entry criterion 4); the `paired_pad` refusal 1654 -> 1659; `ResolvedOffloadCase`
+  2412 -> 2425; `offload_overrides` 2658 -> 2671; `offload_case_start` 2708 -> 2721;
+  `offload_solved_run` 2734 -> 2747; `resolve_experiment` 2816 -> 2829. Added to the
+  table: `shaft: Literal["vented"]` 646, `_dump_one_push_key` 679, the "planned for Phase
+  3" refusal 723, `ExperimentLabel` and `EXPLORATORY_LABEL` 157 and 160. One reference
+  made precise (it was imprecise at cfd9059 already, the file being unchanged):
+  "tests/test_config.py 219-220, 283" -> 219 and 283-289 (`test_other_drives_are_phase_3`
+  matches "Phase 3" at 285 and 288); 220 pins `PLANNED_MODELS == ("linear_motor",
+  "cable_winch")`.
+- `src/launchsim/summary.py`, 3 moved (the exploratory banner, 702-866, sits above them):
+  `OFFLOAD_CAVEATS` 1500 -> 1677; `offload_caveats` 1553 -> 1730; `offload_section` 1897
+  -> 2074. Added: `exploratory_banner` 814, `offload_calibration_caveat` 1707.
+- `docs/physics.md`, 8 moved (SP2 added 299 lines, the display-only section among them):
+  "Propellant offload at fixed payload" 1986 -> 2009; "Cross-vehicle decomposition" 3220
+  -> 3243; "Assist energy identity" 4513 -> 4536; "Silo model (constant_accel, vertical)
+  and every reported quantity" 4568 -> 4591; "Assumptions" 5750 -> 5786; the offload
+  penalty line 5963 -> 5997-6000; "SP1 research notes" 6082 -> 6118; "Test-to-equation
+  map" 6163 -> 6457. Added: "Experiment schema (planar)" 5412 with the label paragraph at
+  5528-5539; "Display-only reconstructions (not part of the model)" 6199-6456.
+- `docs/findings/RQ1-fuel-offload-2d.md`, 4 moved (12 lines changed since cfd9059, by
+  SP1's own close-out): "Structural penalty rows and break-even" 284-317 -> 288-321;
+  "Depth and g-level" 319-408 -> 323-412; "Max-Q and loads" 613-638 -> 617-642; "Limits"
+  693-710 -> 701-718.
+- `.gitignore` (section 9's note): SP2 added `*_scene.html` and `*_scene.mp4` to the
+  ignored default outputs and did not add `!docs/demos/**`; its demo page is
+  docs/demos/SP2/pad-vs-silo-cold-scene.html (hyphens, so not ignored).
+
+Counts: config.py 16 moved, 4 rows added, 1 reference made precise; summary.py 3 moved, 2
+added; physics.md 8 moved, 2 added; RQ1 4 moved; .gitignore 1 note; every other file 0.
+
+**Files SP2 added or changed that SP7 must know about.**
+
+- `src/launchsim/run_data.py` (new, 1,100 lines): the read-only reader that plots.py,
+  replay.py, scene.py and summary.py use. `CALIBRATION_RECORDS` 958 is the one record
+  (the gate vehicle 26,054.4 kg and the README-loads fork 24,700.0 kg against 22,800 kg);
+  `plots.CALIBRATION_RECORDS` (plots.py 516) is the same object, `results_io.py` imports
+  it from plots (143) for the offload caveats (1798), and `replay.calibration_caveat`
+  (replay.py 876) and `summary.exploratory_banner` (summary.py 850) read run_data's
+  directly (summary.py 1711's docstring still says `plots.CALIBRATION_RECORDS`). The
+  bridge's README-loads fork has a record; a new vehicle fork gets the "no calibration
+  record" caveat (summary.py 1715-1719) unless SP7 adds one, and tests/test_animate.py
+  checks each entry against its findings note. Also `offload_role` 511,
+  `CALIBRATION_GATE_VEHICLE` 982, `calibration_gap` 986.
+- `src/launchsim/replay.py` (1,892 lines; its caveats are data-driven since step A1a,
+  D-SP2-23, and the scene page reuses them): `uncharged_structure_sentence` 948 (the
+  sentence "No structural mass is charged for the assist load case" at 966),
+  `penalty_structure_sentence` 978 ("a parametric assumption, not a sized structure; no
+  structural model exists", 1004-1008), `structure_caveat` 1011, `drive_caveat` 1172
+  (docstring 1177-1195, "no bias direction is claimed" at 1190-1191; the classification
+  loop 1209-1232 files a run whose `assist.model` is not `constant_accel` under `others`
+  and its clause is built at 1278-1291), `comparison_caveats` 1455, `caveats` 1492,
+  `calibration_caveat` 876, `push_accel_g` 699 (the metric `net_accel_g`, else the assist
+  block's), `EXPLORATORY_LABEL` 129, `EXPLORATORY_CAVEAT` 133, `is_exploratory`
+  737, `run_record` 1646, `replay_data` 1779.
+- `src/launchsim/plots.py` (1,799 lines): `animation_caveats` 1049 with the footnote
+  clause "no sized structural mass for the <peak> g push load" at 1069 and the penalty-row
+  clause at 1070-1074; `calibration_caveat` 1020.
+- `src/launchsim/summary.py`: `OFFLOAD_CAVEATS` 1680-1682 ("no structural mass is charged
+  for the push load ...; the penalty rows add an assumed stage-1 dry mass, a parametric
+  assumption, not a sized structure"); the exploratory banner 702-866 with
+  `EXPLORATORY_PUSH_CAVEAT` = "no structural mass for the push" (761). Unchanged by SP2
+  but the fourth and fifth sources of the sentence: `sim.offload_penalty_assumption`
+  1690-1696 ("not a structure sized for the push load"), quoted in physics.md 5997-6000,
+  and the note `config.offload_overrides` (config.py 2671) puts on the penalty case's
+  stage-1 dry mass (2702-2705: "an assumed structural penalty, not a sized structure"),
+  pinned by tests/test_offload_pipeline.py 232 (`"assumed structural penalty" in
+  pen["note"]`). That note sits in the case's resolved vehicle dict, which the digest pin
+  does not cover (the four pinned experiments declare no offload block,
+  tests/planar_pin_support.py 142-143).
+- `src/launchsim/config.py` 157-164: `ExperimentLabel` gains `exploratory`
+  (`EXPLORATORY_LABEL` 160), reserved for the app's experiments (D-SP2-12): planar_2d, no
+  sweeps, no cases, the banner (validator 1986-1990). No display block was added
+  (D-SP2-18).
+- `src/launchsim/display.py` (pure), `scene.py`, `appform.py`, `app.py`, `video.py`,
+  `templates/scene.html`, `templates/app.html` (new) and `cli.py` (subcommands: run 90,
+  sweep 108, animate 118, replay 163, scene 185, app 217). `configs/display/f9_class.yaml`
+  and `scene.yaml` are read by scene.py only. tests/test_scene.py 1373
+  (`test_run_path_modules_never_import_display_or_scene`; `RUN_PATH_MODULES` 108-125)
+  guards that no run-path module imports display or scene: a new run-path module
+  (`structure.py`, `assist/linear_motor.py`) goes into that tuple and, as a pure physics
+  module, into `PHYSICS_MODULES` of tests/test_scaffold.py 27-39 (the docstring check).
+- The app's basis: `app.OFFLOAD_EXPERIMENT` 164 (experiments/silo_offload_2d.yaml) and
+  `SCREENING_EXPERIMENT` 167, read at the server-start HEAD by `app.load_basis` 296 (`git
+  cat-file`), which calls `appform.make_basis` 582-633; that requires the two files to
+  agree in their six shared blocks (`config.SHARED_KEYS` 171: dynamics, site, guidance,
+  search, target_orbit, checks) and baseline and every preset (appform 217-235: pad, silo_cold,
+  silo_hot_ramp_on_track, silo_cold_200m, silo_cold_s1, silo_cold_fix5pct,
+  silo_cold_fix10pct, the three penalty rows, silo_cold_lag, silo_hot_full,
+  silo_hot_full_impinged, silo_sled_22t, silo_failed, silo_instant, pad_instant) to name
+  a committed run or case; `SILO_FRAGMENT_VARIANT` = silo_cold (96). `app.SP1_HEADLINE`
+  1420 (41,262.908 kg, SP1's commit and directory) with `REPRODUCTION_TOL_KG` 0.002 kg
+  (1542): a launch is called a reproduction of SP1's headline only while the experiment
+  and vehicle files are unchanged since SP1's commit (`app.sp1_files_same` 2632-2657, a
+  read-only `git diff --quiet`) and the committed case name and x* match (`app.sp1_comparison`
+  2660). The form's assist is
+  `constant_accel` only (appform 104-105); its only structural input is
+  `stage1_dry_mass_added_t` (398-405, 0-100 t, `PENALTY_RANGE_T` 295); carriage mass 318;
+  `ASSIST_UNION_TAGS` 187 is built from `PLANNED_MODELS`.
+- Tests added: tests/test_run_data.py, test_display.py, test_scene.py, test_scene_page.py,
+  test_appform.py, test_app.py, test_app_server.py, test_app_page.py, test_video.py,
+  test_caveat_wording.py, test_site_build.py and tests/app_support.py. The structural
+  wording is pinned in six of them, 25 occurrences: test_caveat_wording.py 12 (the four
+  structure-caveat tests at 721, 746, 775 and 840), test_animate.py 4, test_scene.py 4,
+  test_app.py 2, test_video.py 2, test_app_server.py 1. Two more files pin it, eight in
+  all: tests/test_offload_pipeline.py 232 (an SP1 run-path test: `"assumed structural
+  penalty" in pen["note"]`, the note `config.offload_overrides` writes at 2702-2705, so S3
+  breaks it when it rewords that note) and tests/test_app_page.py 1937 (`template.count("a
+  parametric stand-in for the structure a push needs") == 1`, the penalty field's text in
+  templates/app.html 1216; changes only if the form's text changes). `linear_motor` as a run's model
+  already appears in test_caveat_wording.py 479-489 and 689-712 (the drive caveat's
+  other-drive branch) and in tests/test_config.py 219-220 and 283-289 (the refusal).
+- TODO.md: KI-030 (medium, owner SP7, line 346; section 2, item 9); KI-032 (owner later):
+  `drive_power_peak_t_s` is on the absolute run clock (metrics_planar.py 1012), the
+  metric the linear motor's peak power reports, so S4 may take it; KI-036 (owner "the
+  phase that next edits replay.py", 352): the replay page reads an unknown git state as
+  clean, so it falls to SP7 when S3 edits replay.py; KI-019 and KI-031 stay with the
+  phase that edits replay.html (SP7 does not). Decisions: D-SP2-37 (the app-runs rule,
+  protocol section 4), D-SP2-39 (`pad_variant`), D-SP2-40 (SP7 next).
+- docs/manual/05b-offload.md 100 describes the penalty row as "not a sized structure" and
+  12-faq-glossary.md 191 (the glossary row **penalty row**) as "a parametric stand-in for
+  structure, not a sized one".
+  README.md: "What can eat the gain" 219 with its "Simulation updates" paragraph 238;
+  "Roadmap" 407. These are the lines at 705025f; the close-out's README and manual edits
+  (in the tree at this check, to be carried by the Close SP2 commit) move the glossary
+  entry to 187 and the README anchors to 233, 252 and 421, and leave 05b-offload.md 100
+  where it is; SP7's start reads them at that commit.
 
 **Documents (the record SP7 builds on)**
 
@@ -401,9 +703,9 @@ some of these files; the session before SP7 re-checks every line.
 | README.md, "What can eat the gain" | the axial-load row (21.5 MN, 2.8 times liftoff thrust; hydrostatic about 2.8 times liftoff), the interface-hardware row (1 kg on stage 1 costs about 0.13 kg of payload in the screening; 0.18 kg in 2-D), the silo-air and carriage-braking rows, and the "Simulation updates" below the table |
 | README.md, "Roadmap" | Phase 3's items and its "Done when" (track, ramp-energy, release-mapping, energy-balance and cable tests) |
 | TODO.md, backlog and "Future items" | B-004 (structural mass and interface hardware) and B-005 (linear motor), re-targeted to SP7 by D-SP1-18; B-007 (air column, friction, modelled braking, release at a target speed), still "later" when this file was written; B-006, B-008, B-009 stay later |
-| docs/findings/RQ1-fuel-offload-2d.md | "Structural penalty rows and break-even" (284-317): the four rows, erosion 4.5-5.1 t/t, zero at about 8.5 t extrapolated, screening level at about 5.5 t; "Depth and g-level" (319-408): sweep 2 and the reading that a lower felt g pays off only through a lighter structure; "Max-Q and loads" (613-638); "Limits" (693-710) |
+| docs/findings/RQ1-fuel-offload-2d.md | "Structural penalty rows and break-even" (288-321): the four rows, erosion 4.5-5.1 t/t, zero at about 8.5 t extrapolated, screening level at about 5.5 t; "Depth and g-level" (323-412): sweep 2 and the reading that a lower felt g pays off only through a lighter structure; "Max-Q and loads" (617-642); "Limits" (701-718) |
 | docs/findings/RQ3-silo-screening-2d.md | "Caveats", no structural penalty (82-91): 184 kg of P* per tonne, break-even about 8.1 t; "Loads" (494-517); the 22 t sled and the vented-shaft bias |
-| docs/physics.md | "Propellant offload at fixed payload" (1986), "Cross-vehicle decomposition" (3220), "Assist energy identity" (4513), "Silo model (constant_accel, vertical) and every reported quantity" (4568), "Assumptions" (5750; the offload penalty line at 5963), "SP1 research notes" (6082), "Test-to-equation map" (6163) |
+| docs/physics.md | "Propellant offload at fixed payload" (2009), "Cross-vehicle decomposition" (3243), "Assist energy identity" (4536), "Silo model (constant_accel, vertical) and every reported quantity" (4591), "Experiment schema (planar)" (5412; the label paragraph 5528-5539), "Assumptions" (5786; the offload penalty line at 5997-6000), "SP1 research notes" (6118), "Display-only reconstructions (not part of the model)" (6199-6456, SP2; nothing of the model), "Test-to-equation map" (6457) |
 | configs/vehicles/generic_f9_class_2d.yaml | stage-1 dry 22.2 t, propellant 410.9 t (287.4 LOX + 123.5 RP-1), reference area 10.52 m^2 (3.66 m body); calibrated, never edited |
 
 **Assist package: `src/launchsim/assist/` (the drive models that exist)**
@@ -420,15 +722,16 @@ some of these files; the session before SP7 re-checks every line.
 
 | Symbol | Line | Note |
 |---|---|---|
-| `PlannedModel`, `PLANNED_MODELS` | 78, 79 | `linear_motor`, `cable_winch`; refused as "planned for Phase 3" (tests/test_config.py 219-220, 283) |
-| `StageConfig` | 434 | `dry_mass_t`, `propellant_mass_t` |
-| `TrackConfig` | 584 | `angle_deg` 90 only ("a Phase 3 feature") |
-| `NoAssistConfig`, `ConstantAccelConfig`, `PlannedAssistConfig`, `AssistConfig` | 607, 613, 708, 721 | `shaft: Literal["vented"]`; `_dump_one_push_key` is the model for leaving unset keys out of a dump |
-| `OFFLOAD_STAGE1_INDEX`, `OFFLOAD_DRY_MASS_KEY` | 1542, 1547 | |
-| `OffloadCaseConfig` | 1619 | `stage1_dry_mass_added_t` 1637; refused with `paired_pad` (1654) |
-| `ResolvedOffloadCase` | 2412 | |
-| `offload_overrides`, `offload_case_start`, `offload_solved_run` | 2658, 2708, 2734 | where a penalty enters the vehicle dict |
-| `resolve_experiment` | 2816 | |
+| `PlannedModel`, `PLANNED_MODELS` | 78, 79 | `linear_motor`, `cable_winch`; refused as "planned for Phase 3" (the raise at 723; tests/test_config.py 219 and 283-289, the pin of the tuple at 220) |
+| `ExperimentLabel`, `EXPLORATORY_LABEL` | 157, 160 | SP2: the app's label (D-SP2-12), validator at 1986-1990; never on an SP7 experiment |
+| `StageConfig` | 439 | `dry_mass_t`, `propellant_mass_t` |
+| `TrackConfig` | 589 | `angle_deg` 90 only ("a Phase 3 feature", 601) |
+| `NoAssistConfig`, `ConstantAccelConfig`, `PlannedAssistConfig`, `AssistConfig` | 612, 618, 713, 726 | `shaft: Literal["vented"]` (646); `_dump_one_push_key` (679) is the model for leaving unset keys out of a dump |
+| `OFFLOAD_STAGE1_INDEX`, `OFFLOAD_DRY_MASS_KEY` | 1547, 1552 | |
+| `OffloadCaseConfig` | 1624 | `stage1_dry_mass_added_t` 1642; refused with `paired_pad` (1659) |
+| `ResolvedOffloadCase` | 2425 | |
+| `offload_overrides`, `offload_case_start`, `offload_solved_run` | 2671, 2721, 2747 | where a penalty enters the vehicle dict |
+| `resolve_experiment` | 2829 | |
 
 **Solver, pipeline and reporting**
 
@@ -438,7 +741,7 @@ some of these files; the session before SP7 re-checks every line.
 | `with_offload`, `with_stage_propellant`, `offload_split_kg`, `Stage`, `Vehicle` | `vehicle.py` 653, 600, 613, 162, 480 | |
 | `check_resolved`, `offload_penalty_assumption`, `offload_problem_factory`, `solve_resolved_offload`, `offload_run_result` | `sim.py` 932, 1690, 1708, 1717, 1728 | |
 | `_offload_assumptions`, `planar_offload` | `results_io.py` 1291, 1687 | penalty rows in the post-pass |
-| `OFFLOAD_CAVEATS`, `offload_caveats`, `offload_section` | `summary.py` 1500, 1553, 1897 | the summary block and its caveats |
+| `OFFLOAD_CAVEATS`, `offload_caveats`, `offload_section` | `summary.py` 1677, 1730, 2074 | the summary block and its caveats (the structural sentence at 1680-1682); `exploratory_banner` 814 (SP2) |
 | `cross_vehicle_decomposition` | `compare.py` 1534 | carries `xv_dry_mass_delta_kg` |
 | `g_eff_track`, `TrackParams`, `rhs_track` | `dynamics.py` 114, 372, 438 | the track equation the linear motor and air column feed |
 | `track_params`, `fly_track` | `phases/prelude.py` 737, 774 | the push to the track exit |
@@ -451,19 +754,31 @@ some of these files; the session before SP7 re-checks every line.
 - `tests/test_silo.py` (1,223 lines): the straight-track closed forms, loads, felt g.
 - `tests/test_assist_energy.py`: the assist energy identity, hot starts included.
 - `tests/test_offload.py` (slow tier from 725) and `tests/test_offload_pipeline.py`.
-- `tests/test_config.py` (planned models refused), `tests/test_config_planar.py`
-  (`PLANAR_EXPERIMENTS`: a new experiment file is classified there).
-- `tests/test_golden_1d.py`, the planar digest pin and the planar output capture.
+- `tests/test_config.py` (planned models refused, 219 and 283-289; the tuple pinned at
+  220), `tests/test_config_planar.py` (`PLANAR_EXPERIMENTS` 62: a new experiment file is
+  classified there; the digest pin at 323).
+- `tests/test_golden_1d.py`, the planar digest pin and the planar output capture
+  (`tests/test_planar_pipeline.py` 1146); `tests/test_silo_screening_record.py` (slow:
+  the two recorded payload capacities within 0.002 kg).
+- SP2's: `tests/test_caveat_wording.py` (the structural and drive caveats, per clause),
+  `tests/test_animate.py`, `tests/test_scene.py` (`RUN_PATH_MODULES`), `tests/test_app.py`,
+  `tests/test_video.py`, `tests/test_app_server.py` (the pinned wording of section 5.1;
+  with `tests/test_offload_pipeline.py` 232 and `tests/test_app_page.py` 1937 the eight
+  files); `tests/test_scaffold.py` (`PHYSICS_MODULES`); `tests/test_run_data.py` (the
+  reader).
 
 ## 7. Steps
 
 Proposed, to confirm in Plan mode (step 0). Each step runs the loop of
 SESSION_PROTOCOL.md section 4: implementer; adversarial reviewers (a physics or numerics
 skeptic on every code step, a CLAUDE.md compliance auditor on every step, an honesty
-auditor on S0, S6 and S7); up to two fix rounds; independent gate; commit; tracker commit;
-push. Standing gate on every code step: fast suite green, ruff clean, 1-D golden
-byte-identical, the planar digest pin and output capture unchanged, no shipped experiment
-or vehicle file changed. The full suite after S3, S4 and S5 and before the close.
+auditor on S0, S6 and S7, and on every caveat or label reworded); up to two fix rounds;
+independent gate; commit; tracker commit; push. Standing gate on every code step: fast
+suite green, ruff clean, 1-D golden byte-identical, the planar digest pin and output
+capture unchanged, no shipped experiment or vehicle file changed, `templates/replay.html`'s
+sha256 unchanged (SP2's standing gate, D-SP2-34). The full suite after S3, S4 and S5 and
+before the close. App runs made by reviewers and gates use a scratch results root
+(D-SP2-37; protocol section 4, "App runs").
 
 | # | Step | Main files | Tests | Gate | Status | Commit |
 |---|---|---|---|---|---|---|
@@ -471,12 +786,43 @@ or vehicle file changed. The full suite after S3, S4 and S5 and before the close
 | S0 | Sources: the structural coefficients, the stage-1 mass breakdown, the linear-motor parameter rule; a dated source note under docs/phases/inputs/ | docs/phases/inputs/ | none | Every number sourced or marked assumed; honesty review | [ ] | |
 | S1 | Structural sizing core (pure): hydrostatic pressure, hoop, axial and buckling thickness, domes, load-entry structure, interface hardware | `structure.py` | `tests/test_structure.py` (new): the closed forms of section 5.9 | All listed tests | [ ] | |
 | S2 | Load cases and envelope from a run's records; the increment; the structure file and its config model; the sizing-only sensitivity ranking | `structure.py`, `config.py`, `configs/structures/` | zero inside the envelope; monotone; the pad gets zero; the file validates with every number sourced or assumed | All listed tests; vehicle files untouched; digests unchanged | [ ] | |
-| S3 | Coupling into the offload solve and the payload search; reporting (summary rows, metrics keys, assumptions) | `offload.py`, `sim.py`, `results_io.py`, `summary.py` | the constant-2 t cross-check against the +2 t row (slow); monotonicity of m_res in x with dm(x); without the switch, outputs unchanged | All listed tests; full suite | [ ] | |
-| S4 | `linear_motor`: config, model, force rise time, carriage mass, release at a target speed; physics.md in the same change | `assist/linear_motor.py`, `assist/__init__.py`, `config.py`, `phases/` (target-speed event), `docs/physics.md` | the closed forms of section 5.7; limits honoured; energy identity < 1e-6 relative; refusals | All listed tests; full suite | [ ] | |
+| S3 | Coupling into the offload solve and the payload search; reporting (summary rows, metrics keys, assumptions; the structural sentences of section 5.1 reworded at every source) | `offload.py`, `sim.py`, `results_io.py`, `summary.py`, `replay.py`, `plots.py`, `config.py` (the penalty note of `offload_overrides`), `docs/manual/`; `templates/app.html` only if the form's field text changes | the constant-2 t cross-check against the +2 t row (slow); monotonicity of m_res in x with dm(x); without the switch, outputs unchanged; the pinned wording tests of section 6 updated (the six SP2 tests, `tests/test_offload_pipeline.py` 232, `tests/test_app_page.py` 1937) | All listed tests; full suite; honesty review of the wording; the six gallery pages regenerated with the diff recorded | [ ] | |
+| S4 | `linear_motor`: config, model, force rise time, carriage mass, release at a target speed; KI-030's validators on the existing push models (section 2, item 9) if step 0 agrees; physics.md in the same change | `assist/linear_motor.py`, `assist/__init__.py`, `config.py`, `phases/` (target-speed event), `docs/physics.md` | the closed forms of section 5.7; limits honoured; energy identity < 1e-6 relative; refusals (tests/test_config.py 220 and 283-289 follow `PLANNED_MODELS`) | All listed tests; full suite; the replay and scene pages of a linear-motor run looked at (section 5.7) | [ ] | |
 | S5 | Modelled braking and the sealed-shaft air column (if taken in step 0) | `assist/`, `dynamics.py` or `phases/prelude.py`, `docs/physics.md` | braking and adiabatic closed forms; energy identity with the piston work | All listed tests; full suite | [ ] | |
 | S6 | Experiment file(s) and the pre-registration note (expected readings, the band, the cross-checks), committed before any run | `experiments/`, docs/phases/inputs/ | `tests/test_config_planar.py` lists the new file | Resolves; committed; clean tree | [ ] | |
 | S7 | Runs from the clean commit; findings (RQ1 updated or a new note linked from it; Q6); README results, findings index, physics.md research notes | results/ (summaries), docs/findings/ | full suite | No `bug_suspect`; verification within tolerance; honesty review | [ ] | |
 | C | Close SP7: exit-criteria gate; full suite; demo; trackers; CLAUDE.md layout and status; public face; SP3's file fact-checked; handoff and prompt; memory; cold-read check; push | docs/, site/, TODO.md, CLAUDE.md, README.md, memory | full suite; site build | Independent gate; final commit; Pages green | [ ] | |
+
+What SP2's results change in these steps (re-check of 2026-10-07 at 705025f; facts for
+step 0, not a redesign):
+
+- S3: the "nothing structural" sentence now has five sources in the code (summary.py,
+  sim.py, config.py's penalty note, replay.py shared with the scene page, plots.py's
+  footnote), two in the manual and one in the app form's field text (section 5.1), pinned
+  by tests in eight files (section 6). Rewording them is part of S3's reporting, with an
+  honesty review and the six gallery pages (five replay pages and the scene page)
+  regenerated and their diff recorded, as SP2 step A1a did (one caveat source, D-SP2-23).
+  KI-036 falls to SP7 when S3 edits replay.py (its owner rule).
+- S4: `PLANNED_MODELS` loses `linear_motor`, so tests/test_config.py 220 and 283-289
+  change and appform.py's `ASSIST_UNION_TAGS` (187) follows; the KI-030 validators ride
+  the same config change if step 0 agrees; the new modules go into tests/test_scaffold.py
+  `PHYSICS_MODULES` and tests/test_scene.py `RUN_PATH_MODULES`; what the push metrics and
+  the replay and scene labels hold for a linear-motor run is settled here (section 5.7);
+  KI-032 (the peak-power clock) may be taken with the drive's power metric.
+- For the record: the S3 and S4 rows above (files, tests and gates) and section 2's item
+  9 were extended in place at this re-check of 2026-10-07, where sections 5 and 8 took
+  notes and an addendum instead; the rows as written on 2026-10-04 are in git at 03fe7a7
+  (the Close SP1 commit, the file's first; blob e45580c). All of it is for step 0 to
+  confirm, not a redesign.
+- S6: a new experiment file leaves the app's basis untouched; an amendment of
+  experiments/silo_offload_2d.yaml is both a pre-registration amendment (its own commit,
+  logged) and an app-basis change (entry criterion 8), stated in the manual.
+- S7: the demo may use `launchsim scene` and the app to show the charged structure beside
+  the pad (section 9); app launches follow D-SP2-37 (a clean tree after the last code
+  commit, their summaries in their own commit, never cited in the findings).
+- C: the manual's app and offload chapters and the gallery's scene page where the wording
+  or the form changed; the fact-check of SP3's file includes SP2's and SP7's edits (the
+  board's dependency table).
 
 ## 8. Exit criteria
 
@@ -512,6 +858,16 @@ Draft; SP7's Plan mode fixes the tolerances marked "proposed".
     with the new settings), main pushed and Pages green; SP3's phase file fact-checked
     (or the phase the user chooses); handoff, prompt and memory written.
 
+What SP2's results add to these criteria (re-check of 2026-10-07 at 705025f; for Plan
+mode to fold in, not a redesign): criterion 3 also keeps `templates/replay.html`'s sha256
+(SP2's standing gate, D-SP2-34); criterion 6 includes the structural sentence changed at
+every source of section 5.1 (summary, sim, config.py's penalty note, replay and scene, the
+animation footnote, the manual, the app form's field text if the form keeps the field),
+the pinned tests updated and the six gallery pages regenerated with their diff
+recorded; criterion 9's demo may show the charged structure through `launchsim scene` or
+the app (any app launch per D-SP2-37); criterion 10's public face includes the gallery's
+scene page and the manual's app chapter where the form or the wording changed.
+
 ## 9. Demo script
 
 Output goes to docs/demos/SP7/ (text captures, a short README with the commit). Names are
@@ -520,7 +876,8 @@ proposals; the session fixes them.
     uv run pytest -q -m "not slow"
     uv run pytest -q tests/test_structure.py -k "closed_form or envelope"
     uv run python -m launchsim run experiments/<SP7 offload file>.yaml
-    uv run python -m launchsim replay results/<SP7 offload file>/<timestamp> --runs pad <structural headline run> --out docs/demos/SP7/<name>.html
+    uv run python -m launchsim replay results/<SP7 offload file>/<timestamp> --runs pad <structural headline run> --out docs/demos/SP7/<name>-replay.html
+    uv run python -m launchsim scene results/<SP7 offload file>/<timestamp> --runs pad <structural headline run> --out docs/demos/SP7/<name>-scene.html
 
 Look at:
 
@@ -533,8 +890,14 @@ Look at:
   interface force, the exit speed;
 - the findings note's headline paragraph and its caveats.
 
-Save a replay page under a name that `.gitignore` does not ignore (`*_replay.html` is
-ignored at any depth unless SP1 or SP2 added `!docs/demos/**`); check with `git status`.
+Save pages under names that `.gitignore` does not ignore: `*_replay.html`, `*_scene.html`
+and `*_scene.mp4` are ignored at any depth (SP2 added the last two and did not add
+`!docs/demos/**`; checked 2026-10-07). SP2's demo used hyphens
+(docs/demos/SP2/pad-vs-silo-cold-scene.html); do the same, and check with `git status`.
+The scene command exists since SP2 (`launchsim scene`, cli.py 185); the app
+(`launchsim app`) can show the same pair live, and any launch made for the demo follows
+D-SP2-37 (from a clean tree after the last code commit, its summary in its own commit,
+never cited in a finding).
 
 ## 10. Risks and open questions
 
@@ -563,8 +926,9 @@ option fairly with its cost)
 | R6 | The existing envelope of the real vehicle is unknown | Q3; built from the pad run's own records; a margin sensitivity |
 | R7 | Run time: a band of solves plus the stroke series plus the drive cases | Budget in Plan mode from SP1's measured times; run the commands in parallel as SP1 did |
 | R8 | Scope creep toward FEM, bending or lateral loads | Out of scope (section 2); any expansion asked of the user first and logged |
-| R9 | SP2 changes files this inventory names | The re-check of section 6 by the session before SP7 |
+| R9 | SP2 changes files this inventory names | Done: the re-check of 2026-10-07 at 705025f (section 6); the start checklist re-checks against the HEAD it finds |
 | R10 | The calibration miss (+14.3%) | The bridge case on the README-loads fork with its own structure file |
+| R11 | SP2's readers and eight test files (the six SP2 tests, tests/test_offload_pipeline.py 232 and tests/test_app_page.py 1937) pin the "nothing structural" wording (section 5.1), so a changed sentence breaks tests or, left alone, misstates a run with the structure charged | Reword at source in S3 (one caveat source, D-SP2-23) with the honesty review; update the pinned tests; regenerate the six gallery pages with the diff recorded, as SP2 step A1a did |
 
 **Open design points for Plan mode (no user decision needed unless they change scope)**
 
@@ -572,7 +936,14 @@ option fairly with its cost)
 - The structure file's place and schema (section 5.4).
 - Whether the stroke series is a sweep (`launchsim sweep`) or cases of the run command.
 - The target-speed release: its event, and what happens to the unused stroke.
-- Whether the app's form (SP2) gains the structural switch now or later (backlog).
+- Whether the app's form (SP2) gains the structural switch now or later (backlog): today
+  it offers `stage1_dry_mass_added_t` only (appform.py 398-405) and a `constant_accel`
+  push (104-105); a linear-motor launch from the form is the same question.
+- What the push metrics (`net_accel_mps2`, `exit_speed_mps`; `PUSH_SETTING_METRICS`) and
+  the replay and scene labels hold for a linear-motor run, whose exit speed is a result
+  (section 5.7).
+- KI-030's validators in S4 (section 2, item 9); KI-036, which falls to SP7 when S3
+  edits replay.py; KI-032 if S4 touches the peak-power metric (section 6).
 
 ## 11. Session log
 
@@ -584,52 +955,89 @@ option fairly with its cost)
 
 ## 13. Prompt to start this phase
 
-Draft, the previous session finalises it.
+Final (2026-10-07, SP2's close-out at 705025f). The handoff holds the same text.
 
 > Read docs/handoff/NEXT_SESSION.md first, then docs/process/SESSION_PROTOCOL.md,
 > docs/phases/README.md, docs/phases/SP7-structural-mass-push-load.md, CLAUDE.md, TODO.md,
 > README.md, and the memory index
 > (C:\Users\rahul\.claude\projects\D--DEV-ClaudeProjects-SpaceRocketOptimization\memory\MEMORY.md)
-> with the notes it links. Then read docs/findings/RQ1-fuel-offload-2d.md ("Structural
-> penalty rows and break-even", "Depth and g-level", "Max-Q and loads", "Limits") and
-> docs/findings/RQ3-silo-screening-2d.md ("Caveats", "Loads").
+> with the notes it links, then the inputs the phase file links: none exist under
+> docs/phases/inputs/ for SP7 yet (its Plan mode writes the first), so read the record it
+> builds on instead: docs/findings/RQ1-fuel-offload-2d.md ("Structural penalty rows and
+> break-even", "Depth and g-level", "Max-Q and loads", "Limits"),
+> docs/findings/RQ3-silo-screening-2d.md ("Caveats", "Loads"), and sections 11 and 12 of
+> docs/phases/SP2-launch-app-2d-scene.md for what SP2 changed.
 >
-> We are continuing launch-assist-sim. This session is phase SP7 (D-SP1-18): charge the
-> structural mass that the 4 g full-stack push needs, with a first-order sizing model
-> validated against closed forms, so that SP1's headline (41.26 t of stage-1 propellant,
-> 10.04% of stage 1, before any structural mass) carries a modelled structural cost with
-> an uncertainty band instead of only the assumed penalty rows; and build the drive
-> realism that interacts with it: a force- and power-limited linear motor with carriage
-> mass, and, if we keep them, modelled braking and the silo air column.
+> We are continuing launch-assist-sim. SP2 is closed: the local app (`launchsim app`), the
+> 2-D scene (`launchsim scene`), the shared read-only reader run_data.py, caveats worded
+> from each run's record, and the label `exploratory` on every app run. This session is
+> phase SP7 (D-SP1-18, confirmed by D-SP2-40): charge the structural mass that the 4 g
+> full-stack push needs, with a first-order sizing model validated against closed forms,
+> so that SP1's headline (41.26 t of stage-1 propellant, 10.04% of stage 1, before any
+> structural mass) carries a modelled structural cost with an uncertainty band beside the
+> assumed penalty rows; and build the drive realism that interacts with it: a force- and
+> power-limited linear motor with carriage mass and, if we keep them, modelled braking and
+> the silo air column. The phase file is a brief with recommendations, not the design.
 >
-> Follow the session protocol. Run its start checklist: clean tree, HEAD's subject the
-> previous phase's bookkeeping commit, its closing commit an ancestor, the fast suite
-> green with the count recorded, the entry criteria of section 4, the inventory of
-> section 6 re-checked against HEAD, the open KI and B items owned by SP7 listed (B-004,
-> B-005, and B-007 if it is re-targeted). Then work in Plan mode (step 0): put the
-> questions of section 10 to me (Q1 model fidelity, Q2 sizing basis, Q3 existing margin,
-> Q4 drive scope, Q5 where the load enters, Q6 the findings note, Q7 the dynamic load
-> factor), each with your recommendation first and the trade-off in one line, and give
-> the ambitious option fairly with its cost. Structural FEM is a scope expansion: do not
-> plan it without my approval. Show me the detailed design, the step table with gates and
-> the exit criteria, and wait for my approval before writing code. After approval, log the
-> decisions as D-SP7-nn in TODO.md, save the design under docs/phases/inputs/, and make
-> the start commit ("Start SP7: status in progress").
+> Follow the session protocol. Run its start checklist: a clean tree; HEAD's subject
+> "Close SP2: trackers, handoff, next phase file", SP2's closing commit (named in the
+> handoff) an ancestor, and `git diff --stat <that commit> HEAD` touching only bookkeeping
+> files; the fast suite green with the count recorded; the entry criteria of the phase
+> file's section 4 (the pins, the two recorded payload capacities 26,054.3962 and
+> 27,553.2271 kg within 0.002 kg, SP1's solver and run data, the app's basis); the
+> inventory of section 6 re-checked against HEAD (last checked at 705025f); the open KI
+> and B items owned by SP7 listed (B-004, B-005, KI-030; B-007 if Plan mode re-targets it;
+> KI-036 falls to the phase that edits replay.py). If the session starts in Plan mode, do
+> the read-only checks first and run the suite right after approval, as the protocol's
+> section 3 says.
 >
-> Every structural coefficient is sourced or marked assumed, in a structure file, never in
-> a calibrated vehicle file. Every new physics piece passes its closed-form test before an
-> experiment uses it, with docs/physics.md updated in the same change. No validated number
-> may move: the 1-D golden tier, the planar digest pin, the planar output capture, the pad
-> and silo_cold payload capacities, and SP1's headline with the structural model off. The
-> experiment file and its expected readings are committed before any run, and the runs
-> start from a clean commit. Never choose a drive or structural parameter to make the
-> assist look better. Keep SP1's penalty rows beside the modelled number, and report
-> plainly if the modelled structure cancels most of the offload.
+> Then work in Plan mode (step 0). Put the questions of section 10 to me, each with your
+> recommendation first and the trade-off in one line, and give the ambitious option fairly
+> with its cost: Q1 model fidelity, Q2 the sizing basis (the flown stack or the full
+> load), Q3 the existing margin, Q4 the drive scope, Q5 where the carriage load enters, Q6
+> the findings note, Q7 the dynamic load factor. Settle the open design points of section
+> 10. Structural FEM is a scope expansion: do not plan it without my approval. Show me the
+> detailed design, the step table with gates and the exit criteria with their tolerances,
+> and wait for my approval before writing any code. After approval, log the decisions as
+> D-SP7-nn in TODO.md, save the design under docs/phases/inputs/, and make the start
+> commit ("Start SP7: status in progress").
 >
-> Run every step through the loop (implementer, adversarial reviewers, up to two fix
-> rounds, an independent gate, one commit per gate, the tracker commit at once, push and a
-> green Pages deployment). At the end, run the end checklist: the exit-criteria gate, the
-> full suite, the demo under docs/demos/SP7/, the trackers, CLAUDE.md, README, the public
-> face, the close-out questions (which phase runs next: SP3 in the planned order), the
-> fact-check of the next phase's file, the handoff and prompt, the memory, the cold-read
-> check, the closing commit and the push.
+> Rules for the whole session. Plan mode, and docs/physics.md in the same change, for
+> anything touching the equations of motion, frames, events, integrator settings or loss
+> accounting (the linear motor, the air column and braking touch the track equation and
+> its events). Every structural coefficient is sourced or marked assumed, in a structure
+> file, never in a calibrated vehicle file. Every new physics piece passes its closed-form
+> test before an experiment uses it. Never choose a drive or structural parameter to make
+> the assist look better; published claims and probe numbers are comparisons, never
+> targets. The experiment file and its expected readings are committed before any run
+> (pre-registration), the runs start from a clean commit, and no results directory is ever
+> overwritten or deleted. App runs follow D-SP2-37: reviewers and gates use a scratch
+> results root, demo launches come from a clean tree after the last code commit, their
+> summaries go in their own commit, and no app run is cited in a finding. Keep SP1's
+> penalty rows beside the modelled number.
+>
+> Run every step through the loop: implementer; adversarial reviewers (a physics or
+> numerics skeptic on every code step, a CLAUDE.md compliance auditor on every step, an
+> honesty auditor on S0, S6, S7 and on every caveat or label you reword); up to two fix
+> rounds; an independent gate; one commit per gate; the tracker commit at once ("SP7 step
+> <k>: trackers (<hash>)"); then `git push origin main` and a check that the Pages
+> deployment succeeded. Standing gates on every code step: fast suite green, ruff clean,
+> the golden 1-D outputs byte-identical, the planar digest pin and the planar output
+> capture unchanged, no shipped experiment or vehicle file changed, replay.html's sha256
+> unchanged; the full suite after any physics-core change. No validated number may move:
+> the pad and silo_cold payload capacities, and SP1's headline with the structural model
+> off.
+>
+> At the end, run the end checklist of the protocol's section 7: an independent gate on
+> each exit criterion (a criterion stays open only with my explicit acceptance, logged as
+> a decision); the full suite and ruff with the counts recorded; the demo under
+> docs/demos/SP7/; the phase file closed, the board, TODO.md, CLAUDE.md (status, commands,
+> layout) and README.md updated, and the public face refreshed (landing page, deck and its
+> PDF, gallery, manual) with the site built locally and no broken link; the close-out
+> questions to me with the recommendation first (which phase runs next: SP3 in the planned
+> order); the fact-check of the next phase's file against the code; the handoff archived
+> and the new one written with the next prompt; the next prompt printed to me; the memory
+> updated; the cold-read check by
+> an agent that did not write the documents; the closing commit; the push and the Pages
+> deployment confirmed. Report anything that undercuts the hypothesis, a modelled
+> structure that cancels most of the offload included, as plainly as the rest.

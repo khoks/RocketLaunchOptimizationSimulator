@@ -14,7 +14,8 @@
 | Python | 3.12 (`requires-python = ">=3.12"`; `.python-version` pins 3.12) | The simulator is pure Python |
 | [uv](https://docs.astral.sh/uv/) | recent; the build backend is `uv_build` 0.12 | Creates the environment and runs every command. Optional: pip works too |
 | Git | any | To get the repository, and because every results directory records the git hash |
-| ffmpeg | any, on `PATH` | Optional. Only `launchsim animate` with an `.mp4` output needs it; `.gif` works without it |
+| ffmpeg | any, on `PATH` | Optional. Only `launchsim animate` with an `.mp4` output and the app's Save-video export ([7b](07b-app.md#save-video-mp4)) need it; `.gif` works without it, and the app runs without it with the export switched off |
+| Node.js | any, on `PATH` | Optional, for the tests only: the tests that check the inline scripts of the replay, scene and app pages run them through `node`; without it those tests are skipped and say so |
 
 The package depends on numpy, scipy, pandas, matplotlib, pydantic, PyYAML and `ambiance`
 (the ICAO standard atmosphere, used as the reference in the tests). The dev extra adds
@@ -69,8 +70,10 @@ They should all pass. The full suite, including the slow tier, is `uv run pytest
 
 `launchsim animate` writes `.mp4` through ffmpeg and `.gif` through Pillow (which comes
 with matplotlib). Without ffmpeg the default output switches to `.gif` by itself, and an
-explicit `--out something.mp4` stops with a one-line error. To check whether matplotlib
-can see ffmpeg:
+explicit `--out something.mp4` stops with a one-line error. The app's Save-video control
+([7b](07b-app.md#save-video-mp4)) needs ffmpeg too: the app resolves it once at start and
+prints the executable it found, or `video: MP4 export off (<why>)`, and the rest of the app
+works without it. To check whether matplotlib can see ffmpeg:
 
 ```text
 uv run python -c "from matplotlib.animation import FFMpegWriter; print(FFMpegWriter.isAvailable())"

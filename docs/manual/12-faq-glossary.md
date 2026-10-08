@@ -82,11 +82,21 @@ Not yet. Curved tracks, the cable winch, the force- and power-limited linear mot
 silo air column, modelled braking and a tilted-exit abort are README roadmap Phase 3. The
 config refuses them with a message that says so.
 
-**Is there a 3-D model or a graphical app?**
-Not yet. A local app with an animated 2-D launch scene is phase SP2; true 3-D dynamics (a
-point mass on a rotating sphere, then an oblate Earth, then a 6-DOF fly-out) are SP3 to SP6,
-with a 3-D scene in SP4 ([docs/phases/README.md](../phases/README.md)). Today you get files,
-an MP4 or GIF from `animate`, and an interactive page from `replay`.
+**Is there a graphical app?**
+Yes, a local one since phase SP2: `uv run python -m launchsim app` serves a page on this
+machine with a launch form built from the committed experiments, a Launch button, a results
+panel, a browser over the results directories and the 2-D launch scene, which draws the pad
+and the silo side by side from a run's recorded time series, with an MP4 export;
+`launchsim scene` writes the scene as a standalone page ([7b](07b-app.md)). Every run
+launched from the app is exploratory and never a finding; findings come only from committed
+experiment files run from a clean tree. The command-line outputs stay: files, an MP4 or GIF
+from `animate`, an interactive page from `replay`.
+
+**Is there a 3-D model?**
+Not yet. True 3-D dynamics (a point mass on a rotating sphere, then an oblate Earth, then a
+6-DOF fly-out) are SP3 to SP6, with a 3-D scene in SP4; SP7 (the structural mass of the
+push load and a force-limited drive) runs before them
+([docs/phases/README.md](../phases/README.md)).
 
 **Why does the 1-D model report "payload equivalents" that are not payload?**
 The 1-D model stops at stage-1 burnout, with no orbit. It converts a burnout-speed difference
@@ -104,7 +114,17 @@ track buys nothing under this drive.
 **How do I run the offload experiment myself?**
 `uv run python -m launchsim run experiments/silo_offload_2d.yaml` (long; see
 [5b](05b-offload.md)). Its summary gains the section "Propellant saved at fixed payload";
-replay an offloaded run beside the pad with `replay ... --runs pad silo_cold_s1`.
+replay an offloaded run beside the pad with `replay ... --runs pad silo_cold_s1`, or draw
+it as a scene with `scene`. The app's `silo_cold_s1` preset launches the headline case on
+its own (the page's expected range is 57 s to 6 min 10 s with the pad not cached, an
+estimate from the author's machine; 70 s in the recorded demo with the pad cached); it
+reproduces SP1's 41.26 t (within 0.002 kg in the recorded demo) with every caveat of that
+headline (the gate vehicle +14.3% high, no structural mass for the 4 g push,
+sweep-optimized and unthrottled, the paired-pad reading, max-Q above the pad's, the failed
+stage-2 verification, the energy ratio not an efficiency claim; the list under "How much
+propellant does the silo push save?" above), and the page says that this is a
+reproduction, not new evidence; the launch is exploratory, not a finding
+([7b](07b-app.md#the-presets)).
 
 **Can I change a vehicle file?**
 Not a calibrated one: copy it to a new file and change the copy
@@ -118,6 +138,7 @@ It raised after the directory was created. See
 
 | Term | Meaning |
 |---|---|
+| **app run** | A results directory written by a launch from the local app (`results/app/<timestamp>/`), labelled exploratory ([7b](07b-app.md#the-exploratory-regime)) |
 | **assist** | The ground-powered push. Configured in a run's `assist` block |
 | **attribution** | The split of a variant's delta-v margin difference against the pad, at the pad's payload, into release-speed, final-speed, gravity, drag, steering, back-pressure, pre-flight and fairing terms (`attr_*`) |
 | **back-pressure loss** | Thrust lost to ambient pressure on the nozzle exit, integrated as (T_vac - T)/m |
@@ -127,13 +148,16 @@ It raised after the directory was created. See
 | **calibration** | Comparing the model vehicle with the real one's published performance. Labelled, and kept apart from validation |
 | **carriage** | What the drive pushes and the rocket stands on. It stays on the track at release |
 | **case** | An independent run of a calibration experiment with another vehicle, site or orbit; never compared |
+| **close-up** | The fixed-scale drawing of the vehicle beside each panel's true-scale view of the scene: its attitude, plume, tank levels and, at the separations, the gap and the opening halves, each marked "drawn, not computed" |
 | **closure** | The rocket-equation bookkeeping of a 2-D run: the ideal rocket-equation delta-v at the payload must equal the flown vacuum delta-v plus the pre-flight burn and fairing-carry terms plus the delta-v margin, to a tolerance |
 | **cold start** | Engines lit after release (silo_cold: 0.5 s after, with a 2 s ramp) |
 | **constant_accel** | The screening drive: a prescribed constant net acceleration along a straight track |
 | **dP\*** | A run's payload capacity minus the baseline's |
+| **display-only** | What the launch scene draws that the model does not compute: every shape and length, the held attitude when the engines are off, the spent stage's and fairing halves' drag-free coasts, the carriage after release, the tank levels, the liftoff marker. Named on every scene page and video frame; never model output ([7b](07b-app.md#what-the-scene-draws-that-the-model-does-not-compute)) |
 | **drive efficiency** | Mechanical drive work over electrical energy (assumed 0.5 in the shipped files) |
 | **dv margin** | The delta-v the residual propellant at insertion is worth, at the vehicle payload |
 | **exit speed** | The speed at the track exit; sqrt(2 a L) for the prescribed push |
+| **exploratory** | The label of every run launched from the local app: made from the form, not from a committed experiment file, not pre-registered, never a finding and never cited. Its summary carries a banner, and its replay, animation, scene and video frames one line |
 | **facility length** | Stroke plus carriage braking distance |
 | **felt g** | Proper acceleration, the acceleration the vehicle feels, in g0. A full stack pushed at 3 g net feels about 4 g |
 | **flight start** | Release, or liftoff after an extended hold; the loss quadratures start here |
@@ -173,6 +197,7 @@ It raised after the directory was created. See
 | **release** | The moment the vehicle leaves the track or the hold-down opens |
 | **residual propellant** | Stage-2 propellant left at insertion, at the vehicle payload. Negative means a virtual shortfall |
 | **resolution effect** | A stage-1 pad control that ends `no_offload` because the full-load pad misses P_ref by grams of residual propellant (between -0.05 and 0 kg); it passes the consistency test |
+| **scene** | The 2-D launch scene: a cross-section of the launch site with the pad and the silo side by side on one clock, drawn from a run's recorded time series, in the app or as a standalone page from `launchsim scene` ([7b](07b-app.md#the-scene)) |
 | **screening, screening yardstick** | The ideal rocket-equation payload gain of a release speed, with all losses held constant. The yardstick a run's dP\* is checked against |
 | **sensitivity case** | A run with one parameter moved by plus or minus a fraction |
 | **silo** | Concept A: a vertical shaft whose drive pushes the rocket out |
