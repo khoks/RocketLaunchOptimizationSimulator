@@ -1828,8 +1828,27 @@ Also from the design's section 8:
   G1-G6). The summaries are committed in their own commit per D-SP2-37: 3a1b243.
 - Close-out question (protocol 7.7), put to the user on 2026-10-07 while the demo ran: the
   next phase is SP7, as D-SP1-18 ordered (D-SP2-40).
-- Next: step A8 (documents and the public face; the exit-criteria gate; the full suite;
-  SP7's fact-check; the handoff; memory; the cold read; the closing commit).
+- Step A8, part 1 (2026-10-07): the documents and the public face (CLAUDE.md's status
+  and docs/demos lines; README; the manual with its new chapter 07b-app.md and nine
+  pages updated; the landing page with an app section; the deck's slide 18 and its
+  re-printed 20-page PDF; the gallery index; the site copy of one demo screenshot), and
+  SP7's file fact-checked at 705025f (32 line corrections, entry criterion 8 on the app's
+  basis, the caveat sentences a modelled structure must change, the prompt made final;
+  an independent reader's 12 corrections applied). Workflow: writer; honesty and
+  compliance reviewers, three passes; two fix rounds; gate (independent): G1-G5 pass; G6
+  (only the listed files changed) failed literally on the SP7 file (the orchestrator's
+  item-8 work in the same tree) and one accurate gallery line, both accepted. The last
+  round's eight minors (the app finds the repository above the working directory or the
+  installed package, not "a checkout" only; the deck's slide-17 pointer; the exploratory
+  label in the resolved-config paragraph; the scene's default pair in the gallery; the
+  landing page's shaft-drag figures as RQ3's estimate; the glossary line in SP7's file;
+  its two handoff references) were fixed by the orchestrator before the commit, the PDF
+  re-printed (1,095,954 bytes, 20 pages). Site build: 1312 links checked, none broken.
+  KI-037 closed (the manual documents Ctrl+C); KI-038 logged from the demo record.
+  Commit 96bbfa1.
+- Next: step A8, part 2 (the independent gate on the 17 exit criteria with the full
+  suite; the phase closed in the trackers; the handoff; memory; the cold read; the
+  closing commit; push and Pages).
 
 ## 12. Deviations from the plan
 
