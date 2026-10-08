@@ -1,5 +1,8 @@
 # Handoff: SP2 closed; start SP7 (structural mass of the push load, and a force-limited drive)
 
+SP7 started 2026-10-08. If you are a new session and the phase file says in progress, resume
+per SESSION_PROTOCOL.md section 10 from the step table.
+
 ## 1. Header
 
 - Written 2026-10-07, at the close of phase SP2 (session started 2026-10-05), following

@@ -8,14 +8,14 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-07 (SP2 closed, commit 3a1b243: 13 of 17 exit criteria pass at the gate, 13 and 17 fixed in the close, 7 and 11 accepted as logged misses, D-SP2-41 and D-SP2-42; next phase SP7, D-SP2-40).
+Last updated: 2026-10-08 (SP7 started: step 0 done, the design approved with decisions D-SP7-01 to D-SP7-35; SP2 closed on 2026-10-07, commit 3a1b243).
 
 ## Program
 
-Current phase: **SP7, not started** (the next session; D-SP1-18, confirmed by
+Current phase: **SP7, in progress (session 2026-10-08)** (D-SP1-18, confirmed by
 D-SP2-40): the structural mass of the push load and a force-limited drive,
-docs/phases/SP7-structural-mass-push-load.md, started from
-docs/handoff/NEXT_SESSION.md. SP2 closed on 2026-10-07 (closing commit 3a1b243; the
+docs/phases/SP7-structural-mass-push-load.md, with its approved design
+docs/phases/inputs/2026-10-08-SP7-design.md (decisions D-SP7-01 to D-SP7-35). SP2 closed on 2026-10-07 (closing commit 3a1b243; the
 local app `launchsim app` with the 2-D launch scene, the standalone `launchsim scene`
 page and the MP4 export; every app run exploratory, never a finding); its exit
 criteria results are in docs/phases/SP2-launch-app-2d-scene.md section 8. SP1 closed on
@@ -35,7 +35,7 @@ criteria results are in docs/phases/SP2-launch-app-2d-scene.md section 8. SP1 cl
 |---|---|---|---|
 | SP1 | Tracking system; launch settings (silo depth with exit speed, ramp start); fuel-offload solver; the headline finding on the planar model | done (2026-10-04, commit `5007515`) | [SP1-fuel-offload-planar.md](docs/phases/SP1-fuel-offload-planar.md) |
 | SP2 | Local app (`launchsim app`) with the 2-D launch scene, a standalone scene page (`launchsim scene`) and an MP4 export | done (2026-10-07, commit `3a1b243`) | [SP2-launch-app-2d-scene.md](docs/phases/SP2-launch-app-2d-scene.md); approved design: [2026-10-05-SP2-design.md](docs/phases/inputs/2026-10-05-SP2-design.md) |
-| SP7 | Structural mass of the push load and a force-limited drive (taken from README Phase 3, B-004 and B-005); runs after SP2 and before SP3 (D-SP1-18) | not started | [SP7-structural-mass-push-load.md](docs/phases/SP7-structural-mass-push-load.md) (written 2026-10-04 at SP1's close-out; fact-checked at 705025f and its prompt made final by SP2's close (96bbfa1); its exit criteria are drafts that SP7's Plan mode fixes) |
+| SP7 | Structural mass of the push load and a force-limited drive (taken from README Phase 3, B-004 and B-005); runs after SP2 and before SP3 (D-SP1-18) | in progress (session 2026-10-08) | [SP7-structural-mass-push-load.md](docs/phases/SP7-structural-mass-push-load.md) (written 2026-10-04 at SP1's close-out; fact-checked at 705025f by SP2's close (96bbfa1)); approved design: [2026-10-08-SP7-design.md](docs/phases/inputs/2026-10-08-SP7-design.md) (12 exit criteria, tolerances fixed) |
 | SP3 | 3-D dynamics S1: 3-DOF point mass on a rotating sphere | not started | [SP3-3d-dynamics-s1-sphere.md](docs/phases/SP3-3d-dynamics-s1-sphere.md) |
 | SP4 | 3-D scene in the app; headline re-checked on S1 | not started | [SP4-3d-scene-and-recheck.md](docs/phases/SP4-3d-scene-and-recheck.md) |
 | SP5 | 3-D dynamics S2: oblate Earth (J2, ellipsoid) | not started | [SP5-3d-dynamics-s2-oblate.md](docs/phases/SP5-3d-dynamics-s2-oblate.md) |
@@ -71,11 +71,11 @@ move it by kilograms (D-SP1-18).
 - [ ] M17 SP4 gate: 3-D scene in the app (the launch on a globe); the offload % reported on the planar and the S1 model
 - [ ] M18 SP5 gate: 3-D dynamics S2 (oblate Earth: J2, ellipsoid); offload % on the oblate model, the effects of flattening and J2 separated
 - [ ] M19 SP6 gate: 3-D dynamics S3 (6-DOF fly-out); attitude, gimbal and cold-start controllability results; attitude shown in the 3-D scene
-- [ ] M20 SP7 gate: the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its exit criteria are drafted in its phase file (docs/phases/SP7-structural-mass-push-load.md, section 8, written at SP1's close-out); SP2's close fact-checked the file at 705025f and finalised its prompt (96bbfa1); SP7's Plan mode fixes the tolerances marked "proposed"
+- [~] M20 SP7 gate (in progress since 2026-10-08; step 0 done: the design approved, D-SP7-01 to D-SP7-35): the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its exit criteria are drafted in its phase file (docs/phases/SP7-structural-mass-push-load.md, section 8, written at SP1's close-out); SP2's close fact-checked the file at 705025f and finalised its prompt (96bbfa1); SP7's Plan mode fixes the tolerances marked "proposed"
 
 ## Priorities
 
-1. P0 SP7 (the next session; D-SP1-18, D-SP2-40): the structural mass of the push load and a force-limited drive (B-004, B-005, KI-030, KI-039). It decides whether SP1's 10% of stage 1 survives.
+1. P0 SP7 (in progress since 2026-10-08; D-SP1-18, D-SP2-40): the structural mass of the push load and a force-limited drive (B-004, B-005, KI-030, KI-039; parts of B-007). It decides whether SP1's 10% of stage 1 survives.
 2. P0 (standing) Physics correctness and honest tests (validation first; closed forms computed in the tests).
 3. P1 SP3, after SP7: 3-D dynamics S1, pinned against the planar gate.
 4. P2 SP4, SP5, SP6: the 3-D scene and the re-check on S1; the oblate Earth; the 6-DOF fly-out.
@@ -99,10 +99,10 @@ items" below, where the original wording is kept.
 | B-001 | P3 | any session boundary (needs the user) | [!] | Results retention: three run+sweep pairs from 2026-09-29 have tracked summaries (cited pair 103623Z/103634Z, reviewer pair 104503Z/104510Z, gate pair 105657Z/105707Z); decide whether to keep only cited pairs (deleting results needs your OK per CLAUDE.md) |
 | B-002 | P3 | none | [x] closed 2026-09-30 | Phase 2 prep: re-source the F9 propellant loads and stage-2 dry mass in the calibration fork. Met by the Phase 2 mass sets B and C (D-P2-01, steps 18 and 26): configs/vehicles/generic_f9_class_2d.yaml carries the FT-table values (stage 1 410.9 t, stage 2 4.0 t dry and 107.5 t) with sources. The box was not ticked at the Phase 2 close; checked against the file on 2026-09-30 |
 | B-003 | P2 | later (README Phase 5, with the optimized ascent) | [ ] | Throttling (max-Q is reported unthrottled; deferred by D-P2-05). The offloaded silo run's max-Q can exceed the pad's and is reported, not constrained |
-| B-004 | P1 | SP7 (D-SP1-18, 2026-10-04; was: later, README Phase 3) | [ ] | Structural mass for the 4 g full-stack push and the interface-hardware mass penalty. Decides whether the headline survives; SP1 shows it only as parametric rows (D-SP1-04) |
-| B-005 | P1 | SP7 for the force-limited drive (D-SP1-18, 2026-10-04); any remainder later (README Phase 3) | [ ] | `linear_motor`: force- and power-limited drive with efficiency. Needed before the hot-start question can be answered |
+| B-004 | P1 | SP7 (D-SP1-18, 2026-10-04; was: later, README Phase 3) | [~] | Structural mass for the 4 g full-stack push and the interface-hardware mass penalty. Decides whether the headline survives; SP1 shows it only as parametric rows (D-SP1-04) |
+| B-005 | P1 | SP7 for the force-limited drive (D-SP1-18, 2026-10-04); any remainder later (README Phase 3) | [~] | `linear_motor`: force- and power-limited drive with efficiency. Needed before the hot-start question can be answered |
 | B-006 | P2 | later (README Phase 3) | [ ] | Curved TrackGeometry and the frictionless-arc test; `cable_winch` (and the cable frequency test) |
-| B-007 | P2 | later (README Phase 3) | [ ] | Air-column piston, friction, modelled carriage braking, release at a target speed |
+| B-007 | P2 | SP7 for the sealed-shaft air column, release at a target speed and braking as closed-form functions (D-SP7-04, D-SP7-12, 2026-10-08); later for friction and a braking phase integrated in the trace | [~] | Air-column piston, friction, modelled carriage braking, release at a target speed |
 | B-008 | P2 | later (README Phase 3) | [ ] | Tilted-exit abort with Coriolis |
 | B-009 | P3 | later (README Phase 3) | [ ] | Engine shutdown transients |
 | B-010 | P3 | later | [ ] | Parquet time series |
@@ -111,6 +111,7 @@ items" below, where the original wording is kept.
 | B-013 | P2 | later (README Phase 5) | [ ] | optimize.py: optimal-control ascent; headline results re-run with optimized guidance |
 | B-014 | P3 | later (README Phase 6) | [ ] | RocketPy comparison at hobby scale |
 | B-015 | P1 | SP1 for RQ1 (planar); SP4 and SP5 for the 3-D re-checks; later for RQ4, RQ5, RQ7, RQ8 | [ ] | Findings for RQ1-RQ8. Preliminary notes exist for RQ2, RQ3 and RQ6 (concept A); RQ1 is SP1 step 9 (docs/findings/RQ1-fuel-offload-2d.md; written 2026-10-04, fd664a5, preliminary, the fuel-replacement form on the planar model) |
+| B-016 | P2 | later (D-SP7-08, 2026-10-08) | [ ] | The local app's form: a modelled-structure switch (set, sizing basis) and a linear-motor launch, once SP7's structural cases and `LinearMotorConfig` exist; needs a basis decision (a third committed experiment file or an amendment of silo_offload_2d.yaml) and the D-SP2-37 rules |
 
 ## Todo (near term)
 
@@ -272,6 +273,51 @@ Notes on the SP2 planning group:
   app.
 - Changes against the brief are listed in the phase file, section 12.
 
+SP7 planning (2026-10-08; Q1 to Q7 and the app point answered by the user in step 0, four follow-ups after the review of draft v1, the design approved the same day; the full text and reasons are in docs/phases/inputs/2026-10-08-SP7-design.md):
+
+- **D-SP7-01** 2026-10-08 (Q1) Structural model fidelity B: first-order station sizing (closed forms per tank, the domes, the aft skirt, the load-entry ring and the interface hardware); FEM not taken (user, the recommended option).
+- **D-SP7-02** 2026-10-08 (Q2) The structure is sized for the offloaded stack actually flown, re-sized at each offload x, with a full-load-sizing row beside it (user, the recommended option).
+- **D-SP7-03** 2026-10-08 (Q3) Zero existing margin: the stage-1 structure exactly meets the pad's own envelope; 10% and 25% margin rows beside (user, the recommended option).
+- **D-SP7-04** 2026-10-08 (Q4) Drive scope: the linear motor, carriage mass and release at a target speed in; braking and the sealed-shaft air column in but first to cut; the curved track and the cable winch out (user, the recommended option).
+- **D-SP7-05** 2026-10-08 (Q5) The carriage load enters through an aft ring at the stage base (central), with a row through the thrust structure (user, the recommended option).
+- **D-SP7-06** 2026-10-08 (Q6) A new findings note, docs/findings/RQ1-structural-2d.md, with a dated pointer section at the top of RQ1; RQ1's record kept (user, the recommended option).
+- **D-SP7-07** 2026-10-08 (Q7) The dynamic load factor is charged from a stated force rise time and an assumed axial period (for constant_accel an assumed real-drive rise time), with the quasi-static value and the step beside (user, the recommended option).
+- **D-SP7-08** 2026-10-08 (app) No change to the app's form in SP7; a modelled-structure switch and a linear-motor launch go to the backlog (B-016) (user, the recommended option).
+- **D-SP7-09** 2026-10-08 (Q7 follow-up, after the review found v1's rise-time rule pinned the factor at 1.03-1.10 by construction) The assumed rise time is its own ranged coefficient (central 0.5 s, 0.1-1.0 s), independent of the stack's frequency (central 5 Hz, 2-10 Hz), so the dynamic factor ranges up to a full step; the ramp's own trajectory cost is charged by closed form; a linear-motor run that flies the same ramp cross-checks it (user, the recommended option).
+- **D-SP7-10** 2026-10-08 (release) The release load step is reported, not sized: compared with the vehicle's own MECO shutdown under the same treatment, the stage-1 column-separation check and its numbers in the headline caveats, and one linear-motor variant flying a stop taper to measure its cost (user, the recommended option).
+- **D-SP7-11** 2026-10-08 (stage 2) Wherever the push exceeds the MECO envelope, stage 2's tanks and the interstage are sized with the same closed forms against the pad's full-flight envelope and the mass is charged to stage 2; the payload's published +6.0/-2.0 g limits are flagged (user, the recommended option).
+- **D-SP7-12** 2026-10-08 (braking) Braking as closed-form functions at a constant deceleration, reported for linear-motor runs; a braking phase integrated in the trace stays in the backlog (B-007) (user, the recommended option).
+- **D-SP7-13** 2026-10-08 Layout from SpaceX's guides for both stages (LOX monocoque on top, RP-1 skin and stringer below, a common dome); geometry built once from the full-load vehicle; everything not public assumed (design, approved with the plan).
+- **D-SP7-14** 2026-10-08 Modes per station: hoop, net compression against buckling (SP-8007 with the pressure increment for monocoque walls; Gerard rows and a plate-limited row for stiffened walls), a von Mises membrane check, minimum gauge; the increment is the sum of the positive parts over the pad envelope times a non-optimum factor (design, approved with the plan).
+- **D-SP7-15** 2026-10-08 The envelope is the pad baseline's own recorded flight, quasi-static, drag left out; margin is applied to the envelope loads and pressures (design, approved with the plan).
+- **D-SP7-16** 2026-10-08 Dynamic load factor min(2, 1 + T/(pi t_r)) on the increment over the resting load, single-mode and labelled so; for constant_accel the plateau a ramped drive needs for the same (L, v_e) is charged by closed form (design, approved with the plan).
+- **D-SP7-17** 2026-10-08 Load entry: the aft skirt and a ring frame in closed form (a beam between N_p carriage pads, a fitting factor); the thrust-structure row by its mass-estimating relation, at equal prominence (design, approved with the plan).
+- **D-SP7-18** 2026-10-08 Uncertainty in three layers: the physics band (screened search over the sourced and physical coefficients, frozen before any flight), the design-assumption axes with their break-even values, the outer envelope; a tornado beside (design, approved with the plan).
+- **D-SP7-19** 2026-10-08 The release, upper-stack and payload checks are reported as flags with numbers, not sized (design, approved with the plan).
+- **D-SP7-20** 2026-10-08 Coupling by an optional vehicle transform inside `OffloadProblem.vehicle_at` (SP1's path unchanged when off); constant_accel's load case analytic, a linear-motor push flown inside the transform; dm from 0 at each call, a capped inner iteration with a flag (design, approved with the plan).
+- **D-SP7-21** 2026-10-08 The structural switch is an optional `structure:` field on offload cases plus an experiment-level `structure:` block; the coefficients in configs/structures/<vehicle>.yaml, read by cli and passed to `resolve_experiment` as a keyword-only loader; refused with `stage1_dry_mass_added_t` and `paired_pad` (design, approved with the plan).
+- **D-SP7-22** 2026-10-08 Run-level structural record keys on every structural run of any kind; three-way wording (uncharged, assumed penalty, modelled) at every source; a modelled dry mass restated with a source naming the model, never `assumed` (design, approved with the plan).
+- **D-SP7-23** 2026-10-08 KI-039: imposed cases in their own sub-section with their own basis line; solved cases keep the heading "Propellant saved at fixed payload"; the app banner's imposed disclaimer dropped (design, approved with the plan).
+- **D-SP7-24** 2026-10-08 Linear motor: a force law (a fixed facility) and an acceleration law (a jerk-limited command), an optional stop taper, P_max mechanical at the carriage, release at L or at a target speed; F_max, P_max and the command by rules fixed before any run (design, approved with the plan).
+- **D-SP7-25** 2026-10-08 A release-referenced ignition on a drive whose push time is not exact is resolved at the real release; constant_accel keeps today's path byte for byte (design, approved with the plan).
+- **D-SP7-26** 2026-10-08 The sealed shaft on linear_motor only: an adiabatic trapped column below the carriage, acting on the carriage; its work in a new record outside `AssistEnergyBudget`'s fields (design, approved with the plan).
+- **D-SP7-27** 2026-10-08 No field is added to any dataclass the 1-D golden dump reaches; a fast test pins their field lists (design, approved with the plan).
+- **D-SP7-28** 2026-10-08 KI-030 closed by per-field strict and finite validators on the existing models and named range bounds (t_ign_s within +/-3600 s, exit_altitude_m within +/-500 m); no resolved dict changes (design, approved with the plan).
+- **D-SP7-29** 2026-10-08 SP7's experiments are three new files; experiments/silo_offload_2d.yaml stays unchanged (the app's basis and its reproduction mark stay); the structural files are registered and run after the structural steps (S6a, S7a), the drive file after the drive steps (S6b, S7b) (design, approved with the plan).
+- **D-SP7-30** 2026-10-08 SP1's headline and penalty rows pinned from its metrics.json into tests/data/silo_offload_2d_record.json with a provenance test; slow pins at 0.002 kg for the structure-off headline and a constant-2 t cross-check (design, approved with the plan).
+- **D-SP7-31** 2026-10-08 Freeze: tests in S3-S5 never solve a pre-registered case; the structure files are frozen at S2's commit, a later change being a logged decision (before S6a) or an amendment (after) (design, approved with the plan).
+- **D-SP7-32** 2026-10-08 Numeric reading rules ("survives", "cancels most", "undecided", "cancels all") and a fixed headline-sentence form, pre-registered (design, approved with the plan).
+- **D-SP7-33** 2026-10-08 Plausibility rule: the model's envelope tank mass against Heineman's relation (+/-30%); outside it, the band end on that side is widened by the ratio, mechanically, and printed (design, approved with the plan; restores the brief's rule).
+- **D-SP7-34** 2026-10-08 Test hygiene with the steps that touch the files: the docstring check fails on a missing module path and lists the phases files; KI-035's import check split fast/slow; KI-021 to KI-023 fixed; the physics.md row of the docstring check reworded (design, approved with the plan).
+- **D-SP7-35** 2026-10-08 Amends D-SP1-03: a structural case's stage-1 (and, where charged, stage-2) dry mass is the modelled dm on the assisted run only; the pad keeps its vehicle (design, approved with the plan).
+
+Notes on the SP7 planning group:
+
+- The design's sources are saved beside it: nine surveys (docs/phases/inputs/2026-10-08-SP7-survey/) and draft v1 with its six reviews (docs/phases/inputs/2026-10-08-SP7-review/: 5 blocker, 52 major and 55 minor findings); the design's appendix A gives the disposition of every finding.
+- D-SP7-09 to D-SP7-12 were put to the user because the review found that v1 changed or weakened an answer the user had given (the rise-time rule, the release, the stage-2 rows, braking).
+- Not taken: FEM; a parametric fraction; an all-at-once corner band as the headline band; a modal (multi-mass) dynamic model; a braking phase in the trace; any app form change; editing a shipped experiment or vehicle file; KI-032.
+- Changes against the brief are listed in the design's section 6.1 and the phase file's section 12.
+
 ## Known issues and observations
 
 Format: **KI-nnn** [severity, status, owner phase] entry. "Owner: standing" means a rule or
@@ -311,15 +357,15 @@ Added 2026-09-30 in SP1 step T (from the session itself):
 
 Added 2026-10-02 in SP1 step 2:
 
-- **KI-021** [low, open, owner later: the next phase that may touch those tests (SP1 closed without touching them)] tests/test_silo.py states the 3 g0, 100 m felt load as 3.9992 g0 (module docstring, the `test_cold_felt_acceleration_and_interface_force` docstring and its 1e-4 hand-number literal); the value (3 g0 + mu/R_E^2)/g0 = 3.99915 is 3.9991 to four decimals (docs/physics.md corrected in SP1 step 2). Correct all three together when a step may touch that existing test; the check passes with either value.
+- **KI-021** [low, open, owner SP7 (step S4 edits tests/test_silo.py; D-SP7-34); was: later, the next phase that may touch those tests] tests/test_silo.py states the 3 g0, 100 m felt load as 3.9992 g0 (module docstring, the `test_cold_felt_acceleration_and_interface_force` docstring and its 1e-4 hand-number literal); the value (3 g0 + mu/R_E^2)/g0 = 3.99915 is 3.9991 to four decimals (docs/physics.md corrected in SP1 step 2). Correct all three together when a step may touch that existing test; the check passes with either value.
 
 Added 2026-10-02 in SP1 step 5:
 
-- **KI-022** [low, open, owner later: the next phase that may touch those tests (SP1 closed without touching them)] Test docstrings tests/test_convergence_2d.py:34-38 ("the only planar tests that fly the shipped search rtol of 1e-8"), tests/test_search.py:72-74 and tests/test_payload_search.py:80 ("the convergence tests alone fly the shipped 1e-8") are no longer accurate: tests/test_calibration.py, tests/test_silo_screening_record.py and the convergence test of tests/test_offload.py also fly it, as docs/physics.md "Validation" and "Convergence (planar)" now say. Docstring-only fix.
+- **KI-022** [low, open, owner SP7 (step S4, with KI-021 and KI-023; D-SP7-34); was: later, the next phase that may touch those tests] Test docstrings tests/test_convergence_2d.py:34-38 ("the only planar tests that fly the shipped search rtol of 1e-8"), tests/test_search.py:72-74 and tests/test_payload_search.py:80 ("the convergence tests alone fly the shipped 1e-8") are no longer accurate: tests/test_calibration.py, tests/test_silo_screening_record.py and the convergence test of tests/test_offload.py also fly it, as docs/physics.md "Validation" and "Convergence (planar)" now say. Docstring-only fix.
 
 Added 2026-10-02 in SP1 step 3:
 
-- **KI-023** [low, open, owner later: the next phase that may touch those tests (SP1 closed without touching them)] Two comments in existing tests in tests/test_config.py are stale since SP1 step 3: the comment in `test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name` ("the ignition group's other families arrive in step 3") and the end of the docstring of the step-1 sweep-axis test ("the depth arrives in step 3"). The fields exist and `test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` resolves the depth end to end. Comment-only edits, together with KI-021 and KI-022.
+- **KI-023** [low, open, owner SP7 (step S4 edits tests/test_config.py; D-SP7-34); was: later, the next phase that may touch those tests] Two comments in existing tests in tests/test_config.py are stale since SP1 step 3: the comment in `test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name` ("the ignition group's other families arrive in step 3") and the end of the docstring of the step-1 sweep-axis test ("the depth arrives in step 3"). The fields exist and `test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` resolves the depth end to end. Comment-only edits, together with KI-021 and KI-022.
 
 Added 2026-10-02 in SP1 step 6:
 
@@ -349,10 +395,10 @@ Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the 
 - **KI-032** [low, open, owner later] The metric `drive_power_peak_t_s` is on the absolute run clock (metrics_planar.py 1012), while the other time metrics of a planar run are after release, `t_release_s` excepted. It reads 2.6073 s on silo_cold and 5.2146 s on silo_cold_200m: the release instant, which is 0.0 after release. `felt_g_track_peak_t_s` beside it is after release (-2.607 s). A reader subtracts `t_release_s` before showing it on the release clock. Evidence: docs/phases/inputs/2026-10-05-SP2-survey/05-run-data-on-disk.md (sections 4, 10 and 11).
 - **KI-033** [low, open, owner later] An offload case on a variant with `assist: {model: none}` resolves. The config refuses a case only when its `of` is the baseline or an unknown name (config.py 2046-2053), so the rule that an offload applies to an assisted launch (the pad's own offload is the pad control) is not enforced for a second pad given as a variant. The app's form does not offer it: a pad-only launch disables the offload. Evidence: docs/phases/inputs/2026-10-05-SP2-survey/03-config-and-form.md (section 9, item 2).
 - **KI-034** [low, open, owner later] A step startup at release records thrust 0 on its first flight row. In results/silo_screening_2d/20260930T175743Z/silo_instant/timeseries.csv both rows at t_rel 0 (ASSIST and KICK) have `thrust_vac_N` = 0; the next row, at +0.0427 s, has 8,226,900 N, with `m_kg` already 115.13 kg lower (full flow from the ignition instant). The metric `t_ign_rel_release_s_stage1` is 1.78e-15 s, so the row is sampled a rounding step before ignition (vehicle.py 104: dt < 0 gives 0). The same in silo_bridge_2d_readme. pad_instant (first row 1.0) and stage-2 ignition (0, then 1) are as expected. Consequences for a reader: linear interpolation between the two rows draws a 43 ms thrust ramp the model does not have, and a check that rebuilds mass by integrating thrust must leave out that first interval (57.6 kg). Evidence: docs/phases/inputs/2026-10-05-SP2-review/01-numerics.md, finding 5.
-- **KI-035** [low, open, owner the next phase that edits tests/test_scene.py (SP2 closed without it), else standing] Fast-tier tests can exceed CLAUDE.md's 5 s mark when the machine is loaded: in SP2 step A3's runs tests/test_golden_1d.py took 5.84 s, tests/test_search.py 5.57 s, and tests/test_scene.py::test_run_path_modules_never_import_display_or_scene was reported over 5 s by one reviewer (2.8-2.9 s alone). Split the import check into a cheaper fast part and a slow part, or mark it slow, when a step may edit that file; the timings of the other two depend on load.
-- **KI-036** [low, open, owner the phase that next edits replay.py] `replay.py` (around line 1820) writes `bool(git.get("dirty"))` into the page, so a directory whose git state is unknown (dirty None, for example an exploratory app run started outside a repository) reads as clean on the replay page; the scene page and the app's banner show it as unknown. Found by the SP2 step A4 honesty review.
+- **KI-035** [low, open, owner SP7 (step S1 edits tests/test_scene.py's RUN_PATH_MODULES; D-SP7-34); was: the next phase that edits that file, else standing] Fast-tier tests can exceed CLAUDE.md's 5 s mark when the machine is loaded: in SP2 step A3's runs tests/test_golden_1d.py took 5.84 s, tests/test_search.py 5.57 s, and tests/test_scene.py::test_run_path_modules_never_import_display_or_scene was reported over 5 s by one reviewer (2.8-2.9 s alone). Split the import check into a cheaper fast part and a slow part, or mark it slow, when a step may edit that file; the timings of the other two depend on load.
+- **KI-036** [low, open, owner SP7 (step S3a edits replay.py; its owner rule: the phase that next edits replay.py)] `replay.py` (around line 1820) writes `bool(git.get("dirty"))` into the page, so a directory whose git state is unknown (dirty None, for example an exploratory app run started outside a repository) reads as clean on the replay page; the scene page and the app's banner show it as unknown. Found by the SP2 step A4 honesty review.
 - **KI-037** [low, closed 2026-10-07 in SP2 step A8 (96bbfa1): docs/manual/07b-app.md and 11-troubleshooting.md document Ctrl+C as the stop and name the Ctrl+Break exit code; no code change] Stopping `uv run python -m launchsim app` with Ctrl+Break: the server prints its stop lines, writes FAILED.txt for a running launch and exits 0, but `uv` itself exits 3221225786 (0xC000013A, a console-interrupt exit), so the shell sees a failure and its prompt may return before the server has finished. Ctrl+C is the documented stop; say so in the manual. Found by the SP2 step A4b gate.
-- **KI-038** [low, open, owner the phase that next edits scene.py] The scene page's data block and its Data line name only the run directory's git state, not the renderer's version and git state, unlike the replay page's meta (src/launchsim/scene.py); a scene page cannot say which commit drew it. Found by the SP2 step A7 review, round 1; recorded in docs/demos/SP2/README.md ("Left open at SP2's close (KI-038)"); SP2 made no code change for it.
+- **KI-038** [low, open, owner SP7 (step S3a edits scene.py; its owner rule: the phase that next edits scene.py; D-SP7 design 4.5: the renderer's version, not its git state)] The scene page's data block and its Data line name only the run directory's git state, not the renderer's version and git state, unlike the replay page's meta (src/launchsim/scene.py); a scene page cannot say which commit drew it. Found by the SP2 step A7 review, round 1; recorded in docs/demos/SP2/README.md ("Left open at SP2's close (KI-038)"); SP2 made no code change for it.
 - **KI-039** [low, open, owner SP7 (its reporting step, S3)] A summary.md whose offload block has an imposed (fixed) case files that case under the section "Propellant saved at fixed payload" (summary.py `OFFLOAD_SECTION_NAME`, `offload_section`), whose basis line (compare.py `OFFLOAD_COMPARISON_BASIS`, also in metrics.json's `offload` record) says "every offload is measured at the reference payload P_ref"; an imposed case flies its own payload capacity P*. The case rows are right ("payload flown (solved: P_ref; fixed: its own P*)"), and since SP2 an app summary's banner says an imposed offload is not propellant saved (`EXPLORATORY_IMPOSED_TEXT`). Reword the heading and the basis line for imposed cases at source with the honesty review, then drop the banner's disclaimer; recorded results are not rewritten. Found by the SP2 exit-criteria gate (criterion 7); accepted by D-SP2-41.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
@@ -386,7 +432,10 @@ Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the 
   (D-SP2-01 to D-SP2-08), and the SP2 design was approved the same day (D-SP2-09 to
   D-SP2-38); the SP2 close-out question (the next phase) was answered 2026-10-07
   (D-SP2-40), and the two exit-criteria misses were accepted the same day (D-SP2-41,
-  D-SP2-42).
+  D-SP2-42); the SP7 planning questions Q1 to Q7 and the app point were answered on
+  2026-10-08 (D-SP7-01 to D-SP7-08), four follow-ups after the review of the draft the same
+  day (D-SP7-09 to D-SP7-12), and the SP7 design was approved the same day (D-SP7-13 to
+  D-SP7-35).
 - Deferred to later phases' Plan mode; each phase file lists them in its section 10 (Risks
   and open questions), marked where they need you. Known today from the approved plan: the
   detailed design of the app and the 2-D scene (SP2's Plan mode; done 2026-10-05,
