@@ -64,8 +64,8 @@ Nothing under `results/` is edited by hand or deleted. Only each run's top-level
    - the closing commit the handoff names by hash exists (`git cat-file -e <hash>`) and is
      an ancestor of HEAD;
    - `git diff --stat <hash> HEAD` touches only `docs/`, `TODO.md`, `CLAUDE.md`,
-     `README.md` and `.gitignore` (bookkeeping files; no code, tests, configs,
-     experiments or results).
+     `README.md`, `.gitignore` and `site/` (bookkeeping files and the public-face refresh
+     of section 7, item 6; no code, tests, configs, experiments or results).
 
    If any of these fails, find out why before touching anything. If the phase file says
    "in progress", the checks are those of section 10 instead (every `[x]` row has its
@@ -399,6 +399,12 @@ Tools and shell (Windows 11, PowerShell 5.1 and Git Bash):
 - Plan mode freezes background workflow agents that write scratch files (2026-10-05: nine
   survey agents were idle for 43 minutes). Run workflows outside Plan mode, and enter it
   only to present a finished plan.
+- A model usage limit can stop a workflow's agents mid-step, and their child processes
+  (app and static servers, drivers, headless browsers) keep running. Before resuming the
+  workflow from its journal, stop them by command line (only those the session started)
+  and move the dead agents' partial scratch folders aside (SP2, 2026-10-07).
+- A workflow's result in its notification is cut short; read the task's output file or
+  the workflow journal for the full verdicts.
 
 Code and data:
 
@@ -420,6 +426,10 @@ Results and timing:
 - Machine speed varies about 3x under load (full suite 4-20 min at 2eebcae). A searched
   planar run takes 7-25 s; `silo_screening_2d` took about 27 min for the run and 26 min
   for the sweeps. Budget long runs as background commands.
+- A full suite run beside other heavy jobs can fail tests that start subprocesses (git,
+  node, python, ffmpeg) with exit 0xC0000142 (DLL initialisation failed). Re-run those
+  tests alone before reading them as real (SP2 close: 28 such failures, all passing on
+  re-run; the full suite took 51 min under that load).
 - `run_data.CALIBRATION_RECORDS` (re-exported by `plots`) feeds the calibration caveat in `animate` and `replay`;
   update it whenever the calibration is re-run.
 

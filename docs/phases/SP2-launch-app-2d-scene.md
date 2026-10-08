@@ -1,6 +1,6 @@
 # SP2: Local app and 2-D launch scene
 
-Status: in progress (session 2026-10-05)
+Status: done (2026-10-07, commit `3a1b243`)
 
 Written 2026-09-30 in the SP1 session (step T) from the approved plan
 ([inputs/2026-09-30-SP1-approved-plan.md](inputs/2026-09-30-SP1-approved-plan.md), section
@@ -1248,7 +1248,7 @@ decision.
 | | Checkpoint 2: the request is met | | | | | |
 | A6v | Video | video.py, app.html, app.py | PNG header checks, limits, fake encoders (hung, early exit), reservation | An MP4 of pad beside silo_cold_s1 from the app; frame count = fps x seconds; footer text checked on a sampled frame; security review | [x] | 637994a |
 | A7 | Full visual QA, demo launches, gallery material | docs/demos/SP2/, site/ | the QA table | Every row passes or is a logged deviation; screenshots in both themes; the exported scene page, the gallery entry, the frame rule and the video reviewed; site builds | [x] | 7cb440f (part 1), 3a1b243 (part 2) |
-| A8 | Close | docs, TODO.md, memory | full suite | The 17 exit criteria; close-out question to the user; SP7's file fact-checked after the last code commit; handoff, memory, cold read; push and Pages | [ ] | |
+| A8 | Close | docs, TODO.md, memory | full suite | The 17 exit criteria; close-out question to the user; SP7's file fact-checked after the last code commit; handoff, memory, cold read; push and Pages | [x] | 96bbfa1 (part 1); the bookkeeping commit "Close SP2: trackers, handoff, next phase file" (part 2) |
 
 "Criterion" in the table means an exit criterion of section 8; "survey 06" and "the
 survey's 38 cases" are inputs/2026-10-05-SP2-survey/06-run-data-refactor-plan.md and
@@ -1393,6 +1393,34 @@ lag startup has no ramp end; painted points added; events at 1e-6 s); 6 (1% tigh
 1e-4; tank checks added, because the mass rebuild alone is an identity); 7 (+ the mark on
 every export; contrast); 8 (+ incomplete and unreadable); 10 (the allowed differences
 named); 12 (Pillow); 15, 16 and 17 new.
+
+**Exit criteria results (2026-10-07).** Checked by the independent gate of step A8 at
+cb305a5 (clean tree): six agents, one criterion group each, with their own scripts, and a
+cross-checker who re-ran every FAIL and every thin PASS. Run on 2026-10-07 and 2026-10-08
+UTC; a model usage limit stopped five of the seven agents once and the run was resumed from
+its journal (section 11). 13 pass; 7 and 11 fail on one clause each and the user accepted
+both misses (D-SP2-41, D-SP2-42); 13 and 17 failed on the record only and were fixed in the
+close.
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 1 | The app starts | pass | URL printed (http://127.0.0.1:64418/); one listening socket, on 127.0.0.1 (::1, the LAN and IPv6 addresses refuse); a second server on that port exits 1 with the one-line error |
+| 2 | A launch works | pass | 19 launches through the app: exit speed, net acceleration, the five ramp-start ways, a 15 t imposed offload, a stage-1 solve, a +3 t penalty on a solve, a stage-2 solve with its pad control, the seven screening presets. Each answered 202 and wrote a complete directory labelled exploratory whose resolved config equals the request; every scene route 200 and the clock advanced; silo_failed and the flagged stage-2 solve each say why |
+| 3 | Same numbers as the CLI | pass | silo_cold_s1 from the app: 303 payload and offload values equal to results/silo_offload_2d/20261003T112934Z, worst difference 0.000 kg (offload 41,262.908 kg); time series and events byte-identical |
+| 4 | Refusals | pass | 43 bad bodies posted raw: 422 with one line each, nothing written; 1e400, a 400-digit integer, `true` and "3" refused; a second Launch 409 busy; a launch after a code change (scratch clone) 409 |
+| 5 | The scene matches the run data | pass | worst altitude error 0.071 and downrange 0.100 of the tolerance; attitude 0.0071 deg; base 0.141 px; thrust on and stage: 0 mismatches; plume 0.00034; events 4.99e-7 s; the 28 doubled times show the later row |
+| 6 | The offload is visible and right | pass | start fill within 1.97e-7; stage-1 tank 0 kg at its propellant event; the tank checks at every row; rebuilt stack mass within 0.050 kg |
+| 7 | Honest labels | fail, accepted (D-SP2-41) | Every clause holds except "an imposed offload is never called saved": an app summary with an imposed offload files it under SP1's heading "Propellant saved at fixed payload", whose basis line says every offload is measured at P_ref. The banner on line 1 says an imposed offload is not saved and the case rows read "fixed: its own P*"; SP1's recorded summary carries its two fixed cases the same way. KI-039, owner SP7 |
+| 8 | Browse and replay | pass | 21 of 21 directories listed; both recorded directories open and play; failed, incomplete, unreadable (five ways), 1-D and sweep directories listed with their reasons; filter, refresh and open still work |
+| 9 | The pad is cached | pass | second and later launches have pad_cached true and no pad stage; the pad files byte-identical in all 19 directories |
+| 10 | Loader and fixes | pass | the reference page byte-identical at A1 (9579f89, sha256 3ca23dc5...); at the close it differs only in A1a's text keys (35 keys over 13 pages, no number); animate and replay pass their unchanged tests (52); one output-path rule; no private cross-module call; the four fairing cases tested; replay.html unchanged |
+| 11 | Tests and guards | fail, accepted (D-SP2-42) | Every clause holds except "(one slow launch)": six new slow tests, the slow launch plus three real-ffmpeg encodes, real canvas PNGs and the Ctrl+Break stop. Full suite 1719 passed in 3,062.98 s (51 min; pytest prints 0:51:02) with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1; ruff clean; golden 1-D, digest pin and output capture unchanged; no shipped file changed; the import guard holds; no ResourceWarning |
+| 12 | Dependencies | pass | only pillow>=12.0 in the dev extra (uv.lock: its two lines); the CSP, the template scan and the network list show no request off 127.0.0.1 |
+| 13 | Documents and public face | fail at the gate, fixed in the close | TODO.md's Priorities line still said "Next step: A1" and the SP7 handoff was not yet written: both close-out items, done in the bookkeeping commit and checked by the cold read. Every other clause held (main pushed and Pages green at cb305a5) |
+| 14 | Demo recorded | pass | the README with its commands (headless Edge included); 60 screenshot pairs in both themes and one light-only shot with its reason; qa-table.md 1,994 rows, none failing; api-record.md with one launch and one refusal and their UTC times |
+| 15 | Export | pass | the standalone page plays served and from file:// with no request off the machine; the app's MP4 has 1,727 frames, 1280 x 720 at 20 fps, two panels and the caveat footer on the frames read |
+| 16 | Watchable | pass | close-up vehicle at least 121.0 px; the kick moves the nose 5.34, 7.78 and 4.45 px; event windows 1.667 and 2.500 wall s; separated bodies 11 px across |
+| 17 | Requests from another origin are refused | fail at the gate on the record, fixed in the close | The behaviour passed: 132 browser requests and 64 raw rows from another port, localhost, another host name and a DNS-rebinding proxy, none answered 2xx; the job idle, no video session, no scene built. The demo lacked the real-browser check (demo step 14); the gate's record was added as [docs/demos/SP2/criterion17-browser-check.md](../demos/SP2/criterion17-browser-check.md) |
 
 ## 9. Demo script
 
@@ -1846,9 +1874,36 @@ Also from the design's section 8:
   re-printed (1,095,954 bytes, 20 pages). Site build: 1312 links checked, none broken.
   KI-037 closed (the manual documents Ctrl+C); KI-038 logged from the demo record.
   Commit 96bbfa1.
-- Next: step A8, part 2 (the independent gate on the 17 exit criteria with the full
-  suite; the phase closed in the trackers; the handoff; memory; the cold read; the
-  closing commit; push and Pages).
+- Step A8, part 2 (2026-10-07 to 2026-10-08 UTC): the independent exit-criteria gate at
+  cb305a5 (section 8, "Exit criteria results"). A model usage limit stopped five of its
+  seven agents mid-run; the session moved to Opus 5.5, the dead agents' orphaned processes
+  (three app servers, static servers, a launch driver still posting, headless Edge on
+  temporary profiles, a tail) were stopped by command line, their partial scratch folders
+  moved aside, and the run resumed from its journal. Nothing had reached the repository's
+  results tree. Verdicts: 13 pass; 7 and 11 fail on one clause each, accepted by the user
+  (D-SP2-41, D-SP2-42); 13 and 17 failed on the record only and were fixed in the close
+  (the TODO.md priorities line and the handoff; the gate's real-browser record of
+  criterion 17 added as docs/demos/SP2/criterion17-browser-check.md). Full suite (the
+  gate's second run): 1719 passed (1678 fast, 41 slow) in 3,062.98 s (51 min; pytest prints 0:51:02) with
+  LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1. Its first run, on a machine loaded by the parallel
+  gates, had 28 failures and 3 skips, every one a subprocess (git, node, python, ffmpeg)
+  exiting 0xC0000142 at start; all 31 passed on an immediate re-run. ruff check: all
+  checks passed; ruff format --check: 109 files already formatted. The close: this file,
+  the board, TODO.md (M13 done; D-SP2-41, D-SP2-42; KI-039; KI-035 re-owned), SP7's file
+  (KI-039 in its open points and its prompt), the protocol's gotchas, the handoff archived
+  as docs/handoff/archive/2026-10-04-SP1.md and the new one written, memory. Cold read: an agent that wrote none of the documents read from the handoff on and confirmed every
+  path, the 30 commit hashes (all ancestors of HEAD), the closing commit (3a1b243, the
+  last commit under src, tests, configs, experiments or results), 1719 = 1678 + 41 (the
+  slow tier collected), memory, the board and TODO.md in agreement, and the three prompt
+  copies byte-identical; its 13 minor findings were fixed before the commit (the public
+  face's one app screenshot named; unsourced numbers dropped or sourced; SP7's glossary
+  line at 705025f (167) and its Pages state line; site/ added to the protocol's
+  bookkeeping paths; absolute scratch paths; the results-table sizes and the sweep row;
+  TODO.md's SP7 row and M20; the board's one-liners; the suite time as pytest prints it;
+  KI-039 among the handoff's open design points). Closing commit 3a1b243 (the last commit that changed code or results; the
+  last code commit is 7cb440f); the bookkeeping commit "Close SP2: trackers, handoff, next
+  phase file".
+- Phase closed 2026-10-07. Next: SP7 (D-SP2-40), from docs/handoff/NEXT_SESSION.md.
 
 ## 12. Deviations from the plan
 
@@ -1918,6 +1973,24 @@ to 5 still describe the brief's proposal.
 
 Correction to the design (a record, not edited): its section 4.6 says "the video routes of
 4.9"; the video routes are in its section 4.8.
+
+Step A8 (2026-10-07):
+
+1. **A8 in two parts.** Part 1 (documents, the public face and SP7's fact-check; commit
+   96bbfa1) was committed before the exit-criteria gate, so that the gate checked the
+   documents as committed; part 2 is the gate and the close.
+2. **Exit criterion 7 closed as an accepted miss** (D-SP2-41): an app summary with an
+   imposed offload carries SP1's "Propellant saved at fixed payload" heading and its basis
+   line; SP7 rewords both (KI-039).
+3. **Exit criterion 11 closed as an accepted miss** (D-SP2-42): six new slow tests instead
+   of one slow launch; the five others run real ffmpeg, Edge or a console interrupt and
+   take over CLAUDE.md's 5 s mark.
+4. **Demo step 14** (the real-browser cross-origin check) was recorded at the close from
+   the exit gate's run (docs/demos/SP2/criterion17-browser-check.md), not during the demo
+   launches.
+5. **The gate's re-run** after the usage limit ran on Opus 5.5 (agents inherit the session
+   model); the agents that had finished before the limit ran on Fable 5.1. No criterion
+   depends on the model.
 
 ## 13. Prompt to start this phase
 

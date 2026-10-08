@@ -234,8 +234,9 @@ section 6 (the prompt of section 13 asks for it).
    plots.py, replay.py, cli.py, summary.py and config.py (the label value only; no display
    block, D-SP2-18) and added modules; it did not touch results_io.py.
 7. `gh` is authenticated and the last Pages deployment is green (push cadence, D-SP1-15).
-   State: checked by SP2's close-out at its push; the handoff written at the close records
-   the Pages run (docs/handoff/NEXT_SESSION.md, section 1).
+   State: the handoff's section 1 names the check (`gh run list --workflow pages.yml
+   --limit 1`); the last green run before SP2's close is 37713777230 at cb305a5; the start
+   checklist re-runs the check against HEAD.
 8. SP2's app and scene exist and SP7 keeps the app's basis valid (added at the re-check).
    `launchsim app` (app.py; cli.py 217) copies the six shared blocks and the baseline of
    experiments/silo_offload_2d.yaml, which must agree with experiments/silo_screening_2d.yaml,
@@ -688,12 +689,12 @@ added; physics.md 8 moved, 2 added; RQ1 4 moved; .gitignore 1 note; every other 
   phase that edits replay.html (SP7 does not). Decisions: D-SP2-37 (the app-runs rule,
   protocol section 4), D-SP2-39 (`pad_variant`), D-SP2-40 (SP7 next).
 - docs/manual/05b-offload.md 100 describes the penalty row as "not a sized structure" and
-  12-faq-glossary.md 191 (the glossary row **penalty row**) as "a parametric stand-in for
+  12-faq-glossary.md 167 (the glossary row **penalty row**) as "a parametric stand-in for
   structure, not a sized one".
   README.md: "What can eat the gain" 219 with its "Simulation updates" paragraph 238;
   "Roadmap" 407. These are the lines at 705025f; the close-out's README and manual edits
-  (in the tree at this check, to be carried by the Close SP2 commit) move the glossary
-  entry to 187 and the README anchors to 233, 252 and 421, and leave 05b-offload.md 100
+  (committed in 96bbfa1) move the glossary
+  entry to 191 and the README anchors to 233, 252 and 421, and leave 05b-offload.md 100
   where it is; SP7's start reads them at that commit.
 
 **Documents (the record SP7 builds on)**
@@ -942,6 +943,12 @@ option fairly with its cost)
 - What the push metrics (`net_accel_mps2`, `exit_speed_mps`; `PUSH_SETTING_METRICS`) and
   the replay and scene labels hold for a linear-motor run, whose exit speed is a result
   (section 5.7).
+- KI-039 (added at SP2's close, D-SP2-41): the offload section's heading "Propellant
+  saved at fixed payload" (summary.py `OFFLOAD_SECTION_NAME` 1668, `offload_section`
+  2074) and its basis line (compare.py `OFFLOAD_COMPARISON_BASIS` 1639, also in
+  metrics.json's `offload` record) also cover imposed (fixed) cases, which fly their own
+  P*. Reword both in S3 with the honesty review and drop the app banner's disclaimer
+  (`EXPLORATORY_IMPOSED_TEXT`, summary.py 710) once the section is right.
 - KI-030's validators in S4 (section 2, item 9); KI-036, which falls to SP7 when S3
   edits replay.py; KI-032 if S4 touches the peak-power metric (section 6).
 
@@ -955,7 +962,8 @@ option fairly with its cost)
 
 ## 13. Prompt to start this phase
 
-Final (2026-10-07, SP2's close-out at 705025f). The handoff holds the same text.
+Final (2026-10-07, SP2's close-out at 705025f; KI-039 added at the close). The handoff
+holds the same text.
 
 > Read docs/handoff/NEXT_SESSION.md first, then docs/process/SESSION_PROTOCOL.md,
 > docs/phases/README.md, docs/phases/SP7-structural-mass-push-load.md, CLAUDE.md, TODO.md,
@@ -986,8 +994,8 @@ Final (2026-10-07, SP2's close-out at 705025f). The handoff holds the same text.
 > file's section 4 (the pins, the two recorded payload capacities 26,054.3962 and
 > 27,553.2271 kg within 0.002 kg, SP1's solver and run data, the app's basis); the
 > inventory of section 6 re-checked against HEAD (last checked at 705025f); the open KI
-> and B items owned by SP7 listed (B-004, B-005, KI-030; B-007 if Plan mode re-targets it;
-> KI-036 falls to the phase that edits replay.py). If the session starts in Plan mode, do
+> and B items owned by SP7 listed (B-004, B-005, KI-030, KI-039; B-007 if Plan mode
+> re-targets it; KI-036 falls to the phase that edits replay.py). If the session starts in Plan mode, do
 > the read-only checks first and run the suite right after approval, as the protocol's
 > section 3 says.
 >

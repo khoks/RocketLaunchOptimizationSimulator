@@ -1,271 +1,257 @@
-# Handoff: SP1 closed; start SP2 (local app and 2-D launch scene)
+# Handoff: SP2 closed; start SP7 (structural mass of the push load, and a force-limited drive)
 
 ## 1. Header
 
-- SP2 started 2026-10-05. If you are a new session and the phase file says in progress, resume per SESSION_PROTOCOL.md section 10 from the step table.
-- Written 2026-10-04, at the close of phase SP1 (session started 2026-09-30), following
+- Written 2026-10-07, at the close of phase SP2 (session started 2026-10-05), following
   docs/process/SESSION_PROTOCOL.md sections 7 and 8.
-- Phase just closed: **SP1**, launch settings and fuel offload at fixed payload (planar
-  model), docs/phases/SP1-fuel-offload-planar.md.
-- Closing commit (the last commit that changed code or results): `5007515`.
-- This file is part of the bookkeeping commit that follows it, subject
-  `Close SP1: trackers, handoff, next phase file` (protocol section 7, item 12). A file
+- Phase just closed: **SP2**, the local app and the 2-D launch scene,
+  docs/phases/SP2-launch-app-2d-scene.md.
+- Closing commit (the last commit that changed code or results): `3a1b243`
+  (step A7 part 2: the demo launches' app summaries under results/app/). The code commits of the session end with 7cb440f (step A7 part 1);
+  every commit after the closing commit changed documents, site pages and trackers only
+  (`git diff --stat 3a1b243 HEAD` touches CLAUDE.md, README.md, TODO.md, docs/, site/
+  and nothing under src/, tests/, configs/, experiments/ or results/).
+- This file is part of the bookkeeping commit that follows, subject
+  `Close SP2: trackers, handoff, next phase file` (protocol section 7, item 12). A file
   cannot hold the hash of its own commit, so HEAD is identified by that subject. main was
-  pushed to origin after it.
-- Next phase: **SP2**, docs/phases/SP2-launch-app-2d-scene.md. After SP2 comes SP7 (the
-  structural mass of the push load and a force-limited drive), then SP3 to SP6 (decision
-  D-SP1-18; section 5 below).
+  pushed to origin after it and the Pages deployment checked
+  (`gh run list --workflow pages.yml --limit 1`); if a later docs-only commit records that
+  check, its subject starts with `SP2:` and the start checklist's HEAD-subject test fails
+  literally for that known reason, as it did at SP2's start (SP2 session log, 2026-10-05).
+- Next phase: **SP7**, docs/phases/SP7-structural-mass-push-load.md. After it: SP3, SP4,
+  SP5, SP6 (decision D-SP1-18, confirmed at this close by D-SP2-40).
 
 Read in this order (protocol section 3, item 1):
 
 1. This file.
 2. docs/process/SESSION_PROTOCOL.md.
 3. docs/phases/README.md (the program board).
-4. docs/phases/SP2-launch-app-2d-scene.md (the phase file).
+4. docs/phases/SP7-structural-mass-push-load.md (the phase file).
 5. CLAUDE.md.
-6. TODO.md. While reading it, list the open known issues and backlog items owned by SP2
-   (section 7 below lists them as of this handoff).
+6. TODO.md. While reading it, list the open known issues and backlog items owned by SP7
+   (section 5 below lists them as of this handoff).
 7. README.md.
 8. The memory index and the notes it links:
    C:\Users\rahul\.claude\projects\D--DEV-ClaudeProjects-SpaceRocketOptimization\memory\MEMORY.md
-9. The inputs the SP2 phase file links: docs/phases/inputs/2026-09-30-survey-animate-replay-visuals.md,
-   the section "SP2: local app and 2-D scene" of
-   docs/phases/inputs/2026-09-30-SP1-approved-plan.md, and
-   docs/findings/RQ1-fuel-offload-2d.md (the headline the app shows beside its caveats).
+9. The inputs the phase file links. SP7 has none under docs/phases/inputs/ yet (its Plan
+   mode writes the first); its prompt names the record to read instead.
 
 ## 2. The request
 
-No new research request in SP1. The user's original request and the headline question, in
-their words, are in section 1 of docs/handoff/archive/2026-09-30-phases-0-2.md; section 1
-of the SP2 phase file quotes the part SP2 serves.
+No new research request in SP2. The user's original request and the headline question are
+in section 1 of docs/handoff/archive/2026-09-30-phases-0-2.md; SP2 served the part that
+asked to see the launch happen in 2-D with the depth, the ramp start and the offload
+configurable (quoted in section 1 of the SP2 phase file).
 
-Two new requests were made during the session. Neither was saved word for word; both are
-recorded as decisions in TODO.md.
+Choices the user made in SP2's Plan mode on 2026-10-05 (D-SP2-01 to D-SP2-08): a standalone
+HTML scene export and an MP4 video; offline with system fonts; app runs in
+results/app/<timestamp>/ with their summaries tracked and an exploratory banner, committed
+at step boundaries; presets from SP1's experiment and the Phase 2 screening variants; the
+gate vehicle only; fixed and solved offloads with stage 2 and both under Advanced; a
+schematic look. On 2026-10-06 the user asked, mid-phase, that workflow agents run on
+Fable 5.1 again after a usage limit had moved the session to Opus 5.5 (agents inherit the
+session model; no decision needed). At the close-out question (protocol section 7, item 7)
+the user chose SP7 as the next phase, the recommended option (D-SP2-40).
 
-- **2026-10-02, public repository.** The user asked to put the repository on their GitHub
-  in a new repository, to commit and push after every step, phase and milestone, and to
-  keep a logo, banner, slide deck, animation examples, a user manual and a GitHub Pages
-  site current. The one phrase of theirs that survives (memory note
-  public-repo-and-push-cadence.md): the work is "not shareable and non commercializable",
-  but should be public facing. Decisions D-SP1-14 to D-SP1-16; built as SP1 step P.
-- **2026-10-04, order after SP1.** At the close-out the user chose the recommended option:
-  SP2 runs next as planned; then a new phase, SP7, for the structural mass of the push load
-  (and a force-limited drive), before the 3-D dynamics of SP3 to SP6, because the
-  structural cost decides whether SP1's 10% survives while the 3-D models are expected to
-  move it by kilograms. Decision D-SP1-18. Phase numbers are identifiers and are never
-  renumbered: SP7 runs after SP2 and before SP3 (docs/phases/README.md, "How to add a
-  phase").
+## 3. What was finished in SP2
 
-## 3. What was finished in SP1
-
-**Steps** (SP1 phase file, section 7; every row with its commit):
+**Steps** (SP2 phase file, section 7; every row with its commit):
 
 | Step | What | Commit |
 |---|---|---|
-| T | Tracking system: protocol, program board, phase files SP1 to SP6, TODO.md with ids | 98eb5a6 |
-| 1 | Planar digest pin of the shipped experiments; output capture; exclusive key families in the merge | e2fb6ab |
-| 2 | Silo depth with `exit_speed_mps` as the alternative to `net_accel_g` | 1fc92d3 |
-| 3 | Ramp start by depth, by speed and by closed-form height; preflight before any results directory | 83d66dd |
-| 4 | Ramp start at a height by an altitude event; `no_ignition` failure | 1a0b2af |
-| 5 | Offload solver core (fixed-payload propellant offload), on branch sp1-step5 | a03e218 (merged 04f6542) |
-| 6 | Cross-vehicle decomposition, on branch sp1-step5 | 9ca508b (merged c8e0020) |
-| 7 | `offload:` experiment block, pipeline, reporting, replay role, in-memory entry point | 6719f92 |
-| 8 | Pre-registered experiments (committed before any run) | c2a4cf0 |
-| 8a | Reporting fixes before the run (pre-registration Amendment 1) | d336933 |
-| 9 | Runs from the clean commit b3150c1; findings note RQ1-fuel-offload-2d | fd664a5 |
-| P | Public repository and its face, on branch public-site | 9024d40 (merged e0b9fd8) |
-| 10a | Added at the close: `animate` fixed for offload runs; the SP1 animation in the gallery | `5007515` (the closing commit) |
-| 10 | Close SP1: exit criteria gate, demo, close-out decisions, SP2 fact-check, this handoff | the bookkeeping commit |
+| A0 | Plan mode: the seven questions, the design, two mock-ups, an adversarial review of the design (2 blockers, 49 major, 31 minor, folded in) | `a5b8133` (the start commit) |
+| A1 | Shared read-only run-data module; animate and replay switched; KI-002, KI-016, KI-017 | `9579f89` |
+| A1b | Pillow in the dev extra (KI-018) | `78eaefd` |
+| A1a | Replay caveat wording fixed at source (KI-029); gallery pages regenerated | `41f838a` |
+| A2 | Display geometry, display-only reconstructions, the scene payload, the physics.md section | `58d1ad2` |
+| A3 | Scene page part 1 and the `scene` command | `3f8b807` |
+| A3b | Two panels on one clock, flight to orbit, separated bodies, the rate law | `a864a57` |
+| A4 | The form builder and the launch function with the cached pad | `6f22046` |
+| A4b | The local server and the `app` command | `48c540f` |
+| A5 | The app page | `ed0f4bb` |
+| A6v | MP4 export from the app | `637994a` |
+| A7 | Full visual QA, QA fixes, the gallery scene page and video (part 1); the demo launches (part 2, app summaries in their own commit per D-SP2-37) | `7cb440f`; `3a1b243` |
+| A8 | Close: documents and the public face with SP7's file fact-checked (part 1); the exit-criteria gate, the trackers, this handoff (part 2) | `96bbfa1`; the bookkeeping commit |
 
-**Exit criteria** (SP1 phase file, section 8). The independent gate of step 10 records the
-verdict of each criterion in that section; this table gives the evidence.
+**Exit criteria** (SP2 phase file, section 8; 17 criteria, tolerances fixed by D-SP2-38).
+The independent gate of step A8 (six agents, one criterion group each, and a cross-checker;
+run at cb305a5 on 2026-10-07 with its own scripts) recorded its verdicts in that section.
+Summary:
 
-| # | Criterion | Evidence |
+| # | Criterion | Verdict |
 |---|---|---|
-| 1 | Tracking system; phase files SP1 to SP6; handoff and prompt for SP2 | Step T; this file; the SP2 phase file fact-checked at b3150c1 (commit ac66fd0), its prompt final |
-| 2 | Exit speed and the four ramp-start settings pass their closed-form tests | Gates of steps 2, 3 and 4 |
-| 3 | Toy closed forms; stage-1 pad control within its bound; P_ref reproduced at each solved case, or the case flagged | Step 5 gate (bound 1.63 kg); shipped run: x_pad = 0 with m_res(0) = -0.0016 kg (a resolution effect); headline verification +0.0085 kg against 2.6 kg; the stage-2 case failed its verification and carries its flags |
-| 4 | Run and sweeps from a clean committed tree, no `bug_suspect` | All three directories record git b3150c1754ee, not dirty; "No run and no comparison is bug_suspect" in all three summaries |
-| 5 | Findings note passes the honesty review, headline with penalty rows and sensitivity | Step 9 gate (fd664a5) |
-| 6 | Full suite green; golden 1-D and planar digests unchanged; ruff clean | On the closing tree: 1299 passed (1264 fast, 35 slow) in 13 min 8 s with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 at the closing commit 5007515 (2026-10-04); ruff check: all checks passed; ruff format --check: 91 files already formatted (section 7; SP1 session log). Before step 10a: 1295 passed at fd664a5, 14 min, exact golden tier |
-| 7 | Demo recorded under docs/demos/SP1/ | docs/demos/SP1/README.md |
-| 8 | Public repository current; Pages site live with the landing page, manual, deck and gallery updated with SP1's finding | Refreshed and built locally at the close; main is pushed after the bookkeeping commit and the Pages deployment is checked then (protocol section 7, item 14), so no file of that commit can record it. The gate's verdict is in SP1 section 8 |
+| 1 | The app starts (127.0.0.1 only, URL printed, a second server fails) | pass |
+| 2 | A launch works for every setting and the screening presets | pass (19 launches) |
+| 3 | Same numbers as the CLI | pass (303 values, worst 0.000 kg) |
+| 4 | Refusals | pass (43 bad bodies, 422, nothing written; busy and code change refused) |
+| 5 | The scene matches the run data | pass (worst 0.10 of each tolerance) |
+| 6 | The offload is visible and right | pass (rebuilt mass within 0.050 kg) |
+| 7 | Honest labels | **fail, accepted (D-SP2-41)**: an app summary with an imposed offload carries SP1's heading "Propellant saved at fixed payload" and its P_ref basis line; KI-039, owner SP7 |
+| 8 | Browse and replay | pass (21 of 21 listed, both recorded directories play) |
+| 9 | The pad is cached | pass |
+| 10 | Loader and fixes | pass (reference page identical at A1; at the close only A1a's text keys differ) |
+| 11 | Tests and guards | **fail, accepted (D-SP2-42)**: six new slow tests instead of one slow launch (the other five run real ffmpeg, Edge or a console interrupt) |
+| 12 | Dependencies, no request off the machine | pass |
+| 13 | Documents and public face | failed at the gate on two close-out items (TODO.md's priorities line, this handoff), fixed in the close; checked by the cold read |
+| 14 | Demo recorded | pass |
+| 15 | Export (standalone page, MP4) | pass |
+| 16 | Watchable | pass (close-up at least 121 px; kicks 5.34, 7.78, 4.45 px; windows 1.667 and 2.500 wall s) |
+| 17 | Requests from another origin are refused | the behaviour passed (196 hostile requests, none answered 2xx); the demo's real-browser record was missing at the gate and was added in the close: docs/demos/SP2/criterion17-browser-check.md |
 
-The Phase 2 calibration miss (+14.3%, accepted 2026-09-30, D-P2-08) is not an SP1
-criterion; it travels with every number below.
+The evidence of every row is in the phase file, section 8 ("Exit criteria results").
 
-**Headline** (docs/findings/RQ1-fuel-offload-2d.md; preliminary, sweep-optimized,
-unthrottled). At the full-load pad's payload (26,054.4 kg) and orbit (200 km circular,
-28.5 deg, due east), the 3 g0 net, 100 m cold-start silo (exit 76.7 m/s; stage 1 lit 0.5 s
-after release with a 2 s ramp) lets the Falcon 9-class gate vehicle leave out **41.26 t of
-stage-1 propellant: 10.04% of the stage-1 load, 7.96% of the total** (case
-`silo_cold_s1`). That is 2.76 times the ideal-screening estimate at the same release speed
-(14.98 t); the cross-vehicle decomposition explains the difference. Under +/-10% of
-stage-1 dry mass, Isp, C_D and drive efficiency the offload stays between 38.67 and
-44.46 t. The caveats that travel with it:
+**What you can run.** `uv run python -m launchsim app` (127.0.0.1 only; Ctrl+C stops it);
+`uv run python -m launchsim scene results/<experiment>/<timestamp> --runs pad silo_cold_s1
+--out <file>.html`. The user manual's chapter docs/manual/07b-app.md describes both.
 
-- **Calibration.** The gate vehicle calibrates +14.3% high. On the README-loads fork,
-  which calibrates inside the band (+8.3%), the same case removes 36.01 t, 9.10% of its
-  stage-1 load. Read it as 9 to 10% of stage 1 on two forks of a model, not as a
-  Falcon 9 figure.
-- **No structural mass for the 4 g0 push.** An assumed +2, +4 and +8.1 t of stage-1 dry
-  mass leave 32.29, 22.88 and 1.98 t; about 8.5 t (extrapolated) leaves nothing. These
-  rows are assumptions, not a sized structure. SP7 exists to replace them.
-- **Part of it is the lighter stack.** Flown from the pad with the same 41.26 t removed,
-  the vehicle falls 1,402.0 kg short of the payload. Read as the pre-registration worded
-  it, that shortfall is small against the offload, so most of the offload is the lighter
-  stack's thrust-to-weight. A delta-v reading chosen after the run gives the lighter stack
-  28 to 29% of the 228.2 m/s of ideal delta-v the offload removes. The note states both
-  readings.
-- **Loads.** The offloaded run's unthrottled max-Q is 3.4% above the pad's (38,438.5
-  against 37,191.4 Pa); the full-load silo run flew 16% below it.
-- **Stage 2.** The stage-2 case failed its independent verification: its figure is a
-  flagged lower bound and a property of the vehicle model. Stage 1 is the only headline.
-- **Energy.** The removed RP-1's combustion heat is about 128 times the push's metered
-  electricity (1,156 kWh). That compares unlike quantities; it is not an efficiency claim.
-- Also: sweep-optimized and unthrottled guidance; a free kick (no angle-of-attack
-  aerodynamics); a prescribed-acceleration drive with no force or power limit, a massless
-  carriage and no shaft drag; tanks partly filled with every dry mass kept.
-- Only the exit speed matters: 200 m at 1.5 g0 net gives the same offload as 100 m at
-  3 g0, with 2.5 g0 felt on the track.
+**The reproduction result (exploratory, not new evidence).** The app's `silo_cold_s1`
+preset, launched through the app at the shipped search budget, gives the pad payload
+26,054.396 kg, silo_cold 27,553.227 kg and the stage-1 offload 41,262.908 kg of
+results/silo_offload_2d/20261003T112934Z with every difference 0.000 kg, and its time
+series and events are byte-identical to the recorded ones (A4's gate; repeated by the demo
+launch results/app/20261007T130614Z, 70.4 s with the pad cached). The app and the CLI run
+the same code; the number is SP1's, with SP1's caveats (docs/findings/RQ1-fuel-offload-2d.md:
+the gate vehicle calibrates +14.3% high; no structural mass is charged for the 4 g push;
+sweep-optimized and unthrottled; most of the offload is the lighter stack's
+thrust-to-weight; max-Q 3.4% above the pad's; the stage-2 case failed its verification;
+the energy ratio is not an efficiency claim).
 
-**Recorded demo:** docs/demos/SP1/README.md (console output of the run, sweep and bridge;
-the offload block of summary.md; the replay page pad_vs_offloaded_silo.html with a
-screenshot).
+**What the scene shows that the model does not support** (named on every page, in the
+manual and in the gallery): every shape and length; the body attitude (held when
+unpowered); the spent stage and the fairing halves on a drag-free display-only coast; the
+plume inside the shaft on hot starts; the carriage after release; one propellant level per
+stage; the pad's liftoff marker; the position marker that replaces the rocket.
 
-**Public face.** The repository is public at
-https://github.com/khoks/RocketLaunchOptimizationSimulator (all rights reserved; LICENSE).
-The GitHub Pages site is https://khoks.github.io/RocketLaunchOptimizationSimulator/
-(landing page, slide deck with its PDF, animation gallery, user manual), built by
-site/build.py and deployed by .github/workflows/pages.yml on every push to main. At the
-close it was refreshed with SP1's finding: the landing page, the deck, the gallery
-(site/examples/pad-vs-silo-offload.html, site/examples/offload-vs-paired-pad.html and the
-SP1 animation of step 10a) and the manual (new chapter docs/manual/05b-offload.md).
+**Nothing in SP2 bears on the hypothesis.** SP2 changed no equation, event, integrator
+setting, loss accounting, search, guidance or offload solver, ran no pre-registered
+experiment and produced no finding; the six app runs under results/app/ are the recorded
+demo, labelled exploratory.
 
-**Decisions of the session** (full text in TODO.md's decisions log):
+**Recorded demo:** docs/demos/SP2/README.md (the QA table, 38 screenshots in both themes
+plus the demo launches' 85, the demo launches with their API record and wall times, the
+video numbers, the headless Edge commands) and docs/demos/SP2/criterion17-browser-check.md
+(the real-browser cross-origin check, recorded by the exit gate at cb305a5).
 
-| Id | Decision |
-|---|---|
-| D-SP1-01 | 3-D means true 3-D dynamics in three stages (S1 sphere, S2 oblate, S3 6-DOF) |
-| D-SP1-02 | The visual tool is a local app first: form, Launch button, scenes inside it |
-| D-SP1-03 | Offload of stage 1 (headline), stage 2 and both; tanks partly filled; fixed payload = the full-load pad's capacity |
-| D-SP1-04 | Structural penalty as parametric rows (+2, +4, +8.1 t) |
-| D-SP1-05 | Silo depth: `stroke_m` with exactly one of `net_accel_g` or `exit_speed_mps` |
-| D-SP1-06 | Ramp start by time, depth, speed, height by event, height by closed form |
-| D-SP1-07 | Order: settings and solver, planar headline, the app, then 3-D (SP7 inserted before the 3-D work by D-SP1-18) |
-| D-SP1-08 | One fresh session per phase; each session prepares the next |
-| D-SP1-09 | The offload is an `offload:` block and a post-pass, not a figure-of-merit value |
-| D-SP1-10 | Every offload mode is also solved on the pad; stage 2 and both quoted net of it |
-| D-SP1-11 | Target under J2: osculating circular orbit at R_E + 200 km (for SP5) |
-| D-SP1-12 | The 6-DOF model is a verification fly-out (for SP6) |
-| D-SP1-13 | One-case bridge on the README-loads fork |
-| D-SP1-14 | The repository is public on GitHub, all rights reserved |
-| D-SP1-15 | Push main after every step's tracker commit and at every phase close |
-| D-SP1-16 | Logo, banner, deck, animation examples, user manual and Pages site, kept current at every phase close |
-| D-SP1-17 | The pre-registered experiment keeps its full design despite the longer runtime |
-| D-SP1-18 | SP2 next; then SP7 (structural mass of the push load, force-limited drive); then SP3 to SP6 |
+**Public face.** The landing page, the deck (20 slides, with its PDF) and the manual were
+refreshed; the gallery has the scene page site/examples/pad-vs-silo-offload-scene.html and
+the scene video, both made from results/silo_offload_2d/20261003T112934Z, never from an
+app run; the landing page and deck slide 18 show one demo screenshot of an app run
+(docs/demos/SP2/shots/03-solve-done-tank-part-full-light.png, launch
+results/app/20261007T130614Z), captioned exploratory.
+
+**Decisions of the session** (full text in TODO.md): D-SP2-01 to D-SP2-08 (the user's
+answers), D-SP2-09 to D-SP2-38 (the design, approved with the plan), D-SP2-39 (the
+`pad_variant` name), D-SP2-40 (SP7 next), D-SP2-41 and D-SP2-42 (exit criteria 7 and 11 accepted as
+logged misses at the close).
 
 ## 4. Requirements and status
 
-R1 to R8 come from the first handoff (docs/handoff/archive/2026-09-30-phases-0-2.md,
-section 2), R9 from SP1 step T, R10 from 2026-10-02.
-
-| # | Requirement | Status on 2026-10-04 |
+| # | Requirement | Status on 2026-10-07 |
 |---|---|---|
-| R1 | The interactive replay page as a CLI command | Done before SP1 (`launchsim replay`); SP1 added the offload role (step 7) |
-| R2 | An animated scene of the launch itself, 2-D first | Not started. SP2, inside the local app (D-SP1-02) |
-| R3 | The same in a 3-D world | Not started. True 3-D dynamics in SP3, SP5 and SP6, the 3-D scene in SP4 (D-SP1-01); all after SP7 (D-SP1-18) |
-| R4 | Configure the launch depth in the silo | Done: `stroke_m` with `net_accel_g` or `exit_speed_mps` (SP1 step 2, D-SP1-05) |
-| R5 | Configure where the thrust ramp starts | Done: by time, depth, speed, height by event, height by closed form (SP1 steps 3 and 4, D-SP1-06) |
-| R6 | Reduce the rocket's propellant at fixed payload and report the fraction replaced (the headline question) | First answer on the planar model: docs/findings/RQ1-fuel-offload-2d.md (preliminary, with the caveats of section 3). Its survival depends on the structural mass (SP7); the 3-D re-checks are SP4 and SP5. In the app: SP2 |
-| R7 | Stay on the Falcon 9-class model | Standing: configs/vehicles/generic_f9_class_2d.yaml, never edited |
-| R8 | Lose nothing between sessions | Protocol, board, phase files, trackers, handoffs and memory; first full phase close done at SP1 |
-| R9 | One fresh session per phase; the previous session prepares the next one's documents, memory and prompt | First exercised at this close |
-| R10 | Public repository (all rights reserved), pushed after every step, with a current logo, banner, deck, gallery, manual and Pages site | Done in SP1 step P, refreshed at the close. The social preview image must be uploaded by hand (KI-026, owner the user) |
+| R1 | The interactive replay page as a CLI command | Done before SP1; its caveat wording fixed at source in SP2 (A1a) |
+| R2 | An animated scene of the launch itself, 2-D first | Done: SP2 (the app's scene, the standalone export, the MP4) |
+| R3 | The same in a 3-D world | Not started: SP3, SP5, SP6 (dynamics), SP4 (the scene), after SP7 |
+| R4 | Configure the launch depth in the silo | Done in SP1; in the app since SP2 |
+| R5 | Configure where the thrust ramp starts | Done in SP1 (five ways); in the app since SP2 |
+| R6 | Reduce the rocket's propellant at fixed payload and report the fraction replaced | First answer in SP1 (docs/findings/RQ1-fuel-offload-2d.md); the app solves or imposes it since SP2, exploratory; its survival depends on SP7 |
+| R7 | Stay on the Falcon 9-class model | Standing; the app offers the gate vehicle only (D-SP2-06) |
+| R8 | Lose nothing between sessions | Second full phase close by the protocol |
+| R9 | One fresh session per phase; the previous session prepares the next | Exercised at this close |
+| R10 | Public repository, pushed after every step, with a current logo, banner, deck, gallery, manual and Pages site | Done; refreshed at this close |
 
-## 5. The next phase: SP2
+## 5. The next phase: SP7
 
-Open docs/phases/SP2-launch-app-2d-scene.md.
+Open docs/phases/SP7-structural-mass-push-load.md. It is a brief with recommendations,
+not the design: SP7's Plan mode makes the design and saves it under docs/phases/inputs/.
 
-**Goal.** A local app, started with `uv run python -m launchsim app` and served on
-127.0.0.1 only, in which the user sets the silo depth (exit speed or net acceleration),
-the stage-1 ramp start (any of the five ways), a propellant offload (solved or fixed;
-stage 1, stage 2 or both; an optional stage-2 pre-offload) and an assumed structural
-penalty, presses Launch, follows the job's progress, and watches the pad and silo launches
-side by side in an animated 2-D scene; and browses recorded results directories and
-replays any planar run as a scene. Every app run writes a normal results directory
-labelled exploratory; no finding comes from it. SP2 changes no physics, search, guidance
-or offload solver.
+**Goal** (SP7 section 1). Charge the structural mass that the 4 g full-stack push needs,
+with a first-order sizing model validated against closed forms, so that SP1's headline
+(41.26 t of stage-1 propellant, 10.04% of stage 1, before any structural mass) carries a
+modelled structural cost with an uncertainty band beside the assumed penalty rows (+2, +4
+and +8.1 t leave 32.29, 22.88 and 1.98 t; about 8.5 t leaves nothing); re-open the depth
+question (a deeper, gentler push needs less structure); and build the drive realism that
+interacts with it: a force- and power-limited `linear_motor` with carriage mass and, if
+kept in Plan mode, modelled braking and the silo air column. It may undercut the
+hypothesis; that result is reported as plainly as any other.
 
-**What SP1 built that SP2 relies on** (SP2 section 3 and entry criteria 2 to 6 give the
-file and line of each):
+**What SP2 built that SP7 relies on or must not break** (SP7 section 5.1 and the re-check
+block at the top of its section 6 give file and line):
 
-- The in-memory entry point: `config.resolve_experiment(exp_dict, vehicle_dict)`,
-  `sim.run_resolved`, then `results_io.planar_experiment_result(...)`, which returns the
-  whole result, the offload report included, and writes nothing; `results_io.write_run`
-  writes it. Tested by `tests/test_offload_pipeline.py::test_offload_in_memory_writes_nothing`
-  (slow tier).
-- The settings and their key families (`ASSIST_KEY_FAMILIES`, `IGNITION_KEY_FAMILIES`),
-  the `offload:` block (`OffloadConfig`) and `SweepConfig.offload`, and the preflight
-  `sim.check_resolved` that refuses a bad configuration before any directory is made.
-- Replay of offload runs (role `offload`; offload runs are named with `--runs`, they are
-  not in the default selection).
-- The planar metrics the form and the HUD read: `PUSH_SETTING_METRICS`,
-  `RAMP_START_METRICS`, `RAMP_START_REQUEST_METRICS`, `OFFLOAD_METRIC_KEYS`.
-- Measured costs: a stage-1 offload solve with its verification takes about 90 to 110 s on
-  this machine, a pad control about 30 s more (SP2 section 5.6).
+- `run_data.CALIBRATION_RECORDS` (re-exported by plots) is the one calibration record
+  behind the replay and animation caveats (KI-003); `replay.py`'s caveat functions are
+  data-driven since A1a (one caveat source, D-SP2-23).
+- The sentences a modelled structure must change, each pinned by tests: plots.py's
+  animation footnote ("no sized structural mass", naming a penalty row's assumed mass),
+  replay.py's structure caveat ("No structural mass is charged"), summary.py's exploratory
+  banner line (`EXPLORATORY_PUSH_CAVEAT`, "no structural mass for the push"), appform.py's
+  field text for `stage1_dry_mass_added_t`, and the manual's penalty-row wording
+  (05b-offload.md, 12-faq-glossary.md). SP7 risk R11 names the eight test files that pin
+  them; reword at source with the honesty review, update the pinned tests, regenerate the
+  six gallery pages with the diff recorded, as A1a did.
+- The app's basis: `launchsim app` copies the shared blocks and the baseline of
+  experiments/silo_offload_2d.yaml and the presets of both committed planar experiment
+  files at server start (SP7 entry criterion 8). A change to those files changes what the
+  app launches; it is allowed but must be stated. The label value `exploratory` is reserved
+  for app runs; configs/display/ is never read by the run path.
+- The app's form offers `stage1_dry_mass_added_t` as its only structural input and a
+  `constant_accel` push only (appform.py); whether it gains SP7's structural switch or a
+  linear-motor launch is an open design point of SP7 section 10, not a requirement.
+- The standing gate that templates/replay.html's sha256 is
+  1fa6eba6be18c5c2a8d10a3e42880ae556375dcf1508f6feb937aca641916990 (frozen in SP2,
+  D-SP2-21; KI-031 and KI-019 go to the phase that next edits it).
+- Nothing else: SP2 did not touch results_io.py, sim.py, offload.py, search.py,
+  guidance.py, dynamics.py, phases/, losses.py, compare.py, metrics*.py, the assist
+  package, experiments/ or configs/vehicles/ (SP7 entry criterion 4, confirmed at 705025f).
 
-**Inventory.** SP2 section 6 was fact-checked at b3150c1 on 2026-10-03 (commit ac66fd0).
-fd664a5 and cfd9059 changed none of the paths it inventories (checked:
-`git diff --stat b3150c1 cfd9059 -- src tests configs experiments pyproject.toml .gitignore
-site/build.py` is empty). The close changed four of them, in the code commits that end with
-the closing commit:
+**Inventory.** SP7's sections 4, 6 and 13 were fact-checked at 705025f on 2026-10-07
+(commit 96bbfa1: 32 moved line references corrected, entry criterion 8 added, the prompt
+made final; an independent reader's 12 corrections were applied; 96bbfa1's message). The commits after 705025f (96bbfa1, cb305a5 and the bookkeeping commit) changed
+no path the inventory names; the close added KI-039 to SP7's section 10 and to its prompt: at the start of SP7,
+`git diff --stat 705025f HEAD -- src tests configs experiments pyproject.toml uv.lock
+site/build.py` must be empty; if it is not, re-check section 6 against HEAD (SP7 entry
+criterion 6, risk R9). The manual's glossary row **penalty row** is at
+docs/manual/12-faq-glossary.md 191 at HEAD (167 at 705025f), as SP7 section 5.1 says.
 
-- site/build.py: the public-face refresh (text fixes for the gallery's two offload replay
-  pages);
-- src/launchsim/plots.py: step 10a (`animate` reads and labels the runs of the offload
-  block; `plots.offload_role`, `offload_tag`, `animation_record`, `legend_title`);
-- src/launchsim/replay.py: step 10a (`offload_note` now takes the run's role from
-  `plots.offload_role`);
-- tests/test_animate.py: step 10a (four new tests).
-
-So the re-check command of the SP2 header, `git diff --stat b3150c1 HEAD -- src tests
-configs experiments pyproject.toml .gitignore site/build.py`, lists these four files at
-SP2's start. Re-check them against section 6 (their line numbers have moved) before
-planning from it (SP2 header, entry criterion 8, risk R1). Generate A1's reference replay
-page at the SP2 start commit as section 7 says; that value is the reference. For
-information: regenerated on 2026-10-04 from the working tree with step 10a's edits, before
-its commit, the page was unchanged from b3150c1 (247,949 bytes, sha256 3ca23dc5...; the
-reference directory has no offload runs).
-
-**Open items owned by SP2** (TODO.md): KI-002 (private plots helpers and duplicate
-readers), KI-016 (fairing event mass convention), KI-017 (output-path rule mismatch),
-KI-018 (Pillow not declared), KI-019 (Google Fonts in the replay page), and KI-029 (the
-replay page's drive caveat ends "Each of these favours the assisted runs.", which is
-misleading; site/build.py rewrites it in the gallery). KI-029 is SP2 section 5.8 item 5.
-
-**Order after SP2.** SP7 (structural mass of the push load and a force-limited drive),
-then SP3, SP4, SP5, SP6 (D-SP1-18; the program board's dependency order). The SP2 phase
-file names SP7 as the phase after it (section 3, step A8, exit criterion 13 and its
-prompt). At SP2's close, SP7 is the "next phase" of protocol section 7, items 7 to 9,
-unless the user reorders again: the SP2 session fact-checks SP7's phase file against the
-code and finalises its section 13 prompt. That file,
-docs/phases/SP7-structural-mass-push-load.md, was written at SP1's close-out as a draft
-(its exit criteria and its section 13 prompt are marked draft).
+**Open items owned by SP7** (TODO.md): B-004 (P1, structural mass for the 4 g push and
+the interface-hardware penalty), B-005 (P1, `linear_motor`; any remainder later), parts of
+B-007 (air-column piston, modelled braking, release at a target speed; P2, "later" unless
+SP7's Plan mode re-targets it), KI-030 (medium: the config accepts `true`, numeric
+strings, inf and NaN for several numbers; SP7 step S4 adds the validators). KI-036 (the
+replay page reads an unknown git state as clean) falls to SP7 if its step S3 edits
+replay.py; KI-032 (the peak-power time metric on the absolute clock) if S4 touches that
+metric. KI-039 (low, from D-SP2-41): the summary's offload section is headed
+"Propellant saved at fixed payload" and its basis line says every offload is measured at
+P_ref, also for imposed cases, which fly their own P*; SP7's step S3 rewords both at source
+with the honesty review (SP7 section 10).
 
 ## 6. Decisions to put to the user first
 
-None left open by SP1. In SP2's Plan mode (step A0) put the questions of SP2 section 10,
+None left open by SP2. In SP7's Plan mode (step 0) put the questions of SP7 section 10,
 each with the recommendation there first and the trade-off in one line, and give the
-ambitious option fairly with its cost: Q1 standalone HTML scene export (recommended yes,
-the only way to put a scene on the public site) and video (recommended no for now); Q2 an
-offline page (recommended yes, no request leaves the machine); Q3 where app runs are kept
-(recommended `results/app/<UTC timestamp>/`, wholly ignored by git); Q4 the presets
-(recommended SP1's experiment configurations); Q5 the vehicle (recommended the gate vehicle
-only); Q6 the offload input (recommended both fixed and solved, fixed by default, stage-2
-and both behind an advanced switch with the pad control forced on); Q7 the look
-(recommended a schematic cross-section in the brand palette, with dark mode). Then the
-open design points listed there.
+ambitious option fairly with its cost:
+
+- Q1 structural model fidelity: recommended B, first-order station sizing (testable closed
+  forms, sourceable coefficients); A adds little to the penalty rows; C (FEM) is a scope
+  expansion that needs the user's approval and whose inputs are not public.
+- Q2 sizing basis: recommended the offloaded stack actually flown, with the full-load
+  sizing as a bound row.
+- Q3 the existing stage-1 margin over its pad envelope: recommended none (zero margin
+  charges the most and does not favour the assist), with a margin as a sensitivity.
+- Q4 drive scope: recommended the linear motor and carriage mass in; modelled braking and
+  the air column in but first to cut; the curved track and cable winch out. Ambitious
+  option: take the curved track (frictionless-arc test) and the cable winch (frequency
+  test) too, at the cost of a second session or a split phase.
+- Q5 where the carriage load enters: recommended an aft ring at the stage base, with the
+  thrust structure as the alternative row.
+- Q6 findings: recommended a new note (for example RQ1-structural-2d.md) with a dated
+  pointer at the top of RQ1; RQ1's record kept.
+- Q7 dynamic load factor at push start: recommended charge it from a stated force rise
+  time and an assumed structural period, with the quasi-static value beside.
+
+Then the open design points listed there (option (i) or (ii) of SP7 section 5.5; the
+structure file's place and schema; sweep or cases for the stroke series; the target-speed
+release event; the app's form; the push metrics and labels of a linear-motor run;
+KI-039's reword of the offload heading and basis line (S3); KI-030's validators).
 
 Waiting on the user, not blocking: KI-026 (upload assets/brand/social-preview.png by hand
 under GitHub Settings, General, Social preview) and B-001 (results retention; deleting
@@ -273,224 +259,245 @@ results needs the user's OK).
 
 ## 7. State of the project
 
-**Commits of the session**, newest first (`git log --oneline 2eebcae..HEAD` is the full
+**Commits of the session**, newest first (`git log --oneline b69ff0c..HEAD` is the full
 list):
 
-- the bookkeeping commit `Close SP1: trackers, handoff, next phase file` (holds this file);
-- the code commits of the close (step 10a, with site/build.py of the public-face refresh),
-  the last of them the closing commit `5007515` (SP1 step table, row 10a);
-- cfd9059 step 9 trackers; fd664a5 step 9 findings; ac66fd0 SP2 phase file fact-checked
-  at b3150c1;
-- b3150c1 step 8a trackers (the commit the pre-registered runs were made from); d336933
-  step 8a; 7efbaab step 8a row; 7fcc81a step 8 trackers (D-SP1-17); c2a4cf0 step 8
-  pre-registration;
-- 4e057c8 step 7 trackers; 6719f92 step 7; 6cf6fa4 step P trackers; e0b9fd8 merge of
-  public-site; 9024d40 step P; 910c6c3 RP-1 heat source note;
-- c241fe2 step 4 trackers; c8e0020 merge of sp1-step5 (step 6); 1a0b2af step 4; e19d7ed
-  step 6 trackers; 9ca508b step 6; 668a59e public-repository decisions; e4f36ee LICENSE;
-- 7461ef6 step 3 trackers; 04f6542 merge of sp1-step5 (step 5); 83d66dd step 3; 689ac42
-  step 5 trackers; a03e218 step 5; 534557d step 2 trackers; 1fc92d3 step 2;
-- 1575b79 step 1 trackers; e2fb6ab step 1; c587a08 step T trackers; 98eb5a6 step T.
+- the bookkeeping commit `Close SP2: trackers, handoff, next phase file` (holds this
+  file; it follows cb305a5 directly);
+- cb305a5 A8 trackers part 1 (KI-037 closed, KI-038 logged); 96bbfa1 A8 part 1
+  (documents, the public face, SP7's file fact-checked);
+- 705025f A7 trackers (D-SP2-40); 3a1b243 A7 part 2 (the demo launches' app summaries and
+  their record); fb34b24 A7 trackers part 1; 7cb440f A7 part 1 (visual QA, QA fixes, the
+  gallery scene page and video);
+- 931b19b A6v trackers; 637994a A6v (MP4 export); e248fe2 A5 trackers; ed0f4bb A5 (the
+  app page); 7f36e8d A4b trackers; 48c540f A4b (the server and the `app` command);
+  1c3e22d A4 trackers; 6f22046 A4 (the form builder and the launch function);
+- f77f57c A3b trackers; a864a57 A3b (two panels, flight to orbit, separated bodies, the
+  rate law); 3b5cbad A3 trackers; 3f8b807 A3 (scene page part 1, the `scene` command);
+  1c30421 A2 trackers; 58d1ad2 A2 (display geometry, the payload);
+- 8512bee A1a trackers; 41f838a A1a (caveat wording at source); 20d0039 A1b trackers;
+  78eaefd A1b (Pillow); 5bac09a A1 trackers; 9579f89 A1 (run_data.py);
+- a5b8133 Start SP2.
 
-**Tests and lint.** Full suite on the closing tree (the closing commit):
-1299 passed (1264 fast, 35 slow) in 13 min 8 s with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1 at the closing commit 5007515 (2026-10-04); ruff check: all checks passed; ruff format --check: 91 files already formatted; also in the SP1 session log and SP1 exit criterion 6. Step 10a adds
-four tests to tests/test_animate.py: on 2026-10-04, with its edits in the working tree,
-1299 tests were collected, 1264 fast and 35 slow. The run before step 10a: 1295 passed at
-fd664a5, 14 min, exact golden tier, that is 1260 fast plus 35 slow (the fast count at
-b3150c1: 1260 passed, 35 deselected; no file under src/ or tests/ changed between b3150c1
-and fd664a5).
+**Tests and lint.** Full suite at cb305a5 (the tree the exit gate ran on; no file under
+src/, tests/ or configs/ changed after 7cb440f): 1719 passed (1678 fast, 41 slow) in 3,062.98 s (51 min; pytest prints 0:51:02) with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1,
+the exit gate's second run, on a machine loaded by the parallel gates. Its first run had
+28 failures and 3 skips, every one a subprocess exiting 0xC0000142 at start; all 31
+passed on an immediate re-run (SP2 session log, step A8 part 2). The log is in the SP2
+session's scratch folder, C:\Users\rahul\AppData\Local\Temp\claude\D--DEV-ClaudeProjects-SpaceRocketOptimization\6999a833-8705-4f59-babb-7d35feacc46d\scratchpad\a8\exit\loader-tests-deps\full_suite_run2.txt
+(temporary, not in the repository, and may be cleaned; the counts are also in the SP2
+session log); ruff check: all checks
+passed; ruff format --check: 109 files already formatted. The last fast run recorded in the SP2
+session log: 1678 passed, 41 deselected (7cb440f).
 
 **Results directories** on disk. Only each directory's top-level summary.md is tracked; a
-fresh clone has no CSVs and must re-run an experiment before `animate`, `replay` or the
-SP2 scene can read it.
+fresh clone has no CSVs and must re-run an experiment before `animate`, `replay`, `scene`
+or the app's run browser can play it.
 
 | Directory | What | Notes |
 |---|---|---|
-| results/silo_offload_2d/20261003T112934Z | SP1 run (git b3150c1, clean) | 4 experiment runs, 11 offload-case runs, the paired pad, 3 pad controls: 19 run folders with timeseries.csv, 72 MB |
+| results/silo_offload_2d/20261003T112934Z | SP1 run (git b3150c1, clean); the RQ1 record | 19 run folders with timeseries.csv, 72 MB; the source of the gallery's scene page and video |
 | results/silo_offload_2d/20261003T112949Z | SP1 sweeps | 5 sweeps, 20 points; no top-level metrics.json |
-| results/silo_offload_2d_readme/20261003T112956Z | SP1 bridge on the README-loads fork | 5 runs |
-| results/silo_screening_2d/20260930T175743Z | Phase 2 screening run (git 7ad381f) | 12 runs; SP2's reference directory for the replay page |
+| results/silo_offload_2d_readme/20261003T112956Z | SP1 bridge on the README-loads fork | 5 run folders |
+| results/silo_screening_2d/20260930T175743Z | Phase 2 screening run (git 7ad381f) | 12 run folders, 45 MB; SP2's reference directory for the replay page (247,949 bytes, sha256 3ca23dc5... before A1a) |
+| results/silo_screening_2d/20260930T182453Z | Phase 2 screening sweeps | baseline and 3 sweeps, 24 points (25 timeseries.csv) |
+| results/app/20261007T125946Z, ...130614Z, ...130817Z, ...130924Z, ...130950Z, ...131031Z | SP2 demo launches (git fb34b24, clean): silo_cold; silo_cold_s1 (the reproduction); the +8.1 t penalty row; ramp start by depth; by height by event; the failed ignition | 17 run folders, 57 MB in all; exploratory, never cited; summaries committed in 3a1b243 |
+| results/calibration_f9_2d/ (two), results/guidance_trigger_2d/, results/silo_bridge_2d_readme/, results/silo_screening_1d/ (six) | Phases 0 to 2 | listed in the archived handoffs |
 
-Re-run times: the three SP1 commands took 14.1, 20.9 and 2.1 min run side by side
-(serial estimates 30-50, 39-64 and 3-6 min); silo_screening_2d took about 27 min.
-Earlier results directories are listed in the archived handoffs.
+Sizes by `du -sh` on 2026-10-07.
 
-**Findings** (docs/findings/README.md): CAL-f9-leo-2d, RQ1-fuel-offload-2d (new in SP1),
+**Findings** (docs/findings/README.md): unchanged in SP2 (CAL-f9-leo-2d, RQ1-fuel-offload-2d,
 RQ3-silo-screening-2d, RQ2-ignition-timing-2d, RQ6-aero-2d-preliminary, and the 1-D
-records RQ3-silo-screening-1d and RQ2-ignition-timing-1d.
+records). No app run is a finding.
 
-**Open known issues that matter to SP2:** the six it owns (section 5); KI-003 (update
-`plots.CALIBRATION_RECORDS` whenever the calibration is re-run; the replay caveat reads
-it); KI-020 (save subagent reports to a file at once). KI-021, KI-022 and KI-023 (stale
-test comments and docstrings, owner "SP1 or later") are still open.
+**Open known issues that matter to SP7:** KI-030 and KI-039 (owned); KI-032 and KI-036 (conditional,
+section 5); KI-003 (update `run_data.CALIBRATION_RECORDS` whenever the calibration is
+re-run); KI-021, KI-022 and KI-023 (stale test comments and docstrings in tests SP7 may
+touch); KI-035 (fast-tier tests can exceed the 5 s mark under load; standing). KI-031,
+KI-019 and KI-038 belong to the phase that next edits replay.html or scene.py; KI-033 and
+KI-034 are "later".
 
 ## 8. How work is done
 
 docs/process/SESSION_PROTOCOL.md: the start checklist (section 3), the step loop
-(section 4), the end checklist (section 7). For SP2 in particular:
+(section 4), the end checklist (section 7). For SP7 in particular:
 
-- Reviewers per SP2 section 7: a physics or numerics skeptic on every code step (A1 to
-  A6), a CLAUDE.md compliance auditor on every step, a visual-QA reviewer on anything
-  drawn, an honesty auditor on labels and caveats.
-- Pages are tested through a server on 127.0.0.1, never as local files (protocol
-  section 11).
+- Plan mode, and docs/physics.md in the same change, for anything touching the equations
+  of motion, frames, events, integrator settings or loss accounting: the linear motor, the
+  air column and braking touch the track equation and its events.
+- Every structural coefficient is sourced or `assumed: true`, in a structure file, never in
+  a calibrated vehicle file (CLAUDE.md: copy a calibrated config, never edit it).
+- Pre-registration: the experiment file and its expected readings are committed before any
+  run; runs start from a clean commit; no results directory is overwritten or deleted.
+- No validated number may move: the pad and silo_cold payload capacities (26,054.3962 and
+  27,553.2271 kg, pinned in tests/data/silo_screening_2d_record.json) and SP1's headline
+  with the structural model off; the golden 1-D outputs, the planar digest pin and the
+  output capture unchanged; replay.html's sha256 unchanged.
+- Reviewers per SP7 section 7: a physics or numerics skeptic on every code step, a
+  CLAUDE.md compliance auditor on every step, an honesty auditor on S0, S6, S7 and on
+  every caveat or label reworded.
+- App runs follow D-SP2-37 (protocol section 4, "App runs"): reviewers and gates use a
+  scratch results root; demo launches come from a clean tree after the last code commit
+  and their summaries go in their own commit; no app run is cited in a finding.
 - Push main after every tracker commit and check the Pages deployment
   (`gh run list --workflow pages.yml --limit 1`).
-- App runs are exploratory and never cited in docs/findings/.
 
-## 9. Gotchas learned in SP1
+## 9. Gotchas learned in SP2
 
-New in this session. The standing list is protocol section 11.
+New in this session. The standing list is protocol section 11 (the Plan-mode freeze of
+background workflow agents was added there during SP2).
 
-- **Usage limits stop workflows mid-step.** On 2026-10-01 a model usage limit ended every
-  agent of the step-2 workflow; the implementer's edits stayed in the tree with no report.
-  Relaunch the step with an instruction to review the partial diff critically and finish
-  it; never commit unreviewed partial work.
-- **Parallel steps in git worktrees.** Steps 5 and 6 ran on branch sp1-step5 and step P
-  on public-site, each in its own worktree, while other steps ran in the main checkout.
-  `uv sync` makes a .venv per worktree; merge with `--no-ff` and re-run the full suite on
-  the merged tree. Watch shared tracker files: a phase file staged while another step was
-  editing it carried that step's deviations into main early (e19d7ed, SP1 session log).
-- **Headless Edge screenshots.** `msedge --headless=new --screenshot` writes no file when
-  started from Git Bash while Edge is running: run it from PowerShell with its own
-  `--user-data-dir`. `--window-size=390` does not give a 390 px layout (headless lays out
-  at about 500 px); load the page in a 390 px iframe instead. The SP1 demo screenshot was
-  taken with Playwright from a 127.0.0.1 server (docs/demos/SP1/README.md).
-- **The replay page's drive caveat is stale (KI-029).** It ends "Each of these favours the
-  assisted runs."; under the prescribed drive the massless carriage and the missing shaft
-  drag bias only energy, power and interface force, while the free kick does favour the
-  silo run. site/build.py (`REPLAY_TEXT_FIXES`) rewrites it in the gallery; the demo page
-  in docs/demos/SP1/ keeps it as `replay` wrote it. Fix it in replay.py and drop the site
-  rewrite in the same change (SP2 risk R17).
-- **Offload solves are slow.** About 90 to 110 s per stage-1 solve with its verification,
-  about 30 s per pad control. The design had estimated 33 s per solved case; step 5
-  measured 89 s on a loaded machine, and step 8 replaced every runtime estimate made
-  from the design figure.
-- **The stage-2 offload is ill-conditioned.** The stage-2 case (`silo_cold_s2`) failed its
-  independent verification (its payload search returned 15.36 kg above P_ref against a
-  2.6 kg tolerance) and its pad control carries its own flag. An app launch of a stage-2
-  or both-stage solve should be expected to come back flagged; show the flags and the pad
-  control, do not hide them.
-- **Form-to-config traps.** A key present in a dict counts as given, an explicit null
-  included, so the form sends only the keys of the chosen family; and a YAML merge key
-  (`<<: *silo`) is resolved by the loader, so adding `exit_speed_mps` over an anchor that
-  carries `net_accel_g` is refused (SP1 step 1, deviations 4 and 6).
-- **Ignored file names.** `.gitignore` ignores `*_replay.html`, `*_animation.mp4` and
-  `*_animation.gif` at any depth: a page or animation saved under docs/demos/ needs
-  another name (the SP1 demo uses pad_vs_offloaded_silo.html). Check with `git status`.
-- **The social preview is manual (KI-026).** GitHub has no API for it; the user uploads
-  assets/brand/social-preview.png under Settings, General, Social preview.
+- **Workflow agents die mid-step** (a model usage limit on 2026-10-05, an API 529 on
+  2026-10-06). The workflow's journal (`subagents/workflows/<run>/journal.jsonl` under the
+  session's transcript directory) keeps every finished agent's result;
+  `Workflow({scriptPath, resumeFromRunId})` replays them from cache and runs only the lost
+  agents. A lost fix round is not fatal: the next review pass re-finds its findings. The
+  step pattern that held up over SP2 (implementer; two to four adversarial reviewers in
+  parallel; up to three fix rounds; an independent gate with its own scripts; the
+  orchestrator commits) found many real findings per step on the first pass (A5's
+  reviewers: 49; SP2 session log). A workflow's result in the task notification is truncated (at about 25,000
+  characters in this session): read the output file or the journal for the gate verdict.
+- **Literal "only these files changed" gates fail on the orchestrator's own edits.** A8's
+  documents gate failed G6 because the SP7 fact-check (protocol item 8) sat in the same
+  working tree. Run a close-out's parallel document workflows on disjoint file sets, tell
+  each gate which other files it will see, or accept and log the literal failure.
+- **Agent edits arrive with CRLF line endings** on Windows. Check with
+  `git ls-files --eol` (or count `\r\n` in Python) and normalise to LF before every commit;
+  the gates and the site build report CRLF as a finding.
+- **Loopback connection churn loses HTTP/1.0 posts.** Under the video export (one frame
+  per POST) the standard-library server on HTTP/1.0 lost a frame per connection; the
+  server answers HTTP/1.1 with a per-request deadline since A6v, the page retries, and the
+  default fps is 20 so the default pair's natural length fits the 1,800-frame cap.
+- **`localhost` costs about 2 s per request on this machine** (the IPv6 attempt times out
+  first); the app prints and binds 127.0.0.1 (D-SP2-29). A busy or reserved port is one
+  error line; `--port 0` picks a free one.
+- **Headless Edge** (C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe) writes
+  no file when started from Git Bash while Edge is running: run it from PowerShell with its
+  own `--user-data-dir`. It ignores a `#hash` scroll position for screenshots (page tops
+  only), lays out at about 500 px however `--window-size` is set (SP1's handoff,
+  docs/handoff/archive/2026-10-04-SP1.md section 9), and prints a deck to PDF
+  only against the built site served on 127.0.0.1 (images must resolve) with the deck's
+  `?print` layout. The earlier gates' CDP drivers are under the SP2 session's scratch
+  folder (C:\Users\rahul\AppData\Local\Temp\claude\D--DEV-ClaudeProjects-SpaceRocketOptimization\6999a833-8705-4f59-babb-7d35feacc46d\scratchpad\a5\gate\cdp_lib.mjs and a6v\gate\; temporary); the demo record has the commands.
+- **PowerShell 5.1 lacks `[System.Text.Encoding]::Latin1`**: read a PDF's page count or
+  CreationDate back with Python, not PowerShell.
+- **`uv run ... app` exits 3221225786 on Ctrl+Break** (0xC000013A) although the server
+  exits 0; Ctrl+C is the documented stop (KI-037, closed in the manual).
+- **The site build warns on italic captions that contain commas** (markdown's emphasis
+  rule); put the path in backticks and reword.
+- **The exploratory label travels through three places**: config.py's third label value,
+  summary.py's banner (both git states), and the one-line prefix `replay.caveats` and
+  `plots.animation_caveats` add for an exploratory directory. A new output of an app run
+  must carry it too (exit criterion 7); a test scans the templates for sinks that would
+  let data become HTML.
+- **The cached pad is re-wrapped, not reused**: `dataclasses.replace(cached, name=...,
+  resolved=resolved.baseline)` reproduces the CLI path; a verbatim cached object changes
+  the result through results_io's identity tests (D-SP2-10). The cache key includes the
+  server-start git state, and a launch is refused after `git diff --quiet <start> HEAD --
+  src configs experiments pyproject.toml uv.lock` shows a change (D-SP2-11).
+- **A usage limit leaves the dead agents' processes running.** At the close a limit
+  stopped five of the exit gate's seven agents; three app servers, static servers, a
+  launch driver still posting, headless Edge on temporary profiles and a `tail -f` kept
+  running. They were stopped by command line (only this session's), the partial scratch
+  folders moved aside, and the workflow resumed from its journal (protocol section 11).
+- **A loaded machine breaks subprocess tests.** With several gates running, the full
+  suite took 51 min and its first run lost 28 tests to subprocesses exiting 0xC0000142
+  (DLL initialisation failed); all passed on re-run. Re-run such failures alone before
+  reading them as real; run the full suite when nothing heavy runs beside it.
+- **Fast-tier tests can exceed the 5 s mark under load** (KI-035): judge a slow test by a
+  quiet-machine timing before marking it `slow`.
+- **The scene's grid is a selection of CSV rows, never a resample** (D-SP2-16): both rows
+  of every duplicate time, every event row, then rows inserted until every CSV row is
+  within half of each tolerance. A resampled grid misses the model's instant steps at the
+  kick and at staging.
 
-## 10. Prompt to start SP2
+## 10. Prompt to start SP7
 
 Paste this into a fresh Claude Code session opened in this folder. It is the same text as
-section 13 of docs/phases/SP2-launch-app-2d-scene.md; if the two ever differ, the phase
-file's version is the one to use.
+section 13 of docs/phases/SP7-structural-mass-push-load.md; if the two ever differ, the
+phase file's version is the one to use.
 
 > Read docs/handoff/NEXT_SESSION.md first, then docs/process/SESSION_PROTOCOL.md,
-> docs/phases/README.md, docs/phases/SP2-launch-app-2d-scene.md, CLAUDE.md, TODO.md,
+> docs/phases/README.md, docs/phases/SP7-structural-mass-push-load.md, CLAUDE.md, TODO.md,
 > README.md, and the memory index
 > (C:\Users\rahul\.claude\projects\D--DEV-ClaudeProjects-SpaceRocketOptimization\memory\MEMORY.md)
-> with the notes it links. Then read the inputs the phase file links:
-> docs/phases/inputs/2026-09-30-survey-animate-replay-visuals.md and the section "SP2: local
-> app and 2-D scene" of docs/phases/inputs/2026-09-30-SP1-approved-plan.md, and
-> docs/findings/RQ1-fuel-offload-2d.md for the headline the app will show beside its
-> caveats.
+> with the notes it links, then the inputs the phase file links: none exist under
+> docs/phases/inputs/ for SP7 yet (its Plan mode writes the first), so read the record it
+> builds on instead: docs/findings/RQ1-fuel-offload-2d.md ("Structural penalty rows and
+> break-even", "Depth and g-level", "Max-Q and loads", "Limits"),
+> docs/findings/RQ3-silo-screening-2d.md ("Caveats", "Loads"), and sections 11 and 12 of
+> docs/phases/SP2-launch-app-2d-scene.md for what SP2 changed.
 >
-> We are continuing launch-assist-sim. SP1 is closed: the launch settings (silo depth with
-> the exit speed or the net acceleration; the stage-1 thrust-ramp start by time, depth,
-> speed, height by event and height by closed form), the fuel-offload solver with its
-> `offload:` experiment block and pad controls, an in-memory entry point
-> (config.resolve_experiment, sim.run_resolved, results_io.planar_experiment_result, which
-> writes nothing), replay of offload runs, and the headline finding on the planar model.
-> This session is phase SP2: a local app with an animated 2-D launch scene.
+> We are continuing launch-assist-sim. SP2 is closed: the local app (`launchsim app`), the
+> 2-D scene (`launchsim scene`), the shared read-only reader run_data.py, caveats worded
+> from each run's record, and the label `exploratory` on every app run. This session is
+> phase SP7 (D-SP1-18, confirmed by D-SP2-40): charge the structural mass that the 4 g
+> full-stack push needs, with a first-order sizing model validated against closed forms,
+> so that SP1's headline (41.26 t of stage-1 propellant, 10.04% of stage 1, before any
+> structural mass) carries a modelled structural cost with an uncertainty band beside the
+> assumed penalty rows; and build the drive realism that interacts with it: a force- and
+> power-limited linear motor with carriage mass and, if we keep them, modelled braking and
+> the silo air column. The phase file is a brief with recommendations, not the design.
 >
-> What I want to see at the end: I run `uv run python -m launchsim app`, open the printed
-> 127.0.0.1 address, set the silo depth with the exit speed or the net acceleration, choose
-> where the stage-1 thrust ramp starts (any of the five ways), choose a propellant offload
-> (solved or fixed; stage 1, stage 2 or both; with an optional stage-2 pre-offload) and an
-> assumed structural penalty, press Launch, follow the job's progress (an offload solve
-> takes minutes), and watch the pad launch and the silo launch side by side in a 2-D scene:
-> the silo cross-section and carriage, the rocket to scale with its attitude and plume, tank
-> levels that show the offload, release, the kick, staging with stage 1 falling away, the
-> fairing halves, a camera that zooms out to Earth's curvature, a HUD, and the caveats
-> beside the numbers. I also want to browse the recorded results directories (including
-> SP1's results/silo_offload_2d/20261003T112934Z) and replay any planar run as a scene.
-> Every app run writes a normal results directory and is labelled exploratory: no finding
-> comes from it.
+> Follow the session protocol. Run its start checklist: a clean tree; HEAD's subject
+> "Close SP2: trackers, handoff, next phase file", SP2's closing commit (named in the
+> handoff) an ancestor, and `git diff --stat <that commit> HEAD` touching only bookkeeping
+> files; the fast suite green with the count recorded; the entry criteria of the phase
+> file's section 4 (the pins, the two recorded payload capacities 26,054.3962 and
+> 27,553.2271 kg within 0.002 kg, SP1's solver and run data, the app's basis); the
+> inventory of section 6 re-checked against HEAD (last checked at 705025f); the open KI
+> and B items owned by SP7 listed (B-004, B-005, KI-030, KI-039; B-007 if Plan mode
+> re-targets it; KI-036 falls to the phase that edits replay.py). If the session starts in Plan mode, do
+> the read-only checks first and run the suite right after approval, as the protocol's
+> section 3 says.
 >
-> Decisions already taken (TODO.md decisions log; phase file section 3): D-SP1-02 (a local
-> app first: form, Launch button, scenes inside it); D-SP1-07, D-SP1-08 and D-SP1-18 (SP2
-> now, in one fresh session that also prepares SP7, the structural mass of the push load
-> and a force-limited drive, which runs after SP2 and before SP3); D-SP1-05 and D-SP1-06
-> (the depth and ramp-start settings); D-SP1-03, D-SP1-04, D-SP1-09 and D-SP1-10 (offload semantics, the penalty rows,
-> the offload block, the pad control: stage 1 is the only headline, and stage-2 and
-> both-stage numbers are shown net of the pad control as a property of the vehicle model);
-> D-SP1-01 (later 3-D models add their series without a rewrite); D-SP1-14 to D-SP1-16
-> (public repository, push after every step, public face kept current); D-P2-08 (the +14.3%
-> calibration miss travels with every number). The route approved with the plan: the
-> standard-library HTTP server bound to 127.0.0.1, no new dependency, the CLI's resolve,
-> preflight and run path in a background worker, a cached pad baseline, canvas rendering
-> that reuses the replay page's clock and helpers, display-only shapes with a source or
-> `assumed: true`.
->
-> Follow the session protocol. Run its start checklist: confirm a clean tree, that HEAD's
-> subject is "Close SP1: trackers, handoff, next phase file" and that SP1's closing commit
-> named in the handoff is an ancestor; run the fast suite and record the count; check the
-> entry criteria in section 4 of the phase file; run the diff of the phase file's header,
-> `git diff --stat b3150c1 HEAD -- src tests configs experiments pyproject.toml .gitignore
-> site/build.py`: an empty diff is the re-check of section 6 (record it in the session
-> log), and if it lists files, re-check those files against section 6 before planning from
-> it; list the open known issues and backlog items whose owner is SP2 in TODO.md (at SP1's
-> close: KI-002, KI-016, KI-017, KI-018, KI-019 and KI-029, the replay drive-caveat wording
-> of section 5.8 item 5). If the session starts in
-> Plan mode, do the read-only checks first and run the suite right after approval, as the
-> protocol's section 3 says.
->
-> Then work in Plan mode (step A0). Put the questions of section 10 to me, each with your
+> Then work in Plan mode (step 0). Put the questions of section 10 to me, each with your
 > recommendation first and the trade-off in one line, and give the ambitious option fairly
-> with its cost: Q1 the HTML scene export (the only way to put a scene on the public site)
-> and video; Q2 an offline page, fonts and brand; Q3 where app runs are kept; Q4 the
-> presets; Q5 the vehicle; Q6 the offload input; Q7 the look. Settle the open design points
-> of section 10 (what a fixed-offload launch shows, thread or child process, how the cached
-> baseline enters the run path, the git provenance of a long-running server, A1's
-> compatibility policy for the moved names, progress granularity, the exploratory label,
-> the default run selection of an offload directory, brand assets in the package, whether
-> SP2 takes the replay drive-caveat fix). Show me one static mock-up frame of the scene
-> and one of the app page inline in the chat, then the detailed design, the step table
-> with gates, and the exit criteria with their tolerances, and wait for my approval before
-> writing any code.
-> After approval, log the decisions as D-SP2-nn in TODO.md, save the design under
-> docs/phases/inputs/, and make the start commit ("Start SP2: status in progress").
+> with its cost: Q1 model fidelity, Q2 the sizing basis (the flown stack or the full
+> load), Q3 the existing margin, Q4 the drive scope, Q5 where the carriage load enters, Q6
+> the findings note, Q7 the dynamic load factor. Settle the open design points of section
+> 10. Structural FEM is a scope expansion: do not plan it without my approval. Show me the
+> detailed design, the step table with gates and the exit criteria with their tolerances,
+> and wait for my approval before writing any code. After approval, log the decisions as
+> D-SP7-nn in TODO.md, save the design under docs/phases/inputs/, and make the start
+> commit ("Start SP7: status in progress").
 >
-> Run every step of the table through the loop: implementer; adversarial reviewers (a
-> physics or numerics skeptic on every code step, A1 to A6; a CLAUDE.md compliance auditor
-> on every step; a visual-QA reviewer on anything drawn who checks the page state against
-> the run's CSV through a server on 127.0.0.1; and an honesty auditor on labels and
-> caveats); up to two fix rounds; an independent gate; one commit per
-> gate; the tracker commit at once ("SP2 step <k>: trackers (<hash>)"); then `git push
-> origin main` and a check that the Pages deployment succeeded. Step A1's first action,
-> before any edit, is the reference replay page of section 7 and its sha256. Standing gates:
-> fast suite green, ruff clean, golden 1-D, the planar digest pin and the planar output
-> capture unchanged, no shipped experiment or vehicle file changed. An offload launch takes
-> minutes (about 90-110 s per solve with its verification on this machine, plus about 30 s
-> per pad control), so it runs in a background worker with progress and the page never
-> blocks. Do not change the equations of motion, frames, events, integrator settings, loss
-> accounting, search, guidance or the offload solver; a reader-side fix is preferred over
-> any change to what the planner logs. Never delete or overwrite a results directory.
+> Rules for the whole session. Plan mode, and docs/physics.md in the same change, for
+> anything touching the equations of motion, frames, events, integrator settings or loss
+> accounting (the linear motor, the air column and braking touch the track equation and
+> its events). Every structural coefficient is sourced or marked assumed, in a structure
+> file, never in a calibrated vehicle file. Every new physics piece passes its closed-form
+> test before an experiment uses it. Never choose a drive or structural parameter to make
+> the assist look better; published claims and probe numbers are comparisons, never
+> targets. The experiment file and its expected readings are committed before any run
+> (pre-registration), the runs start from a clean commit, and no results directory is ever
+> overwritten or deleted. App runs follow D-SP2-37: reviewers and gates use a scratch
+> results root, demo launches come from a clean tree after the last code commit, their
+> summaries go in their own commit, and no app run is cited in a finding. Keep SP1's
+> penalty rows beside the modelled number.
 >
-> At the end, run the end checklist: an independent gate on each of the 14 exit criteria (a
-> criterion stays open only with my explicit acceptance, logged as a decision), the full
-> suite, the demo recorded under docs/demos/SP2/ (pages served through 127.0.0.1,
-> screenshots in light and dark mode, the visual-QA table), CLAUDE.md (commands, layout, the
-> modules allowed to do I/O, the status line), the README quick start and status, the user
-> manual, TODO.md and the program board, and the public face: the landing page, the deck and
-> its PDF, the gallery (with an exported scene if Q1 chose the export) and the manual, with
-> the site built locally and no broken link. Then put the close-out questions to me, with
-> the recommendation first (which phase runs next, SP7 in the planned order, D-SP1-18),
-> fact-check the next phase's file (SP7 in the planned order, or the phase I choose)
-> against the code, archive the handoff and write the
-> new one with the prompt for that phase, update the memory,
-> have the cold-read check done, make the closing commit, push, and confirm the Pages
-> deployment. Report anything that undercuts the hypothesis, and anything the scene would
-> show that the model does not support, as plainly as the rest.
+> Run every step through the loop: implementer; adversarial reviewers (a physics or
+> numerics skeptic on every code step, a CLAUDE.md compliance auditor on every step, an
+> honesty auditor on S0, S6, S7 and on every caveat or label you reword); up to two fix
+> rounds; an independent gate; one commit per gate; the tracker commit at once ("SP7 step
+> <k>: trackers (<hash>)"); then `git push origin main` and a check that the Pages
+> deployment succeeded. Standing gates on every code step: fast suite green, ruff clean,
+> the golden 1-D outputs byte-identical, the planar digest pin and the planar output
+> capture unchanged, no shipped experiment or vehicle file changed, replay.html's sha256
+> unchanged; the full suite after any physics-core change. No validated number may move:
+> the pad and silo_cold payload capacities, and SP1's headline with the structural model
+> off.
+>
+> At the end, run the end checklist of the protocol's section 7: an independent gate on
+> each exit criterion (a criterion stays open only with my explicit acceptance, logged as
+> a decision); the full suite and ruff with the counts recorded; the demo under
+> docs/demos/SP7/; the phase file closed, the board, TODO.md, CLAUDE.md (status, commands,
+> layout) and README.md updated, and the public face refreshed (landing page, deck and its
+> PDF, gallery, manual) with the site built locally and no broken link; the close-out
+> questions to me with the recommendation first (which phase runs next: SP3 in the planned
+> order); the fact-check of the next phase's file against the code; the handoff archived
+> and the new one written with the next prompt; the next prompt printed to me; the memory
+> updated; the cold-read check by
+> an agent that did not write the documents; the closing commit; the push and the Pages
+> deployment confirmed. Report anything that undercuts the hypothesis, a modelled
+> structure that cancels most of the offload included, as plainly as the rest.

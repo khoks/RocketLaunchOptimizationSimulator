@@ -434,7 +434,10 @@ The once-with-a-real-browser check of exit criterion 17 (a page on another loopb
 cannot start a launch) was made at the A4b gate (two cross-origin browser posts started
 nothing) and the A5 gate (a page opened from another site reads no hash and acts only after
 the user's first trusted event), as the phase file's session log records; it was not
-repeated for this demo. The screening presets of the script's step 11 (`silo_sled_22t`,
+repeated for the demo launches. The exit-criteria gate of step A8 found that gap and made
+the check at cb305a5 with a real browser (launch, video start, frame, cancel, finish and
+scene requests from another port, localhost, another host name and a DNS-rebinding proxy;
+no hostile request got a 2xx): [criterion17-browser-check.md](criterion17-browser-check.md). The screening presets of the script's step 11 (`silo_sled_22t`,
 `silo_hot_full`) were not launched from the clean tree; they are in the criterion-2 driver
 record above (launches 12 to 14 there), made into a scratch root.
 

@@ -8,19 +8,18 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-07 (SP2 in progress: steps A1 to A7 and A8 part 1 done; A8 part 2 the close; next phase SP7, D-SP2-40).
+Last updated: 2026-10-07 (SP2 closed, commit 3a1b243: 13 of 17 exit criteria pass at the gate, 13 and 17 fixed in the close, 7 and 11 accepted as logged misses, D-SP2-41 and D-SP2-42; next phase SP7, D-SP2-40).
 
 ## Program
 
-Current phase: **SP2, in progress (session 2026-10-05)**. In step A0 the user answered Q1
-to Q7 and approved the design saved as docs/phases/inputs/2026-10-05-SP2-design.md
-(decisions D-SP2-01 to D-SP2-38 below). Its step table (13 steps, A0 to A8, with two
-checkpoints) and its 17 exit criteria are in docs/phases/SP2-launch-app-2d-scene.md
-(sections 7 and 8), with the session log (section 11). SP1 closed on 2026-10-04 (step 10 of
-docs/phases/SP1-fuel-offload-planar.md; its closing commit is on the program board). A new
-session resumes SP2 from docs/handoff/NEXT_SESSION.md and the step table of the phase file
-(docs/process/SESSION_PROTOCOL.md section 10). Order after SP2 (D-SP1-18): SP7 (structural
-mass of the push load and a force-limited drive), then SP3, SP4, SP5, SP6.
+Current phase: **SP7, not started** (the next session; D-SP1-18, confirmed by
+D-SP2-40): the structural mass of the push load and a force-limited drive,
+docs/phases/SP7-structural-mass-push-load.md, started from
+docs/handoff/NEXT_SESSION.md. SP2 closed on 2026-10-07 (closing commit 3a1b243; the
+local app `launchsim app` with the 2-D launch scene, the standalone `launchsim scene`
+page and the MP4 export; every app run exploratory, never a finding); its exit
+criteria results are in docs/phases/SP2-launch-app-2d-scene.md section 8. SP1 closed on
+2026-10-04. Order after SP7: SP3, SP4, SP5, SP6.
 
 - How a session runs (start checklist, step loop, end checklist, ID conventions):
   [docs/process/SESSION_PROTOCOL.md](docs/process/SESSION_PROTOCOL.md).
@@ -35,8 +34,8 @@ mass of the push load and a force-limited drive), then SP3, SP4, SP5, SP6.
 | Phase | One line | Status | Phase file |
 |---|---|---|---|
 | SP1 | Tracking system; launch settings (silo depth with exit speed, ramp start); fuel-offload solver; the headline finding on the planar model | done (2026-10-04, commit `5007515`) | [SP1-fuel-offload-planar.md](docs/phases/SP1-fuel-offload-planar.md) |
-| SP2 | Local app (`launchsim app`) with the 2-D launch scene, a standalone scene page (`launchsim scene`) and an MP4 export | in progress (session 2026-10-05) | [SP2-launch-app-2d-scene.md](docs/phases/SP2-launch-app-2d-scene.md); approved design: [2026-10-05-SP2-design.md](docs/phases/inputs/2026-10-05-SP2-design.md) |
-| SP7 | Structural mass of the push load and a force-limited drive (taken from README Phase 3, B-004 and B-005); runs after SP2 and before SP3 (D-SP1-18) | not started | [SP7-structural-mass-push-load.md](docs/phases/SP7-structural-mass-push-load.md) (written 2026-10-04 at SP1's close-out; its exit criteria and prompt are drafts: SP2's close finalises the prompt, SP7's Plan mode the criteria) |
+| SP2 | Local app (`launchsim app`) with the 2-D launch scene, a standalone scene page (`launchsim scene`) and an MP4 export | done (2026-10-07, commit `3a1b243`) | [SP2-launch-app-2d-scene.md](docs/phases/SP2-launch-app-2d-scene.md); approved design: [2026-10-05-SP2-design.md](docs/phases/inputs/2026-10-05-SP2-design.md) |
+| SP7 | Structural mass of the push load and a force-limited drive (taken from README Phase 3, B-004 and B-005); runs after SP2 and before SP3 (D-SP1-18) | not started | [SP7-structural-mass-push-load.md](docs/phases/SP7-structural-mass-push-load.md) (written 2026-10-04 at SP1's close-out; fact-checked at 705025f and its prompt made final by SP2's close (96bbfa1); its exit criteria are drafts that SP7's Plan mode fixes) |
 | SP3 | 3-D dynamics S1: 3-DOF point mass on a rotating sphere | not started | [SP3-3d-dynamics-s1-sphere.md](docs/phases/SP3-3d-dynamics-s1-sphere.md) |
 | SP4 | 3-D scene in the app; headline re-checked on S1 | not started | [SP4-3d-scene-and-recheck.md](docs/phases/SP4-3d-scene-and-recheck.md) |
 | SP5 | 3-D dynamics S2: oblate Earth (J2, ellipsoid) | not started | [SP5-3d-dynamics-s2-oblate.md](docs/phases/SP5-3d-dynamics-s2-oblate.md) |
@@ -65,27 +64,27 @@ move it by kilograms (D-SP1-18).
 - [x] M10 Phase V plan (Plan mode): the five decisions in the first handoff (now docs/handoff/archive/2026-09-30-phases-0-2.md, section 5). Done 2026-09-30: the plan was approved in Plan mode; decisions D-SP1-01 to D-SP1-13; the plan is docs/phases/inputs/2026-09-30-SP1-approved-plan.md
 - [x] M11 Fuel replacement at fixed payload: a `propellant_offload` figure of merit and experiment on the Falcon 9 gate vehicle; % of stage-1 and total propellant replaced, energy ratio, with and without a structural penalty (headline question, user 2026-09-30). **Phase: SP1** (steps 5-9). Built as an `offload:` experiment block and a post-pass, not a figure-of-merit value (D-SP1-09); the structural penalty is parametric rows (D-SP1-04). Done 2026-10-04: docs/findings/RQ1-fuel-offload-2d.md (fd664a5), preliminary, with its caveats (see "Findings so far")
 - [x] M12 Launch configuration knobs: silo depth with exit speed; thrust-ramp start by depth/speed. **Phase: SP1** (steps 1-4). The ramp start is also set by height, by event and by closed form (D-SP1-06). Done 2026-10-04 (SP1 close): steps 1-4 (e2fb6ab, 1fc92d3, 83d66dd, 1a0b2af)
-- [ ] M13 Animated 2-D launch scene (`launchsim scene`): rocket, silo, plume, staging, camera. **Phase: SP2**, inside the local app (`launchsim app`, D-SP1-02); a separate `launchsim scene` command is no longer the plan. Corrected 2026-10-05: the scene is inside the app, and a standalone `launchsim scene` export (an HTML page that plays with no server) and an MP4 export from the app are in SP2 again (D-SP2-01, D-SP2-30). SP2 is in progress (session 2026-10-05); its exit criteria are in the phase file, section 8
+- [x] M13 Animated 2-D launch scene (`launchsim scene`): rocket, silo, plume, staging, camera. **Phase: SP2**, inside the local app (`launchsim app`, D-SP1-02); a separate `launchsim scene` command is no longer the plan. Corrected 2026-10-05: the scene is inside the app, and a standalone `launchsim scene` export (an HTML page that plays with no server) and an MP4 export from the app are in SP2 again (D-SP2-01, D-SP2-30). Done 2026-10-07 (SP2, closing commit 3a1b243): the scene in the app, `launchsim scene` and the MP4 export; the exit criteria results are in the phase file, section 8 (7 and 11 accepted as logged misses, D-SP2-41, D-SP2-42)
 - [ ] M14 3-D view of the planar runs on a globe. Changed by D-SP1-01: 3-D now means true 3-D dynamics in three stages, **SP3 (S1), SP5 (S2), SP6 (S3)**, with the 3-D scene in **SP4**. Done when M16-M19 are done
 - [ ] M15 Phase 3 assist models (linear_motor, curved track, cable winch, air column, braking, tilted exit) and the structural mass for the 4 g push. **Phase: later** (README Phase 3; no SP number yet). Changed by D-SP1-18 (2026-10-04): the structural mass for the push and a force-limited drive move to **SP7** (M20); the rest stays later
 - [ ] M16 SP3 gate: 3-D dynamics S1 (3-DOF point mass on a rotating sphere); tests green, model-to-model record against the planar gate, a 3-D run from the CLI
 - [ ] M17 SP4 gate: 3-D scene in the app (the launch on a globe); the offload % reported on the planar and the S1 model
 - [ ] M18 SP5 gate: 3-D dynamics S2 (oblate Earth: J2, ellipsoid); offload % on the oblate model, the effects of flattening and J2 separated
 - [ ] M19 SP6 gate: 3-D dynamics S3 (6-DOF fly-out); attitude, gimbal and cold-start controllability results; attitude shown in the 3-D scene
-- [ ] M20 SP7 gate: the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its exit criteria are drafted in its phase file (docs/phases/SP7-structural-mass-push-load.md, section 8, written at SP1's close-out); SP2's close fact-checks the file against the code and finalises its prompt, and SP7's Plan mode fixes the tolerances marked "proposed"
+- [ ] M20 SP7 gate: the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its exit criteria are drafted in its phase file (docs/phases/SP7-structural-mass-push-load.md, section 8, written at SP1's close-out); SP2's close fact-checked the file at 705025f and finalised its prompt (96bbfa1); SP7's Plan mode fixes the tolerances marked "proposed"
 
 ## Priorities
 
-1. P0 SP2 (in progress, session 2026-10-05): the local app with the 2-D launch scene, the standalone scene page and the MP4 export (D-SP2-01). Next step: A1, the shared run-data module (phase file, section 7).
+1. P0 SP7 (the next session; D-SP1-18, D-SP2-40): the structural mass of the push load and a force-limited drive (B-004, B-005, KI-030, KI-039). It decides whether SP1's 10% of stage 1 survives.
 2. P0 (standing) Physics correctness and honest tests (validation first; closed forms computed in the tests).
-3. P1 SP7, after SP2: the structural mass of the push load and a force-limited drive (B-004, B-005; D-SP1-18). It decides whether SP1's 10% of stage 1 survives.
-4. P1 SP3, after SP7: 3-D dynamics S1, pinned against the planar gate.
-5. P2 SP4, SP5, SP6: the 3-D scene and the re-check on S1; the oblate Earth; the 6-DOF fly-out.
-6. P2 later: the rest of README Phase 3 (B-006 to B-009), Phase 5, Phase 6. Can be moved up at a session boundary.
-7. P3 (standing) Polish: plots, docs completeness, slow-test hygiene.
+3. P1 SP3, after SP7: 3-D dynamics S1, pinned against the planar gate.
+4. P2 SP4, SP5, SP6: the 3-D scene and the re-check on S1; the oblate Earth; the 6-DOF fly-out.
+5. P2 later: the rest of README Phase 3 (B-006 to B-009), Phase 5, Phase 6. Can be moved up at a session boundary.
+6. P3 (standing) Polish: plots, docs completeness, slow-test hygiene.
 
 Met earlier (kept as history):
 
+- P0 SP2: the local app with the 2-D launch scene, the standalone scene page and the MP4 export (D-SP2-01). Met 2026-10-07 (M13; closing commit 3a1b243).
 - P1 Phase 0 and Phase 1 gates with the CLAUDE.md commands working on Windows (M1, M2).
 - P2 Concept-A numbers and the two preliminary findings notes (M4, M5).
 - P0 SP1 headline: the user's question, % of rocket propellant the silo push replaces at fixed payload on the Falcon 9 model, with caveats (stage 1 is the only headline; penalty rows and sensitivity beside it). Met 2026-10-04 (M11; docs/findings/RQ1-fuel-offload-2d.md).
@@ -255,6 +254,8 @@ SP2 planning (2026-10-05; Q1 to Q7 answered by the user in step A0, the design a
 - **D-SP2-38** 2026-10-05 SP2 has 17 exit criteria (docs/phases/SP2-launch-app-2d-scene.md, section 8), with their changes against the brief's 14 listed there. Reason: three of the brief's tolerances were unmeasurable or vacuous on recorded data (design, approved with the plan).
 - **D-SP2-39** 2026-10-06 (SP2 step A4): D-SP2-31's neutral run names gain a third, `pad_variant`, for a pad launch whose ignition or startup equals no committed variant (naming it `silo` would be wrong: it has no push). Extends D-SP2-31; recorded by the A4 compliance review (design, recorded with the step).
 - **D-SP2-40** 2026-10-07 (SP2 close-out): SP7 (the structural mass of the push load and a force-limited drive) runs next, as D-SP1-18 ordered; then SP3 to SP6. SP2's close fact-checks SP7's phase file and writes its prompt (user, the recommended option).
+- **D-SP2-41** 2026-10-07 (SP2 close, exit criterion 7): accepted as a logged miss. Every clause of criterion 7 holds except "an imposed offload is never called saved": a summary.md with an imposed (fixed) offload case files it under the section "Propellant saved at fixed payload", whose basis line says every offload is measured at the reference payload P_ref, although an imposed case flies its own P*. The wording is SP1's pipeline text (SP1's recorded summary carries its two fixed cases the same way); the per-case rows are right and the exploratory banner says an imposed offload is not propellant saved; no committed app summary has an imposed case. SP7 rewords it in its reporting step (KI-039) (user, the recommended option; the other was a fix step before the close, about 1.5 to 2 h with its gate and the full suite).
+- **D-SP2-42** 2026-10-07 (SP2 close, exit criterion 11): accepted as a logged miss. SP2 added six slow tests, not one slow launch: besides `test_a_searched_launch_with_a_stage1_solve`, `test_ctrl_break_stops_the_app_and_marks_the_launch`, `test_real_canvas_pngs_pass_the_header_check` and three `test_real_ffmpeg_*` tests run real subprocesses (a console interrupt, Edge, ffmpeg) and take over CLAUDE.md's 5 s mark; fake-encoder and guard versions of each are in the fast tier. Every other clause holds (user, the recommended option; the other was to re-tier them, a code step of about 1.5 h that would likely leave several slow).
 
 Notes on the SP2 planning group:
 
@@ -348,10 +349,11 @@ Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the 
 - **KI-032** [low, open, owner later] The metric `drive_power_peak_t_s` is on the absolute run clock (metrics_planar.py 1012), while the other time metrics of a planar run are after release, `t_release_s` excepted. It reads 2.6073 s on silo_cold and 5.2146 s on silo_cold_200m: the release instant, which is 0.0 after release. `felt_g_track_peak_t_s` beside it is after release (-2.607 s). A reader subtracts `t_release_s` before showing it on the release clock. Evidence: docs/phases/inputs/2026-10-05-SP2-survey/05-run-data-on-disk.md (sections 4, 10 and 11).
 - **KI-033** [low, open, owner later] An offload case on a variant with `assist: {model: none}` resolves. The config refuses a case only when its `of` is the baseline or an unknown name (config.py 2046-2053), so the rule that an offload applies to an assisted launch (the pad's own offload is the pad control) is not enforced for a second pad given as a variant. The app's form does not offer it: a pad-only launch disables the offload. Evidence: docs/phases/inputs/2026-10-05-SP2-survey/03-config-and-form.md (section 9, item 2).
 - **KI-034** [low, open, owner later] A step startup at release records thrust 0 on its first flight row. In results/silo_screening_2d/20260930T175743Z/silo_instant/timeseries.csv both rows at t_rel 0 (ASSIST and KICK) have `thrust_vac_N` = 0; the next row, at +0.0427 s, has 8,226,900 N, with `m_kg` already 115.13 kg lower (full flow from the ignition instant). The metric `t_ign_rel_release_s_stage1` is 1.78e-15 s, so the row is sampled a rounding step before ignition (vehicle.py 104: dt < 0 gives 0). The same in silo_bridge_2d_readme. pad_instant (first row 1.0) and stage-2 ignition (0, then 1) are as expected. Consequences for a reader: linear interpolation between the two rows draws a 43 ms thrust ramp the model does not have, and a check that rebuilds mass by integrating thrust must leave out that first interval (57.6 kg). Evidence: docs/phases/inputs/2026-10-05-SP2-review/01-numerics.md, finding 5.
-- **KI-035** [low, open, owner SP2 (the next step allowed to edit tests/test_scene.py), else standing] Fast-tier tests can exceed CLAUDE.md's 5 s mark when the machine is loaded: in SP2 step A3's runs tests/test_golden_1d.py took 5.84 s, tests/test_search.py 5.57 s, and tests/test_scene.py::test_run_path_modules_never_import_display_or_scene was reported over 5 s by one reviewer (2.8-2.9 s alone). Split the import check into a cheaper fast part and a slow part, or mark it slow, when a step may edit that file; the timings of the other two depend on load.
+- **KI-035** [low, open, owner the next phase that edits tests/test_scene.py (SP2 closed without it), else standing] Fast-tier tests can exceed CLAUDE.md's 5 s mark when the machine is loaded: in SP2 step A3's runs tests/test_golden_1d.py took 5.84 s, tests/test_search.py 5.57 s, and tests/test_scene.py::test_run_path_modules_never_import_display_or_scene was reported over 5 s by one reviewer (2.8-2.9 s alone). Split the import check into a cheaper fast part and a slow part, or mark it slow, when a step may edit that file; the timings of the other two depend on load.
 - **KI-036** [low, open, owner the phase that next edits replay.py] `replay.py` (around line 1820) writes `bool(git.get("dirty"))` into the page, so a directory whose git state is unknown (dirty None, for example an exploratory app run started outside a repository) reads as clean on the replay page; the scene page and the app's banner show it as unknown. Found by the SP2 step A4 honesty review.
 - **KI-037** [low, closed 2026-10-07 in SP2 step A8 (96bbfa1): docs/manual/07b-app.md and 11-troubleshooting.md document Ctrl+C as the stop and name the Ctrl+Break exit code; no code change] Stopping `uv run python -m launchsim app` with Ctrl+Break: the server prints its stop lines, writes FAILED.txt for a running launch and exits 0, but `uv` itself exits 3221225786 (0xC000013A, a console-interrupt exit), so the shell sees a failure and its prompt may return before the server has finished. Ctrl+C is the documented stop; say so in the manual. Found by the SP2 step A4b gate.
 - **KI-038** [low, open, owner the phase that next edits scene.py] The scene page's data block and its Data line name only the run directory's git state, not the renderer's version and git state, unlike the replay page's meta (src/launchsim/scene.py); a scene page cannot say which commit drew it. Found by the SP2 step A7 review, round 1; recorded in docs/demos/SP2/README.md ("Left open at SP2's close (KI-038)"); SP2 made no code change for it.
+- **KI-039** [low, open, owner SP7 (its reporting step, S3)] A summary.md whose offload block has an imposed (fixed) case files that case under the section "Propellant saved at fixed payload" (summary.py `OFFLOAD_SECTION_NAME`, `offload_section`), whose basis line (compare.py `OFFLOAD_COMPARISON_BASIS`, also in metrics.json's `offload` record) says "every offload is measured at the reference payload P_ref"; an imposed case flies its own payload capacity P*. The case rows are right ("payload flown (solved: P_ref; fixed: its own P*)"), and since SP2 an app summary's banner says an imposed offload is not propellant saved (`EXPLORATORY_IMPOSED_TEXT`). Reword the heading and the basis line for imposed cases at source with the honesty review, then drop the banner's disclaimer; recorded results are not rewritten. Found by the SP2 exit-criteria gate (criterion 7); accepted by D-SP2-41.
 
 ## Findings so far (details in docs/findings/; index in docs/findings/README.md)
 
@@ -382,7 +384,9 @@ Added 2026-10-05 in SP2 step A0 (found by the code survey and the review of the 
   question (which phase runs next, and the B-004 order) was answered 2026-10-04 (D-SP1-18);
   the SP2 planning questions Q1 to Q7, with a follow-up to Q3, were answered 2026-10-05
   (D-SP2-01 to D-SP2-08), and the SP2 design was approved the same day (D-SP2-09 to
-  D-SP2-38).
+  D-SP2-38); the SP2 close-out question (the next phase) was answered 2026-10-07
+  (D-SP2-40), and the two exit-criteria misses were accepted the same day (D-SP2-41,
+  D-SP2-42).
 - Deferred to later phases' Plan mode; each phase file lists them in its section 10 (Risks
   and open questions), marked where they need you. Known today from the approved plan: the
   detailed design of the app and the 2-D scene (SP2's Plan mode; done 2026-10-05,
