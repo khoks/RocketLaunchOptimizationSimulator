@@ -37,7 +37,7 @@ record (none when the record has none); the captured frames' caveat line and eac
 run's structure note; schema
 defaults labelled 'default'; the import guard that keeps
 display and scene out of the run path, scene reading through run_data only and display
-loading no I/O module.
+loading no I/O module (its fresh-interpreter part is the one slow test here, KI-035).
 """
 
 from __future__ import annotations
@@ -122,6 +122,7 @@ RUN_PATH_MODULES = (
     "phases/prelude",
     "phases/vertical",
     "phases/planar",
+    "structure",  # the structural sizing primitives (SP7 step S1)
 )
 """Modules of the run path that must never import display or scene."""
 SCENE_MODULES = ("launchsim.display", "launchsim.scene")
@@ -1372,10 +1373,10 @@ def test_peak_q_row_kept_and_frame_caveats(
 
 def test_run_path_modules_never_import_display_or_scene() -> None:
     """No module of the run path (sim, results_io, search, guidance, dynamics, offload,
-    compare, metrics, metrics_planar, run_data, the phases package) imports display or
-    scene, by source scan; scene imports no run-path writer and reads no file itself;
-    and in a fresh interpreter importing display loads no I/O module while importing sim
-    loads neither display nor scene."""
+    compare, metrics, metrics_planar, run_data, the phases package, structure) imports
+    display or scene, by source scan; scene imports no run-path writer and reads no file
+    itself. The fast part of the guard (KI-035); the fresh-interpreter part is
+    ``test_fresh_interpreter_keeps_display_and_the_run_path_apart`` (slow)."""
     offenders = []
     for module in RUN_PATH_MODULES:
         tree = ast.parse((SRC / f"{module}.py").read_text(encoding="utf-8"))
@@ -1403,6 +1404,14 @@ def test_run_path_modules_never_import_display_or_scene() -> None:
     # ... and reads no file itself: no pandas or yaml reader call (run_data does the reading)
     calls = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     assert not ({"read_csv", "read_parquet", "safe_load", "read_text", "open"} & calls), calls
+
+
+@pytest.mark.slow
+def test_fresh_interpreter_keeps_display_and_the_run_path_apart() -> None:
+    """In a fresh interpreter importing display loads no I/O module while importing sim
+    and results_io loads neither display nor scene: the slow part of the import guard
+    (a subprocess start, about 3 s; KI-035), split from
+    ``test_run_path_modules_never_import_display_or_scene``."""
     # one fresh interpreter: importing display (pure) loads no I/O module of the package
     # (run_data, replay, scene, plots, results_io, sim) and no yaml reader; then importing
     # sim and results_io (the run path) loads neither display nor scene

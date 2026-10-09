@@ -1096,6 +1096,23 @@ them with the design (D-SP7-01 to D-SP7-35); the full list is the design's secti
    stack frequency, and for constant_accel the ramp's plateau cost is charged, against the brief's
    single stated rise time.
 
+Step S1 (2026-10-08): two physics changes against the approved design and its review numbers,
+found in S1's reviews (PHYS-S1-02, PHYS2-03, S1-COMP2-02); docs/physics.md, "Structural sizing
+of the push load (first order)", derives both, and the review records stay unedited.
+
+7. **Ring frame moment** (design 4.2.3, D-SP7-17): `ring_frame_mass_kg` sizes the ring for the
+   bending moment at the pads of a closed thin ring on N_p equally spaced supports,
+   M = q r^2 (1 - alpha cot alpha) with alpha = pi/N_p, not the straight continuous beam's
+   interior-span moment q l^2/12 (l = 2 pi r/N_p) that the design states. It tends to q l^2/12
+   as N_p grows and is larger by 1.0% at 8 pads, 1.9% at 6, 4.4% at 4 and 8.2% at 3 (the ring's
+   mass by 0.7%, 1.3%, 2.9% and 5.4%): conservative, it charges the assist more mass. The ring's
+   mass is ideal; the caller applies the barrels' NOF (S2).
+8. **Ramped plateau reference** (design 4.2.1, review SP-8): at L = 100 m, v_e = 76.707 m/s
+   (3 g0 over 100 m) and t_r = 1.061 s the closed form and an integration of the ramp's
+   kinematics both give a' = 29.84 m/s^2 (1.42% above v_e^2/(2 L) = 29.42), so the felt load
+   factor is 4.043 g0, not review SP-8's 29.77 m/s^2 and 4.032 g0 (an arithmetic slip: 29.77
+   corresponds to t_r of about 0.97 s). S2 consumes 29.84 m/s^2 and 4.043 g0.
+
 ## 13. Prompt to start this phase
 
 Final (2026-10-07, SP2's close-out at 705025f; KI-039 added at the close). The handoff

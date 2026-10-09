@@ -1,7 +1,12 @@
-"""Earth and physical constants: the only place mu, R_E, omega_E and g0 are defined.
+"""Earth and physical constants, and the published empirical coefficients the physics
+modules use: the only place mu, R_E, omega_E and g0 are defined.
 
 All values are SI. Earth parameters follow WGS84 / IERS; g0 and sea-level pressure
-follow the ICAO standard atmosphere.
+follow the ICAO standard atmosphere. The structural coefficients are empirical fits from
+NASA SP-8007 (the knockdown of an unstiffened cylinder in axial compression, 1968 Eq. 5
+and 2020 Eq. 9-10), each with its source in its docstring; structure.py uses them. A
+published table whose rows are used whole (Gerard & Lakshmikantham's Table 2) lives with
+its module instead.
 """
 
 MU_EARTH_M3S2: float = 3.986004418e14
@@ -40,3 +45,13 @@ ALT_AMBIANCE_MIN_M: float = -5_004.0
 ALT_AMBIANCE_MAX_M: float = 81_020.0
 """Highest geometric altitude [m] the ambiance ICAO atmosphere accepts; above it
 atmosphere.py applies its documented isothermal extension."""
+
+SP8007_KNOCKDOWN_A: float = 0.901
+"""Coefficient [-] of the SP-8007 knockdown of an unstiffened isotropic cylinder in axial
+compression, gamma = 1 - 0.901 (1 - exp(-phi)), phi = sqrt(r/t)/16: NASA SP-8007 (1968),
+"Buckling of Thin-Walled Circular Cylinders", Eq. 5; NASA/SP-8007-2020/REV 2, Eq. 9-10
+(stated there for r/t < 1500 as a lower bound to the test data). Used by structure.py."""
+
+SP8007_PHI_DIVISOR: float = 16.0
+"""Divisor [-] of sqrt(r/t) in the SP-8007 knockdown exponent phi = sqrt(r/t)/16 (the
+1/16 of NASA SP-8007 (1968) Eq. 5 and NASA/SP-8007-2020/REV 2 Eq. 10)."""

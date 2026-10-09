@@ -28,15 +28,25 @@ PHYSICS_MODULES = [
     "atmosphere",
     "dynamics",
     "losses",
-    "phases",
+    "phases/__init__",
+    "phases/engine",
+    "phases/prelude",
+    "phases/planar",
+    "phases/vertical",
+    "phases/trace",
     "vehicle",
     "units",
+    "offload",  # pure per CLAUDE.md's layout (SP7 step S1, D-SP7-34)
+    "structure",  # the structural sizing primitives (SP7 step S1)
     "assist/base",
     "assist/constant_accel",
     "assist/none",
     "assist/track",
     "display",  # the scene's display-only reconstructions (SP2 step A2, design 4.1)
 ]
+"""Module paths under src/launchsim (without .py) whose public functions, classes and
+methods must carry a docstring. Every path must exist: a missing one fails the check
+(the package ``phases`` is listed file by file; SP7 step S1, D-SP7-34)."""
 
 
 def _source_files() -> list[Path]:
@@ -77,11 +87,14 @@ def test_every_file_open_declares_encoding() -> None:
 
 
 def test_public_physics_functions_have_docstrings() -> None:
+    """Every public module-level function and class, and every public method of those
+    classes, in each PHYSICS_MODULES file has a docstring (what the docstring says is for
+    review: this checks that one exists); a listed path that does not exist fails."""
+    absent = [module for module in PHYSICS_MODULES if not (SRC / f"{module}.py").is_file()]
+    assert not absent, f"PHYSICS_MODULES lists missing module files: {absent}"
     missing = []
     for module in PHYSICS_MODULES:
         path = SRC / f"{module}.py"
-        if not path.exists():
-            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         nodes: list[ast.FunctionDef | ast.ClassDef] = []
         for node in tree.body:

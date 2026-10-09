@@ -19,8 +19,9 @@ propellant, the payload and gamma* search, the shared budget and their convergen
 rules, the phase state machine, loss accounting, the ignition-after-release
 loss, the assist energy identity, the silo model and its reported quantities, hot
 starts, the failed-ignition coast, the figures of merit and their convergence, and
-the planar experiment schema (the shared blocks every run of an experiment carries);
-then every assumption the code emits, collected in one list, the display-only
+the planar experiment schema (the shared blocks every run of an experiment carries),
+and the first-order structural sizing of the push load (SP7 step S1: the sizing
+primitives); then every assumption the code emits, collected in one list, the display-only
 reconstructions of the 2-D scene (not part of the model: tank levels, a vacuum coast of
 the dropped bodies, the screen transform, the camera, the held attitude and the row
 selection; SP2 step A2), and the test-to-equation map.
@@ -5783,6 +5784,297 @@ An `ExperimentConfig` validates the raw experiment dict only: its `model_dump()`
 holds the injected baseline, which the raw form refuses, so a stored experiment is
 re-resolved from its raw dict, never from a dump.
 
+## Structural sizing of the push load (first order)
+
+Module: `src/launchsim/structure.py` (pure: it imports constants, units, numpy and
+scipy.optimize only). Named constants: `constants.SP8007_KNOCKDOWN_A` and
+`constants.SP8007_PHI_DIVISOR`; unit conversions of the structure file in `units.py`
+(`gpa_to_pa`, `mpa_to_pa`, `bar_to_pa`, `mm_to_m`, `kg_per_mn_to_kg_per_n`,
+`kg_per_kn_to_kg_per_n` and their inverses). Tests: `tests/test_structure.py`,
+`tests/test_units.py`, `tests/test_constants.py`. SP7 step S1 (design
+docs/phases/inputs/2026-10-08-SP7-design.md section 4.2, 4.2.1 and 4.2.3; D-SP7-14,
+D-SP7-16, D-SP7-17).
+
+**What S1 holds, and what it does not.** A ground push loads the stack with a felt axial
+load factor n that the pad's own flight never reaches at some stations. The model charges
+the mass of the positive part of the difference between the wall the push needs and the
+wall the pad's own envelope already needs. Step S1 adds only the sizing primitives that
+model is built from: closed-form, first-order relations (membrane level for the shells)
+for the walls, the load entry and the push's dynamic load. The station model of both
+stages (elements, stations, free bodies, `LoadCase`), the envelope over a pad's recorded
+flight, the flags, the structure file
+(`configs/structures/`, `StructureConfig`) and the screened coefficient search arrive in
+S2; the coupling to the offload solve, the records and the wording in S3, S3b and S3a.
+Nothing in S1 changes a run: no run, experiment or results file calls structure.py yet.
+
+**Conventions.** SI throughout (m, Pa, N, kg, s); a load factor n is in units of g0 and is
+converted by `units.from_g` (g0 here defines the unit, never a gravity model); a "design"
+load N_d is at ultimate, already multiplied by the ultimate factor FS_u and relieved by the
+caller with the tank's minimum expected pressure, unfactored (NASA-STD-5001B FSR 19,
+relieving pressure at its minimum, and FSR 53-54, buckling checked at ultimate loads with a
+relieving load unfactored); F_tu is the ultimate tensile strength and eta_w the weld
+efficiency on the hoop direction. A mode with no demand (N_d <= 0, no net internal
+pressure) sizes 0; inputs outside a function's domain are refused (ValueError). Frame: the
+primitives are local to a shell or a ring and carry no frame, except the hydrostatic depth,
+which runs along the stack axis from the liquid surface toward the tank bottom (the station
+frame of S2 is documented with it).
+
+**Pressure reference.** Every pressure argument (`p_pa`, `p_ullage_pa`, `p_stab_pa`,
+`p_relief_pa`) is a gauge pressure relative to the ambient pressure outside the vehicle at
+the load case's time, never a difference across an inner wall. A wall whose other side is
+that ambient (a barrel; an aft or forward dome) is sized from p alone. A wall whose other
+side is another pressurized volume (the common dome's RP-1 side; the RP-1 around the LOX
+transfer tube) is given that volume's pressure as p_relief, measured from the same ambient,
+at its minimum and unfactored (FSR 19), and subtracts it once: FS_u p - p_relief. Passing
+p_LOX - p_RP1 as p and p_RP1 again as p_relief would count the relief twice and under-size
+the wall.
+
+**Hydrostatic pressure** (`hydrostatic_pressure_pa`):
+
+    p = p_u + rho n g0 max(h, 0)        [Pa]
+
+with p_u the ullage pressure (relative to the ambient), rho the liquid density [kg/m^3], n
+the felt load factor [g0] (any sign: after a release n < 0 can make p negative, which S2
+reads as a column separating, design 4.2.2) and h the depth below the liquid surface [m].
+
+**Hoop** (`hoop_thickness_m`; `tube_hoop_thickness_m` for the LOX transfer tube with its own
+radius, the LOX pressure inside it and the RP-1 pressure outside it as the relief):
+
+    t_h = (FS_u p - p_relief) r / (F_tu eta_w)       [m];   0 when FS_u p - p_relief <= 0
+
+p the pressure inside, at its maximum expected operating value plus the head, unfactored
+(factored here); p_relief (keyword, default 0) the pressure outside when that side is
+another pressurized volume, at its minimum, subtracted once and unfactored (FSR 19: the
+RP-1 around the transfer tube, design 4.2). A barrel has none: its outside is the ambient
+the pressures are measured from.
+
+**Monocoque buckling** (`sp8007_knockdown`, `delta_gamma`, `monocoque_buckling_load_N`,
+`monocoque_bracket_m`, `monocoque_buckling_thickness_m`). NASA SP-8007 (1968) Eq. 5 and
+NASA/SP-8007-2020/REV 2 Eq. 9-10 give the knockdown of an unstiffened isotropic cylinder in
+axial compression, stated there for r/t < 1500 as a lower bound to test data:
+
+    gamma(r/t) = 1 - A (1 - exp(-sqrt(r/t)/D)),   A = 0.901, D = 16
+
+(0.3217 at r/t = 500; between 1 - A = 0.099 and 1, decreasing in r/t; r/t beyond 1500 is
+evaluated by the same formula, not refused). The 2020 edition's Eq. 48-49 (the same form in
+the 1968 edition, section 4.2.5.4) add the internal-pressure increment Delta_gamma, read
+from the digitized curve of 1968 Fig. 6 / 2020 Fig. 4-5 against x = (p/E)(r/t)^2. The
+digitization is an input: a table of (x, Delta_gamma) pairs, x strictly ascending from
+(0, 0), Delta_gamma non-decreasing, interpolated linearly (monotone, exact at the points)
+and constant beyond the last point (S2's structure file holds the table S0 adopts, with its
+source points). The buckling load without the pressure's own end load is
+
+    N_cr(t) = 2 pi E t^2 (gamma(r/t) / sqrt(3 (1 - nu^2)) + s_dg Delta_gamma((p/E)(r/t)^2))   [N]
+
+with p the stabilizing pressure at its minimum, unfactored (design 4.2: Delta_gamma at p_min
+only) and s_dg in [0, 1] the structure file's switch (0 or 1); Eq. 48's p pi r^2 term is the
+relief already in N_d. The wall is at or just above the root t* of N_cr(t) = N_d (unique,
+and the smallest t with N_cr(t) >= N_d, by the monotonicity below), found by brentq with
+xtol `MONOCOQUE_XTOL_M` = 1e-12 m (about 4e-7 kg on a 13 m barrel of r = 1.83 m in 2195)
+and rtol `MONOCOQUE_RTOL` = 4 machine epsilons (scipy's default and smallest) on the
+bracket
+
+    t_lo = (1 - m_b) sqrt(N_d / (2 pi E (1/k3 + s_dg g_max))),   t_hi = (1 + m_b) sqrt(N_d k3 / (2 pi E (1 - A)))
+
+(k3 = sqrt(3 (1 - nu^2)), g_max the table's last value, m_b = `MONOCOQUE_BRACKET_MARGIN` =
+1e-6): gamma <= 1 and Delta_gamma <= g_max give N_cr(t_lo) <= (1 - m_b)^2 N_d < N_d, and
+gamma >= 1 - A and Delta_gamma >= 0 give N_cr(t_hi) >= (1 + m_b)^2 N_d > N_d. The margin
+is needed in floating point: without it, at r/t_hi above about 3.6e5 (loads below about
+0.75 N at r = 1.83 m with no pressure credit, s_dg = 0 or p = 0) exp(-sqrt(r/t)/16) is
+below 2^-54 (half the spacing of doubles just below 1), so expm1 returns exactly -1, gamma
+rounds to exactly 1 - A, and N_cr(t_hi) equals N_d to rounding with either sign (before the
+margin, brentq refused 801 of 9,003 such solves: 3,001 loads from 1e-12 to 1e3 N, each with
+s_dg = 0, with p = 0, and with both). **The returned wall is never short.** brentq stops
+when its sign-change bracket around its estimate x0 is narrower than delta = xtol +
+rtol x0, so |t* - x0| < delta, on either side; x0 is short of the root (N_cr(x0) < N_d) in
+most solves (85% of 6,600 solves with N_d 1e3-5e7 N at r = 1.83 m, p_min 0-2 MPa, s_dg 0
+and 1, walls 0.08-17 mm; review PHYS2-01). A short x0 (x0 < t*) is raised by delta, which
+puts it at or above t*; an x0 that is not short is at or above t* already. So the returned
+t has N_cr(t) >= N_d, 0 <= t - t* < delta (about 1e-12 m) and 0 <= N_cr(t)/N_d - 1 <
+2.56 delta/t (about 2.6e-12 m / t): d ln N_cr / d ln t = 2 + d ln gamma / d ln t for the
+unpressurized wall, at most 2.5534 (at r/t of about 1,136, sqrt(r/t)/16 = 2.11), and the
+pressure term t^2 Delta_gamma((p/E)(r/t)^2) has a log slope between 0 and 2 (the table's
+non-decreasing values and the chord condition below), so the sum's slope is at most 2.5534
+too. On those solves the excess is up to 2.4e-9 at walls of 1 mm and more and 1.5e-10 at
+17 mm (at most 2.5534e-12 m / t, on the bound), and the mass below 1e-6 kg on a 13 m
+barrel. If the raised x0 were still short (brentq's bound broken), the solve raises
+RuntimeError. The tests check N_cr(t) >= N_d and bound t by N_d lying between
+N_cr(t -/+ 2e-12 m). t_hi/t_lo is below 4 for nu = 0.33 and s_dg g_max <= 0.25.
+**Monotonicity.** N_cr is continuous and strictly increasing in t, so the root is unique
+and is the smallest t with N_cr(t) >= N_d: the first term grows because t^2 grows and
+gamma rises as r/t falls; the second equals s_dg c Delta_gamma(y)/y with c = p r^2/E and
+y = c/t^2 falling in t, and it does not fall as t grows provided the chord slope
+Delta_gamma(x)/x does not increase with x. That chord condition (y[i+1] x[i] <= y[i] x[i+1]
+at every vertex: each segment's line meets x = 0 at or above 0; true for a concave curve
+through the origin and for survey 06's reading, whose one convex kink at x = 0.06 still
+keeps it) is checked, and a table that breaks it is refused by the monocoque functions.
+
+**Stiffened walls** (`gerard_stiffened_thickness_m`, `GerardRow`, the four `GERARD_RING_*`
+rows; `plate_limited_thickness_m`). Gerard & Lakshmikantham (1966), Allied Research
+Associates TR 292-2 (NTRS 19660015694), Eq. 32 with Table 2: the minimum-weight solidity of
+an axially compressed stiffened cylinder Sigma = 4 t_bar/d = C (N_x/(E d))^n, with the
+stiffened knockdown k_s applied to the load (the table's weights are perfect-theory values):
+
+    t_bar = (d/4) C (N_x / (k_s E d))^n,   d = 2 r,   N_x = N_d/(2 pi r)   [m]
+
+(C, n) is one published row, used as a pair, never as independent coefficients (design
+4.2; review SP-4): ring-stiffened with k_a = 1, common Z (6.48, 3/5), common Y (5.93, 3/5),
+improved Z (7.14, 7/11), improved Y (6.01, 7/11). The plate-limited alternative (design 4.2,
+the adverse row; Lovejoy et al. 2010 found optimized 2195 orthogrid weights rising as
+N^0.90-1.00, which they attribute to the plate-thickness limit) is thickness proportional
+to the load, anchored at a reference (the envelope load in S2):
+
+    t = t_ref N_d / N_ref   [m]
+
+**Combined membrane check** (`von_mises_thickness_m`; design 4.2 and D-SP7-14, review SP-3:
+the push is the only case with high hoop tension and high axial compression at the same
+stations). With s_h = A/t the hoop stress and s_x = B/t the net axial membrane stress at
+ultimate, A = FS_u max(p, 0) r and B = -N_d/(2 pi r) (negative in net compression), the
+smallest t with sqrt(s_h^2 - s_h s_x + s_x^2) <= F_tu eta_w is the closed form
+
+    t = sqrt(A^2 - A B + B^2) / (F_tu eta_w)   [m]
+
+p is the barrel's internal pressure relative to the ambient (its outside), so there is no
+relief term. A net external pressure (p < 0) is clamped to A = 0, as the hoop mode sizes it
+0: hoop compression is an external-pressure buckling or collapse case, not sized here, and
+a factored compressive hoop stress would lower the von Mises stress of a net axial
+compression, crediting a factored load against FSR 19. The combination of a net external
+pressure with a net axial tension, where hoop compression would raise the combined stress,
+is therefore not sized either (in the design it arises only in the release swing, a flagged
+check, design 4.2.2). Limits: B = 0 gives the hoop thickness without a relief for every p
+(0 for p <= 0); A = 0 (p <= 0) gives |B|/(F_tu eta_w); a compressive axial stress under
+hoop tension needs more wall than either. A net axial tension (N_d < 0, B > 0) is used as
+given.
+
+**Domes** (`dome_crown_thickness_m`, `spheroid_head_area_m2`). An oblate spheroidal head of
+equatorial radius a (the barrel's) and height b is sized as a membrane at its crown, where
+the radius of curvature is a^2/b:
+
+    t = (FS_u p - p_relief) a k_d / (F_tu eta_w),   k_d = (a/b)/2,   a/b in [1, sqrt(2)]   [m]
+
+with p the pressure on the concave side at the crown (ullage plus head, unfactored) and
+p_relief (keyword, default 0) the pressure on the convex side when that side is another
+tank, at its minimum, unfactored (0 for an aft or forward dome, whose convex side is the
+ambient): the common dome is FS_u (p_u,LOX + rho_LOX n g0 H_LOX) - p_min,RP1, both relative
+to the ambient, the relieving side once and unfactored (design 4.2; review SP-10). Above
+sqrt(2) the membrane hoop stress at the equator, (p a/t)(1 - (a/b)^2/2), turns
+compressive, a mode a crown check misses, so it is refused (review SP-10). A reverse
+pressure (FS_u p - p_relief <= 0) sizes 0 here; S2 flags it. The area of the half oblate
+spheroid, with b = a/(a/b) and the eccentricity e = sqrt(1 - b^2/a^2),
+
+    A = pi a^2 + (pi b^2 / (2 e)) ln((1 + e)/(1 - e))   [m^2]
+
+is half the standard area of an oblate spheroid, 2 pi a^2 + (pi b^2/e) ln((1 + e)/(1 - e)).
+Derivation: the head is the surface of revolution about the z axis of
+x(z) = a sqrt(1 - z^2/b^2) for 0 <= z <= b, so
+
+    A = 2 pi int_0^b x sqrt(1 + x'^2) dz = 2 pi a int_0^b sqrt(1 + c^2 z^2) dz,   c = a e/b^2
+
+and with c b = a e/b and 1 + c^2 b^2 = a^2/b^2 the second integral is
+a/2 + b^2 asinh(a e/b)/(2 a e), where asinh(a e/b) = ln((1 + e)/sqrt(1 - e^2)) = atanh(e).
+It is evaluated as pi a^2 + pi b^2 atanh(e)/e, which tends to the hemisphere's 2 pi a^2 at
+a/b = 1 (1.6232 pi a^2 at sqrt(2)); the formula holds for any oblate head, so only a/b < 1
+is refused.
+
+**Ring frame at the stage base** (`ring_frame_mass_kg`; design 4.2.3, D-SP7-17, central
+entry `aft_ring`). The ring carries the push from N_p equally spaced carriage pads into the
+aft skirt. It is sized for the bending moment at the pads of a closed thin ring on N_p
+equally spaced point supports under the skirt's uniform reaction, loaded normal to its
+plane (the classical circular ring girder):
+
+    q = F/(2 pi r) [N/m],  alpha = pi/N_p,  M = q r^2 (1 - alpha cot alpha) [N m] (at the pads)
+    Z = FS_u f_fit M / F_tu [m^3],  h = k b:  Z = k^2 b^3/6,  area k b^2
+    m = 2 pi r rho k b^2 [kg],   b = (6 Z/k^2)^(1/3)
+
+with f_fit the fitting factor and k = h/b (Z the elastic modulus: no plastic shape factor
+credited). m is the ideal mass, before the non-optimum factor: the caller multiplies it by
+the barrels' NOF (design 4.2.3), as the increments below take theirs. N_p >= 3 (three point supports are the fewest that hold a ring against tilting
+as a rigid body); no envelope credit (new hardware; the hold-down hardpoints are not
+credited). Derivation, by statics: each span subtends 2 alpha. The planes through the pads
+and through the midspans are planes of symmetry of the ring and its load, so at a midspan
+the out-of-plane shear and the torsion vanish, and at a pad the torsion vanishes. Take the
+half span from a midspan (angle 0, bending moment M_m) to the next pad (angle alpha), with
+the ring in the x-y plane and the midspan on the x axis. Moment equilibrium about the pad,
+whose shear passes through it, of M_m along x, the pad's moment M along the radius
+(cos alpha, sin alpha) and the load q r d theta at angle theta gives, along y,
+M sin alpha = q r^2 (sin alpha - alpha cos alpha), so M = q r^2 (1 - alpha cot alpha)
+(hogging), and along x, M_m = q r^2 (alpha/sin alpha - 1) (sagging). At angle phi from the
+midspan the bending moment is q r^2 ((alpha/sin alpha) cos phi - 1) and the torsion
+q r^2 (phi - (alpha/sin alpha) sin phi). As N_p grows, M tends to q l^2/12 and M_m to
+q l^2/24 with l = 2 pi r/N_p: the interior span of a straight continuous beam, each span
+fixed-fixed by symmetry, which design 4.2.3 states. The ring's M is larger, by 1.0% at
+8 pads, 1.9% at 6, 4.4% at 4 and 8.2% at 3 (the mass by 0.7%, 1.3%, 2.9% and 5.4%; checked
+against a quadrature of the half span's equilibrium). The torsion is not checked: it is
+zero at the pads, where the bending moment peaks, and peaks in the span at cos phi* =
+sin alpha/alpha, where the bending moment is zero, at 0.076 M (8 pads), 0.102 M (6),
+0.154 M (4) and 0.209 M (3). For a solid section with h = 2b its shear stress there,
+tau = T/(0.246 h b^2) (the rectangular-bar torsion coefficient of Timoshenko and Goodier's
+Theory of Elasticity), has a von Mises equivalent sqrt(3) tau of 18%, 24%, 36% and 49% of
+the bending stress at the pads; the ratio grows roughly in proportion to h/b. The mass
+scales as F^(2/3) and as (1 - alpha cot alpha)^(2/3) in N_p (N_p^(-4/3) as N_p grows).
+
+**Dynamic load factor** (`dynamic_load_factor`, `peak_load`; design 4.2.1, D-SP7-16,
+D-SP7-09). The increment over the resting load n_0 (or F_0) is multiplied by
+
+    rise_time:     DLF = min(2, 1 + T/(pi t_r))   (2 at t_r = 0)
+    quasi_static:  DLF = 1;      step: DLF = 2
+    peak:          n_peak = n_0 + DLF (n_q - n_0)
+
+with t_r the force rise time [s] and T = 1/f the assumed first axial period [s]. The
+rise_time value is the undamped single-mode envelope of a ramp to a constant, whose exact
+peak 1 + |sin(pi t_r/T)|/(pi t_r/T) drops to 1 at integer t_r/T; using the exact form on an
+uncertain T would credit those zeros (tuning), so the bound replaces |sin| by 1. The exact
+peak is the classical rise-time result (Biggs 1964, Introduction to Structural Dynamics,
+chapter 2; Chopra, Dynamics of Structures; neither read here: survey 07 read MIT 1.581's
+2001 problem set and checked it numerically, and survey 08 checked it against an undamped
+single-mode integration). Derivation: with omega = 2 pi/T and x_st the static response,
+a ramp F_0 t/t_r gives x/x_st = t/t_r - sin(omega t)/(omega t_r); superposing a negative
+ramp from t_r gives, for t >= t_r, x/x_st = 1 - [sin(omega t) - sin(omega (t - t_r))]/
+(omega t_r) = 1 - 2 sin(omega t_r/2) cos(omega (t - t_r/2))/(omega t_r), whose peak is
+1 + |sin(pi t_r/T)|/(pi t_r/T). During the ramp x/x_st never decreases (its derivative is
+(1 - cos(omega t))/t_r >= 0), so its largest value there is 1 - sin(omega t_r)/(omega t_r)
+at t_r, which is not above that peak because |sin 2y| <= 2 |sin y| (y = omega t_r/2).
+Damping is not credited. The single-mode value is applied to every station; it is not
+conservative at the upper stations of a multi-mass stack for short rise times (review
+SP-7), and the rows that use it say so. A drop (n_q < n_0, a release) swings below n_q by
+the same rule.
+
+**Ramped plateau** (`ramped_plateau_accel_mps2`; design 4.2.1, review SP-8). For
+constant_accel under `rise_time`, the felt n is raised to the plateau a drive needs when
+its net acceleration ramps linearly from 0 over t_r and then stays constant, reaching the
+same exit speed v_e at the same stroke L from rest. The ramp ends at v_r = a' t_r/2 and
+s_r = a' t_r^2/6; the plateau gives v_e^2 = v_r^2 + 2 a' (L - s_r) = 2 a' L - a'^2 t_r^2/12,
+whose smaller root is
+
+    a' = [L - sqrt(L^2 - v_e^2 t_r^2/12)] / (t_r^2/12) = v_e^2 / (L + sqrt(L^2 - v_e^2 t_r^2/12))   [m/s^2]
+
+(the second form is evaluated: no cancellation, and exactly v_e^2/(2 L) at t_r = 0). It is
+refused when L^2 < v_e^2 t_r^2/12 and when the ramp does not finish within the stroke
+(s_r > L, which happens for v_e t_r > 3 L). At L = 100 m, v_e = 76.70717046013364 m/s
+(3 g0 over 100 m) and t_r = 1.061 s it is 29.84 m/s^2, 1.42% above the constant 29.42
+m/s^2. This closed form does not reproduce review SP-8's "about 29.77 m/s^2" at 1.061 s
+(the S1 spec repeated it): it gives 29.84 there, and 29.77 corresponds to t_r of about
+0.97 s; the review's number is not used. The constant_accel trajectory is not re-flown
+with the ramp (design 4.2.1: stated with the rows that use it; the linear motor's
+acceleration law flies the same ramp and checks it).
+
+**Increments** (`barrel_increment_kg`, `area_increment_kg`; design 4.2, D-SP7-14). Only the
+positive part over the envelope counts, times the non-optimum factor NOF >= 1 (`NOF_MIN`;
+the design's coarse-model ranges, Wu 2024, are 1.54-1.9 for barrels and skirts and
+1.28-2.76 for domes):
+
+    barrel:          dm = NOF sum_i 2 pi r rho_w dz_i max(0, t_push,i - t_env,i)   [kg]
+    dome and tube:   dm = NOF A rho_w max(0, t_push - t_env)                      [kg]
+
+so a push inside the envelope adds exactly 0.
+
+**Cost (measured, S1).** On the development machine one evaluation takes about 0.7 to 1.7 us
+for each closed form (hydrostatic and hoop, Gerard, von Mises, dome and area, ring, DLF with
+the peak and the plateau), about 20 to 32 us for a monocoque solve (brentq with the table
+lookup) and about 12 to 18 us for a 100-station barrel increment (the spread of four
+measurements under different machine load; `tests/test_structure.py::test_primitive_timing`
+records them; its ceilings are 1 ms and 10 ms, a gross-slow-down guard only).
+
 ## Assumptions
 
 Every assumption string the code emits, in one place, with the code that emits it.
@@ -6466,13 +6758,15 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_scaffold.py::test_package_imports_and_version` | the package imports; `__version__` | exact |
 | `test_scaffold.py::test_earth_constants_only_in_constants_py` | mu, R_E, omega_E, g0 (and 9.81) appear only in `constants.py` ("Frames and datum", "Gravity") | exact (grep of `src/`) |
 | `test_scaffold.py::test_every_file_open_declares_encoding` | every `open`/`read_text`/`write_text` passes `encoding=` | exact |
-| `test_scaffold.py::test_public_physics_functions_have_docstrings` | every public physics docstring states inputs, outputs, units and frame | exact |
+| `test_scaffold.py::test_public_physics_functions_have_docstrings` | a docstring exists on every public function, class and public method of the modules listed in `PHYSICS_MODULES` (atmosphere, dynamics, losses, the six phases package files, vehicle, units, offload, structure, the four assist modules, display); a listed path that does not exist fails; what the docstrings state (inputs, outputs, units, frame) is checked by review, not by this test | exact |
 | `test_scaffold.py::test_pyproject_dev_tooling_installable_both_ways` | dev extra is a subset of the dev group | exact |
 | `test_constants.py::test_literals_are_the_documented_values` | the `constants.py` values | exact |
 | `test_constants.py::test_surface_gravity_and_equatorial_rotation_speed` | mu/R_E^2 = 9.7982855 m/s^2, omega_E R_E = 465.101 m/s ("Frames and datum") | 1e-7 and 1e-5 relative (the quoted digits) |
+| `test_constants.py::test_sp8007_knockdown_constants`; `test_structure.py::test_published_constants_and_rows` | SP8007_KNOCKDOWN_A = 0.901 and SP8007_PHI_DIVISOR = 16 (SP-8007 1968 Eq. 5, 2020 Eq. 9-10); the four Gerard Table 2 rows (6.48 and 5.93 at 3/5, 7.14 and 6.01 at 7/11); MONOCOQUE_XTOL_M = 1e-12 m; MONOCOQUE_RTOL = 4 machine epsilons (scipy's default); MONOCOQUE_BRACKET_MARGIN = 1e-6; DLF 1 and 2; the axis-ratio cap sqrt(2); POISSON_RATIO_MAX = 0.5; RING_PADS_MIN = 3; a Gerard pair with C <= 0 or n outside (0, 1] refused ("Structural sizing of the push load") | exact |
 | `test_units.py::test_scalar_round_trips` | every conversion inverts its partner (`units.py`) | 1e-12 relative |
 | `test_units.py::test_documented_factors` | 1000, 9.80665, pi/180, 3.6e6 as documented | 1e-15 relative (pi/180); exact for 1000, g0 and 3.6e6 |
 | `test_units.py::test_array_inputs` | conversions accept arrays | exact |
+| `test_units.py::test_structure_file_units` | GPa = 1e9 Pa, MPa = 1e6 Pa, bar = 1e5 Pa, mm = 1e-3 m, kg/MN = 1e-6 kg/N, kg/kN = 1e-3 kg/N and their inverses (`units.py`) | exact factors; 1e-12 relative round trips |
 | `test_atmosphere.py::test_icao_table_points` | ICAO layer closed forms at the table rows 0 to 80 km geopotential, converted with h = r0 H/(r0 - H) ("ICAO range") | 1e-4 relative p, rho; 1e-6 K abs; 1e-5 relative a |
 | `test_atmosphere.py::test_constants_agree_with_ambiance_table` | R_air, r0, floor and top equal `ambiance.CONST` | exact |
 | `test_atmosphere.py::test_matches_ambiance_on_dense_grid`, `::test_scalar_path_matches_ambiance` | the in-house layer forms against `ambiance.Atmosphere` on 20,001 points plus every layer base, both branches | 1e-12 relative (measured 8e-15) |
@@ -6720,3 +7014,24 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_offload_pipeline.py::test_sweep_index_records_each_point_solves_gamma_star_and_flags`, `::test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms`, `::test_calibration_caveat_of_the_readme_loads_fork`, `::test_stage2_caveat_does_not_assume_a_stage1_offload_maximises_total_tonnes` | SP1 step 8a: OFFLOAD_SWEEP_COLUMNS is step 7's twelve (written out in the test, in order) followed by `solve_gamma_star_rad` and `n_flags`; a point's solved case records its solve's gamma*_ref (23.4 deg), not the point's payload-search gamma* (22.0 deg), and its two flags; a fixed case none and 0, a reference_failed point none and none, a search_failed solve NaN and 0; read back from the CSV, gamma*_ref within half a unit of its 12th significant digit; the Checks section lists each point's flags ("; "-joined, `none`, the no-list note, a search_failed solve's "none (solve search_failed: bracket)" and a failed fixed case's payload-search status) after the decomposition lines, and nothing new without offload cases; the payload Sensitivity note of a block with an empty `of` (the full texts written out: with the offload arms, with `--no-offload`, without arms, and with arms none of which ran because their case's variant did not, whose offload record has no arms and whose offload section no arms table) and the notes kept without a block, for a block naming runs and with `--no-sensitivity`, carried by `planar_experiment_result` and printed by the table; the README-loads fork's offload caveat 100 (24,700/22,800 - 1) = +8.3% high with its masses; the stage-2 caveat written out, never "cannot beat the headline" (pre-registration Amendment 1, item 4) ("Reporting definitions (planar)", "Propellant saved at fixed payload", "Calibration notes (build step 26)") | exact; 5e-12 relative (CSV) |
 | `test_config_planar.py::test_offload_reports_name_the_arms_and_the_bridge_calibration` | on the pre-registered files (nothing run): silo_offload_2d's empty `of` with offload arms gives the note that points to "Propellant saved at fixed payload", never "no sensitivity block declared"; the bridge's fork has a record with 100 (P*/reference - 1) within 10%, and its offload caveat states P* instead of "no calibration record"; the bridge, with no sensitivity block, keeps that note (SP1 step 8a) | exact |
 | `test_animate.py::test_calibration_record_matches_its_findings_note`, `::test_calibration_footnote_says_inside_the_band_when_it_is`, `::test_calibration_band_includes_both_edges`, `test_replay.py::test_calibration_caveat_says_within_the_band_for_the_readme_loads_fork` | every calibration record (the gate and, since SP1 step 8a, the README-loads fork): its vehicle is the case of tests/data/calibration_record.json whose vehicle file carries that name, its P* that case's recorded P* to 0.1 kg, and the findings note's results row of the case prints P* to 0.1 kg, 100 (P*/22,800 - 1) % to two decimals and inside or outside the 10% band; the gate's one-paragraph result; the footnote keeps the gate's sentence word for word, says "+8.3% high ... inside the +/-10% band" for the README-loads fork (not "Gate vehicle"), and each record's line ends left of the frame's right edge at 1280 px; both edges of the band, 22,800 +/- 2,280 kg, read inside (P*/22,800 - 1 rounds above 0.1 at the upper one) and 0.1 kg beyond either reads outside; the replay page says the fork lies within the gate band, never a miss, and keeps the gate's sentence word for word ("Calibration notes (build step 26)") | exact (0.1 kg; 0.01 percentage points) |
+| `test_structure.py::test_structure_imports_no_io_module` | structure.py imports only the standard library (math, operator, bisect, collections, dataclasses, typing), numpy, scipy.optimize, constants and units; no open, print or file read | exact (source scan) |
+| `test_structure.py::test_hydrostatic_pressure_against_hand_values` | p = p_u + rho n g0 max(h, 0): 20 m of LOX at 3.996 g0 under 3 bar; the ullage pressure above the surface; a negative n lowering p below 0 (column separation) ("Structural sizing of the push load", Hydrostatic pressure) | 1e-12 relative |
+| `test_structure.py::test_hoop_thickness_against_hand_values`, `::test_hoop_of_the_head_is_monotone_in_n_and_in_depth` | t = FS p r/(F_tu eta) (1 MPa, r 1.83 m, FS 1.4, 558 MPa, eta 0.7: 6.5591 mm, a rounded cross-check), 0 for p <= 0, the tube's wall by the same form, a relieving outside pressure subtracted once, unfactored ((FS p - p_relief) r/(F_tu eta), 0 when it exceeds FS p); refusals; the hoop thickness of the hydrostatic pressure non-decreasing in n and in depth on a 29 x 41 grid, strictly increasing for n, h > 0 (Hoop) | 1e-12 relative; exact (monotone) |
+| `test_structure.py::test_sp8007_knockdown_against_the_closed_form` | gamma = 1 - 0.901 (1 - exp(-sqrt(r/t)/16)) written out: 0.3217 at r/t = 500 (surveys 06 and 08) and survey 06's 0.471, 0.404, 0.357, 0.224 at 200, 300, 400, 1000 (rounded cross-checks); the limits 1 and 0.099; decreasing; refusals (Monocoque buckling) | 1e-12 relative |
+| `test_structure.py::test_delta_gamma_interpolation` | Delta_gamma exact at the table's points, the mean at midpoints, the last value beyond the last point, equal to numpy's interp on 2001 points, monotone; x < 0 and eight malformed tables refused (Monocoque buckling) | exact at the points; 1e-12 relative (abs 1e-15) |
+| `test_structure.py::test_monocoque_thickness_inverts_the_buckling_load` (6 cases), `::test_monocoque_hand_case` | the solved t against the test's own bisection of the written-out N_cr (numpy interp for Delta_gamma) and, unpressurized at 10 MN, its own fixed point (about 8.6 mm); N_cr(t) = N; N between N_cr(t -/+ 2e-12 m); the code's N_cr equals the written-out one; with the increment the wall is thinner, switched off the same as unpressurized (Monocoque buckling) | 2e-12 m; N within 1e-9 relative; 1e-12 relative |
+| `test_structure.py::test_monocoque_solves_tiny_loads` (4 cases) | review PHYS-S1-01: with no pressure credit (s_dg = 0, p = 0, both) and with it, a 0.01 N load solves to a finite t with N_cr(t) = N; on 200 loads from 1e-9 to 1e8 N every solve returns t with N between the written-out N_cr(t -/+ 2e-12 m), and the written-out N_cr is below N at the code's t_lo and above it at its t_hi (the unwidened bracket fails here: at r/t_hi above about 3.6e5 gamma rounds to exactly 1 - 0.901) (Monocoque buckling) | 1e-5 relative at 0.01 N (xtol 1e-12 m on t of about 0.6 um); 2e-12 m |
+| `test_structure.py::test_monocoque_wall_is_never_short` | review PHYS2-01: on 720 solves (N_d 1e3-5e7 N at r = 1.83 m, p_min 0-2 MPa, s_dg 0 and 1) the code's N_cr(t) >= N_d, and the written-out N_cr exceeds N_d by less than 2.6e-12 m / t relative (brentq's bound xtol + rtol t on t - t* times the log slope d ln N_cr / d ln t, at most 2.5534) (Monocoque buckling, the returned wall is never short) | exact (>= N_d); 2.6e-12 m / t + 1e-14 relative |
+| `test_structure.py::test_monocoque_raises_a_short_estimate` | with brentq replaced: an estimate half the tolerance short of the test's own bisection root is raised by xtol + rtol t (written out) and then carries the load; one still short after that (the bracket's lower end) raises RuntimeError; the real brentq gives the original wall again (Monocoque buckling, the returned wall is never short) | exact |
+| `test_structure.py::test_monocoque_load_is_increasing_on_the_bracket` (6 cases), `::test_monocoque_zero_load_monotone_and_refusals` | the bracket t_lo = (1 - 1e-6) sqrt(N/(2 pi E (1/k3 + s g_max))), t_hi = (1 + 1e-6) sqrt(N k3/(2 pi E (1 - 0.901))) written out; N_cr(t_lo) < N < N_cr(t_hi); N_cr strictly increasing on 4001 points of the bracket (written out and code); 0 for N <= 0; t rising in N and not rising in p; a table whose chord slope rises, nu outside [0, 0.5), p < 0, s_dg outside [0, 1] refused (Monocoque buckling, Monotonicity) | 1e-12 relative; exact (monotone) |
+| `test_structure.py::test_gerard_rows_against_hand_values`, `::test_plate_limited_thickness` | t_bar = (d/4) C (N_x/(k_s E d))^n written out for the four rows at N_x = 1.652 MN/m, d 3.66 m, k_s 0.65 (5.6 mm for ring + common Z, review SP-4, a rounded cross-check); 0 for N <= 0; monotone in N; refusals; t = t_ref N/N_ref (Stiffened walls) | 1e-12 relative |
+| `test_structure.py::test_von_mises_thickness_hand_value_and_limits` | t = sqrt(A^2 - A B + B^2)/(F_tu eta), A = FS max(p, 0) r, B = -N_d/(2 pi r), written out; the von Mises stress at that t equals F_tu eta; B = 0 gives the hoop thickness without a relief (p >= 0), A = 0 gives abs(B)/(F_tu eta); net compression above both; a net tension by the same form; a net external pressure (p = -4 bar) clamped to A = 0: 0 with no axial load (the hoop mode's 0) and abs(B)/(F_tu eta) with a compression, thicker than crediting the factored hoop compression would give (review S1-C2) (Combined membrane check) | 1e-12 relative; exact (clamp) |
+| `test_structure.py::test_dome_crown_thickness`, `::test_spheroid_head_area` | t = FS p a (a/b)/2/(F_tu eta) at a/b = 1 (half the hoop thickness) and sqrt(2); the common dome (FS p_LOX - p_min,RP1) a (a/b)/2/(F_tu eta), the relief unfactored; 0 for FS p - p_relief <= 0; a/b outside [1, sqrt(2)] refused; the half spheroid's pi a^2 + (pi b^2/(2 e)) ln((1 + e)/(1 - e)) written out at a/b = 1.1, sqrt(2), 2 (1.6232 pi a^2 at sqrt(2), survey 08, a rounded cross-check), 2 pi a^2 at 1 and continuous there (1e-8 at a/b = 1 + 1e-9), decreasing in a/b; refusals (Domes) | 1e-12 relative |
+| `test_structure.py::test_ring_frame_mass_hand_value` | q = F/(2 pi r), alpha = pi/N_p, M = q r^2 (1 - alpha cos(alpha)/sin(alpha)), Z = FS f M/F_tu, b = (6 Z/k^2)^(1/3), m = 2 pi r rho k b^2 written out at 20 MN, 8 pads, h/b 2 (about 747 kg and M/(q l^2/12) = 1.0104, rounded cross-checks; review PHYS-S1-02); Z = b h^2/6; m proportional to F^(2/3) and to (1 - alpha cot alpha)^(2/3) in N_p (16 against 8 pads); at 400 pads M = q l^2/12 and doubling N_p scales m by 2^(-4/3); a numpy integer N_p gives the same mass; 0 for F <= 0; N_p < 3, a float (Python or numpy), a bool (Python or numpy), a string and None refused (Ring frame at the stage base) | 1e-12 relative; 1e-11 (16 pads); 1e-4 (400 pads) |
+| `test_structure.py::test_ring_support_moment_against_the_half_span_statics` (3, 4, 6, 8, 16 pads) | an independent statics solve of the half span (midspan to pad, no shear or torsion at the midspan and no torsion at the pad by symmetry; the load's moment about the pad by scipy's quad; the two in-plane moment equations solved for the pad and midspan moments): the code's mass equals the mass from that moment; the midspan moment is q r^2 (alpha/sin alpha - 1); the pad moment exceeds q l^2/12 (Ring frame at the stage base) | 1e-10 relative |
+| `test_structure.py::test_dynamic_load_factor_values`, `::test_peak_load` | DLF 2 at t_r = 0; 1 + T/(pi t_r) (1.1273 at 0.5 s and 5 Hz); near 1 for a slow rise; capped at 2; never below the exact single-mode 1 + abs(sin(pi t_r/T))/(pi t_r/T) on 120 ratios; 1 and 2 for quasi_static and step; refusals; n_0 + DLF (n_q - n_0), the release swing to -4 g0 at DLF 2 (Dynamic load factor) | 1e-12 relative; 1e-15 absolute (envelope) |
+| `test_structure.py::test_ramped_plateau_acceleration` | a' = [L - sqrt(L^2 - v_e^2 t_r^2/12)]/(t_r^2/12) written out at L 100 m, v_e 76.70717046013364 m/s, t_r 1.061 s (29.84 m/s^2, a rounded cross-check; not review SP-8's 29.77, which corresponds to t_r of about 0.97 s); the ramp's kinematics (v_r = a' t_r/2, s_r = a' t_r^2/6, then constant a') reach v_e at exactly L; v_e^2/(2 L) = 3 g0 at t_r = 0 and the limit t_r -> 0; refusals of L^2 < v_e^2 t_r^2/12 and of v_e t_r > 3 L (Ramped plateau) | 1e-12 relative; exact at t_r = 0; 1e-9 relative (limit) |
+| `test_structure.py::test_barrel_increment_counts_positive_parts_only`, `::test_area_increment_counts_the_positive_part_only` | NOF sum 2 pi r rho dz max(0, t_push - t_env) and NOF A rho max(0, t_push - t_env) written out; exactly 0 inside (and at) the envelope; lists and arrays the same; mismatched shapes, negative lengths or thicknesses, NOF < 1 and non-finite values refused (Increments) | 1e-12 relative; exact (0) |
+| `test_structure.py::test_primitive_timing` | one call of each primitive group timed over a loop, recorded in the test's user_properties (Cost) | below 1 ms (closed forms) and 10 ms (monocoque solve, 100-station increment) per evaluation |
+| `test_golden_dump_fields.py::test_dataclasses_dumped_field_by_field_keep_their_fields`, `::test_dataclasses_reached_by_attribute_keep_their_fields`, `::test_pinned_budget_fields_are_the_recorded_golden_keys` | D-SP7-27: the field lists of every dataclass the 1-D golden dump reaches (LossBudget and AssistEnergyBudget, converted field by field, and frozen; Result, RunResult, ResolvedRun, SweepPoint, SensitivityRow, ExperimentResult, SweepResult, read by attribute) pinned in order; the two budgets' lists equal the keys of every non-null budget in the golden objects.json files | exact |
+| `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |
