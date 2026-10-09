@@ -838,7 +838,7 @@ use `--results-root <scratch>` (D-SP2-37).
 |---|---|---|---|---|---|
 | 0 | Plan mode: checklist, nine surveys, the questions, draft v1 and its six reviews, version 2 | docs/phases/inputs/ | the user approves (2026-10-08) | [x] | the start commit ("Start SP7: status in progress") |
 | S0 | Sources: every coefficient's range with its source or reason; both stages' layouts; the breakdowns; the Delta_gamma digitization; the ring's N_p, h/b and fitting factor; NOF by fidelity; t_r and f; the payload limits; the coefficient count; the linear-motor rules' method | docs/phases/inputs/<date>-SP7-sources.md | every number sourced or assumed with a reason; no range narrower than its source's spread without a reason; honesty and physics review | [ ] | |
-| S1 | Sizing primitives (pure structure.py), units, named constants, test hygiene (D-SP7-34, KI-035) | structure.py, units.py, constants.py, physics.md, tests | each closed form against a hand value at 1e-12 relative; one sizing evaluation timed | [ ] | |
+| S1 | Sizing primitives (pure structure.py), units, named constants, test hygiene (D-SP7-34, KI-035) | structure.py, units.py, constants.py, physics.md, tests | each closed form against a hand value at 1e-12 relative; one sizing evaluation timed | [x] | a3bd183 |
 | S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [ ] | |
 | S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [ ] | |
 | S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [ ] | |
@@ -1066,6 +1066,19 @@ option fairly with its cost)
 - Process note: the surveys and the review ran as workflows outside Plan mode (protocol section
   11); Plan mode was entered only to present the finished plan.
 - Next: S0 (sources), with S1 (sizing primitives) in parallel.
+- Step S1 (2026-10-08): structure.py's sizing primitives with closed-form tests, units, the
+  SP-8007 constants, the golden-dump field-list test, the docstring check made strict, KI-035's
+  split. Workflow: implementer; physics/numerics and compliance reviewers, three passes; two fix
+  rounds. Two deviations recorded in section 12 (the ring's closed-ring moment, conservative;
+  the plateau reference 29.84 m/s^2, review SP-8's 29.77 being an arithmetic slip). The
+  independent gate failed G3 (its 1e-9 inverse tolerance, written by the orchestrator, was
+  tighter than the design's 1e-12 m root tolerance allows below 2.55 mm walls; every wall
+  carries its load) and G5 (one missing test-map row); the row and the bound's last digit
+  (2.5534) were fixed and an independent re-gate passed both (5,200 random cases, worst excess
+  0.997 of the documented bound). Fast suite 1727 passed, 42 deselected; ruff clean; exact
+  golden tier, digest pin and output capture pass. Per-evaluation times: 1-2 us per primitive,
+  28 us per monocoque solve, 17 us per 100-station increment. Commit a3bd183. Next: S0's gate
+  (running), then S2.
 
 ## 12. Deviations from the plan
 
