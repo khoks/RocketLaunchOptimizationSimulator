@@ -837,7 +837,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | # | Step | Main files | Gate | Status | Commit |
 |---|---|---|---|---|---|
 | 0 | Plan mode: checklist, nine surveys, the questions, draft v1 and its six reviews, version 2 | docs/phases/inputs/ | the user approves (2026-10-08) | [x] | the start commit ("Start SP7: status in progress") |
-| S0 | Sources: every coefficient's range with its source or reason; both stages' layouts; the breakdowns; the Delta_gamma digitization; the ring's N_p, h/b and fitting factor; NOF by fidelity; t_r and f; the payload limits; the coefficient count; the linear-motor rules' method | docs/phases/inputs/<date>-SP7-sources.md | every number sourced or assumed with a reason; no range narrower than its source's spread without a reason; honesty and physics review | [ ] | |
+| S0 | Sources: every coefficient's range with its source or reason; both stages' layouts; the breakdowns; the Delta_gamma digitization; the ring's N_p, h/b and fitting factor; NOF by fidelity; t_r and f; the payload limits; the coefficient count; the linear-motor rules' method | docs/phases/inputs/2026-10-08-SP7-sources.md | every number sourced or assumed with a reason; no range narrower than its source's spread without a reason; honesty and physics review | [x] | 81e045d |
 | S1 | Sizing primitives (pure structure.py), units, named constants, test hygiene (D-SP7-34, KI-035) | structure.py, units.py, constants.py, physics.md, tests | each closed form against a hand value at 1e-12 relative; one sizing evaluation timed | [x] | a3bd183 |
 | S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [ ] | |
 | S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [ ] | |
@@ -1079,6 +1079,16 @@ option fairly with its cost)
   golden tier, digest pin and output capture pass. Per-evaluation times: 1-2 us per primitive,
   28 us per monocoque solve, 17 us per 100-station increment. Commit a3bd183. Next: S0's gate
   (running), then S2.
+- Step S0 (2026-10-08 to 2026-10-09): the source note docs/phases/inputs/2026-10-08-SP7-sources.md
+  (1,520 lines; 27 physics coefficients, 8 design axes, the drive values). Workflow: writer;
+  physics, honesty and compliance reviewers, three passes; two fix rounds; the gate failed G3
+  (two range ends from quoted-only values). A third fix round (with majors; a deviation,
+  section 12), a verification pass and a clean-up, then a fresh independent gate passed G1-G8.
+  The note's section 13 sent fifteen corrections of the approved design: item 14 (the
+  interstage's stage) was put to the user, who chose stage 1 (D-SP7-36); the rest were
+  adopted (D-SP7-37), with k_ts's central taken per relation (0.2805). The search budget now
+  stands at about 3,263 sizings (section 9.3), which needs about 0.18 s per sizing to fit S2's
+  10 min gate; S2 times one sizing first. Commit 81e045d. Next: S2.
 
 ## 12. Deviations from the plan
 
@@ -1125,6 +1135,18 @@ of the push load (first order)", derives both, and the review records stay unedi
    kinematics both give a' = 29.84 m/s^2 (1.42% above v_e^2/(2 L) = 29.42), so the felt load
    factor is 4.043 g0, not review SP-8's 29.77 m/s^2 and 4.032 g0 (an arithmetic slip: 29.77
    corresponds to t_r of about 0.97 s). S2 consumes 29.84 m/s^2 and 4.043 g0.
+
+Step S0 (2026-10-09):
+
+9. **A third fix round with majors** (protocol: up to two fix rounds): the third review pass of
+   the source note found six majors (the ring's torsion and shear, the stiffened factor's low
+   end, the completeness of section 1.4, the ring pad count, stage 2's tank order, the
+   interstage rule) and the gate failed G3. A document is cheap to fix, so a third round, a
+   verification pass and a clean-up ran, and a fresh independent gate passed. No coefficient was
+   changed to move the result: every change is listed in the note's two revision sections with
+   its direction on dm.
+10. **The note's corrections of the design** (its section 13): adopted as D-SP7-37, with the
+    interstage charged to stage 1 by the user's answer D-SP7-36 (amending D-SP7-11's wording).
 
 ## 13. Prompt to start this phase
 
