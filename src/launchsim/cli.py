@@ -62,7 +62,12 @@ import yaml
 
 from launchsim import __version__, app, plots, replay, run_data, scene, sim, video
 from launchsim.compare import CHECK_NA
-from launchsim.config import OFFLOAD_GROSS_MODES, ResolvedExperiment, resolve_experiment
+from launchsim.config import (
+    OFFLOAD_GROSS_MODES,
+    ResolvedExperiment,
+    StructureConfig,
+    resolve_experiment,
+)
 from launchsim.results_io import OFFLOAD_QUOTED_FAILED, OFFLOAD_QUOTED_NO_CONTROL
 from launchsim.units import kg_to_t, rad_to_deg, to_percent
 
@@ -350,6 +355,20 @@ def load_experiment(experiment_path: Path) -> ResolvedExperiment:
     except ValueError as exc:  # ValidationError, ConfigPathError, InvalidNameError, preflight
         raise CliError(f"invalid configuration in {experiment_path}:\n{exc}") from exc
     return resolved
+
+
+def load_structure(path: Path) -> StructureConfig:
+    """Read and validate a structure file (configs/structures/<vehicle>.yaml, SP7 step S2;
+    design 4.3): the YAML by ``load_yaml``, the model by ``config.StructureConfig``, which
+    checks every number's provenance, the ranges and that the central set and each range's
+    ends convert. Raises CliError on any problem (a missing or unreadable file, bad YAML, a
+    validation error), one ``error:`` line as for an experiment. Passing it to
+    ``resolve_experiment`` as a keyword-only loader arrives in step S3."""
+    data = load_yaml(path)
+    try:
+        return StructureConfig.model_validate(data)
+    except ValueError as exc:  # pydantic's ValidationError included
+        raise CliError(f"invalid structure file {path}:\n{exc}") from exc
 
 
 def repo_root_or_cwd(experiment_path: Path) -> Path:

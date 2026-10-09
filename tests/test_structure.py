@@ -171,8 +171,9 @@ def test_published_constants_and_rows() -> None:
 
 def test_structure_imports_no_io_module() -> None:
     """structure.py is pure: it imports only the standard library (math, operator, bisect,
-    collections, dataclasses, typing), numpy, scipy.optimize, and launchsim's constants and
-    units (never sim, results_io, plots, run_data, replay, scene, app or config)."""
+    collections, dataclasses, typing, and itertools for S2's search), numpy, scipy.optimize,
+    and launchsim's constants and units (never sim, results_io, plots, run_data, replay,
+    scene, app or config)."""
     path = Path(st.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported: set[str] = set()
@@ -191,6 +192,7 @@ def test_structure_imports_no_io_module() -> None:
         "collections",
         "dataclasses",
         "typing",
+        "itertools",
         "launchsim",
     }
     assert third_party == {"numpy", "scipy"}, third_party

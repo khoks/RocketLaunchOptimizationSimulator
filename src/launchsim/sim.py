@@ -17,6 +17,17 @@ per-run checks of the screening-beat rule, status ``bug_suspect``);
 run's name and config. Units are SI; frames: the +z-up ascent datum frame (1-D), planar
 ECI (2-D).
 
+The structural model's adapters and search drivers (SP7 step S2; structure.py holds the
+physics and the search, pure): ``stack_masses`` and ``structure_pad_cases`` turn a pad
+baseline's Vehicle and planar Result into structure.py's stage masses and load cases (the
+envelope), ``constant_accel_push_load`` builds the analytic push (no trajectory flown),
+``structure_sizing`` makes the screened search's sizing callable from a structure file,
+``structure_search_inputs`` flies a committed experiment's pad baseline for it,
+``time_structure_sizing`` times one sizing (the rate the search's fallbacks are chosen
+by), ``structure_screened_search`` runs searches A to C, and ``structure_sets_record`` and
+``structure_search_method`` give the structure file's frozen ``sets`` block as plain data
+(the caller writes it; frame: the stack axis).
+
 The reporting pipeline lives in sibling modules. Every name sim.py defined before the
 split (plus ``NoAssist``) is re-exported here (``__all__``), so each
 ``launchsim.sim.<name>`` import path of Phase 1 keeps working; library names sim.py
@@ -53,12 +64,14 @@ The result types (``Result``, ``RunResult``) are imported by the sibling modules
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 import pandas as pd
 
+from launchsim import structure
 from launchsim.assist import NoAssist, build_assist
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.constant_accel import ConstantAccelAssist
@@ -115,8 +128,9 @@ from launchsim.config import (
     ResolvedExperiment,
     ResolvedRun,
     RunConfig,
+    StructureConfig,
 )
-from launchsim.constants import MU_EARTH_M3S2
+from launchsim.constants import MU_EARTH_M3S2, P_SEA_LEVEL_PA
 from launchsim.dynamics import (
     PLANAR_LAYOUT,
     ConstantGravity,
@@ -188,6 +202,8 @@ from launchsim.offload import (
 )
 from launchsim.orbit import TargetOrbit
 from launchsim.phases import (
+    ASSIST_KIND,
+    HOLD_KIND,
     AscentStart,
     IgnitionSpec,
     IntegratorSettings,
@@ -195,7 +211,13 @@ from launchsim.phases import (
     RunTrace,
     VerticalPlanner,
 )
-from launchsim.phases.planar import PLANAR_MODEL, PlanarEnvironment, PlanarPlanner
+from launchsim.phases.planar import (
+    FAIRING_EVENT,
+    LIT_KINDS,
+    PLANAR_MODEL,
+    PlanarEnvironment,
+    PlanarPlanner,
+)
 from launchsim.phases.prelude import resolve_stage_ignitions
 from launchsim.plots import (  # re-exported
     PLANAR_PLOT_PANELS,
@@ -279,6 +301,31 @@ from launchsim.search import (
     WarmStore,
     run_search,
 )
+from launchsim.structure import (
+    FLIGHT,
+    HOLD,
+    PUSH,
+    CoefficientRange,
+    CoefficientValue,
+    Increment,
+    LoadCase,
+    PadLoadSet,
+    PushLoad,
+    RampedPlateau,
+    ReleaseState,
+    ScreenedSearch,
+    SearchEvaluator,
+    SizingCase,
+    SizingFn,
+    StackLayout,
+    StackMasses,
+    StageMasses,
+    build_geometry,
+    implied_stack_length_m,
+    pad_load_set,
+    screened_search,
+    size,
+)
 from launchsim.summary import (  # re-exported
     CALIBRATION_BANNER,
     DISPLAY_ZERO_ABS,
@@ -323,7 +370,14 @@ from launchsim.summary import (  # re-exported
     variant_rows,
     variants_table,
 )
-from launchsim.vehicle import OffloadMode, Vehicle, with_payload
+from launchsim.units import from_g, to_g
+from launchsim.vehicle import (
+    OffloadMode,
+    Vehicle,
+    propellant_burned_kg,
+    with_offload,
+    with_payload,
+)
 
 # Every name sim.py defined before the split (Phase 1), whether defined here or
 # re-exported from the reporting modules, plus NoAssist (tests build a pad run with
@@ -1750,3 +1804,579 @@ def offload_run_result(resolved: ResolvedRun, offload: OffloadResult) -> RunResu
         run_assumptions=planar_run_assumptions(run_config, vehicle, setup),
     )
     return with_assumptions(RunResult(resolved.name, resolved, result), OFFLOAD_ASSUMPTIONS)
+
+
+# ------------------------------------------------------------------------ structure (SP7 S2)
+
+STRUCTURE_MASS_TOL_KG = 1.0e-3
+"""Tolerance [kg] of the adapter's mass checks between a Result and the Vehicle it is said
+to have flown (survey 05 found the events' bookkeeping exact to 1e-6 kg)."""
+
+
+def stack_masses(vehicle: Vehicle) -> StackMasses:
+    """The masses and thrusts ``structure.build_geometry`` builds the stations from: each
+    stage's name, dry mass, propellant load and total vacuum thrust [kg, kg, N] of a
+    two-stage launchsim Vehicle (pass the full-load vehicle: the geometry is built once
+    from it and closed over, design 4.2)."""
+    if vehicle.n_stages != 2:
+        raise ValueError(
+            f"the structural model sizes two stages, the vehicle has {vehicle.n_stages}"
+        )
+    s1, s2 = vehicle.stages
+    return StackMasses(
+        stage1=StageMasses(s1.name, s1.dry_mass_kg, s1.propellant_mass_kg, s1.thrust_vac_total_N),
+        stage2=StageMasses(s2.name, s2.dry_mass_kg, s2.propellant_mass_kg, s2.thrust_vac_total_N),
+    )
+
+
+def _fairing_drop(events: pd.DataFrame) -> tuple[float, float] | None:
+    """(time [s], mass at the event [kg]) of the fairing jettison event, or None."""
+    rows = events[events["event"] == FAIRING_EVENT]
+    if rows.empty:
+        return None
+    first = rows.iloc[0]
+    return float(first["t_s"]), float(first["m_kg"])
+
+
+def _non_negative_mass(value_kg: float, load_kg: float) -> float:
+    """A propellant mass recovered from the bookkeeping [kg], clamped to [0, load] within
+    STRUCTURE_MASS_TOL_KG (rounding at depletion); ValueError outside that."""
+    if value_kg < -STRUCTURE_MASS_TOL_KG or value_kg > load_kg + STRUCTURE_MASS_TOL_KG:
+        raise ValueError(
+            f"a recovered propellant mass {value_kg!r} kg is outside [0, {load_kg!r}] kg: the "
+            "vehicle is not the one the Result flew"
+        )
+    return min(max(value_kg, 0.0), load_kg)
+
+
+def structure_pad_cases(
+    result: Result, vehicle: Vehicle, layout: StackLayout, *, label: str = "pad"
+) -> tuple[LoadCase, ...]:
+    """The pad baseline's load cases for the structural envelope (pure; design 4.2,
+    D-SP7-15; survey 05 sections 1-3).
+
+    Inputs: result, the pad baseline's planar Result (its time series and events; no
+    ASSIST rows); vehicle, the Vehicle it flew (the flown payload: a searched pad's
+    P_final); layout, the structure file's StackLayout (stage names and each stage's LOX
+    mass fraction); label, the cases' label prefix.
+    Output: one LoadCase per HOLD row (kind hold; n = felt_axial_g, which is g_eff/g0 on a
+    clamped row; the support m n g0 - T), per stage-1 flight row (an engine lit: phase in
+    LIT_KINDS) and per stage-2 burn row (stage 1 gone), in time-series order. Masses as
+    survey 05 recovers them: U = stage 2 wet + the fairing while attached + the payload,
+    the stage-1 propellant m - dry1 - U, the stage-2 propellant on its burn m - dry2 -
+    payload - the fairing while attached (attached before the fairing event; on a row at
+    the event's time, by its mass), split by each stage's LOX mass fraction. Checked
+    against the vehicle: the first row is the full stack and the stage-1 propellant is 0
+    at its depletion event, within STRUCTURE_MASS_TOL_KG. Coasts are left out (n near 0:
+    never governing).
+    Frame: the stack axis.
+    """
+    if result.model != PLANAR_MODEL:
+        raise ValueError(f"the structural envelope reads a planar Result, got {result.model!r}")
+    masses = stack_masses(vehicle)
+    stage1, stage2 = masses.stage1.name, masses.stage2.name
+    if (layout.stage1.name, layout.stage2.name) != (stage1, stage2):
+        raise ValueError("the structure layout's stage names differ from the vehicle's")
+    ts, events = result.timeseries, result.events
+    if (ts["phase"] == ASSIST_KIND).any():
+        raise ValueError("the envelope is the pad baseline's flight: this Result has a push")
+    s1, s2 = vehicle.stages
+    fairing, payload = vehicle.fairing_mass_kg, vehicle.payload_mass_kg
+    drop = _fairing_drop(events)
+    m = ts["m_kg"].to_numpy(dtype=float)
+    t = ts["t_s"].to_numpy(dtype=float)
+
+    def attached(i: int) -> bool:
+        if drop is None or t[i] < drop[0]:
+            return True
+        if t[i] > drop[0]:
+            return False
+        return abs(m[i] - drop[1]) <= 0.5 * fairing
+
+    full = s1.wet_mass_kg + s2.wet_mass_kg + fairing + payload
+    if abs(m[0] - full) > STRUCTURE_MASS_TOL_KG:
+        raise ValueError(f"the Result's first mass {m[0]!r} kg is not the vehicle's {full!r} kg")
+    f1, f2 = layout.stage1.lox_mass_fraction, layout.stage2.lox_mass_fraction
+    lox2_full = f2 * s2.propellant_mass_kg
+    rp12_full = s2.propellant_mass_kg - lox2_full
+    cases: list[LoadCase] = []
+    phases = ts["phase"].astype(str).to_numpy()
+    stages = ts["stage"].astype(str).to_numpy()
+    felt = ts["felt_axial_g"].to_numpy(dtype=float)
+    thrust = ts["thrust_N"].to_numpy(dtype=float)
+    for i in range(len(ts)):
+        phase, stage = phases[i], stages[i]
+        upper2 = payload + (fairing if attached(i) else 0.0)
+        tag = f"{label} {phase} t={t[i]:.4f} s"
+        if stage == stage1 and (phase == HOLD_KIND or phase in LIT_KINDS):
+            upper = s2.wet_mass_kg + upper2
+            prop1 = _non_negative_mass(m[i] - s1.dry_mass_kg - upper, s1.propellant_mass_kg)
+            lox1 = f1 * prop1
+            hold = phase == HOLD_KIND
+            support = float(m[i]) * float(from_g(felt[i])) - float(thrust[i]) if hold else None
+            cases.append(
+                LoadCase(
+                    label=tag,
+                    kind=HOLD if hold else FLIGHT,
+                    t_s=float(t[i]),
+                    n_g=float(felt[i]),
+                    stage1_attached=True,
+                    lox_stage1_kg=lox1,
+                    rp1_stage1_kg=prop1 - lox1,
+                    lox_stage2_kg=lox2_full,
+                    rp1_stage2_kg=rp12_full,
+                    upper_mass_stage1_kg=upper,
+                    upper_mass_stage2_kg=upper2,
+                    vehicle_mass_kg=float(m[i]),
+                    thrust_N=float(thrust[i]),
+                    hold_down_support_N=support,
+                )
+            )
+        elif stage == stage2 and phase in LIT_KINDS:
+            prop2 = _non_negative_mass(m[i] - s2.dry_mass_kg - upper2, s2.propellant_mass_kg)
+            lox2 = f2 * prop2
+            cases.append(
+                LoadCase(
+                    label=tag,
+                    kind=FLIGHT,
+                    t_s=float(t[i]),
+                    n_g=float(felt[i]),
+                    stage1_attached=False,
+                    lox_stage1_kg=0.0,
+                    rp1_stage1_kg=0.0,
+                    lox_stage2_kg=lox2,
+                    rp1_stage2_kg=prop2 - lox2,
+                    upper_mass_stage1_kg=0.0,
+                    upper_mass_stage2_kg=upper2,
+                    vehicle_mass_kg=float(m[i]),
+                    thrust_N=float(thrust[i]),
+                )
+            )
+    depletion = events[(events["event"] == "propellant") & (events["stage"] == stage1)]
+    if not depletion.empty:
+        m_dep = float(depletion.iloc[0]["m_kg"])
+        on = drop is None or float(depletion.iloc[0]["t_s"]) < drop[0]
+        left = m_dep - s1.dry_mass_kg - s2.wet_mass_kg - payload - (fairing if on else 0.0)
+        if abs(left) > STRUCTURE_MASS_TOL_KG:
+            raise ValueError(
+                f"stage 1's propellant at its depletion event is {left!r} kg, not 0: the "
+                "vehicle is not the one the Result flew"
+            )
+    return tuple(cases)
+
+
+def constant_accel_push_load(
+    vehicle: Vehicle,
+    assist: ConstantAccelAssist,
+    track: TrackGeometry,
+    layout: StackLayout,
+    *,
+    g_eff_mps2: float,
+    stage1_ignition_s: float | None = None,
+    p_amb_pa: float = P_SEA_LEVEL_PA,
+    label: str = "push",
+) -> PushLoad:
+    """The analytic load case of a constant_accel push (pure; design 4.4: no trajectory is
+    flown; survey 05 section 6 found the recorded rows equal to it to 5e-12).
+
+    Inputs: vehicle, the Vehicle at the offload x and payload P being sized (its masses
+    are the push's); assist and track, the push (a straight track, phi read at s = 0);
+    layout, the structure file's StackLayout (each stage's LOX mass fraction); g_eff_mps2,
+    the track's effective gravity [m/s^2]; stage1_ignition_s, stage 1's ignition time from
+    the push start [s] (None: a cold push, no thrust on the track); p_amb_pa, the ambient
+    pressure of the delivered thrust on the track [Pa] (sea level by default); label.
+    Output: a PushLoad with one case: n = (a + g_eff sin phi)/g0, constant; the tank
+    contents at push start; F_int = the largest over the push of m_v(t) (a + g_eff
+    sin phi) - T(t) (at the start, the thrust schedule's kinks and the release; m_v (a +
+    g_eff sin phi) cold) with the thrust at that instant; n_rest = g_eff sin phi/g0 and
+    F_rest = m_v(0) g_eff sin phi - T(0) (a hold's for a lit start); the RampedPlateau
+    (L, v_e, a) for the ``rise_time`` mode; the release at the end of the stroke with the
+    contents then, n before the drop the plateau and after it T/(m_v g0) (drag neglected).
+    Frame: the track's axis (the stack axis on the vertical track).
+    """
+    if vehicle.n_stages != 2:
+        raise ValueError("the structural model sizes two stages")
+    s1, s2 = vehicle.stages
+    length = track.length_m
+    sin_phi = math.sin(track.phi(0.0))
+    accel = assist.net_accel_mps2
+    a_up = accel + g_eff_mps2 * sin_phi
+    t_push = assist.push_time_s(length)
+    schedule = None if stage1_ignition_s is None else s1.schedule(stage1_ignition_s)
+    m0 = vehicle.stack_mass_kg(0)
+
+    def burned(t: float) -> float:
+        return 0.0 if schedule is None else propellant_burned_kg(schedule, t)
+
+    def thrust(t: float) -> float:
+        return 0.0 if schedule is None else schedule.thrust_N(t, p_amb_pa)
+
+    samples = [0.0, t_push]
+    if schedule is not None:
+        samples += [k for k in schedule.kink_times() if 0.0 < k < t_push]
+    forces = [((m0 - burned(t)) * a_up - thrust(t), thrust(t)) for t in sorted(samples)]
+    f_int, t_at = max(forces, key=lambda pair: pair[0])
+    f1, f2 = layout.stage1.lox_mass_fraction, layout.stage2.lox_mass_fraction
+    upper2 = vehicle.payload_mass_kg + vehicle.fairing_mass_kg
+    upper = s2.wet_mass_kg + upper2
+    lox2 = f2 * s2.propellant_mass_kg
+
+    def case_at(t: float, interface: float, thrust_N: float, tag: str) -> LoadCase:
+        prop1 = s1.propellant_mass_kg - burned(t)
+        lox1 = f1 * prop1
+        return LoadCase(
+            label=f"{label} {tag}",
+            kind=PUSH,
+            t_s=t,
+            n_g=float(to_g(a_up)),
+            stage1_attached=True,
+            lox_stage1_kg=lox1,
+            rp1_stage1_kg=prop1 - lox1,
+            lox_stage2_kg=lox2,
+            rp1_stage2_kg=s2.propellant_mass_kg - lox2,
+            upper_mass_stage1_kg=upper,
+            upper_mass_stage2_kg=upper2,
+            vehicle_mass_kg=m0 - burned(t),
+            thrust_N=thrust_N,
+            interface_force_N=interface,
+        )
+
+    start = case_at(0.0, f_int, t_at, "push start")
+    m_rel = m0 - burned(t_push)
+    t_rel = thrust(t_push)
+    release = case_at(t_push, m_rel * a_up - t_rel, t_rel, "release")
+    return PushLoad(
+        cases=(start,),
+        n_rest_g=float(to_g(g_eff_mps2 * sin_phi)),
+        f_rest_N=(m0 - burned(0.0)) * g_eff_mps2 * sin_phi - thrust(0.0),
+        ramp=RampedPlateau(
+            stroke_m=length,
+            exit_speed_mps=assist.exit_speed_mps(length),
+            accel_net_mps2=accel,
+        ),
+        rise_time_s=None,
+        release=ReleaseState(
+            n_before_g=float(to_g(a_up)),
+            n_after_g=float(to_g(t_rel / m_rel)),
+            case=release,
+        ),
+    )
+
+
+# ------------------------------------------------------------------- structure search (SP7 S2)
+
+STRUCTURE_SEARCH_VARIANT = "silo_cold"
+"""The variant of the committed experiments whose push is SP1's headline (constant_accel
+3 g0 net, 100 m vertical stroke, cold start: stage 1 lit 0.5 s after release)."""
+STRUCTURE_PAYLOAD_TOL_KG = 0.002
+"""How close the flown pad's P* must lie to SP1's recorded P_ref [kg] (design section 6,
+criterion 3: the pad capacities within 0.002 kg)."""
+STRUCTURE_OFFLOAD_MODE: OffloadMode = "stage1"
+"""The headline push's offload mode (SP1's stage-1 solve)."""
+
+
+def _push_stage1_ignition_s(
+    setup: PlanarSetup, vehicle: Vehicle, push_time_s: float
+) -> float | None:
+    """Stage 1's ignition time from the push start [s] when it lights on the track (before
+    the release at push_time_s), else None (a cold push)."""
+    spec = setup.ignition[vehicle.stages[0].name]
+    if spec.fails or spec.lights_at_height:
+        return None
+    t_abs = spec.t_ign_abs_s(push_time_s, 0.0)
+    return t_abs if t_abs < push_time_s else None
+
+
+def structure_sizing(
+    config: StructureConfig,
+    vehicle: Vehicle,
+    pad: PadLoadSet,
+    run_config: RunConfig,
+    *,
+    headline_offload_kg: float,
+) -> SizingFn:
+    """The screened search's sizing (``structure.SizingFn``): a coefficient assignment (paths
+    to file values) and a ``structure.SizingCase`` to one ``structure.size`` with a fresh
+    geometry and envelope.
+
+    Inputs: config, the structure file; vehicle, the full-load vehicle at P_ref (the
+    geometry's masses, closed over); pad, the flown pad's PadLoadSet; run_config, the
+    variant whose push is sized (a constant_accel run: its assist, track, g_eff and stage-1
+    ignition); headline_offload_kg [kg], the push's stage-1 offload when a case gives none.
+    Output: the SizingFn. Each push is the analytic constant_accel case
+    (``constant_accel_push_load``) of the vehicle offloaded along STRUCTURE_OFFLOAD_MODE,
+    built once per offload and kept (a closure cache). Frame: the stack frame.
+    """
+    masses = stack_masses(vehicle)
+    layout = config.stack_layout()
+    pushes: dict[float, PushLoad] = {}
+
+    def push_at(offload_kg: float) -> PushLoad:
+        if offload_kg not in pushes:
+            flown = (
+                with_offload(vehicle, STRUCTURE_OFFLOAD_MODE, offload_kg)
+                if offload_kg > 0.0
+                else vehicle
+            )
+            setup = planar_setup(run_config, flown)
+            if not isinstance(setup.assist, ConstantAccelAssist) or setup.track is None:
+                raise ValueError(f"run {run_config.name!r}: the push is not a constant_accel push")
+            t_push = setup.assist.push_time_s(setup.track.length_m)
+            pushes[offload_kg] = constant_accel_push_load(
+                flown,
+                setup.assist,
+                setup.track,
+                layout,
+                g_eff_mps2=setup.env.g_ref_mps2,
+                stage1_ignition_s=_push_stage1_ignition_s(setup, flown, t_push),
+            )
+        return pushes[offload_kg]
+
+    def sizing(values: Mapping[str, CoefficientValue], case: SizingCase) -> Increment:
+        coeffs = config.coefficients(overrides=dict(values), check_ranges=case.check_ranges)
+        x = headline_offload_kg if case.offload_kg is None else case.offload_kg
+        return size(
+            masses,
+            layout,
+            coeffs,
+            pad,
+            push_at(x),
+            dynamic=case.dynamic,
+            entry=case.entry,
+            margin=case.margin,
+            envelope_cap_g=case.envelope_cap_g,
+        )
+
+    return sizing
+
+
+@dataclass(frozen=True)
+class StructureSearchInputs:
+    """What the screened search sizes against (``structure_search_inputs``): experiment, the
+    experiment's name; variant, the push's variant; pad, the flown pad baseline (RunResult);
+    payload_kg, its P* [kg]; vehicle, the full-load vehicle at P* (the geometry's masses);
+    pad_cases, its PadLoadSet; headline_offload_kg [kg]; push_run, the variant's RunConfig;
+    sizing, the SizingFn; ranges, the structure file's coefficients; pad_seconds, the pad's
+    flight time [s] (wall clock)."""
+
+    experiment: str
+    variant: str
+    pad: RunResult
+    payload_kg: float
+    vehicle: Vehicle
+    pad_cases: PadLoadSet
+    headline_offload_kg: float
+    push_run: RunConfig
+    sizing: SizingFn
+    ranges: tuple[CoefficientRange, ...]
+    pad_seconds: float
+
+
+def structure_search_inputs(
+    resolved: ResolvedExperiment,
+    config: StructureConfig,
+    *,
+    offload_kg: float,
+    reference_payload_kg: float | None = None,
+    variant: str = STRUCTURE_SEARCH_VARIANT,
+) -> StructureSearchInputs:
+    """Fly a committed experiment's pad baseline and build the screened search's inputs
+    (SP7 step S2; design 4.2.6: the envelope from the pad as flown, the headline push
+    analytic).
+
+    Inputs: resolved, the experiment (cli.load_experiment); config, its vehicle's structure
+    file; offload_kg, the headline push's stage-1 offload [kg] (SP1's recorded x*);
+    reference_payload_kg, SP1's recorded P_ref [kg] the flown P* must equal within
+    STRUCTURE_PAYLOAD_TOL_KG (None: not checked); variant, the push's variant.
+    Output: StructureSearchInputs. Raises ValueError when the pad's search gives no P*,
+    its P* misses the reference, or the variant is not a constant_accel push.
+    """
+    t0 = time.perf_counter()
+    pad = run_resolved(resolved.baseline)
+    pad_seconds = time.perf_counter() - t0
+    p_star = pad.result.metrics.get("payload_kg")
+    if p_star is None or not math.isfinite(float(p_star)):
+        raise ValueError(f"the pad baseline's payload search gave no P* ({p_star!r})")
+    if reference_payload_kg is not None and abs(p_star - reference_payload_kg) > (
+        STRUCTURE_PAYLOAD_TOL_KG
+    ):
+        raise ValueError(
+            f"the flown pad's P* {p_star!r} kg is not SP1's P_ref {reference_payload_kg!r} kg "
+            f"within {STRUCTURE_PAYLOAD_TOL_KG} kg"
+        )
+    vehicle = with_payload(resolved.baseline.to_vehicle(), float(p_star))
+    layout = config.stack_layout()
+    cases = pad_load_set(structure_pad_cases(pad.result, vehicle, layout))
+    push_run = resolved.runs[variant].run
+    return StructureSearchInputs(
+        experiment=resolved.experiment.name,
+        variant=variant,
+        pad=pad,
+        payload_kg=float(p_star),
+        vehicle=vehicle,
+        pad_cases=cases,
+        headline_offload_kg=offload_kg,
+        push_run=push_run,
+        sizing=structure_sizing(config, vehicle, cases, push_run, headline_offload_kg=offload_kg),
+        ranges=config.coefficient_ranges(),
+        pad_seconds=pad_seconds,
+    )
+
+
+STRUCTURE_HEADLINE_CASE = SizingCase()
+"""The headline push's sizing case (rise_time, aft_ring, margin 0, no cap)."""
+STRUCTURE_STEP_CASE = SizingCase(dynamic="step")
+"""The step row's sizing case (DLF 2 on the plain plateau), search B's push."""
+STRUCTURE_TIMING_REPEATS = 20
+"""Repeats of the timed sizing (the median is taken)."""
+
+
+def time_structure_sizing(
+    inputs: StructureSearchInputs, repeats: int = STRUCTURE_TIMING_REPEATS
+) -> tuple[float, float]:
+    """The median wall time [s] of one sizing at the central coefficients with a fresh
+    geometry and envelope (``structure.size``), at the headline and at the step row (stage 2
+    sized), after one warm-up each (the pad's features cached): the rate the fallbacks of
+    source note 9.3 are chosen by (``structure.choose_fallbacks`` on the larger median; the
+    structure files' sets notes record the medians this call measured before the search)."""
+    out = []
+    for case in (STRUCTURE_HEADLINE_CASE, STRUCTURE_STEP_CASE):
+        inputs.sizing({}, case)
+        times = []
+        for _ in range(repeats):
+            t0 = time.perf_counter()
+            inputs.sizing({}, case)
+            times.append(time.perf_counter() - t0)
+        out.append(sorted(times)[len(times) // 2])
+    return out[0], out[1]
+
+
+def structure_screened_search(
+    inputs: StructureSearchInputs, *, fallbacks: Sequence[str] = ()
+) -> tuple[ScreenedSearch, SearchEvaluator]:
+    """Searches A to C (``structure.screened_search``) on the inputs with the given
+    fallbacks; returns the search and its evaluator (whose memo serves search D and the
+    reports)."""
+    evaluator = SearchEvaluator(inputs.sizing, inputs.ranges)
+    search = screened_search(
+        evaluator,
+        headline=STRUCTURE_HEADLINE_CASE,
+        step=STRUCTURE_STEP_CASE,
+        fallbacks=fallbacks,
+    )
+    return search, evaluator
+
+
+def structure_search_method(inputs: StructureSearchInputs, search: ScreenedSearch) -> str:
+    """The method sentence the structure file records for the frozen sets."""
+    grid = (
+        structure.GRID_POINTS_FALLBACK
+        if structure.FALLBACK_GRID_TWO_POINTS in search.fallbacks
+        else structure.GRID_POINTS
+    )
+    return (
+        "Design 4.2.6 and source note section 9.3, searches A to C (D, the design axes' "
+        "break-even values, is not frozen here), sizing only, at the headline push of "
+        f"{inputs.experiment}'s {inputs.variant} (the analytic constant_accel case at a "
+        f"stage-1 offload of {inputs.headline_offload_kg!r} kg and P_ref "
+        f"{inputs.payload_kg!r} kg) on the envelope of its pad baseline as flown. A: the "
+        "physics band at the design axes' central: the tornado, "
+        f"{structure.SCAN_POINTS}-point scans, step 3 (monotone coefficients at their ends; "
+        f"the pressures and any other non-monotone coefficient on {grid} points per set "
+        "direction, crossed with the (s_dg, gerard_row) combinations, stage by stage), then "
+        "the polish of D-SP7-38 (each varied coefficient moved alone over its "
+        f"{structure.SCAN_POINTS} scan points or its choices, re-read at the end itself, "
+        f"until a pass moves nothing; at most {structure.POLISH_MAX_PASSES} passes). B: the "
+        "stage-2-only five per physics set at the step row (DLF 2), enumerated and polished "
+        "with every other coefficient at A's value. C: the outer envelope, A re-run at the "
+        "design axes' two corners (the margin's direction from its tornado). Checks, "
+        f"recorded and not acted on: {search.physics.samples} seeded samples for A (numpy "
+        "default_rng; B and C their own), and a one-coordinate check from each found end "
+        f"({structure.LOCAL_CHECK_POINTS} points per continuous coefficient, every other "
+        "choice of a discrete one; B's also over the stage-1 coefficients it holds at A's "
+        "values). The ends are the extremes this search found, not bounds: neither check "
+        "proves an end extreme."
+    )
+
+
+def structure_sets_record(
+    inputs: StructureSearchInputs,
+    config: StructureConfig,
+    search: ScreenedSearch,
+    *,
+    parent_commit: str,
+    test: str,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """The structure file's ``sets`` block for a search (plain data, as YAML writes it):
+    the label, a source naming the search and the test, the method, the evaluation count,
+    the fallbacks, the seed, the parent commit, the test, the note and the four sets with
+    their values, searches, polish records (each move with the dm it adds [kg]),
+    extremality checks (the found end's dm, the most extreme trial and its excess [kg],
+    sizing-only numbers at the search's push) and implied stack lengths
+    (``structure.implied_stack_length_m`` on each set's geometry, the file's fairing
+    height)."""
+    masses = stack_masses(inputs.vehicle)
+    layout = config.stack_layout()
+    fairing = config.layout.fairing_height_m.value
+    record: dict[str, Any] = {
+        "label": search.label,
+        "source": (
+            "SP7 step S2's screened search (src/launchsim/structure.py screened_search; "
+            f"design 4.2.6, source note section 9.3), reproduced by {test}"
+        ),
+        "method": structure_search_method(inputs, search),
+        "evaluation_count": search.evaluations,
+        "fallbacks": list(search.fallbacks),
+        "seed": search.seed,
+        "parent_commit": parent_commit,
+        "test": test,
+    }
+    if note is not None:
+        record["note"] = note
+    for item in search.sets:
+        coeffs = config.coefficients(overrides=item.coefficient_values())
+        geometry = build_geometry(masses, layout, coeffs)
+        record[item.name] = {
+            "values": dict(item.values),
+            "searches": item.searches,
+            "polish": [_polish_record(name, polish) for name, polish in item.polish],
+            "extremality": [_check_record(name, check) for name, check in item.extremality],
+            "implied_stack_length_m": implied_stack_length_m(geometry, fairing),
+        }
+    return record
+
+
+def _polish_record(search: str, polish: structure.Polish) -> dict[str, Any]:
+    """One search's polish as the sets block writes it (plain data; dm in kg)."""
+    return {
+        "search": search,
+        "passes": polish.passes,
+        "converged": polish.converged,
+        "dm_before_kg": float(polish.dm_before_kg),
+        "dm_after_kg": float(polish.dm_after_kg),
+        "moves": [
+            {
+                "path": move.path,
+                "from_value": move.from_value,
+                "to_value": move.to_value,
+                "dm_change_kg": float(move.dm_change_kg),
+                "pass_index": move.pass_index,
+            }
+            for move in polish.moves
+        ],
+    }
+
+
+def _check_record(search: str, check: structure.ExtremalityCheck) -> dict[str, Any]:
+    """One extremality check as the sets block writes it (plain data; dm in kg)."""
+    return {
+        "search": search,
+        "check": check.check,
+        "trials": check.trials,
+        "found_dm_kg": float(check.found_dm_kg),
+        "extreme_dm_kg": None if check.extreme_dm_kg is None else float(check.extreme_dm_kg),
+        "excess_kg": float(check.excess_kg),
+        "path": check.path,
+        "value": check.value,
+    }

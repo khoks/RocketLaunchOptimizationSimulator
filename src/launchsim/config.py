@@ -7,6 +7,17 @@ provenance for all its lists; a bare number raises). Experiment files use bare n
 Units are carried by field suffixes (``_t``, ``_kN``, ``_s``, ``_m``, ``_m2``, ``_W_m2``,
 ``_deg``, ``_g``) and converted to SI here and nowhere else, through launchsim.units.
 
+Structure files (SP7 step S2; configs/structures/<vehicle>.yaml, ``StructureConfig``) are
+all-provenance like vehicle files: every number is a Quantity, a ranged
+``{central, low, high}`` (RangeQuantity, IntegerRangeQuantity), a discrete choice or a
+layout fact, each with ``source`` or ``assumed: true``, and a list carries one provenance.
+Their suffixes (``_GPa``, ``_MPa``, ``_bar``, ``_mm``, ``_kg_per_kN``; the rest already SI)
+are converted through units.py when a named coefficient set becomes structure.py's
+``StructureCoefficients``. The layout facts the model hard-codes (each stage's tank order,
+common dome and construction per element, the interstage's charged stage) are checked
+against structure.py's values; the frozen ``sets`` block (StructureSetsConfig) is written
+by S2's screened search.
+
 Model selector and shared blocks (Phase 2). An experiment picks its model once with the
 experiment-level ``dynamics`` (``vertical_1d``, the default, or ``planar_2d``). The
 experiment-level shared blocks ``dynamics``, ``site``, ``guidance``, ``search``,
@@ -53,7 +64,7 @@ from pydantic import (
     model_validator,
 )
 
-from launchsim import units
+from launchsim import structure, units
 from launchsim.constants import OMEGA_EARTH_RADS, P_SEA_LEVEL_PA, R_EARTH_M
 from launchsim.vehicle import (
     HEATING_TRIGGER,
@@ -2909,3 +2920,913 @@ def resolve_experiment(
         cases=calibration,
         offload=offload,
     )
+
+
+# --------------------------------------------------------------------------- structure file
+#
+# SP7 step S2: configs/structures/<vehicle>.yaml, the structural model's coefficients
+# (design 4.3; the source note docs/phases/inputs/2026-10-08-SP7-sources.md sections 3, 4,
+# 5 and 12). cli.load_structure reads the file; this section validates it and converts a
+# named coefficient set into structure.py's frozen dataclasses through units.py. No I/O.
+
+
+class RangeQuantity(_Model):
+    """A ranged number of the structure file: ``{central, low, high, source | assumed:
+    true, note}`` (design 4.3), low <= central <= high, all finite numbers (a bool or a
+    string raises). Its field name carries the unit. ``assumed: true`` whenever any of the
+    three numbers is assumed, inferred, set by a rule with no opened value, a user decision,
+    an analogue or rests on a quoted value; ``source`` alone only when all three rest on
+    opened sources used for what they measure (source note section 12)."""
+
+    central: float = Field(allow_inf_nan=False)
+    low: float = Field(allow_inf_nan=False)
+    high: float = Field(allow_inf_nan=False)
+    source: str | None = None
+    assumed: bool = False
+    note: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _numbers_only(cls, data: Any) -> Any:
+        if isinstance(data, RangeQuantity):
+            return data
+        if not isinstance(data, dict):
+            raise ValueError(
+                "bare value; a ranged number needs {central, low, high, source | assumed}"
+            )
+        for key in ("central", "low", "high"):
+            if not _is_number(data.get(key)):
+                raise ValueError(f"{key} must be a number")
+        return data
+
+    @model_validator(mode="after")
+    def _ordered(self) -> RangeQuantity:
+        _check_provenance(self.source, self.assumed)
+        if not self.low <= self.central <= self.high:
+            raise ValueError(
+                f"need low <= central <= high, got {self.low}, {self.central}, {self.high}"
+            )
+        return self
+
+
+class IntegerRangeQuantity(_Model):
+    """A ranged whole number (``ring_pads``): ``{central, low, high, source | assumed: true,
+    note}`` with integers (a float or a bool raises), low <= central <= high."""
+
+    central: int = Field(strict=True)
+    low: int = Field(strict=True)
+    high: int = Field(strict=True)
+    source: str | None = None
+    assumed: bool = False
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _ordered(self) -> IntegerRangeQuantity:
+        _check_provenance(self.source, self.assumed)
+        if not self.low <= self.central <= self.high:
+            raise ValueError(
+                f"need low <= central <= high, got {self.low}, {self.central}, {self.high}"
+            )
+        return self
+
+
+ChoiceValue = Annotated[int, Field(strict=True)] | str
+"""A discrete choice's value: a whole number (``s_dg``) or a name."""
+
+
+class DiscreteChoice(_Model):
+    """A discrete coefficient: ``{central, alternatives, source | assumed: true, note}``
+    (source note section 12): the central choice and the alternatives the band takes,
+    distinct; ``assumed: true`` whenever any choice rests on an inference, an assumption,
+    an analogue or a quoted value."""
+
+    central: ChoiceValue
+    alternatives: list[ChoiceValue] = []
+    source: str | None = None
+    assumed: bool = False
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _distinct(self) -> DiscreteChoice:
+        _check_provenance(self.source, self.assumed)
+        values = [self.central, *self.alternatives]
+        if len(set(values)) != len(values):
+            raise ValueError(f"choices must be distinct, got {values}")
+        return self
+
+    @property
+    def choices(self) -> tuple[int | str, ...]:
+        """The central choice, then the alternatives."""
+        return (self.central, *self.alternatives)
+
+
+class LayoutChoice(_Model):
+    """A fixed layout fact of the structure file (``tank_order``, ``common_dome``,
+    ``construction``, ``rest_at``, the interstage's ``charged_to``): ``{value, source |
+    assumed: true, note}``."""
+
+    value: list[str] | bool | str | dict[str, str]
+    source: str | None = None
+    assumed: bool = False
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _one_provenance(self) -> LayoutChoice:
+        _check_provenance(self.source, self.assumed)
+        return self
+
+
+class SizingOnlyLine(_Model):
+    """A labelled sizing-only line, outside every band (source note sections 9.1 and 12,
+    whose field names it keeps): field, the coefficient it sets, named by its dotted path
+    in the structure file (as an override); value, the value it takes there; label, printed
+    beside it; and its provenance."""
+
+    field: str
+    value: float | str
+    label: str
+    source: str | None = None
+    assumed: bool = False
+
+    @model_validator(mode="after")
+    def _one_provenance(self) -> SizingOnlyLine:
+        _check_provenance(self.source, self.assumed)
+        return self
+
+
+class DeltaGammaPoint(_Model):
+    """One (x, Delta_gamma) point of the SP-8007 curve, x = (p/E)(r/t)^2, both
+    dimensionless."""
+
+    x: float = Field(allow_inf_nan=False)
+    delta_gamma: float = Field(allow_inf_nan=False)
+
+
+class DeltaGammaPoints(_Model):
+    """A list of DeltaGammaPoints with one provenance (``source`` or ``assumed: true``)."""
+
+    points: list[DeltaGammaPoint]
+    source: str | None = None
+    assumed: bool = False
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _one_provenance(self) -> DeltaGammaPoints:
+        _check_provenance(self.source, self.assumed)
+        if not self.points:
+            raise ValueError("a Delta_gamma list needs points")
+        return self
+
+    def pairs(self) -> tuple[tuple[float, float], ...]:
+        """The points as (x, Delta_gamma) pairs."""
+        return tuple((p.x, p.delta_gamma) for p in self.points)
+
+
+class DeltaGammaTable(DeltaGammaPoints):
+    """The SP-8007 table the monocoque mode interpolates (source note section 6.3): from
+    (0, 0), x strictly ascending, Delta_gamma non-decreasing, its chord slope non-increasing
+    (structure.py's rules)."""
+
+    @model_validator(mode="after")
+    def _table_rules(self) -> DeltaGammaTable:
+        structure.check_delta_gamma_table(self.pairs())
+        return self
+
+
+class TankPressureConfig(_Model):
+    """One tank's pressure pair (source note section 3.2, section 13 item 13): the ullage
+    MEOP [bar, gauge from the ambient, without the acceleration head] and the minimum as a
+    fraction of it."""
+
+    p_meop_bar: RangeQuantity
+    p_min_fraction: RangeQuantity
+
+
+class PressuresConfig(_Model):
+    """The four tanks' pressure pairs."""
+
+    stage1_lox: TankPressureConfig
+    stage1_rp1: TankPressureConfig
+    stage2_lox: TankPressureConfig
+    stage2_rp1: TankPressureConfig
+
+
+class AlloyValues(_Model):
+    """A dome alloy's fixed allowables: F_tu_MPa and rho_wall_kg_per_m3 Quantities."""
+
+    F_tu_MPa: Quantity
+    rho_wall_kg_per_m3: Quantity
+
+
+class MaterialsConfig(_Model):
+    """The materials block (``block_alloy``, a LayoutChoice naming the alloy with its
+    provenance: 2195 for the barrels from FUG15 Table 2-1, assumed for the aft skirt, the
+    ring frame and the tube, source note sections 2.3 and 11) and the domes' discrete alloy
+    (source note section 3.1): a ``dome_alloy`` choice is the block's name (its ranged
+    values) or a key of ``dome_alloys``."""
+
+    block_alloy: LayoutChoice
+    E_GPa: RangeQuantity
+    nu: RangeQuantity
+    rho_wall_kg_per_m3: RangeQuantity
+    F_tu_MPa: RangeQuantity
+    eta_weld: RangeQuantity
+    dome_alloy: DiscreteChoice
+    dome_alloys: dict[str, AlloyValues]
+
+    @model_validator(mode="after")
+    def _known_alloys(self) -> MaterialsConfig:
+        if not isinstance(self.block_alloy.value, str):
+            raise ValueError("block_alloy's value is the alloy's name")
+        for choice in self.dome_alloy.choices:
+            if choice != self.block_alloy_name and choice not in self.dome_alloys:
+                raise ValueError(f"dome alloy {choice!r} has no values")
+        return self
+
+    @property
+    def block_alloy_name(self) -> str:
+        """The materials block's alloy name."""
+        return str(self.block_alloy.value)
+
+
+class FactorsConfig(_Model):
+    """The fixed ultimate factor (source note section 3.1)."""
+
+    FS_ult: Quantity
+
+
+class BucklingConfig(_Model):
+    """Buckling (source note sections 3.3 and 6): the pressure-increment switch, the
+    stiffened knockdown, the stiffened row (names only: structure.GERARD_ROWS holds the
+    pairs), the minimum gauge, the SP-8007 table and its source points."""
+
+    s_dg: DiscreteChoice
+    k_stiff: RangeQuantity
+    gerard_row: DiscreteChoice
+    t_min_mm: RangeQuantity
+    delta_gamma_table: DeltaGammaTable
+    delta_gamma_source_points: DeltaGammaPoints
+
+    @model_validator(mode="after")
+    def _known_choices(self) -> BucklingConfig:
+        if not set(self.s_dg.choices) <= {0, 1}:
+            raise ValueError(f"s_dg choices must be 0 or 1, got {self.s_dg.choices}")
+        unknown = set(self.gerard_row.choices) - set(structure.GERARD_CHOICES)
+        if unknown:
+            raise ValueError(f"unknown gerard_row choices {sorted(map(str, unknown))}")
+        return self
+
+
+class StructureGeometryConfig(_Model):
+    """Ranged geometry and densities (source note section 3.4) and stage 2's fixed tube
+    ratio."""
+
+    aft_skirt_length_m: RangeQuantity
+    dome_axis_ratio: RangeQuantity
+    ullage_fraction: RangeQuantity
+    rho_lox_kg_per_m3: RangeQuantity
+    rho_rp1_kg_per_m3: RangeQuantity
+    tube_diameter_m: RangeQuantity
+    tube_diameter_ratio: Quantity
+    interstage_length_m: RangeQuantity
+
+
+class LoadEntryConfig(_Model):
+    """Load entry (source note section 3.5): the skirt's envelope path, the ring section's
+    aspect and the fixed fitting factor."""
+
+    skirt_envelope_path: DiscreteChoice
+    ring_h_over_b: RangeQuantity
+    fitting_factor: Quantity
+
+    @model_validator(mode="after")
+    def _known_paths(self) -> LoadEntryConfig:
+        unknown = set(self.skirt_envelope_path.choices) - set(structure.SKIRT_ENVELOPE_PATHS)
+        if unknown:
+            raise ValueError(f"unknown skirt_envelope_path choices {sorted(map(str, unknown))}")
+        return self
+
+
+class NofConfig(_Model):
+    """The non-optimum factors (source note section 4; D-SP7-37)."""
+
+    nof_barrel: RangeQuantity
+    nof_stiffened: RangeQuantity
+    nof_dome: RangeQuantity
+    nof_entry_ratio: RangeQuantity
+
+
+class StructureDynamicsConfig(_Model):
+    """The dynamic load factor's axes (D-SP7-09): the assumed real-drive rise time and the
+    stack's first axial frequency."""
+
+    rise_time_s: RangeQuantity
+    axial_frequency_Hz: RangeQuantity
+
+
+class RingConfig(_Model):
+    """The ring frame's pad count (an integer axis, source note section 4)."""
+
+    ring_pads: IntegerRangeQuantity
+
+
+class ThrustStructureConfig(_Model):
+    """The thrust-structure row's coefficient (D-SP7-37: central 0.2805 kg/kN)."""
+
+    k_ts_kg_per_kN: RangeQuantity
+
+
+class InterstageConfig(_Model):
+    """The interstage relation (Castellini 2012 Table 15, in SI), its increment's fixed
+    exponent and the stage its increment is charged to (D-SP7-36; source note section
+    5.5; only structure.INTERSTAGE_CHARGED_TO is accepted, the stage the model charges)."""
+
+    interstage_k1_kg_per_m2p4856: Quantity
+    interstage_k2: Quantity
+    interstage_k_sm: Quantity
+    interstage_exponent: Quantity
+    charged_to: LayoutChoice
+
+    @model_validator(mode="after")
+    def _modelled_stage(self) -> InterstageConfig:
+        if self.charged_to.value != structure.INTERSTAGE_CHARGED_TO:
+            raise ValueError(
+                f"interstage.charged_to must be {structure.INTERSTAGE_CHARGED_TO!r}, the only "
+                "stage the model charges it to (D-SP7-36); editing it would change nothing"
+            )
+        return self
+
+
+class PolygonConfig(QuantityList):
+    """The payload's quasi-static limit polygon (axial and lateral g, in order; recorded,
+    not used: the model is axial)."""
+
+    axial_g: list[FiniteFloat]
+    lateral_g: list[FiniteFloat]
+
+
+class PayloadLimitsConfig(_Model):
+    """The payload's axial limit load factors (source note section 8) and the polygon."""
+
+    payload_limit_axial_max_g: Quantity
+    payload_limit_axial_min_g: Quantity
+    polygon: PolygonConfig
+
+
+class LabelledQuantity(Quantity):
+    """A Quantity printed with a label (the thrust-structure readings)."""
+
+    label: str
+
+
+class PlausibilityConfig(_Model):
+    """The plausibility references (source note section 7): Heineman's relation and band,
+    Akin's tank fractions, the thrust-structure readings and Castellini's Ref. 5 relation's
+    constants (printed only)."""
+
+    heineman_kg_per_m2p25: Quantity
+    heineman_exponent: Quantity
+    heineman_band_fraction: Quantity
+    akin_lox_tank_fraction: Quantity
+    akin_rp1_tank_fraction: Quantity
+    thrust_structure_readings_kg_per_kN: list[LabelledQuantity]
+    castellini_ref5_constants: dict[str, Quantity]
+
+
+class StageLayoutConfig(_Model):
+    """One stage's layout (source note sections 2.3 and 12): the vehicle's stage name, the
+    tank order (bottom to top), the common dome, the construction per element (exactly
+    structure.MODELLED_CONSTRUCTION for its role, checked by StructureLayoutConfig) and, for
+    stage 2, its fixed aft-skirt length 0."""
+
+    name: str
+    tank_order: LayoutChoice
+    common_dome: LayoutChoice
+    construction: LayoutChoice
+    aft_skirt_length_m: Quantity | None = None
+
+
+class StructureLayoutConfig(_Model):
+    """The stack layout: radius, stations per barrel (an integer), the fairing height and
+    the overall stack length (for the implied stack length, source note section 2.4) and
+    the two stages (each stage's construction refused unless it is the modelled one)."""
+
+    radius_m: Quantity
+    stations_per_barrel: Quantity
+    fairing_height_m: Quantity
+    stack_length_m: Quantity
+    stages: list[StageLayoutConfig]
+
+    @model_validator(mode="after")
+    def _two_stages(self) -> StructureLayoutConfig:
+        if len(self.stages) != PLANAR_STAGE_COUNT:
+            raise ValueError("the structure layout names two stages")
+        first, second = self.stages
+        for cfg, role in ((first, structure.STAGE1), (second, structure.STAGE2)):
+            modelled = dict(structure.MODELLED_CONSTRUCTION[role])
+            if cfg.construction.value != modelled:
+                raise ValueError(
+                    f"{cfg.name}: construction must be the modelled {modelled} (source note "
+                    "section 12); the model hard-codes it, so another value would change "
+                    "nothing"
+                )
+        if first.aft_skirt_length_m is not None:
+            raise ValueError("stage 1's aft skirt length is the ranged geometry.aft_skirt_length_m")
+        if second.aft_skirt_length_m is None or second.aft_skirt_length_m.value != 0.0:
+            raise ValueError("stage 2's aft_skirt_length_m is fixed at 0 (source note section 2.2)")
+        n = self.stations_per_barrel.value
+        if n != int(n) or n < 1:
+            raise ValueError(f"stations_per_barrel must be a whole number >= 1, got {n}")
+        return self
+
+
+class MixtureStageConfig(_Model):
+    """A stage's LOX mass fraction."""
+
+    lox_mass_fraction: Quantity
+
+
+class MixtureConfig(_Model):
+    """Each stage's LOX mass fraction (constant mixture ratio)."""
+
+    stage1: MixtureStageConfig
+    stage2: MixtureStageConfig
+
+
+class BreakdownStageConfig(_Model):
+    """A stage's dry mass by element (source note section 5; every entry a Quantity):
+    stage 1 names its engines ``engines_kg`` and has the interstage and upper equipment;
+    stage 2 names its engine ``mvac_kg``; ``rest_at`` places the remainder."""
+
+    interstage_kg: Quantity | None = None
+    upper_equipment_kg: Quantity | None = None
+    forward_dome_kg: Quantity
+    lox_barrel_kg: Quantity
+    common_dome_kg: Quantity
+    rp1_barrel_kg: Quantity
+    rp1_aft_dome_kg: Quantity
+    thrust_structure_kg: Quantity
+    engines_kg: Quantity | None = None
+    mvac_kg: Quantity | None = None
+    rest_kg: Quantity
+    rest_at: LayoutChoice
+
+    @model_validator(mode="after")
+    def _one_engine_entry(self) -> BreakdownStageConfig:
+        if (self.engines_kg is None) == (self.mvac_kg is None):
+            raise ValueError("give exactly one of engines_kg (stage 1) or mvac_kg (stage 2)")
+        if self.rest_at.value not in structure.REST_PLACEMENTS:
+            raise ValueError(f"rest_at must be one of {structure.REST_PLACEMENTS}")
+        return self
+
+    def to_breakdown(self) -> structure.StageBreakdown:
+        """The structure.StageBreakdown [kg]."""
+
+        def kg(q: Quantity | None) -> float:
+            return 0.0 if q is None else q.value
+
+        return structure.StageBreakdown(
+            interstage_kg=kg(self.interstage_kg),
+            upper_equipment_kg=kg(self.upper_equipment_kg),
+            forward_dome_kg=self.forward_dome_kg.value,
+            lox_barrel_kg=self.lox_barrel_kg.value,
+            common_dome_kg=self.common_dome_kg.value,
+            rp1_barrel_kg=self.rp1_barrel_kg.value,
+            rp1_aft_dome_kg=self.rp1_aft_dome_kg.value,
+            thrust_structure_kg=self.thrust_structure_kg.value,
+            engines_kg=kg(self.engines_kg) + kg(self.mvac_kg),
+            rest_kg=self.rest_kg.value,
+            rest_at=str(self.rest_at.value),
+        )
+
+
+class BreakdownConfig(_Model):
+    """Both stages' breakdowns."""
+
+    stage1: BreakdownStageConfig
+    stage2: BreakdownStageConfig
+
+
+StructureSetName = Literal[
+    "physics_low_mass", "physics_high_mass", "outer_low_mass", "outer_high_mass"
+]
+STRUCTURE_SET_NAMES: tuple[str, ...] = get_args(StructureSetName)
+"""The frozen coefficient sets of the structure file (design 4.2.6, D-SP7-18), the same
+names and order as structure.SEARCH_SET_NAMES."""
+STRUCTURE_CENTRAL_SET = "central"
+"""The central coefficient set (every coefficient at its central value)."""
+STRUCTURE_CASE_FIELDS: tuple[str, ...] = (structure.CASE_MARGIN, structure.CASE_ENVELOPE_CAP)
+"""Offload-case fields an outer set records beside its coefficients (source note 9.3 C)."""
+STRUCTURE_PHYSICS_SETS: tuple[str, ...] = (structure.SET_PHYSICS_LOW, structure.SET_PHYSICS_HIGH)
+"""The physics band's sets: every physics coefficient, no design axis, no case field."""
+
+
+class SearchExtremalityConfig(_Model):
+    """One extremality check behind a frozen set (source note 9.3, D-SP7-38; recorded, not
+    acted on): the search (A, B or C); the check (structure.EXTREMALITY_CHECKS: the seeded
+    samples, the one-coordinate check, B's held check); the trials it sized; the found
+    end's dm, the most extreme trial's dm and how far it lies beyond the end in the end's
+    direction [kg] (sizing-only numbers at the search's push, not findings); for a
+    one-coordinate check the coefficient moved and its value in that trial."""
+
+    search: str
+    check: str
+    trials: int = Field(strict=True, ge=0)
+    found_dm_kg: float = Field(allow_inf_nan=False)
+    extreme_dm_kg: float | None = Field(default=None, allow_inf_nan=False)
+    excess_kg: float = Field(ge=0.0, allow_inf_nan=False)
+    path: str | None = None
+    value: float | int | str | None = None
+
+    @model_validator(mode="after")
+    def _known_check(self) -> SearchExtremalityConfig:
+        if self.check not in structure.EXTREMALITY_CHECKS:
+            raise ValueError(f"check must be one of {structure.EXTREMALITY_CHECKS}")
+        if (self.extreme_dm_kg is None) != (self.trials == 0):
+            raise ValueError("a check with trials records its most extreme dm, and only then")
+        return self
+
+
+class PolishMoveConfig(_Model):
+    """One move of the polish (D-SP7-38): the coefficient, its value before and after, the
+    dm the move adds [kg] (negative: lowers dm) and the pass it was made in."""
+
+    path: str
+    from_value: float | int | str
+    to_value: float | int | str
+    dm_change_kg: float = Field(allow_inf_nan=False)
+    pass_index: int = Field(strict=True, ge=0)
+
+
+class SearchPolishConfig(_Model):
+    """One search's polish of a frozen set (D-SP7-38): the search, the passes run, whether
+    the last pass moved nothing, the end's dm before and after [kg] and every move."""
+
+    search: str
+    passes: int = Field(strict=True, ge=0)
+    converged: bool
+    dm_before_kg: float = Field(allow_inf_nan=False)
+    dm_after_kg: float = Field(allow_inf_nan=False)
+    moves: list[PolishMoveConfig]
+
+
+class StructureSetConfig(_Model):
+    """One frozen coefficient set written by S2's screened search: each coefficient's chosen
+    value by its path (a physics set every physics coefficient; an outer set every
+    coefficient and the case fields ``margin`` and ``envelope_cap_g``); the searches behind
+    it; the polish of each search (D-SP7-38); its extremality checks; the stack length its
+    coefficients imply (source note section 2.4's arithmetic, the fairing included, a lower
+    bound; the 70 m budget is not imposed, 9.3)."""
+
+    values: dict[str, float | int | str | None]
+    searches: str
+    polish: list[SearchPolishConfig]
+    extremality: list[SearchExtremalityConfig]
+    implied_stack_length_m: float = Field(gt=0.0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _case_fields(self) -> StructureSetConfig:
+        margin = self.values.get(structure.CASE_MARGIN, 0.0)
+        if not _is_number(margin) or not math.isfinite(float(margin)) or float(margin) < 0.0:
+            raise ValueError(f"margin must be a finite number >= 0, got {margin!r}")
+        cap = self.values.get(structure.CASE_ENVELOPE_CAP)
+        if cap is not None and (not _is_number(cap) or not float(cap) > 1.0):
+            raise ValueError(f"envelope_cap_g must be null or > 1 g0, got {cap!r}")
+        return self
+
+
+class StructureSetsConfig(_Model):
+    """The frozen sets block (design 4.2.6 and 4.3; source note 9.3): the label (exactly
+    structure.SEARCH_LABEL, never "bounds"), the source (the search and its reproducing
+    test, which covers every number of the block), the method, the evaluation count (the
+    distinct sizings of searches A to C), the fallbacks used, the seed of the extremality
+    samples, the parent commit, the reproducing slow test's name, a free note (the measured
+    timing; not compared by the test) and the four sets."""
+
+    label: str
+    source: str
+    method: str
+    evaluation_count: int = Field(strict=True, ge=0)
+    fallbacks: list[str]
+    seed: int = Field(strict=True)
+    parent_commit: str
+    test: str
+    note: str | None = None
+    physics_low_mass: StructureSetConfig
+    physics_high_mass: StructureSetConfig
+    outer_low_mass: StructureSetConfig
+    outer_high_mass: StructureSetConfig
+
+    @model_validator(mode="after")
+    def _label_and_fallbacks(self) -> StructureSetsConfig:
+        if self.label != structure.SEARCH_LABEL:
+            raise ValueError(f"the sets' label must be {structure.SEARCH_LABEL!r}")
+        unknown = set(self.fallbacks) - set(structure.SEARCH_FALLBACKS)
+        if unknown:
+            raise ValueError(f"unknown fallbacks {sorted(unknown)}")
+        return self
+
+
+CoefficientRange = structure.CoefficientRange
+"""One coefficient the search varies (``StructureConfig.coefficient_ranges``; the class
+lives in structure.py, the search's input type)."""
+
+
+def _identity(x: float) -> float:
+    return x
+
+
+_STRUCTURE_RANGED: tuple[tuple[str, str, Callable[[float], float], str], ...] = (
+    ("materials.E_GPa", "e_pa", units.gpa_to_pa, "physics"),
+    ("materials.nu", "nu", _identity, "physics"),
+    ("materials.rho_wall_kg_per_m3", "rho_wall_kgm3", _identity, "physics"),
+    ("materials.F_tu_MPa", "f_tu_pa", units.mpa_to_pa, "physics"),
+    ("materials.eta_weld", "eta_weld", _identity, "physics"),
+    *(
+        (f"pressures.{tank}.p_meop_bar", f"p_meop_{tank}_pa", units.bar_to_pa, "physics")
+        for tank in ("stage1_lox", "stage1_rp1", "stage2_lox", "stage2_rp1")
+    ),
+    *(
+        (f"pressures.{tank}.p_min_fraction", f"p_min_fraction_{tank}", _identity, "physics")
+        for tank in ("stage1_lox", "stage1_rp1", "stage2_lox", "stage2_rp1")
+    ),
+    ("buckling.k_stiff", "k_stiff", _identity, "physics"),
+    ("buckling.t_min_mm", "t_min_m", units.mm_to_m, "physics"),
+    ("geometry.aft_skirt_length_m", "aft_skirt_length_m", _identity, "physics"),
+    ("geometry.dome_axis_ratio", "dome_axis_ratio", _identity, "physics"),
+    ("geometry.ullage_fraction", "ullage_fraction", _identity, "physics"),
+    ("geometry.rho_lox_kg_per_m3", "rho_lox_kgm3", _identity, "physics"),
+    ("geometry.rho_rp1_kg_per_m3", "rho_rp1_kgm3", _identity, "physics"),
+    ("geometry.tube_diameter_m", "tube_diameter_m", _identity, "physics"),
+    ("geometry.interstage_length_m", "interstage_length_m", _identity, "physics"),
+    ("load_entry.ring_h_over_b", "ring_h_over_b", _identity, "physics"),
+    ("nof.nof_barrel", "nof_barrel", _identity, "design"),
+    ("nof.nof_stiffened", "nof_stiffened", _identity, "design"),
+    ("nof.nof_dome", "nof_dome", _identity, "design"),
+    ("nof.nof_entry_ratio", "nof_entry_ratio", _identity, "design"),
+    ("dynamics.rise_time_s", "rise_time_s", _identity, "design"),
+    ("dynamics.axial_frequency_Hz", "axial_frequency_hz", _identity, "design"),
+    ("thrust_structure.k_ts_kg_per_kN", "k_ts_kg_per_n", units.kg_per_kn_to_kg_per_n, "design"),
+)
+"""Every continuous coefficient: (path, StructureCoefficients field, unit conversion,
+group)."""
+_STRUCTURE_INTEGER: tuple[tuple[str, str, str], ...] = (("ring.ring_pads", "ring_pads", "design"),)
+"""Every integer coefficient: (path, field, group)."""
+_STRUCTURE_DISCRETE: tuple[tuple[str, str, str], ...] = (
+    ("materials.dome_alloy", "dome_alloy", "physics"),
+    ("buckling.s_dg", "s_dg", "physics"),
+    ("buckling.gerard_row", "gerard_row", "physics"),
+    ("load_entry.skirt_envelope_path", "skirt_envelope_path", "physics"),
+)
+"""Every discrete coefficient: (path, field, group)."""
+_STRUCTURE_FIXED: tuple[tuple[str, str, Callable[[float], float]], ...] = (
+    ("factors.FS_ult", "fs_ult", _identity),
+    ("load_entry.fitting_factor", "fitting_factor", _identity),
+    ("geometry.tube_diameter_ratio", "tube_diameter_ratio", _identity),
+    ("interstage.interstage_k1_kg_per_m2p4856", "interstage_k1_kg_per_m2p4856", _identity),
+    ("interstage.interstage_k2", "interstage_k2", _identity),
+    ("interstage.interstage_k_sm", "interstage_k_sm", _identity),
+    ("interstage.interstage_exponent", "interstage_exponent", _identity),
+    ("payload_limits.payload_limit_axial_max_g", "payload_limit_axial_max_g", _identity),
+    ("payload_limits.payload_limit_axial_min_g", "payload_limit_axial_min_g", _identity),
+    ("plausibility.heineman_kg_per_m2p25", "heineman_kg_per_m2p25", _identity),
+    ("plausibility.heineman_exponent", "heineman_exponent", _identity),
+    ("plausibility.heineman_band_fraction", "heineman_band_fraction", _identity),
+    ("plausibility.akin_lox_tank_fraction", "akin_lox_tank_fraction", _identity),
+    ("plausibility.akin_rp1_tank_fraction", "akin_rp1_tank_fraction", _identity),
+)
+"""Every fixed number the coefficient set carries: (path, field, unit conversion)."""
+_STAGE2_ONLY = frozenset(
+    {
+        "pressures.stage2_lox.p_meop_bar",
+        "pressures.stage2_lox.p_min_fraction",
+        "pressures.stage2_rp1.p_meop_bar",
+        "pressures.stage2_rp1.p_min_fraction",
+        "geometry.interstage_length_m",
+    }
+)
+"""The stage-2-only five (source note section 9.1)."""
+
+
+def _structure_node(config: BaseModel, path: str) -> Any:
+    """The model at a dotted path of a StructureConfig."""
+    node: Any = config
+    for part in path.split("."):
+        node = getattr(node, part)
+    return node
+
+
+class StructureConfig(_Model):
+    """A structure file (configs/structures/<vehicle>.yaml; design 4.3; the source note's
+    field names, section 12). No I/O: cli.load_structure reads the YAML.
+
+    name, description, applies_to (the vehicle names it serves); layout, mixture and
+    breakdown (both stages); materials, factors, pressures, buckling, geometry,
+    load_entry, nof, dynamics, ring, thrust_structure, interstage, payload_limits and
+    plausibility (the coefficient sections, identical between the gate file and its
+    README-loads fork, a test); sizing_only, the labelled lines outside every band; sets,
+    the frozen coefficient sets (absent until S2's search fills them). Every number is a
+    Quantity, a RangeQuantity, an IntegerRangeQuantity, a DiscreteChoice, a LayoutChoice or
+    a provenance-carrying list. The central set and each range's ends convert to valid
+    StructureCoefficients (checked on validation).
+    """
+
+    name: str
+    description: str
+    applies_to: list[str]
+    layout: StructureLayoutConfig
+    mixture: MixtureConfig
+    materials: MaterialsConfig
+    factors: FactorsConfig
+    pressures: PressuresConfig
+    buckling: BucklingConfig
+    geometry: StructureGeometryConfig
+    load_entry: LoadEntryConfig
+    nof: NofConfig
+    dynamics: StructureDynamicsConfig
+    ring: RingConfig
+    thrust_structure: ThrustStructureConfig
+    interstage: InterstageConfig
+    payload_limits: PayloadLimitsConfig
+    plausibility: PlausibilityConfig
+    breakdown: BreakdownConfig
+    sizing_only: list[SizingOnlyLine] = []
+    sets: StructureSetsConfig | None = None
+
+    @model_validator(mode="after")
+    def _converts(self) -> StructureConfig:
+        if not self.applies_to:
+            raise ValueError("applies_to names at least one vehicle")
+        self.stack_layout()
+        self.coefficients()
+        for item in self.coefficient_ranges():
+            ends = item.choices if item.kind == "discrete" else (item.low, item.high)
+            for value in ends:
+                self.coefficients(overrides={item.path: value})
+        for line in self.sizing_only:
+            self.coefficients(overrides={line.field: line.value})
+        if self.sets is not None:
+            ranges = self.coefficient_ranges()
+            physics = {r.path for r in ranges if r.group == structure.GROUP_PHYSICS}
+            every = {r.path for r in ranges} | set(STRUCTURE_CASE_FIELDS)
+            for set_name in STRUCTURE_SET_NAMES:
+                recorded = set(getattr(self.sets, set_name).values)
+                expected = physics if set_name in STRUCTURE_PHYSICS_SETS else every
+                if recorded != expected:
+                    raise ValueError(
+                        f"set {set_name} must record exactly {sorted(expected)} (no coefficient "
+                        f"at central by default); missing {sorted(expected - recorded)}, extra "
+                        f"{sorted(recorded - expected)}"
+                    )
+                self.coefficients(set_name)
+        return self
+
+    def coefficient_ranges(self) -> tuple[CoefficientRange, ...]:
+        """Every coefficient the search varies, with its range or choices (design 4.2.6)."""
+        out: list[CoefficientRange] = []
+        for path, _, _, group in _STRUCTURE_RANGED:
+            q: RangeQuantity = _structure_node(self, path)
+            out.append(
+                CoefficientRange(
+                    path, "continuous", group, q.central, q.low, q.high, (), path in _STAGE2_ONLY
+                )
+            )
+        for path, _, group in _STRUCTURE_INTEGER:
+            qi: IntegerRangeQuantity = _structure_node(self, path)
+            out.append(
+                CoefficientRange(path, "integer", group, qi.central, qi.low, qi.high, (), False)
+            )
+        for path, _, group in _STRUCTURE_DISCRETE:
+            choice: DiscreteChoice = _structure_node(self, path)
+            out.append(
+                CoefficientRange(
+                    path, "discrete", group, choice.central, None, None, choice.choices, False
+                )
+            )
+        return tuple(out)
+
+    def _sizing_only_values(self, path: str) -> set[float | str]:
+        """The sizing-only values listed for a path."""
+        return {line.value for line in self.sizing_only if line.field == path}
+
+    def set_values(self, set_name: str) -> dict[str, float | int | str | None]:
+        """A frozen set's recorded values by path (KeyError for an unknown set; ValueError
+        when the file has no sets yet)."""
+        if set_name == STRUCTURE_CENTRAL_SET:
+            return {}
+        if set_name not in STRUCTURE_SET_NAMES:
+            raise KeyError(f"unknown coefficient set {set_name!r}")
+        if self.sets is None:
+            raise ValueError(f"{self.name}: the structure file has no frozen sets yet")
+        return dict(getattr(self.sets, set_name).values)
+
+    def set_case_fields(self, set_name: str) -> dict[str, float | None]:
+        """The offload-case fields a set records (``margin``, ``envelope_cap_g``; {} for the
+        central set and for a physics set that records none)."""
+        values = self.set_values(set_name)
+        return {k: values[k] for k in STRUCTURE_CASE_FIELDS if k in values}  # type: ignore[misc]
+
+    def coefficients(
+        self,
+        set_name: str = STRUCTURE_CENTRAL_SET,
+        overrides: dict[str, float | int | str] | None = None,
+        *,
+        check_ranges: bool = True,
+    ) -> structure.StructureCoefficients:
+        """The StructureCoefficients of a named set (``central`` or a frozen set), with
+        optional overrides by path (the search's hook), converted to SI through units.py.
+
+        With check_ranges, an override must lie within its range (a discrete one among its
+        choices, an integer one a whole number), or be one of the file's sizing-only lines
+        (which may also set a fixed number, ``factors.FS_ult``); an unknown path raises.
+        The 2195 dome alternative takes the materials block's (possibly overridden) values.
+        """
+        values: dict[str, Any] = {}
+        for path, _, _, _ in _STRUCTURE_RANGED:
+            values[path] = _structure_node(self, path).central
+        for path, _, _ in _STRUCTURE_INTEGER:
+            values[path] = _structure_node(self, path).central
+        for path, _, _ in _STRUCTURE_DISCRETE:
+            values[path] = _structure_node(self, path).central
+        for path, _, _ in _STRUCTURE_FIXED:
+            values[path] = _structure_node(self, path).value
+        chosen = {
+            k: v for k, v in self.set_values(set_name).items() if k not in STRUCTURE_CASE_FIELDS
+        }
+        for path, value in {**chosen, **(overrides or {})}.items():
+            if path not in values:
+                raise ValueError(f"unknown structure coefficient path {path!r}")
+            if check_ranges:
+                self._check_override(path, value)
+            values[path] = value
+        kwargs: dict[str, Any] = {}
+        for path, name, convert, _ in _STRUCTURE_RANGED:
+            kwargs[name] = convert(float(values[path]))
+        for path, name, _ in _STRUCTURE_INTEGER:
+            kwargs[name] = values[path]
+        for path, name, _ in _STRUCTURE_DISCRETE:
+            kwargs[name] = values[path]
+        for path, name, convert in _STRUCTURE_FIXED:
+            kwargs[name] = convert(float(values[path]))
+        kwargs["s_dg"] = float(values["buckling.s_dg"])
+        alloy = str(values["materials.dome_alloy"])
+        if alloy == self.materials.block_alloy_name:
+            kwargs["dome_f_tu_pa"] = kwargs["f_tu_pa"]
+            kwargs["dome_rho_kgm3"] = kwargs["rho_wall_kgm3"]
+        else:
+            alloy_values = self.materials.dome_alloys[alloy]
+            kwargs["dome_f_tu_pa"] = units.mpa_to_pa(alloy_values.F_tu_MPa.value)
+            kwargs["dome_rho_kgm3"] = alloy_values.rho_wall_kg_per_m3.value
+        kwargs["delta_gamma_table"] = self.buckling.delta_gamma_table.pairs()
+        return structure.StructureCoefficients(**kwargs)
+
+    def _check_override(self, path: str, value: Any) -> None:
+        """ValueError unless value is admissible at path (see ``coefficients``)."""
+        if value in self._sizing_only_values(path):
+            return
+        node = _structure_node(self, path)
+        if isinstance(node, RangeQuantity):
+            if not _is_number(value) or not node.low <= value <= node.high:
+                raise ValueError(f"{path} = {value!r} is outside [{node.low}, {node.high}]")
+        elif isinstance(node, IntegerRangeQuantity):
+            whole = not isinstance(value, bool) and hasattr(value, "__index__")
+            if not whole or not node.low <= value <= node.high:
+                raise ValueError(
+                    f"{path} = {value!r} is not a whole number in [{node.low}, {node.high}]"
+                )
+        elif isinstance(node, DiscreteChoice):
+            if value not in node.choices:
+                raise ValueError(f"{path} = {value!r} is not one of {node.choices}")
+        else:
+            raise ValueError(f"{path} is fixed; only its sizing-only lines may change it")
+
+    def stack_layout(self) -> structure.StackLayout:
+        """The structure.StackLayout of both stages."""
+        lay = self.layout
+
+        def stage(i: int, role: str) -> structure.StageLayout:
+            cfg = lay.stages[i]
+            order = cfg.tank_order.value
+            if not isinstance(order, list):
+                raise ValueError(f"{cfg.name}: tank_order is a list, bottom to top")
+            common = cfg.common_dome.value
+            if not isinstance(common, bool):
+                raise ValueError(f"{cfg.name}: common_dome is true or false")
+            breakdown = self.breakdown.stage1 if role == structure.STAGE1 else self.breakdown.stage2
+            mix = self.mixture.stage1 if role == structure.STAGE1 else self.mixture.stage2
+            return structure.StageLayout(
+                name=cfg.name,
+                tank_order=tuple(order),
+                common_dome=common,
+                lox_mass_fraction=mix.lox_mass_fraction.value,
+                breakdown=breakdown.to_breakdown(),
+                has_aft_skirt=role == structure.STAGE1,
+                has_load_ring=role == structure.STAGE1,
+            )
+
+        return structure.StackLayout(
+            radius_m=lay.radius_m.value,
+            stations_per_barrel=int(lay.stations_per_barrel.value),
+            stage1=stage(0, structure.STAGE1),
+            stage2=stage(1, structure.STAGE2),
+        )

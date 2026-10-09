@@ -5787,7 +5787,7 @@ re-resolved from its raw dict, never from a dump.
 ## Structural sizing of the push load (first order)
 
 Module: `src/launchsim/structure.py` (pure: it imports constants, units, numpy and
-scipy.optimize only). Named constants: `constants.SP8007_KNOCKDOWN_A` and
+scipy.optimize only; S2's station model below is in the same module). Named constants: `constants.SP8007_KNOCKDOWN_A` and
 `constants.SP8007_PHI_DIVISOR`; unit conversions of the structure file in `units.py`
 (`gpa_to_pa`, `mpa_to_pa`, `bar_to_pa`, `mm_to_m`, `kg_per_mn_to_kg_per_n`,
 `kg_per_kn_to_kg_per_n` and their inverses). Tests: `tests/test_structure.py`,
@@ -5804,8 +5804,9 @@ for the walls, the load entry and the push's dynamic load. The station model of 
 stages (elements, stations, free bodies, `LoadCase`), the envelope over a pad's recorded
 flight, the flags, the structure file
 (`configs/structures/`, `StructureConfig`) and the screened coefficient search arrive in
-S2; the coupling to the offload solve, the records and the wording in S3, S3b and S3a.
-Nothing in S1 changes a run: no run, experiment or results file calls structure.py yet.
+S2 (below, "The station model of both stages"); the coupling to the offload solve, the
+records and the wording in S3, S3b and S3a. Nothing in S1 or S2 changes a run: no run,
+experiment or results file calls structure.py yet.
 
 **Conventions.** SI throughout (m, Pa, N, kg, s); a load factor n is in units of g0 and is
 converted by `units.from_g` (g0 here defines the unit, never a gravity model); a "design"
@@ -5987,8 +5988,12 @@ plane (the classical circular ring girder):
     m = 2 pi r rho k b^2 [kg],   b = (6 Z/k^2)^(1/3)
 
 with f_fit the fitting factor and k = h/b (Z the elastic modulus: no plastic shape factor
-credited). m is the ideal mass, before the non-optimum factor: the caller multiplies it by
-the barrels' NOF (design 4.2.3), as the increments below take theirs. N_p >= 3 (three point supports are the fewest that hold a ring against tilting
+credited). m is the ideal mass, before the non-optimum factor (design 4.2.3). This is the
+bending-only primitive: in the station model (S2, "The ring frame's check" below)
+`ring_frame_section` starts from this width (one shared helper, `_ring_bending_width_m`),
+widens the section where its torsion-plus-shear and von Mises check binds, and the caller
+multiplies the mass by `nof_barrel` x `nof_entry_ratio` (D-SP7-37 items 2 and 15). N_p >= 3
+(three point supports are the fewest that hold a ring against tilting
 as a rigid body); no envelope credit (new hardware; the hold-down hardpoints are not
 credited). Derivation, by statics: each span subtends 2 alpha. The planes through the pads
 and through the midspans are planes of symmetry of the ring and its load, so at a midspan
@@ -6004,7 +6009,8 @@ q r^2 (phi - (alpha/sin alpha) sin phi). As N_p grows, M tends to q l^2/12 and M
 q l^2/24 with l = 2 pi r/N_p: the interior span of a straight continuous beam, each span
 fixed-fixed by symmetry, which design 4.2.3 states. The ring's M is larger, by 1.0% at
 8 pads, 1.9% at 6, 4.4% at 4 and 8.2% at 3 (the mass by 0.7%, 1.3%, 2.9% and 5.4%; checked
-against a quadrature of the half span's equilibrium). The torsion is not checked: it is
+against a quadrature of the half span's equilibrium). This primitive does not check the
+torsion (S2's `ring_frame_section` does): it is
 zero at the pads, where the bending moment peaks, and peaks in the span at cos phi* =
 sin alpha/alpha, where the bending moment is zero, at 0.076 M (8 pads), 0.102 M (6),
 0.154 M (4) and 0.209 M (3). For a solid section with h = 2b its shear stress there,
@@ -6074,6 +6080,525 @@ the peak and the plateau), about 20 to 32 us for a monocoque solve (brentq with 
 lookup) and about 12 to 18 us for a 100-station barrel increment (the spread of four
 measurements under different machine load; `tests/test_structure.py::test_primitive_timing`
 records them; its ceilings are 1 ms and 10 ms, a gross-slow-down guard only).
+
+### The station model of both stages (SP7 step S2)
+
+Modules: `src/launchsim/structure.py` (pure; the S2 part from "S2: names" on),
+`src/launchsim/config.py` (`StructureConfig`, no I/O), `src/launchsim/cli.py`
+(`load_structure`), `src/launchsim/sim.py` (the adapters `structure_pad_cases`,
+`constant_accel_push_load`, `stack_masses`). Files: `configs/structures/generic_f9_class_2d.yaml`
+and `configs/structures/generic_f9_class_2d_readme_loads.yaml`, transcribed from the source
+note docs/phases/inputs/2026-10-08-SP7-sources.md (S0) with D-SP7-36 and D-SP7-37. Tests:
+`tests/test_structure_model.py`, `tests/test_structure_files.py` (inputs in
+`tests/structure_support.py`: synthetic pad flights from closed forms, never results/).
+Design docs/phases/inputs/2026-10-08-SP7-design.md sections 4.2 to 4.3; D-SP7-13 to
+D-SP7-19, D-SP7-33. S2 sizes only: no offload is solved (D-SP7-31); the coupling to the
+offload solve is S3's and the screened search (the frozen sets) is S2's second part (the next
+subsection).
+
+**Stations and frame.** `station_height_m` z runs up the stack from the stage-1 load ring
+at the stage base (its own frame, not the track frame's z). Stage 1, bottom to top: the aft
+skirt (0 to L_s), the RP-1 aft dome (equator at L_s, bulging down inside the skirt), the
+RP-1 barrel, the common dome at the junction (bulging into the RP-1 tank, LOX side concave),
+the LOX barrel, the forward dome (inside the interstage), the interstage (L_is, to the
+stage-2 latch plane); stage 2 the same from the latch plane with no skirt (its base is the
+latch plane, source note section 2.2) and no ring; the LOX transfer tube through each RP-1
+tank from the common-dome crown to the aft-dome crown (length L_RP1; both domes bulge down
+by b = r/(a/b)). Barrel lengths from the full loads, L = m (1 + u)/(rho pi r^2) with u the
+ullage over the liquid volume (cylinder-equivalent: dome and tube volumes neglected),
+built once from the full-load vehicle's masses (`build_geometry` takes `StackMasses`;
+`sim.stack_masses` builds them from a Vehicle) and closed over, so the push at any offload
+is sized on the same stations as the envelope (a geometry that shrank with the offload
+would favour the assist, D-SP7-13). Each barrel and the skirt have N stations of equal
+length (centres at fractions (i + 1/2)/N; `stations_per_barrel` 200). A station's mass
+height is the liquid mass below it at the full tank's density, k = f (1 + u) m_full, so
+the head above it is h = (m - k)+/(rho A) and rho h = (m - k)+/A does not depend on rho.
+The structural mass above a station comes from the breakdown (not from the sized
+thicknesses): the interstage, the upper equipment and the forward dome at the top of stage
+1, the barrels' masses uniform along them, the common dome at the junction (it loads every
+RP-1 station), the aft dome, thrust structure, engines and stage-1 remainder at or below
+the RP-1 barrel's bottom (they load no barrel station), stage 2's remainder at its forward
+end (source note section 5). The increment's own inertia is not added (about 0.3% of dm,
+stated).
+
+**Load cases** (`LoadCase`, frozen): the felt axial load factor n [g0], each stage's LOX and
+RP-1 on board (split at each stage's LOX mass fraction, the structure file's `mixture`),
+the upper mass above stage 1 U (stage 2 wet, the fairing while attached, the payload flown)
+and above stage 2 U2, the vehicle mass, the thrust, the phase kind (hold, push, flight),
+the interface force (a push) and the hold-down support m n g0 - T (a HOLD row).
+`sim.structure_pad_cases` adapts the pad baseline's planar Result as survey 05 did: its
+HOLD rows (n = g_eff/g0 there by the clamp convention), its stage-1 flight rows (an engine
+lit: `LIT_KINDS`) and its stage-2 burn rows (stage 1 gone; they load stage-2 elements
+only); coasts are left out (n near 0 never governs). U, the dry masses and the propellant
+come from the flown Vehicle and the Result: the stage-1 propellant m - dry1 - U, the stage-2
+propellant m - dry2 - payload - the fairing while attached (attached before the fairing
+event, and on a row at the event's time by its mass); the first row must be the full stack
+and stage 1's propellant 0 at its depletion event within `STRUCTURE_MASS_TOL_KG` (1 g), or
+the vehicle is refused. `sim.constant_accel_push_load` gives the analytic constant_accel
+push (design 4.4; survey 05 found the recorded rows equal to it to 5e-12): n = (a + g_eff
+sin phi)/g0 constant, the tank contents at push start, F_int = max over the push of
+m_v(t) (a + g_eff sin phi) - T(t) (at the start, the thrust schedule's kinks and the
+release; m_v (a + g_eff sin phi) for a cold push), n_rest = g_eff sin phi/g0, F_rest =
+m_v(0) g_eff sin phi - T(0) (a hold's for a lit start), the ramped plateau's (L, v_e, a),
+and the release at the end of the stroke (n before the drop the plateau, after it
+T/(m_v g0), drag neglected).
+
+**Station loads and pressures** (design 4.2; free body above a cut; the liquid of the tank
+whose wall is cut is carried by its bottom dome, not by the wall above it; the other tank's
+ullage pressure is internal to the free body). With the margin factor lambda = 1 + margin on
+the envelope (1 on a push):
+
+    LOX barrel:    Q = n (U + s)               N_d = FS_u lambda g0 Q - p_min,LOX pi r^2
+    RP-1 barrel:   Q = n (U + s + m_LOX)       N_d = FS_u lambda g0 Q - p_min,RP1 pi r^2
+    pressure:      P = n (m - k)+              p = lambda (p_MEOP + g0 P/A)
+    aft skirt:     N_d = FS_u lambda S         (unpressurized, no relief)
+
+with s the structure above the station, p_MEOP the tank's ullage MEOP (the acceleration
+head is added here, never inside p_MEOP) and p_min = `p_min_fraction` x p_MEOP its minimum,
+unfactored and unscaled (NASA-STD-5001B FSR 19 and 53-54). The pressure basis is assumed
+(source note sections 1.4 and 3.2): one differential (gauge) value for the pad, the push at
+sea level and flight. Whether Falcon 9 regulates in absolute or gauge terms is not public
+(most analogues are psia read at altitude); if it regulates in absolute terms the push's
+relief at sea level is overstated (about 1 bar over the 10.5 m^2 tank area, of order 1 MN),
+which lowers dm, and the hoop pressures too (either way by station). The skirt's S: on the pad the
+largest hold-down support (central path) or the larger of it and the flight product g0 n
+(U + s + m_LOX + m_RP1) (the `flight_thrust` alternative); on a push the peak interface
+force. Drag is left out of the envelope (it would raise it by about 0.01%, S05).
+
+**Modes at a station**: hoop t_h = FS_u p r/(F_tu eta_w); compression from N_d: SP-8007
+monocoque on the LOX barrels (S1's solve, stabilized at p_min with the Delta_gamma table),
+the active Gerard row or the plate-limited row on the RP-1 barrels and the skirt; the
+combined mode (S1's von Mises closed form) of net compression only (N_d clamped at 0: in
+net tension the hoop mode governs a pressurized wall, since the axial tension resultant is
+at most p_min r/2 <= FS_u p r/2, and an unpressurized wall in net tension is a tension mode
+the design does not size); the minimum gauge. The required thickness is the largest. The
+plate-limited row is t_ref (N_d/N_env) with t_ref the central row's smeared thickness at the
+station's envelope design compression N_env, before the gauge floor (D-SP7-37; the anchor
+row where N_env <= 0). Domes at the crown with the head at the crown: aft p = lambda
+(p_MEOP,RP1 + g0 n (m_RP1 + rho_RP1 A b)/A); common FS_u lambda (p_MEOP,LOX + g0 n (m_LOX +
+rho_LOX A b)/A) - p_min,RP1 (the relieving side once, unfactored, unscaled); forward lambda
+p_MEOP,LOX (ullage only, unchanged by a push); in the dome alloy (`dome_alloy`: 2219-T851
+central, the 2195 block the alternative), floored at the minimum gauge, area from the
+spheroid formula. The transfer tube: hoop of its bottom, p = lambda (p_MEOP,LOX + g0 n
+(m_LOX + rho_LOX A (L_tube + b))/A) less p_min,RP1 outside (the RP-1 head outside is not
+credited), in the 2195 block, floored. The cylinder-equivalent head keeps the dome depth
+and the tube length in the column at every case; at the exact depletion row this overstates
+the column by n (L_tube + b), on the rows just before it the dome and tube are in fact still
+full.
+
+**The envelope and its candidate reduction** (`build_envelope`; `envelope_reference` is the
+definition, every case at every station with S1's scalar primitives). The envelope's loads
+and pressures are the pad's times (1 + margin) (margin on loads, not thickness, D-SP7-15),
+the pad's stage-1 felt n capped at `envelope_cap_g` when it is given (the trajectory stays
+unthrottled), and t_env(z) = max over the cases of t(z, case). Each pad case enters only
+through coefficient-free features, n, n m_LOX, n m_RP1 and n U (`_features`, computed once
+per stage and cap and cached on the `PadLoadSet`), and at a station the drivers are
+
+    P = (n m - k n)+    (head, with the tank's own m),    Q = (n U [+ n m_LOX]) + s n    (load)
+
+with k and s the station's constants. Monotonicity: hoop is non-decreasing in P alone, every
+compression mode in Q alone (S1's monocoque root is strictly increasing in N_d; the Gerard
+and plate rows are power laws in N_d), the combined mode in both (sqrt(A^2 + A|B| + B^2) with
+A = FS_u p r and |B| = N_d+/(2 pi r), each non-decreasing in its driver), and the minimum
+gauge is constant. So the largest over the cases of a single-driver mode is that mode at
+its driver's largest value, which is computed exactly per station; the combined mode needs
+both drivers together. The Pareto front of (P, Q) alone does not shorten the pad's samples:
+through the burn P falls and Q rises monotonically, so every flight sample after liftoff is
+on it (and the curve bulges outward: 1,363 of the recorded pad's 3,073 stage-1 rows are
+vertices of its convex hull in the features), so the reduction is by an exact bound
+instead (`_rowwise_max`): the cases are split into blocks of `CASE_BLOCK_SIZE` (32)
+consecutive rows with their features' block maxima and minima; a block's mode values are
+bounded above by the mode at P_ub = (max(n m) - k min(n))+ and Q_ub = max(aq) + s max(n)
+(valid because k, s >= 0 and every operation is monotone, also in floating point); the
+block with the largest bound is evaluated exactly, then every block whose bound exceeds
+that value (and, for the combined mode, the other modes' maximum) is evaluated exactly, and
+the rest cannot hold a larger value. The result equals the full sample's to rounding (the
+test: 1e-12 relative on seven coefficient sets, two margins and caps; measured 0 to 1.7e-16),
+stations vectorized with numpy, independent of the coefficient set except through k, s and
+the pressures. Domes and the tube have one driver D = n m + c n each (linear), so their
+maximum is taken directly. The skirt's load is a single number. The upper stack's envelope is
+(1 + margin) max n U over the stage-1 cases (capped), the thrust structure's (1 + margin)
+T_max.
+
+**The push and the increment** (`push_requirement`, `size_increment`, `size`). The push is
+taken at its peak: n_peak = n_rest + DLF (n_q - n_rest) and F_peak = F_rest + DLF (F_q -
+F_rest) by S1's `dynamic_load_factor` (t_r the drive's own, or the assumed real-drive
+rise time of the coefficient set for constant_accel; T = 1/f) and `peak_load`; for
+constant_accel under `rise_time` the plateau is raised to S1's ramped plateau a' (n_q +=
+(a' - a)/g0, F_q += m_v (a' - a); the trajectory is not re-flown, stated); the heads use
+n_peak. Each barrel station's push thickness is the largest over the push's cases of the
+modes above (no margin), with the same arithmetic as the envelope, so a pad case sized as a
+push gives t_push = t_env bit for bit. The increment by S1's `barrel_increment_kg` and
+`area_increment_kg`: the positive part of t_push - t_env times 2 pi r rho dz (domes and the
+tube: the area) and the element's non-optimum factor, by base (D-SP7-37; source note
+section 4): `nof_barrel` at every LOX station, at a hoop- or combined-sized RP-1 station and
+on the tube; `nof_stiffened` at a station whose push thickness is a Gerard or the
+plate-limited row's; `nof_stiffened` x `nof_entry_ratio` on the skirt; `nof_barrel` x
+`nof_entry_ratio` on the ring; `nof_dome` on every dome; none on the interstage and
+thrust-structure relations (fitted to as-built masses). Where the governing push mode
+switches between a stiffened row and a skin mode along a barrel the factor jumps, so the
+station cell holding the switch (the linear root of compression minus skin thickness
+between the two stations) is split there (`_nof_cells`); without it the midpoint rule's
+error would be O(dz), about 1 kg at the step row with 200 stations. Entry `aft_ring`
+(central): the skirt carries F_peak and the ring frame is sized for it (no envelope credit:
+new hardware); entry `thrust_structure`: dm = k_ts max(0, F - (1 + margin) T_max) =
+k_ts T_max max(0, F/T_max - 1) at margin 0, with F the peak interface force plus the thrust
+at the same instant (both enter through the thrust structure; F_peak for a cold push, the
+design's form), the skirt and ring then not loaded. Stage 2's tanks and the interstage are
+sized only when the push's peak n U exceeds the envelope's (`structure_upper_stack_exceeded`;
+`size` builds stage 2's envelope only then); the interstage's increment is m_is
+((N_push/N_env)^0.6 - 1)+ with N = n U (FS_u and g0 cancel), m_is Castellini's relation
+(`interstage_mass_kg`, 934 kg at 4.5 m), charged to stage 1 (D-SP7-36). `size` is the
+screened search's one call: a fresh geometry and envelope and the increment (measured on a
+synthetic pad of the recorded pad's size, about 10,500 cases: 14 ms at the headline,
+61 ms with stage 2 sized, after a one-time 0.10 s preparation of the pad's features).
+
+**The ring frame's check** (`ring_frame_section`, `ring_shear_ratio`,
+`rectangle_torsion_factors`; source note section 11 and section 13 item 15, adopted by
+D-SP7-37). The section is S1's bending section unless the von Mises stress over the half
+span and the section's boundary exceeds F_tu, and then the smallest width at which it does
+not (brentq; every stress falls as b^-2 or b^-3). On the half span from a midspan (phi = 0)
+to a pad (alpha = pi/N_p), at ultimate (q factored by FS_u and the fitting factor): M =
+q r^2 ((alpha/sin alpha) cos phi - 1), T = q r^2 (phi - (alpha/sin alpha) sin phi), V =
+q r phi. On the section b (radial) x h = k b (axial), k >= 1: bending sigma = 12 M zeta/(k^2
+b^3) at height zeta h; Saint-Venant's torsion of a solid rectangle (Timoshenko and Goodier;
+odd n) with G theta = T/(beta k b^4), beta = (1/3)[1 - (192/(pi^5 k)) sum tanh(n pi k/2)/
+n^5], the long face's shear G theta b [1 - (8/pi^2) sum cosh(n pi zeta k)/(n^2 cosh(n pi
+k/2))] and the short face's (8 G theta b/pi^2) |sum (-1)^((n-1)/2) tanh(n pi k/2) cos(n pi
+xi)/n^2| (400 terms; a square's alpha 0.208 and beta 0.141); the transverse shear (1.5 V/
+(k b^2))(1 - 4 zeta^2) on the long faces, added to the torsion's on one of them. Evaluated
+on 401 span points and 21 points along each half face. The neutral axis's shear over
+F_tu/sqrt(3) reproduces the note's table (8 pads, h/b 6.5: 0.85; h/b 12: 1.28 and the
+section x1.21; 4 pads, h/b 6.5: 1.235 and x1.16), and where it binds it is also the
+boundary's largest von Mises point.
+
+**Flags** (design 4.2.2 with D-SP7-39; reported, not sized). `structure_release_unload`:
+the release is an instant drop to n_after. Under the same undamped single mode that sizes
+the peak (damping is not credited), the ramp's residual oscillation, of amplitude (DLF - 1)
+(n_rel - n_rest), is still present at the release, so the largest instantaneous load there
+is n_peak,rel = n_rest + DLF (n_rel - n_rest) (n_rel the plateau just before the release,
+raised as the cases are under `rise_time`), and the drop swings to n_swing = n_after -
+(n_peak,rel - n_after) (S1's `peak_load` with DLF 2): the conservative bound every flag
+fires on. The swing from the plateau, n_after - (n_rel - n_after) (the residual fully
+damped; design 4.2.2's wording), is printed beside. At the headline (DLF 1.1273) the cold
+release swings to -4.389 g0 rather than the plateau's -4.006; at the step row (DLF 2) to
+-6.9965 rather than -3.9965 g0. Against the pad's MECO shutdown under the same treatment
+(n_MECO to 0: a slowly built thrust load, no residual; nearly empty stage-1 tanks, full
+stage-2 tanks), per tank of both stages, with the model's head to the bottom dome's crown
+(m/(rho A) + b, as the dome sizing): the bottom's minimum gauge pressure p_min + g0 n_swing
+(m + rho A b)/A for the push and for MECO, and the push's absolute value p_atm + that, p_atm
+the sea-level ambient of the release at the silo's top (negative: the column would separate
+from its dome; MECO's ambient is not in its load case and is taken as 0, `MECO_AMBIENT_PA`,
+near vacuum at its altitude, so its gauge value is also its absolute one); the common dome's
+reverse pressure p_MEOP,RP1 - max(p_min,LOX + g0 n_swing (m_LOX + rho_LOX A b)/A, -p_atm)
+(a difference; positive: the dome pushed from its RP-1 side; the LOX side floored at zero
+absolute, since a separated column cannot pull the dome below its vapour pressure, which is
+neglected, so the value is an upper bound; MECO's floor at its zero ambient; it is
+p_MEOP,RP1 - p_min,LOX > 0 already at zero swing for the central pair and positive on the
+pad's own MECO, so it is judged against MECO's); the upper stack's swing n_swing U g0
+against MECO's. Fired when a stage-1 column separates at the push (D-SP7-19), the push's
+reverse pressure is positive and above MECO's, or the upper stack swings further than at
+MECO; the stage-2 tanks' numbers (`stage2_*`) are recorded beside and do not fire it. At the
+gate's central headline it fires: both stage-1 columns would separate (the LOX bottom at
+-911.6 kPa gauge, -810.3 kPa absolute, the RP-1 bottom at -181.5 kPa absolute) and the
+dome's reverse pressure is 363.3 kPa (p_MEOP,RP1 + p_atm, the floor binding; the linear
+value through the separated column would be 1.17 MPa) against MECO's 129.6 kPa
+(sizing-only numbers). The stage-1 comparison is not specific to the push: MECO's stage-1
+tanks are empty (on the depletion row, m = 0, MECO's value is only p_min less the dome's own
+head, +132.4 and +162.7 kPa at central), and the same treatment applied to the
+full stage-2 tanks on the pad's own MECO separates the stage-2 LOX column (-231.7 kPa,
+gauge and about absolute at MECO), deeper than the headline push takes the same tank
+(-161.6 kPa gauge, -60.3 kPa absolute; the stage-2 RP-1 bottom +6.3 kPa at MECO, +39.5 kPa
+at the push). So
+the instant-release column separation that the headline caveat names (design 4.11's fixed
+form) is a property of the single-mode step treatment, which the pad's own MECO shutdown
+also shows on stage 2; S3a's and S6a's caveat wording carries this comparison (D-SP7-39).
+At the step row the push's stage-2 LOX bottom is at -388.4 kPa gauge.
+`structure_upper_stack_exceeded`: n_peak U above the
+envelope's (1 + margin) largest capped n U (the pad's own value recorded beside);
+stage 2 and the interstage are then charged. `structure_payload_limit`: n_peak above
++6.0 g0 or the release swing (from the release's peak, D-SP7-39; the plateau's swing
+printed beside) below -2.0 g0 (FUG25 Table 5-3, printed p.33; limit loads at the payload
+interface; the payload and its adapter are not sized). The fixed-point cap flag is S3's.
+
+**Plausibility** (`plausibility`, `plausibility_factors`, `widen_band`; design 4.2.5,
+D-SP7-33 with the source note's section 7; calibration, not validation). M_model is the
+stage-1 tank elements' envelope mass (forward dome, LOX barrel, common dome, RP-1 barrel,
+aft dome; not the skirt, ring or tube) at the central coefficients, each station times its
+factor by the envelope's governing mode (hoop, combined, monocoque or the minimum gauge:
+`nof_barrel`; a stiffened row: `nof_stiffened`; domes `nof_dome`), the barrels on their
+physical lengths (L_LOX,phys = (V_LOX - 2 V_dome)/(pi r^2), L_RP1,phys = V_RP1/(pi r^2 -
+pi d_t^2/4); 0.919 and 1.033 at the gate's central coefficients). R = 68.404 V^0.75 on the
+combined LOX + RP-1 volume (6,038 kg for the gate; the per-tank sum, 7,152 kg, printed
+beside). Below 0.7 R the physics band's high-mass end is multiplied by 0.7 R/M_model,
+above 1.3 R its low-mass end by 1.3 R/M_model, mechanically. Akin's relations, the
+interstage relation, k_ts T_max and stage 1 less its engines are printed beside.
+
+The rule fires at the central coefficients in both files, on the favourable side
+(D-SP7-40, sizing-only numbers): the gate's M_model is 10,621.8 kg against R = 6,038.3 kg
+(M/R 1.759, above the 7,849.9 kg ceiling), so the physics band's low-mass end is
+multiplied by 0.7390; the fork's 9,977.1 kg against 5,870.0 kg (M/R 1.700) by 0.7649. It
+is the largest single dm-lowering adjustment the band receives. Its trigger is not the
+base-skin bias the source note's section 7 anticipated: the stage-1 LOX barrel's envelope
+mass is 7,541.9 of the gate's 10,621.8 kg (71%; Heineman's per-tank LOX value is 4,135 kg),
+monocoque-governed at all 200 stations by MECO's compression, and it carries `nof_barrel`,
+which the note's section 4 calls a double count of buckling material at buckling-governed
+monocoque stations (it raises M_model). The push's own LOX-barrel increment is about 1 kg.
+So a stated conservative double count becomes, through the rule, a cut of about 26% to the
+favourable end. The rule is applied as approved (D-SP7-33); the question goes to the user
+before S6a (D-SP7-40).
+
+**The structure file** (`StructureConfig`; design 4.3; the note's field names, section 12).
+Every number is a Quantity, a range `{central, low, high, source | assumed: true, note}`
+(low <= central <= high, finite), an integer range (`ring_pads`), a discrete choice
+`{central, alternatives, source | assumed: true, note}`, a layout choice or a list with one
+provenance; the model checks the provenance, the order and that the central set and each
+range's end convert to a valid `StructureCoefficients`. `coefficients(set, overrides)` converts
+a named set (central, or one of the four frozen sets the search wrote into `sets`) with optional
+overrides by dotted path (the search's hook: within the range, among the choices, a whole
+pad count, or one of the file's sizing-only lines, each `{field, value, label, source |
+assumed: true}` as the note's section 12 names them, its `field` the coefficient's dotted
+path) through units.py (GPa, MPa, bar, mm,
+kg/kN); the 2195 dome alternative takes the materials block's values. `coefficient_ranges`
+lists the 35 coefficients the search varies (23 continuous and 4 discrete physics, 7
+continuous design axes and the integer pad count; the stage-2-only five marked). The
+README-loads fork copies the gate file's coefficient sections and layout byte for byte;
+only its identity fields (name, description, applies_to), its mixture notes, its breakdown
+and its frozen sets differ. The breakdowns place D-SP7-37's k_ts
+central (0.2805 x T_max: 2,308 kg on stage 1, 275 kg on stage 2) where the note's tables
+used its earlier 0.306; the remainders close the vehicles' dry masses.
+
+### The screened search and the frozen sets (SP7 step S2)
+
+Modules: `src/launchsim/structure.py` (pure; "S2: the screened search" and "S2: the
+placement"), `src/launchsim/sim.py` (the driver: `structure_search_inputs`,
+`structure_sizing`, `time_structure_sizing`, `structure_screened_search`,
+`structure_sets_record`), `src/launchsim/constants.py` (SP1's recorded penalty rows, each
+with its record, the headline offload their first; the offload lost per kg of stage-1 and of
+stage-2 dry mass) and `src/launchsim/config.py` (the `sets` block). SP1's solved offloads
+are recorded once at full precision in tests/data/silo_offload_2d_record.json (D-SP7-30;
+copied from the two runs' untracked metrics.json, with their run directories, git hash and
+budget id): the gate's headline and penalty rows, which constants.py's rows equal exactly,
+and the README-loads fork's P_ref and bridge offload; tests/structure_support.py reads P_ref,
+the headline and the fork's values from it, and a fast test pins constants.py to it and the
+record to the tracked findings note RQ1 (constants.py holds model results here only because
+structure.py is pure and numbers live only in constants.py and configs; CLAUDE.md's layout
+line for constants.py is S8's to update). Tests: `tests/test_structure_search.py`.
+Design 4.2.6, source note section 9.3, D-SP7-18 and D-SP7-37. Sizing only: no offload is
+solved (D-SP7-31); every x* below is an estimate by placement, never a solve.
+
+**What is sized.** Each structure file's committed experiment
+(experiments/silo_offload_2d.yaml for the gate, silo_offload_2d_readme.yaml for the
+README-loads fork) has its pad baseline flown afresh (`run_resolved`); its P* must equal
+SP1's recorded P_ref within 0.002 kg (26,054.396243494975 and 24,700.013061881455 kg; both
+reproduce exactly). The pad's Result is adapted into the envelope's load cases
+(`structure_pad_cases`, 10,557 and 9,412 cases) and prepared once (`pad_load_set`). The push
+is the variant silo_cold's (constant_accel 3 g0 net, a 100 m vertical stroke, cold: stage 1
+lit 0.5 s after release), the analytic case (`constant_accel_push_load`) of the full-load
+vehicle at P_ref offloaded on stage 1 by SP1's recorded x* (41,262.90803733282 kg; the
+fork's bridge 36,006.44430169878 kg), or by another offload when a sizing case names one
+(`structure_sizing`, one push per offload, kept). A sizing is `size`: a fresh geometry and
+envelope for every coefficient assignment. The objective is dm = dm1 + dm2 [kg].
+`SearchEvaluator` sizes each distinct assignment (every coefficient's value, the central
+where none is given) under each `SizingCase` once; the number of distinct sizings is the
+evaluation count.
+
+**Search A, the physics band** (`band_search` at the design axes' central and the headline).
+Varied: the physics group, the 18 stage-1 continuous coefficients and the 4 discrete ones;
+the stage-2-only five only when the base sizing exceeds the upper stack (they act only then;
+at the headline n_peak is about 4.39 g0, below MECO's 5.195 g0). (1) The tornado: each at
+its range's two ends or each alternative, the rest at the base. (2) A 5-point scan of each
+continuous one (`scan_values`: equally spaced from low to high, the ends exact), classified
+by `classify_scan`: flat when every dm lies within `MONOTONE_TOL_KG` (1e-6 kg, about the
+mass of the monocoque solve's 1e-12 m tolerance over the walls) of every other, monotone
+when every step is >= -1e-6 kg or every step <= 1e-6 kg, else non-monotone. (3) Per
+direction (low-mass, high-mass): a monotone coefficient at the range end that moves dm that
+way, a flat one at its base value, the skirt envelope path and the dome alloy at their most
+extreme tornado choice (monotone by construction); the four stage-1 pressure coefficients,
+and every other non-monotone coefficient (in its stage's grid), on three points (both ends
+and the interior scan point most extreme in the direction), crossed with the four (s_dg,
+gerard_row) combinations; a stage-2 grid, when varied, enumerated after stage 1's with stage
+1 at its best (the groups are separable by stage, source note 9.2). Were the extra
+non-monotone coefficients to take step 3's sizings over the directions beyond `STEP3_BUDGET`
+(2,000), each would be set afterwards by a coordinate sweep (to its most extreme scan point
+given the rest, two passes). A tie keeps the earlier candidate (the central combination
+first). Then the polish (`_polish`, D-SP7-38, added to the note's method in S2's review):
+step 3 reads every monotone coefficient's direction at the base only and enumerates the
+pressures on three points, so a direction that reverses at the found end, or an interior
+optimum there off those points, is missed; from each found end every varied coefficient in
+turn is moved alone over its five scan points (a discrete one over its choices) to the dm
+furthest in the end's direction given the rest (by more than 1e-6 kg; a tie keeps the
+earlier), the move kept, pass after pass until one moves nothing (at most
+`POLISH_MAX_PASSES`, 4). Every move is recorded with the dm it adds. The polish can only
+move an end further out. (4) The extremality checks, recorded and never acted on: 500
+seeded samples (numpy `default_rng(SEARCH_SEED)`, `SEARCH_SEED` 20261008; per sample each
+varied continuous coefficient uniform on its range and each discrete one a uniform choice,
+in the file's order), the most extreme sample and its excess beyond each found end; and a
+one-coordinate check (`_one_coordinate_check`): from each polished end, every varied
+coefficient alone over `LOCAL_CHECK_POINTS` (9) points of its range (the scan's five among
+them) or its other choices, the most extreme trial (its coefficient and value) and its excess.
+The samples spread over the whole box, so they almost never come near an end (their zero
+excess has little power); the one-coordinate check is the sharper test, and neither proves
+an end extreme.
+
+**Search B, the stage-2-only five** (`stage2_search`). At the step row (dynamic `step`:
+DLF 2 on the plain plateau, n_peak = 0.9965 + 2 x 3.0 = 6.9965 g0, above MECO's 5.195 g0,
+so stage 2 and the interstage are sized): the tornado of the four stage-2 pressures and the
+interstage length and the pressures' scans about the central; per physics set the
+interstage length at its end in the set's direction (monotone by construction; the
+tornado's dm decides) and the four stage-2 pressures enumerated on their three grid points
+(81 sizings) with every other coefficient at the set's value from A, then the five polished
+as in A; 50 seeded samples per set over the four pressures about the polished set (seeds +
+1, + 2), the one-coordinate check over the five, and a held check
+(`CHECK_ONE_COORDINATE_HELD`) over the 22 stage-1 physics coefficients that B keeps at A's
+values (they are the headline's sets and are not re-chosen at the step row, source note
+9.3 B; the held check measures how far that leaves them from the step row's own
+one-coordinate extremes). The physics sets carry every physics coefficient: A's 22 and B's
+five (none "at whatever value the search leaves it").
+
+**Search C, the outer envelope** (`outer_search`). The margin's direction from its tornado
+at physics central (the rows 0.10 and 0.25 against 0: dm falls with margin, so the
+low-mass corner takes 0.25 and the high-mass corner 0); the design axes at their two
+corners by construction (`design_corner`): low-mass, the four factors and k_ts at their low
+ends, t_r 1.0 s, f 10 Hz, 8 pads, no cap; high-mass, the factors and k_ts at their high
+ends, f 2 Hz, t_r = max(0.1, 1/(pi f)) = 0.159 s (DLF 2, the largest t_r at which the cap
+still binds, so the largest n_peak in the box), 4 pads, the 4.0 g0 cap. Search A is re-run
+at each corner in its own direction, the polish and the one-coordinate check included (250
+samples, seeds + 3, + 4); the high corner sizes
+stage 2, so all 23 continuous coefficients are varied there, stage 1's grid then stage 2's;
+the low corner does not, and its set takes the stage-2-only five from the physics low-mass
+set (from search B, never searched or checked at the corner; its `searches` field says so;
+they have no effect there). The outer sets record every coefficient and the corner's
+`margin` and `envelope_cap_g`.
+
+**Budget and fallbacks** (source note 9.3, D-SP7-38). `note_planned_sizings` is the note's
+plan, computed from the file's coefficients (18 stage-1 active and 5 stage-2-only
+continuous, 4 discrete with one alternative each, 4 joint combinations, 4 pressures per
+stage): A 1,243, B 285, C 1,689 and D 46 sizings, 3,263 in all; 1,833 with fallback 1
+(every grid on two points) and 1,283 with both (the samples halved). `polish_planned_sizings`
+bounds the polish and the one-coordinate checks: per polished end four passes over its
+varied coefficients (5 values each, a discrete one's alternative) and the check (9 values
+each): A 2 x (4 x 94 + 166), B 2 x (4 x 25 + 45 + 166), C (4 x 94 + 166) + (4 x 119 + 211),
+2,935 in all; `planned_sizings` is their sum, 6,198. Before the search,
+`time_structure_sizing` measures the median of 20 central sizings with a fresh geometry and
+envelope at the headline and at the step row, after a warm-up; `choose_fallbacks` applies
+the fallbacks in order only while the planned sizings times the larger rate exceed 600 s,
+and raises `SearchBudgetExceeded` beyond both (fallback 3: the budget goes to the user).
+Measured on the development machine before the frozen run (2026-10-09): the gate's median
+sizing took 22.1 ms at the headline and 39.9 ms at the step row (6,198 x 39.9 ms = 247 s);
+the fork's 22.7 and 40.1 ms (249 s). So no fallback applied. At the headline every scan is
+monotone (the pressures included) but ring_h_over_b's (and, for the fork, nu is flat); at
+the low corner nu and the stage-1 LOX minimum-pressure fraction are flat; at the high corner
+the two stage-2 MEOPs are non-monotone too (and the fork's stage-2 RP-1 minimum-pressure
+fraction; enumerated anyway). ring_h_over_b is non-monotone at the headline and at both
+corners (the ring's torsion-and-shear check binds at deep sections, the section 9.2
+expectation once item 15 was adopted), which multiplies stage 1's grid by three as 9.3
+prescribes (972 sizings per A set, 1,296 at the high corner, within 2,000 per search), and
+the polish adds its trials, so the search took more sizings than the note planned: 6,789
+distinct sizings for the gate (A 2,866, B 643, C 3,280) in 218 s and 6,836 for the fork (C
+3,327) in 235 s, about 32-34 ms each; search D added 46 for the gate in 1.1 s.
+
+**What the polish and the checks found** (sizing-only numbers at the search's push, not
+findings; the phase file's S2 session log holds the sizing-only table). Every polish
+converged within two passes. The gate's physics high-mass end rose by 413.0 kg, from
+18,190.8 to 18,603.8 kg: the stage-1
+RP-1 MEOP from 3.31 to 2.62 bar (+132.0 kg, an interior optimum at the end that step 3's
+three points, read at the base, did not hold) and the LOX density from 1,306.1 to 1,141.2
+kg/m^3 (+281.0 kg). The density's direction reverses between the base and the end: at
+central its whole effect is +8 kg (the common dome and the tube), so the scan reads it as
+raising dm with density, but at the high-mass end the LOX barrel carries a 2.2 t increment
+whose length scales as 1/rho_LOX. The fork's high-mass end rose by the same two moves,
+421.0 kg (+153.2 and +267.8 kg), and its outer high-mass end by 2.2 kg (the stage-2 LOX
+minimum-pressure fraction 0.93 to 0.7975). The other ends did not move. The one-coordinate
+checks then record, beyond the gate's ends: 11.8 kg at A's low end (ring_h_over_b at 7.875,
+between scan points), 2.0 kg at B's low end (the stage-2 LOX MEOP at 2.965 bar), 1.4 and
+8.0 kg at C's ends, none at A's or B's high end; the fork's 4.9 kg (A low) and 7.7 kg (C
+high). The held checks at the step row: the gate's physics low-mass set lies 223.2 kg above
+the step row's one-coordinate low (the LOX density's dense end lowers dm there) and its
+high-mass set 67.3 kg below its high (the RP-1 MEOP at 2.965 bar); the fork's 149.1 and 43.2
+kg. In the band these deviations point both ways: the low-mass end is overstated (against
+the assist) and the high-mass end understated (for it). The samples' most extreme dm lies
+far inside every end (the gate's A: 4,465 against 3,677 kg and 14,866 against 18,604 kg; C:
+2,723 against 2,186 kg and 41,610 against 51,860 kg).
+
+The searches' objective is the unweighted dm1 + dm2, while the coupled placement (and S3's
+offload) charges a kg of stage-2 increment at w = 5.478 kg of stage-1 dry mass. Where stage 2
+is not sized (A's ends and the low corner, all at the headline) the two agree. Where it is,
+a frozen end is an extreme of the unweighted sum, not of the charged dm1 + w dm2; scored on
+the charged objective (a fixer's check of S2's second review round, the same 9-point moves,
+sizing-only), a one-coordinate move goes beyond the gate's ends by 11.1 kg (B's low end,
+against 2.0 kg recorded), 280.1 kg (the low-mass held check, against 223.2), 67.3 kg
+(the high-mass held check, unchanged) and 43.6 kg (C's high end, against 8.0; the stage-2
+RP-1 MEOP at 1.585 bar); the fork's 181.0 (against 149.1), 43.2 (unchanged) and 42.0 kg
+(against 7.7). So on the charged objective the high corner's end is understated by up to
+about 36 kg more than recorded (for the assist) and the step row's low end overstated by
+about 57 kg more (against it); the recorded excesses are those of the unweighted search.
+
+**Search D, the break-even values** (`break_even_search`; the gate only, the fork having no
+penalty curve). For each design axis, the other coefficients central, the axis value at
+which the coupled-placement estimate of x* falls to 50% and to 0% of SP1's uncharged
+headline. The coupled fixed point is unique (its map rises with x by about 1/20 kg per kg),
+so x* = x_t exactly when the push at x_t gives dm = X^-1(x_t): 4,440.4 kg at 50% (x_t =
+20,631.45 kg) and 8,488.6 kg at 0% (on the extrapolated last segment, an assist-favouring
+estimate: see the coupled placement). The four factors and k_ts (through the
+thrust-structure entry, its own row) are linear in dm: two sizings at the range's ends give
+the root in closed form, reported also outside the range (`outside_range`) while it is
+physical; a root below the axis's physical floor (`LINEAR_AXIS_FLOORS`: `NOF_MIN` = 1 for
+the factors, 0 for k_ts) is reached by no admissible value and is reported as not reached
+(its value None, below or above the level by the range's side, as for the bracketed axes);
+the rise time and the frequency by brentq on their ranges (to 1e-6 of
+the width) when the target lies between the ends' dm, else not reached
+(`above_level_throughout`: x* stays above the level over the whole range;
+`below_level_throughout`: below it); the pad count from 3 (S1's minimum, below the axis's
+4), 4, 6 and 8 and the whole count between the bracketing pair, reported as two adjacent
+whole counts, or not reached in 3-8. The margin and cap rows are reported as placements.
+
+**The coupled placement** (`coupled_placement` on a `PenaltyCurve`; survey 08 section 8;
+design 4.10). SP1's penalty rows (`SP1_PENALTY_CURVE`: added stage-1 dry mass 0, 2, 4 and
+8.1 t to x* 41,262.908, 32,285.203, 22,875.961 and 1,980.477 kg, from
+results/silo_offload_2d/20261003T112934Z/metrics.json, written in constants.py) are
+interpolated linearly and extrapolated beyond 8.1 t along the last segment (marked); an
+offload <= 0 is no offload. The recorded curve is concave (its segment slopes steepen,
+-4.489, -4.705 and -5.096 kg/kg, against 4.381 kg/kg locally at the headline), so a chord
+between its points places x low (against the assist) and the extended last chord beyond
+8.1 t places it high (for the assist): the 50% break-even target (4,440.4 kg, interpolated)
+is biased against the assist, the 0% one (8,488.6 kg, extrapolated) for it, the true zero
+crossing lying below 8,488.6 kg if the curve keeps steepening, so the 0% break-even values
+are optimistic for the assist wherever they are reported. From the uncharged offload, x_{k+1} = max(0, X(s (dm1(x_k) + w
+dm2(x_k)))) until two iterates agree to 1 g (at most 100 iterations), dm re-evaluated at the
+offload it gives (the push lightens as x grows). w = 24/4.381 = 5.478
+(`STAGE2_DM_WEIGHT`): a kg of stage-2 increment in kg of stage-1 dry mass of equal offload
+cost (design 4.2.4's "about 24 kg of offload per kg" over survey 03's 4.381 kg per kg of
+stage-1 dry mass measured at the headline; an estimate, used only where stage 2 is sized);
+s the plausibility rule's factor on a widened band end (1 otherwise). The naive placement
+(the headline's dm read straight off the curve) favours the assist and is printed only
+beside it.
+
+**What the file records** (`structure_sets_record`; the `sets` block, frozen at S2's commit,
+D-SP7-31). The label `SEARCH_LABEL`, "the extremes found by the screened search over the
+stated ranges" (never the bounds; config refuses any other); a source naming the search and
+its slow test (it covers every number of the block for the provenance test); the method; the
+evaluation count (the distinct sizings of A to C); the fallbacks used (none); the seed; the
+parent commit (4494fe1); the reproducing test,
+`tests/test_structure_search.py::test_frozen_sets_reproduce[<file stem>]`; a note with the
+measured timing, the implied stack lengths and the checks' power (not compared); and per set
+its values by path (config refuses a physics set that does not hold exactly the 27 physics
+coefficients, or an outer set without all 35 and both case fields), the searches behind it,
+each search's polish (passes, whether it converged, the end's dm before and after and every
+move with the dm it adds [kg]), its extremality checks (search; the check: samples,
+one-coordinate or B's held check; the trials; the found end's dm, the most extreme trial's
+dm and its excess [kg]; for a one-coordinate check the coefficient and value of that trial;
+sizing-only dm at the search's push) and its implied stack length (`implied_stack_length_m`,
+source note section 2.4's arithmetic on the set's geometry with the 13.2 m fairing, a lower
+bound since the omitted lengths only add; the 70 m budget is not imposed, so the high-mass
+sets describe stacks of at least 83.22 m for the gate, physics and outer alike, and 80.20 m
+for the fork, against the opened 70 m, which inflates the high-mass end; the low-mass sets
+63.18 and 60.33 m). The slow test compares the values exactly and the other numbers to
+1e-9. The fork's sets come from the same search on its own pad and its own headline push
+(its physics low-mass set differs from the gate's in nu and the stage-2 LOX
+minimum-pressure fraction, its outer sets in the latter; its physics high-mass set equals
+the gate's). D's break-even values and the sizing-only table are not frozen: they go to the
+session log and the pre-registration (S6a).
 
 ## Assumptions
 
@@ -7014,7 +7539,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_offload_pipeline.py::test_sweep_index_records_each_point_solves_gamma_star_and_flags`, `::test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms`, `::test_calibration_caveat_of_the_readme_loads_fork`, `::test_stage2_caveat_does_not_assume_a_stage1_offload_maximises_total_tonnes` | SP1 step 8a: OFFLOAD_SWEEP_COLUMNS is step 7's twelve (written out in the test, in order) followed by `solve_gamma_star_rad` and `n_flags`; a point's solved case records its solve's gamma*_ref (23.4 deg), not the point's payload-search gamma* (22.0 deg), and its two flags; a fixed case none and 0, a reference_failed point none and none, a search_failed solve NaN and 0; read back from the CSV, gamma*_ref within half a unit of its 12th significant digit; the Checks section lists each point's flags ("; "-joined, `none`, the no-list note, a search_failed solve's "none (solve search_failed: bracket)" and a failed fixed case's payload-search status) after the decomposition lines, and nothing new without offload cases; the payload Sensitivity note of a block with an empty `of` (the full texts written out: with the offload arms, with `--no-offload`, without arms, and with arms none of which ran because their case's variant did not, whose offload record has no arms and whose offload section no arms table) and the notes kept without a block, for a block naming runs and with `--no-sensitivity`, carried by `planar_experiment_result` and printed by the table; the README-loads fork's offload caveat 100 (24,700/22,800 - 1) = +8.3% high with its masses; the stage-2 caveat written out, never "cannot beat the headline" (pre-registration Amendment 1, item 4) ("Reporting definitions (planar)", "Propellant saved at fixed payload", "Calibration notes (build step 26)") | exact; 5e-12 relative (CSV) |
 | `test_config_planar.py::test_offload_reports_name_the_arms_and_the_bridge_calibration` | on the pre-registered files (nothing run): silo_offload_2d's empty `of` with offload arms gives the note that points to "Propellant saved at fixed payload", never "no sensitivity block declared"; the bridge's fork has a record with 100 (P*/reference - 1) within 10%, and its offload caveat states P* instead of "no calibration record"; the bridge, with no sensitivity block, keeps that note (SP1 step 8a) | exact |
 | `test_animate.py::test_calibration_record_matches_its_findings_note`, `::test_calibration_footnote_says_inside_the_band_when_it_is`, `::test_calibration_band_includes_both_edges`, `test_replay.py::test_calibration_caveat_says_within_the_band_for_the_readme_loads_fork` | every calibration record (the gate and, since SP1 step 8a, the README-loads fork): its vehicle is the case of tests/data/calibration_record.json whose vehicle file carries that name, its P* that case's recorded P* to 0.1 kg, and the findings note's results row of the case prints P* to 0.1 kg, 100 (P*/22,800 - 1) % to two decimals and inside or outside the 10% band; the gate's one-paragraph result; the footnote keeps the gate's sentence word for word, says "+8.3% high ... inside the +/-10% band" for the README-loads fork (not "Gate vehicle"), and each record's line ends left of the frame's right edge at 1280 px; both edges of the band, 22,800 +/- 2,280 kg, read inside (P*/22,800 - 1 rounds above 0.1 at the upper one) and 0.1 kg beyond either reads outside; the replay page says the fork lies within the gate band, never a miss, and keeps the gate's sentence word for word ("Calibration notes (build step 26)") | exact (0.1 kg; 0.01 percentage points) |
-| `test_structure.py::test_structure_imports_no_io_module` | structure.py imports only the standard library (math, operator, bisect, collections, dataclasses, typing), numpy, scipy.optimize, constants and units; no open, print or file read | exact (source scan) |
+| `test_structure.py::test_structure_imports_no_io_module` | structure.py imports only the standard library (math, operator, bisect, collections, dataclasses, typing, itertools), numpy, scipy.optimize, constants and units; no open, print or file read | exact (source scan) |
 | `test_structure.py::test_hydrostatic_pressure_against_hand_values` | p = p_u + rho n g0 max(h, 0): 20 m of LOX at 3.996 g0 under 3 bar; the ullage pressure above the surface; a negative n lowering p below 0 (column separation) ("Structural sizing of the push load", Hydrostatic pressure) | 1e-12 relative |
 | `test_structure.py::test_hoop_thickness_against_hand_values`, `::test_hoop_of_the_head_is_monotone_in_n_and_in_depth` | t = FS p r/(F_tu eta) (1 MPa, r 1.83 m, FS 1.4, 558 MPa, eta 0.7: 6.5591 mm, a rounded cross-check), 0 for p <= 0, the tube's wall by the same form, a relieving outside pressure subtracted once, unfactored ((FS p - p_relief) r/(F_tu eta), 0 when it exceeds FS p); refusals; the hoop thickness of the hydrostatic pressure non-decreasing in n and in depth on a 29 x 41 grid, strictly increasing for n, h > 0 (Hoop) | 1e-12 relative; exact (monotone) |
 | `test_structure.py::test_sp8007_knockdown_against_the_closed_form` | gamma = 1 - 0.901 (1 - exp(-sqrt(r/t)/16)) written out: 0.3217 at r/t = 500 (surveys 06 and 08) and survey 06's 0.471, 0.404, 0.357, 0.224 at 200, 300, 400, 1000 (rounded cross-checks); the limits 1 and 0.099; decreasing; refusals (Monocoque buckling) | 1e-12 relative |
@@ -7033,5 +7558,43 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_structure.py::test_ramped_plateau_acceleration` | a' = [L - sqrt(L^2 - v_e^2 t_r^2/12)]/(t_r^2/12) written out at L 100 m, v_e 76.70717046013364 m/s, t_r 1.061 s (29.84 m/s^2, a rounded cross-check; not review SP-8's 29.77, which corresponds to t_r of about 0.97 s); the ramp's kinematics (v_r = a' t_r/2, s_r = a' t_r^2/6, then constant a') reach v_e at exactly L; v_e^2/(2 L) = 3 g0 at t_r = 0 and the limit t_r -> 0; refusals of L^2 < v_e^2 t_r^2/12 and of v_e t_r > 3 L (Ramped plateau) | 1e-12 relative; exact at t_r = 0; 1e-9 relative (limit) |
 | `test_structure.py::test_barrel_increment_counts_positive_parts_only`, `::test_area_increment_counts_the_positive_part_only` | NOF sum 2 pi r rho dz max(0, t_push - t_env) and NOF A rho max(0, t_push - t_env) written out; exactly 0 inside (and at) the envelope; lists and arrays the same; mismatched shapes, negative lengths or thicknesses, NOF < 1 and non-finite values refused (Increments) | 1e-12 relative; exact (0) |
 | `test_structure.py::test_primitive_timing` | one call of each primitive group timed over a loop, recorded in the test's user_properties (Cost) | below 1 ms (closed forms) and 10 ms (monocoque solve, 100-station increment) per evaluation |
+| `test_structure_model.py::test_reduced_envelope_equals_the_full_sample` | `build_envelope` (single-driver modes at their driver's exact maximum, the combined mode by the exact block bound) equals `envelope_reference` (S1's scalar primitives on every case at every station) at every station of every element of both stages, on seven coefficient sets (central, all low, all high, a combined-governed set, three seeded random), at margin 0 and 0.1 with a 4.5 g0 cap; the combined mode does govern some stations ("The station model", The envelope and its candidate reduction) | 1e-12 relative |
+| `test_structure_model.py::test_envelope_margin_scales_loads_not_thickness` | margin multiplies the skirt's load and the upper stack's n U by 1 + margin and a membrane forward dome's thickness likewise; the pad's own n U unchanged; a 4.0 g0 cap gives cap x U; margin < 0 and a cap <= 1 refused (The envelope) | 1e-12 relative |
+| `test_structure_model.py::test_pad_own_cases_give_zero_increment` | the synthetic pad's HOLD, liftoff, mid-burn and MECO cases sized as quasi-static pushes resting at themselves: 0.0 kg exactly through the thrust structure; through the aft ring every element but the ring 0.0 and the ring its own sized mass x nof_barrel x nof_entry_ratio (no envelope credit; 0 without an interface force); stage 2's tanks 0.0 (The push and the increment) | exact (0.0 kg) |
+| `test_structure_model.py::test_doubling_the_stations_moves_dm_by_less_than_0p1_kg` | 200 to 400 stations per barrel and skirt at the headline push (rise_time), the step row (stage 2 sized; the RP-1 factor switch's cell split) and the plate-limited row (Stations and frame; The push and the increment) | < 0.1 kg |
+| `test_structure_model.py::test_station_products_of_survey_05` | on a six-row hand-built Result: U = stage 2 wet + fairing + payload, the stage-1 propellant m - dry1 - U split at the mixture fraction, the products n U, n (U + LOX), n (U + LOX + RP-1), n LOX, n RP-1 written out and equal to the model's drivers; the hold-down support m n g0 - T; the stage-2 row's propellant with the fairing gone (Load cases) | 1e-12 relative |
+| `test_structure_model.py::test_adapter_refuses_a_mismatched_vehicle_or_a_push` | the adapter refuses a vehicle whose stack is not the Result's first mass, a Result with ASSIST rows and a 1-D Result (Load cases) | exact |
+| `test_structure_model.py::test_constant_accel_push_load_cold_and_hot` | cold: n = (a + g_eff)/g0, F_int = m_v (a + g_eff), the contents at push start, n_rest g_eff/g0, F_rest m_v g_eff, the release to 0; hot (lit 2 s before, the 2 s ramp): F_int = m_v(0) (a + g_eff) - T(0), the burn up to the push start, F_rest m_v(0) g_eff - T(0), the release to T/(m_v g0), written out (Load cases) | 1e-12 relative |
+| `test_structure_model.py::test_push_requirement_against_the_closed_forms` | n_peak = n_rest + DLF (n_q - n_rest) and F_peak likewise with a' = [L - sqrt(L^2 - v_e^2 t_r^2/12)]/(t_r^2/12) at t_r 0.5 s and DLF 1 + T/(pi t_r) at 5 Hz (1.1273), the ramp cost (a' - a)/a; the cold release's peak n_rest + DLF (n_q - n_rest) and its swing to minus it (D-SP7-39), the plateau's swing -n_q beside; quasi_static the plain plateau (both swings equal); step 0.9965 + 2 x 3.0 = 6.9965 g0 and its release swing -6.9965 g0 (The push and the increment; Flags) | 1e-11 relative |
+| `test_structure_model.py::test_dm_is_non_decreasing_in_n_and_in_the_propellant` | dm over 11 net accelerations 1-6 g0 and 9 offloads 80-0 t never falls (The push and the increment) | exact (monotone) |
+| `test_structure_model.py::test_flags_against_hand_thresholds` | the upper stack exceeded exactly above MECO's n U (stage 2 then sized), not 1e-6 below; the payload limit not fired at 1.9 g0 and fired at 2.1 g0 (swing below -2.0) and n above 6.0; with the head to the dome's crown, the LOX and RP-1 bottoms' gauge p_min - g0 n (m + rho A b)/A, the LOX absolute value at the sea-level release, MECO's gauge value at -n_MECO, the same three for both stage-2 tanks, the common dome's reverse pressure p_MEOP,RP1 - max(LOX side, -p_atm) and MECO's (floor 0) written out; that reverse pressure positive at zero swing and on MECO (so judged against MECO's); at a 5 g0 swing the floor binds, exactly p_MEOP,RP1 + p_atm; MECO's swing -n_MECO; the release flag's rule (Flags; D-SP7-39) | 1e-12 / 1e-9 relative; exact |
+| `test_structure_model.py::test_release_swings_from_the_release_peak` | at the step row a cold push at a 1.5 g0 plateau swings from its release peak 2 x 1.5 - n_rest to -2.0035 g0 (the plateau's -1.5 beside), so the payload-limit flag fires on the peak swing though the plateau's would not; the release flag carries the same swing and peak (Flags; D-SP7-39) | 1e-12 relative |
+| `test_structure_model.py::test_interstage_rule_against_section_5_5` | Castellini's relation 0.7 x 13.740 x pi D L x D^0.4856 = 934 kg (207.7 kg/m) at 4.5 m; 934 x (1.347^0.6 - 1) = 183 kg at 7.0 against 5.195 g0; exponent 1 gives 1.77 times; 0 inside (The push and the increment) | 1e-12 relative; the note's rounded values |
+| `test_structure_model.py::test_thrust_structure_row` | k_ts max(0, F - T_env) = 0.2805 kg/kN x (20,815 - 8,226.9) kN = 3,531 kg; 0 below T_max (The push and the increment) | 1e-12 relative |
+| `test_structure_model.py::test_ring_section_starts_from_s1s_bending_ring` | on 60 random rings `ring_frame_section`'s bending width gives 2 pi r rho k b_bend^2 = `ring_frame_mass_kg` and its mass_bending_kg is S1's; unbound rings keep S1's mass and width, bound ones are wider with 2 pi r rho k b^2 (The ring frame's check; Ring frame at the stage base) | 1e-15 relative; exact |
+| `test_structure_model.py::test_ring_torsion_check_against_the_note_table` | the neutral axis's torsion-plus-shear ratio at S1's section and the sized section's mass factor against the source note's section 11 table (3 to 16 pads, h/b 1, 6.5, 12), the h/b where the ratio reaches 1 (3.7 to 11.1), the boundary von Mises equal to the shear ratio where it binds, S1's ring where it does not; Saint-Venant's alpha and beta of a square (0.208, 0.141), of h = 2b (0.246, 0.229) and 1/3 for a thin strip (The ring frame's check) | 0.006 (the note's two decimals, two entries on a rounding boundary); one decimal; 1e-9 |
+| `test_structure_model.py::test_vectorized_modes_equal_the_s1_primitives` | the envelope's array forms of hoop (with a relief), Gerard and the combined mode against S1's scalar primitives on 2,000 random points, the combined of net compression only (Modes at a station) | 1e-15 relative |
+| `test_structure_model.py::test_geometry_against_the_source_note` | barrels 14.811, 22.548, 3.874, 5.900 m; dome depth 1.3725 m and area 17.637 m^2; physical-length ratios 0.919 and 1.033; the implied stack 67.7 m; the mass heights f (1 + u) m_full, the station heights and the structure above them from the breakdown written out (Stations and frame) | the note's digits; 1e-12 relative |
+| `test_structure_model.py::test_plausibility_rule_and_its_widening` | R = 68.404 V^0.75 on the combined volume (6,038 kg; per tank 7,152 kg), Akin 4,903 kg, the interstage relation 934 kg, stage 1 less engines 17,970 kg; M_model the elements' sum and the LOX barrel's mass by its envelope modes' factors on the physical length, written out; the rule's factors on hand cases (M = R: none; 0.5 R: 1.4 on the high-mass end; 1.5 R: 0.867 on the low-mass end; the band's edge: none) and the widening (Plausibility) | 1e-4 / 1e-12 relative; exact |
+| `test_structure_model.py::test_one_full_sizing_timed` | one `size` with a fresh geometry and envelope on a synthetic pad of 10,551 cases, the headline and the step row, recorded in user_properties (measured 14-61 ms after a 0.10 s preparation; the search needs about 0.18 s) (The push and the increment) | below 1 s (a gross-slow-down guard) |
+| `test_structure_files.py::test_structure_files_validate_through_the_loader` (2 files), `::test_load_structure_refuses_bad_files` | `cli.load_structure` reads and validates both files (two stages, 200 stations, r 1.83 m, applies_to the file's vehicle, the four frozen sets converting; a copy without its sets block refuses a set asked for); a missing file, a number without provenance, a range out of order, an unknown key and a bare number are one CliError each (The structure file) | exact |
+| `test_structure_files.py::test_every_number_has_provenance` (2 files) | every number in the YAML sits in a mapping with source or assumed: true; `source` alone exactly on nu, rho_wall, k_stiff, nof_dome and s_dg, `assumed: true` on every other ranged or discrete coefficient (source note section 12) (The structure file) | exact |
+| `test_structure_files.py::test_shared_coefficient_sections_are_identical`, `::test_breakdowns_close_the_vehicle_dry_masses` (2 files) | the fork's coefficient sections and layout equal the gate's; only name, description, applies_to, mixture (same fractions), breakdown and its own frozen sets differ; each breakdown sums to its vehicle's dry mass, the thrust structure placed at 0.2805 kg/kN x 8,226.9 and 981 kN (The structure file) | exact |
+| `test_structure_files.py::test_delta_gamma_table_is_the_notes`, `::test_delta_gamma_table_against_its_source_points` | the file's table and source points equal the note's sections 6.3 and 6.2 written out; at every source point the interpolated table is at or below the curve, at most 1.1% below it below x = 2.4 and 1.8% above, the largest gap 1.70% at x = 4.31; ascending, non-decreasing, the chord rule, constant beyond 10 (Monocoque buckling; The structure file) | exact; the note's percentages |
+| `test_structure_files.py::test_gerard_rows_named_in_the_file_exist_with_the_notes_pairs` | the rows the file names (band and sizing-only) are `GERARD_CHOICES`, and `GERARD_ROWS`' pairs are the note's section 3.3 table (The structure file) | exact |
+| `test_structure_files.py::test_layout_facts_the_model_hard_codes_are_checked` | each stage's construction is `MODELLED_CONSTRUCTION` for its role and the interstage's charged_to is stage 1 (D-SP7-36), and a changed, missing, extra or misspelt construction entry and charged_to: stage2 are refused, since the model hard-codes them; the materials block's alloy is a provenance-carrying choice (assumed: true with its note), a bare string refused (The structure file) | exact |
+| `test_structure_files.py::test_coefficients_convert_through_units`, `::test_coefficient_overrides_are_checked` | the central set in SI (75.84 GPa, 558.5 MPa, 2.62 bar and 0.84 of it, 1.65 mm, 0.2805 kg/kN, the 2219-T851 domes; the 2195 alternative with the block's values); the coefficient count of section 9.1 (23 + 4 physics, 7 + 1 design) and the stage-2-only five; overrides refused off their range, choice, integer or a fixed number unless a sizing-only line, and check_ranges=False lifting the range check only (The structure file) | exact (1e-15 relative) |
+| `test_structure_search.py::test_coefficient_range_refuses_bad_ranges_and_choices`, `::test_search_paths_are_the_structure_files_coefficients` | `CoefficientRange` refuses an unknown kind or group, a central outside its range, a malformed choice; every path the search names is in the file's `coefficient_ranges` with the kind and group it is used as, the stage-2-only five are the stage-2 pressures and the interstage length, the set names are config's, the label is exactly "the extremes found by the screened search over the stated ranges" ("The screened search and the frozen sets", What the file records) | exact |
+| `test_structure_search.py::test_classify_scan_end_and_grid_values`, `::test_evaluator_memoizes_and_counts` | `classify_scan`: flat within 1e-6 kg, monotone with ties either way, non-monotone otherwise; `scan_values` hits both ends exactly; `Scan.end` and `Scan.grid_values` by direction (three points: both ends and the most extreme interior point; two: the two most extreme); the evaluator sizes each distinct assignment and case once (a value at its central is the assignment with none given) and refuses an unknown path (Search A) | exact |
+| `test_structure_search.py::test_band_search_finds_the_separable_extremes`, `::test_band_search_extremality_excess_against_a_replay`, `::test_band_search_coordinate_sweep_beyond_the_budget` | search A on separable synthetic sizings over the file's 35 coefficients: every set value is its own term's extreme (a monotone coefficient at its end, the pressures and the non-monotone ring_h_over_b at their best grid point, each discrete one at its extreme choice) and dm their sum; the polish moves nothing (one confirming pass); the one-coordinate check (148 trials) sees the ring's interior minimum between scan points at the low end (excess w (0.1^2 - 0.025^2) at 7.875) and nothing beyond the high end; the stage-2-only five not varied; 4 x 3^5 grid sizings per direction; the recorded sample excess equals the found end less an independent replay of the seeded samples (positive when the minimum lies between scan points, 0 at a grid end); beyond 2,000 step-3 sizings the extra non-monotone coefficients are set by the coordinate sweep, each at its best scan point (Search A; D-SP7-38) | exact; 1e-9 relative |
+| `test_structure_search.py::test_polish_rereads_a_direction_at_the_found_end` | a synthetic interaction -50 f_rho (1 - f_eta) on top of separable terms: rho_lox scans increasing at the base, step 3 puts the high-mass end at its dense end, and the polish moves it to its light end in its first pass (+40 kg, recorded with the dm it adds; a second pass confirms), after which the one-coordinate check finds no excess; the low-mass end needs no move (Search A; D-SP7-38, review P1's reversal) | 1e-9 relative |
+| `test_structure_search.py::test_stage2_and_outer_searches`, `::test_screened_search_sets_label_seeds_and_fallbacks` | search B: the interstage length at its end, the four stage-2 pressures at their best grid points with A's values, polished, its checks the samples, the one-coordinate check over the five (40 trials) and the held check over the stage-1 ones (148), refused at a case that does not size stage 2; search C: the margin row that lowers (raises) dm, the corners by construction (t_r = 1/(pi 2 Hz), 4 and 8 pads, 10 Hz and 1.0 s, the 4.0 g0 cap), the stage-2-only five from the physics set at the corner that does not size stage 2, every coefficient and both case fields recorded; `screened_search`: the four sets in the file's order under the label, the physics sets with every physics coefficient, A's and B's polish and their five checks in order (C's polish and two checks for the outer sets), the same seed the same sets, fallbacks 1 and 2 giving two-point grids and halved samples, an unknown fallback refused (Searches B and C) | exact; 1e-15 relative |
+| `test_structure_search.py::test_planned_sizings_and_the_fallback_choice` | the source note's plan computed from the file's coefficients, 1,243 + 285 + 1,689 + 46 = 3,263 sizings, 1,833 with fallback 1 and 1,283 with both; the polish's bound 2,935 (D-SP7-38); the fallbacks taken in order only while the whole estimate times the rate exceeds 600 s; `SearchBudgetExceeded` beyond both (Budget and fallbacks) | exact |
+| `test_structure_search.py::test_sp1_record_pins_the_placement_inputs` | tests/data/silo_offload_2d_record.json (D-SP7-30): constants.py's penalty rows equal its gate rows (the headline first, the curve's uncharged offload), structure_support's P_ref, the fork's P_ref and bridge are its values; the gate's P_ref is the screening record's pad P* under the same budget id; RQ1 names both run directories with git b3150c1754ee, clean, and quotes 41,262.908 kg and 32.29, 22.88 and 1.98 t (What is sized; The coupled placement) | exact |
+| `test_structure_search.py::test_penalty_curve_against_sp1_rows`, `::test_coupled_placement_fixed_point` | `SP1_PENALTY_CURVE` is constants.py's recorded rows, exact at its points, linear between, extrapolated beyond 8.1 t along the last segment (zero at 8,100 + 1,980.477/5.0965 kg), inverted by `dm_at`; an offload above the uncharged one and curves out of order refused; w = 24/4.381; the coupled fixed point of a linear dm(x) equals its closed form on the 4-8.1 t segment, a dm beyond the curve's zero gives no offload, the stage-2 weight and the plausibility scale enter the placed dm (The coupled placement) | 2e-3 kg (the iteration's 1 g tolerance); 1e-14 relative |
+| `test_structure_search.py::test_break_even_closed_form_bracketed_and_integer`, `::test_break_even_linear_root_below_the_physical_floor`, `::test_break_even_integer_bracket_on_a_shifted_sizing` | search D on synthetic sizings: each linear axis's root equals the closed form at the target offload (k_ts through the thrust-structure entry; outside the range reported as such while at or above its floor), a root below the floor (a factor below 1, k_ts below 0) not reached with value None, below the level for a rising axis and above it for a falling one, k_ts's root 0.1 (between the floor and the range) outside_range with its value; the rise time's brentq root, the pad count's adjacent pair (5, 6) from 3, 4, 6, 8 and the one count between (5 sizings), the not-reached statuses, the 0% target on the extrapolated segment (Search D) | 1e-12 / 1e-9 relative; 1e-5 s |
+| `test_structure_search.py::test_structure_sizing_on_the_synthetic_pad` | `sim.structure_sizing` equals `size` on the analytic push of the synthetic pad's vehicle at the headline offload, at x = 0 and at 20 t; a pad count of 3 only with check_ranges False, its ring heavier; `sim.time_structure_sizing` (the call behind the files' recorded timing) returns two positive medians, the step row's (stage 2 sized) the slower (What is sized; Budget and fallbacks) | exact |
+| `test_structure_search.py::test_sets_record_validates_as_the_files_sets_block`, `::test_structure_files_carry_the_frozen_sets` (2 files) | `sim.structure_sets_record` validates as the file's `sets` block, its implied stack lengths recomputed from each set's geometry; config refuses a wrong label, an unknown fallback, a physics set with a design axis or missing a physics coefficient, an outer set without a case field, a negative margin, a cap at 1 g0, an unknown check, a negative excess, a check with trials but no extreme and a set without its polish; both files carry the four sets under the label, parent 4494fe1, no fallback, the seed, the slow test's name, the method naming the headline offload and P_ref, every set converting, every excess >= 0, each search's polish converged with its moves summing to its dm change and its checks against the polished dm, the high corner's 4.0 g0 cap (What the file records) | exact; 1e-6 kg |
+| `test_structure_search.py::test_frozen_sets_reproduce` (slow, 2 files) | each committed experiment's pad baseline flown afresh (P* = SP1's P_ref within 0.002 kg), searches A to C re-run at its headline push with the file's fallbacks, and the file's `sets` block (every value exactly; the searches, the polish records, the extremality checks, the implied stack lengths, the evaluation count, the method, the label and the seed, their floats to 1e-9) equal to the recomputed one; under 10 minutes each, the wall time in user_properties (measured 251 s for the gate and 255 s for the fork, the pad flights 32 s of them, run one after the other) ("The screened search and the frozen sets") | exact (values); 1e-9 relative; < 600 s |
 | `test_golden_dump_fields.py::test_dataclasses_dumped_field_by_field_keep_their_fields`, `::test_dataclasses_reached_by_attribute_keep_their_fields`, `::test_pinned_budget_fields_are_the_recorded_golden_keys` | D-SP7-27: the field lists of every dataclass the 1-D golden dump reaches (LossBudget and AssistEnergyBudget, converted field by field, and frozen; Result, RunResult, ResolvedRun, SweepPoint, SensitivityRow, ExperimentResult, SweepResult, read by attribute) pinned in order; the two budgets' lists equal the keys of every non-null budget in the golden objects.json files | exact |
 | `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |
