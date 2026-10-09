@@ -1205,8 +1205,8 @@ option fairly with its cost)
   by at most 0.04 kg; the fast envelope equals a brute force to 1.5e-15; the files' values equal
   the note's; the slow reproduction 245 s per file; the central dm recomputed: 5,868.2 kg). Fast
   suite 1781 passed, 44 deselected; ruff clean; the exact golden tier, the digest pin, the output
-  capture and the golden-dump field lists pass. D-SP7-40 (the plausibility rule's firing) goes to
-  the user before S6a. Next: S3.
+  capture and the golden-dump field lists pass. D-SP7-40 (the plausibility rule's firing) was put
+  to the user, who kept the rule as approved, both ends printed (D-SP7-41). Next: S3.
 
 ## 12. Deviations from the plan
 
