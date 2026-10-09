@@ -839,7 +839,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | 0 | Plan mode: checklist, nine surveys, the questions, draft v1 and its six reviews, version 2 | docs/phases/inputs/ | the user approves (2026-10-08) | [x] | the start commit ("Start SP7: status in progress") |
 | S0 | Sources: every coefficient's range with its source or reason; both stages' layouts; the breakdowns; the Delta_gamma digitization; the ring's N_p, h/b and fitting factor; NOF by fidelity; t_r and f; the payload limits; the coefficient count; the linear-motor rules' method | docs/phases/inputs/2026-10-08-SP7-sources.md | every number sourced or assumed with a reason; no range narrower than its source's spread without a reason; honesty and physics review | [x] | 81e045d |
 | S1 | Sizing primitives (pure structure.py), units, named constants, test hygiene (D-SP7-34, KI-035) | structure.py, units.py, constants.py, physics.md, tests | each closed form against a hand value at 1e-12 relative; one sizing evaluation timed | [x] | a3bd183 |
-| S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [ ] | |
+| S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [x] | 45e39d4 |
 | S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [ ] | |
 | S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [ ] | |
 | S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line; honesty review | [ ] | |
@@ -1089,6 +1089,124 @@ option fairly with its cost)
   adopted (D-SP7-37), with k_ts's central taken per relation (0.2805). The search budget now
   stands at about 3,263 sizings (section 9.3), which needs about 0.18 s per sizing to fit S2's
   10 min gate; S2 times one sizing first. Commit 81e045d. Next: S2.
+- Step S2 (2026-10-09; commit 45e39d4): the station model of both
+  stages, the envelope, the flags, the plausibility rule, `StructureConfig` and the two
+  structure files, the screened search with its polish and checks (D-SP7-38) and the frozen
+  sets. Workflow: implementer; physics, compliance and honesty reviewers, two rounds; two fix
+  rounds. Decisions made in the step: D-SP7-38 to D-SP7-40 (section 12, entries 11-13).
+  - **Timing before the search** (source note 9.3; `sim.time_structure_sizing`, the median of
+    20 central sizings with a fresh geometry and envelope after a warm-up, on the development
+    machine before the frozen run): the gate's 22.1 ms at the headline and 39.9 ms at the step
+    row, the fork's 22.7 and 40.1 ms. Planned: 6,198 sizings (the note's 3,263 plus the
+    polish's bound of 2,935), so 6,198 x 39.9 ms = 247 s (the fork's 249 s) against the 600 s
+    budget: no fallback. Then: searches A to C took 6,789 distinct sizings in 218 s for the
+    gate (A 2,866, B 643, C 3,280) and 6,836 in 235 s for the fork (C 3,327); D 46 in 1.1 s;
+    the slow reproduction test 251 s and 255 s, the pad flights 32 s of each.
+  - Cross-file record: CLAUDE.md's layout line for constants.py ("Earth and physical
+    constants") is S8's to update: constants.py now also holds SP1's recorded penalty rows
+    (model results, pinned to tests/data/silo_offload_2d_record.json, D-SP7-30, by a fast
+    test).
+
+  **The sizing-only table** (S2's gate item; design 4.2.6). Every number is a sizing at the
+  push of the search (SP1's headline offload, constant_accel 3 g0, 100 m, cold, the pad as
+  flown), not a finding; every x* is a coupled-placement estimate on SP1's penalty curve
+  (survey 08 section 8; stage 2 at w = 5.478), never a solved offload, and a no-offload end
+  says so. The curve is concave, so an x* placed between its rows is biased against the
+  assist and one beyond 8.1 t (extrapolated) for it. Gate unless marked; the fork has no
+  penalty curve.
+
+  | set or row (headline unless stated) | dm1 + dm2 [kg] | x* estimate [kg] (of 41,262.9) | fork dm1 + dm2 [kg] |
+  |---|---|---|---|
+  | central | 5,868.2 + 0 | 11,298 (27.4%) | 5,583.6 + 0 |
+  | central, naive placement (dm at 41.26 t read off the curve; favours the assist) | 5,868.2 | 13,355 (32.4%) | |
+  | physics_low_mass | 3,677.1 + 0 | 23,717 (57.5%) | 3,451.5 + 0 |
+  | physics_low_mass x 0.7390 (the plausibility rule, D-SP7-40; fork x 0.7649) | 2,717.5 | 28,546 (69.2%) | 2,639.9 |
+  | physics_high_mass | 18,603.8 + 0 | 0 (no offload; extrapolated) | 17,685.6 + 0 |
+  | outer_low_mass (margin 0.25, no cap) | 2,186.2 + 0 | 31,113 (75.4%) | 2,033.6 + 0 |
+  | outer_high_mass (margin 0, cap 4.0 g0; stage 2 sized) | 50,497.9 + 1,362.1 | 0 (no offload) | 48,201.8 + 1,138.5 |
+  | physics sets at the step row (B; stage 2 sized) | 8,306.7 + 185.8; 36,128.7 + 668.2 | | 7,308.3 + 104.0; 34,020.0 + 409.5 |
+
+  Central at the headline: n_q 4.0057 g0, DLF 1.1273, n_peak 4.3889 g0, F_peak 22.858 MN, the
+  ramp's plateau cost 0.31%; the elements: the aft skirt 1,957.1 kg (ring + common Z, all 200
+  stations), the ring 1,457.1 (bending), the RP-1 barrel 2,067.9 (ring + common Z), the
+  common dome 267.6, the aft dome 116.7, the LOX barrel 0.7 (combined at 29 stations), the
+  tube 1.2; stage 2 and the interstage not sized (n_peak U below MECO's 5.195 g0 U).
+
+  Polish and checks (D-SP7-38; excess = how far a trial goes beyond the end, kg; fork in
+  brackets): the polish moved only the physics high-mass end, +413.0 kg [+421.0] (the RP-1
+  MEOP 3.31 to 2.62 bar, +132.0 [+153.2]; the LOX density 1,306.1 to 1,141.2 kg/m^3, +281.0
+  [+267.8]), and the fork's outer high-mass end +2.2 kg (stage 2's LOX p_min fraction 0.93 to
+  0.7975). One-coordinate excess: A low 11.8 [4.9] (ring_h_over_b 7.875), A high 0 [0], B low
+  2.0 [0] (stage 2's LOX MEOP 2.965 bar), B high 0 [0], C low 1.4 [0], C high 8.0 [7.7] (stage
+  2's RP-1 MEOP 1.585 bar). B's held check over the 22 stage-1 coefficients at the step row:
+  low 223.2 [149.1] (the LOX density at 1,306.1; the low end overstated, against the assist),
+  high 67.3 [43.2] (the RP-1 MEOP at 2.965 bar; the high end understated, for the assist).
+  Scored on the charged dm1 + 5.478 dm2: B low 11.1 [0], B's held low 280.1 [181.0], held
+  high 67.3 [43.2], C high 43.6 [42.0]. Samples' most extreme dm against the end: A 4,465
+  against 3,677 and 14,866 against 18,604; C 2,723 against 2,186 and 41,610 against 51,860.
+
+  Tornado (search A, the gate, the design axes central; dm at the range's ends [kg], x* each):
+
+  | coefficient | swing [kg] | dm at the ends (x* estimate) |
+  |---|---|---|
+  | gerard_row (plate_limited) | 4,851.6 | 10,719.8 (0) |
+  | aft_skirt_length_m 2.0 / 10.09 | 2,619.1 | 4,558.7 (18,795) / 7,177.8 (3,580) |
+  | eta_weld 0.7 / 1.0 | 1,828.2 | 7,696.5 (0) / 5,868.2 |
+  | ring_h_over_b 1.0 / 12.0 | 1,269.0 | 7,130.4 (4,049) / 5,861.4 (11,288) |
+  | skirt_envelope_path (flight_thrust) | 325.1 | 5,543.1 (13,082) |
+  | k_stiff 0.65 / 0.75 | 305.8 | 5,868.2 / 5,562.4 (12,945) |
+  | stage 1 LOX MEOP 1.24 / 4.0 bar | 246.3 | 5,835.0 (11,669) / 6,081.3 (9,481) |
+  | E 72.0 / 79.6 GPa | 237.4 | 5,995.0 (10,627) / 5,757.6 (11,880) |
+  | stage 1 RP-1 MEOP 1.24 / 4.0 bar | 225.5 | 5,758.6 (11,917) / 5,984.1 (10,531) |
+  | F_tu 520.0 / 558.5 MPa | 136.0 | 6,004.2 (10,130) / 5,868.2 |
+  | the other 12 | 132.1 down to 0.3 each | (tube diameter, dome alloy, RP-1 density, dome a/b, RP-1 p_min fraction, t_min, ullage, wall density, LOX density 8.0, LOX p_min fraction, s_dg 0.7, nu 0.3) |
+
+  Design-axis rows at central: margin 0.10 dm 5,555.7 (x* 13,133, 31.8%), 0.25 dm 5,105.5
+  (15,585, 37.8%); cap 4.5 g0 (x* 10,374, 25.1%), 4.0 g0 (5,039, 12.2%); quasi_static dm
+  5,261.4 (14,888, 36.1%); the step row dm 12,251.9 (no offload); the thrust-structure entry dm
+  6,558.2 (6,276, 15.2%). Sizing-only lines (outside every band): FS_u 1.25 dm 5,447.1 (13,891,
+  33.7%); k_stiff 0.85 5,399.7 (13,782, 33.4%); k_stiff 0.52 6,444.9 (7,898, 19.1%); Gerard
+  ring_common_y 5,554.8 (12,985, 31.5%), ring_improved_z 5,409.3 (13,508, 32.7%),
+  ring_improved_y 5,299.4 (14,136, 34.3%).
+
+  Plausibility (central; D-SP7-33, D-SP7-40): M_model 10,621.8 kg [9,977.1] (the LOX barrel
+  7,541.9, the RP-1 barrel 2,588.8, the domes 157.6, 175.8 and 157.6; 11,206.3 on the
+  cylinder-equivalent lengths), R 6,038.3 kg [5,870.0] (per tank 7,151.7), the band
+  4,226.8-7,849.9 kg, M/R 1.759 [1.700]: the low-mass end's factor 0.7390 [0.7649], the
+  high-mass end unchanged; beside: Akin 4,903.0, the interstage relation 934.4, k_ts T_max
+  2,307.6, stage 1 less its engines 17,970.0 kg.
+
+  Release flag at the central headline (D-SP7-39; fired): the swing -4.389 g0 (the plateau's
+  -4.006) against MECO's -5.195 g0; stage-1 LOX bottom -911.6 kPa gauge (-810.3 absolute), RP-1
+  -282.8 (-181.5), MECO's (empty tanks) +132.4 and +162.7; stage-2 LOX -161.6 (-60.3) against
+  MECO's (full) -231.7, stage-2 RP-1 +39.5 (+140.8) against +6.3; the common dome's reverse
+  pressure 363.3 kPa (the floor) against MECO's 129.6; the upper stack's swing -5.99 MN
+  against MECO's -7.10 MN. The payload-limit flag fires on the swing (below -2.0 g0).
+
+  Search D, the break-even values (estimates; the other coefficients central; 50%: x_t
+  20,631.5 kg at dm 4,440.4 kg, interpolated, biased against the assist; 0%: dm 8,488.6 kg,
+  extrapolated, biased for it):
+
+  | axis (range) | 50% of the headline | 0% (no offload) |
+  |---|---|---|
+  | nof_barrel (1.54-1.90) | not reached: below 50% at every admissible value (dm 5,923.9-6,227.3) | 4.128, outside |
+  | nof_stiffened (1.45-1.90) | not reached, below (5,724.4-6,901.6) | 2.364, outside |
+  | nof_dome (1.50-2.36) | not reached, below (6,055.7-6,243.4) | 10.69, outside |
+  | nof_entry_ratio (1.05-1.47) | not reached, below (5,134.1-6,143.0) | 2.299, outside |
+  | k_ts (0.197-0.628 kg/kN; thrust-structure entry) | 0.1178, outside (below the range) | 0.3476, in range |
+  | rise time (0.1-1.0 s) | below throughout (10,235.6-5,870.7) | 0.1438 s, in range |
+  | axial frequency (2-10 Hz) | below throughout (7,160.4-5,821.9) | above throughout (7,519.4-6,084.3) |
+  | ring pads (4-8 in the file; D adds 3) | below throughout (12,550.0 at 3, 6,143.0 at 8) | between 4 (no offload) and 5 |
+
+
+  Gate (independent, its own scripts on fresh flights of both committed pad baselines, P*
+  equal to SP1's P_ref): G1-G8 pass (the pad's own cases give 0.0 kg for every element except
+  the ring frame, which gets no envelope credit as new hardware; doubling the stations moves dm
+  by at most 0.04 kg; the fast envelope equals a brute force to 1.5e-15; the files' values equal
+  the note's; the slow reproduction 245 s per file; the central dm recomputed: 5,868.2 kg). Fast
+  suite 1781 passed, 44 deselected; ruff clean; the exact golden tier, the digest pin, the output
+  capture and the golden-dump field lists pass. D-SP7-40 (the plausibility rule's firing) goes to
+  the user before S6a. Next: S3.
 
 ## 12. Deviations from the plan
 
@@ -1147,6 +1265,34 @@ Step S0 (2026-10-09):
    its direction on dm.
 10. **The note's corrections of the design** (its section 13): adopted as D-SP7-37, with the
     interstage charged to stage 1 by the user's answer D-SP7-36 (amending D-SP7-11's wording).
+
+Step S2 (2026-10-09), from its first review round (session-made; reported to the user at S2's
+gate):
+
+11. **The search's polish and one-coordinate check** (D-SP7-38): source note 9.3's method
+    gains a polish after step 3 (each varied coefficient alone over its scan points or
+    choices, until a pass moves nothing) and a one-coordinate extremality check recorded
+    beside the seeded samples; every move and every check's numbers go into the frozen sets.
+    The note's step 3 read each monotone direction at the base only, so the first frozen
+    high-mass ends were not one-coordinate extremes (the gate's by 413 kg). The polish only
+    moves an end outward; the budget estimate adds its bound (2,935 sizings, 6,198 planned).
+    What remains, recorded: the one-coordinate excess at most 11.8 kg at the headline; B's
+    held check at the step row puts the physics low-mass set 223.2 kg above the step row's
+    one-coordinate low (the fork's 149.1; the low end overstated, against the assist) and
+    the high-mass set 67.3 kg below its high (the fork's 43.2; the high end understated, for
+    the assist); scored on the charged dm1 + 5.478 dm2 instead of the search's unweighted sum,
+    280.1 and 67.3 kg, and C's high end 43.6 kg (8.0 recorded).
+12. **The release flag** (D-SP7-39, amending design 4.2.2's "n_rel"): the release swings from
+    the release's peak, the ramp's undamped residual included, as the peak is sized; heads to
+    the dome's crown; the dome's reverse pressure judged against MECO's; MECO's pressures
+    gauge. Round 2: the dome's LOX side floored at zero absolute (a separated column); the
+    stage-2 tanks' numbers recorded beside, since the same treatment separates stage 2's LOX
+    column on the pad's own MECO, so the separation is not specific to the push and S3a's and
+    S6a's caveat wording must say so. Flags only.
+13. **The plausibility rule fires** (D-SP7-40): at central the gate's M_model is 1.759 R (the
+    fork's 1.700 R), so the band's low-mass end is cut by 26.1% (the fork's by 23.5%), driven by
+    the LOX barrel's MECO buckling envelope carrying `nof_barrel`; the rule is applied
+    unchanged and the question goes to the user before S6a.
 
 ## 13. Prompt to start this phase
 
