@@ -840,7 +840,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S0 | Sources: every coefficient's range with its source or reason; both stages' layouts; the breakdowns; the Delta_gamma digitization; the ring's N_p, h/b and fitting factor; NOF by fidelity; t_r and f; the payload limits; the coefficient count; the linear-motor rules' method | docs/phases/inputs/2026-10-08-SP7-sources.md | every number sourced or assumed with a reason; no range narrower than its source's spread without a reason; honesty and physics review | [x] | 81e045d |
 | S1 | Sizing primitives (pure structure.py), units, named constants, test hygiene (D-SP7-34, KI-035) | structure.py, units.py, constants.py, physics.md, tests | each closed form against a hand value at 1e-12 relative; one sizing evaluation timed | [x] | a3bd183 |
 | S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [x] | 45e39d4 |
-| S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [ ] | |
+| S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [x] | 889f6ea |
 | S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [ ] | |
 | S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line; honesty review | [ ] | |
 | (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | | | | |
@@ -1207,6 +1207,25 @@ option fairly with its cost)
   suite 1781 passed, 44 deselected; ruff clean; the exact golden tier, the digest pin, the output
   capture and the golden-dump field lists pass. D-SP7-40 (the plausibility rule's firing) was put
   to the user, who kept the rule as approved, both ends printed (D-SP7-41). Next: S3.
+- Step S3 (2026-10-09 to 2026-10-11; commit 889f6ea): the structural sizing coupled into the
+  offload solve (the transform in `OffloadProblem.vehicle_at`, the case field and the experiment
+  block, the loader, the verification flying the restated dm with a modelled provenance, the
+  memo keys, the run-level record keys, the pins). Workflow: implementer; numerics, compliance
+  and honesty reviewers, three passes; two fix rounds; then a minors-only third round (10
+  minors; a deviation, section 12 item 22). A weekly usage limit stopped the workflow after
+  the implementer on 2026-10-09 (the three reviewers and the gate lost; nothing orphaned); it
+  resumed from its journal on 2026-10-11 with the session model changed to Fable 5.1 (agents
+  inherit the session model; no criterion depends on the model). Measured: SP1's headline with
+  the structure off and the constant-2 t cross-check reproduce SP1's x* and verification P* to
+  0.0 kg; the inner iteration contracts by 0.005 at central (0.050 on the outer high-mass set,
+  10 sizings; cap 25, D-SP7-44); a transform call costs about 21 ms against 0.8 s per ascent
+  evaluation; dm'(x) between -0.015 and -0.128 kg/kg, inside the hard bound -1/E. Decisions
+  made in the step and reported here: D-SP7-42 to D-SP7-44; deviations 14-22. Gate
+  (independent, own scripts): G1-G8 pass; full suite 1878 passed in 22.6 min with no spurious
+  subprocess failures; after the minors round the standing gates re-run by the orchestrator:
+  fast suite 1833 passed, 47 deselected; the golden tier, the golden-dump field lists, the
+  digest pin and the output capture 126 passed; ruff clean; replay.html's sha256 unchanged.
+  Next: S3b.
 
 ## 12. Deviations from the plan
 
@@ -1293,6 +1312,80 @@ gate):
     fork's 1.700 R), so the band's low-mass end is cut by 26.1% (the fork's by 23.5%), driven by
     the LOX barrel's MECO buckling envelope carrying `nof_barrel`; the rule is applied
     unchanged and the question goes to the user before S6a.
+
+Step S3 (2026-10-11), from its first review round (session-made; to report at S3's gate):
+
+14. **The cross-check's verification criterion** (D-SP7-42, amending the step's item 6(b)):
+    SP1's own +2 t verification ended 0.00299 kg above P_ref, so "P* equals P_ref within
+    0.002 kg" is unattainable by the run the cross-check reproduces; the pin compares x* and
+    the verification's P* with SP1's recorded values within 0.002 kg (measured 0.0 kg, the
+    same bits) and holds P* to P_ref within the flag tolerance only. Criterion 3 (x*) is
+    unchanged.
+15. **The recorded structure path** (design 4.3 and 4.4 write `configs/structures/<file>`):
+    the provenance, the run-level `structure_file` and resolved_config.yaml's `structure.file`
+    quote the file by `cli.recorded_config_path`, its path relative to the repository root
+    whenever it lies under the repository (a rooted path or one found next to the experiment
+    included), as named only for a file outside it, so no machine-specific path enters a
+    record or a tracked summary (honesty finding H-S3-04).
+16. **What S3 leaves self-contradictory until S3a** (honesty finding H-S3-02): a structural
+    run written at S3's commit would carry SP1's caveat "no structural mass is charged for
+    the push load" and a 0 in the case table's "assumed stage-1 dry mass added" beside its
+    own `structure_charged: true`; no experiment under experiments/ has a structure block and
+    none is written before S3a rewords those lines (stated in physics.md's S3 section). The
+    run's own assumptions list is not on this inventory any more: round 2 (honesty finding
+    H-S3-P2-02) replaced, on a structural run only, SP1's offload sentence "every dry mass
+    (tank structure included) ... unchanged" by `sim.OFFLOAD_STRUCTURE_ASSUMPTIONS`, whose
+    dry-mass clause excepts the modelled increment (S3a still owns the final wording).
+17. **A caveat for the dry-mass arm, carried to S3a, S3b and S6a** (numerics finding N5):
+    under a `vehicle.stages.stage1.dry_mass_t` arm the geometry is built from the perturbed
+    variant, but the stations are loaded from the structure file's mass breakdown, so the
+    perturbed dry mass reaches the sizing only through the push's interface force and the
+    perturbed pad's envelope, never through the stage-1 station loads (measured on the
+    synthetic file at the headline, envelope held: +10% dry mass gives +10.4 kg of dm,
+    +0.20%); the sentence goes beside the arms wherever they are reported.
+18. **Records at this step**: a structural sensitivity arm's and sweep point's structure keys
+    exist on the in-memory case record only (a test spies on them); the arm record in
+    metrics.json and the sweep columns carry none until S3b's columns, so on disk such a run
+    is marked only by its case name (numerics N1, compliance S3-R1-03, honesty H-S3-01).
+
+Step S3 (2026-10-11), from its second review round (session-made; to report at S3's gate):
+
+19. **The overrides are recorded and named at source** (D-SP7-43, amending design 4.4's
+    record list; honesty finding H-S3-P2-01): a case's design-axis overrides changed the
+    sizing but reached disk nowhere (only the memo key saw them), so an axis row's restated
+    dry mass would have carried `source: ..., set central` for a mass the central set did not
+    produce. `structure_overrides` is now a run-level key, and the provenance (the dry mass's
+    `source`, the assumption line) appends `, overrides <path> <value>[, ...]`.
+20. **The fixed point's cap raised from 10 to 25** (D-SP7-44, amending design 4.4; numerics
+    finding N-S3-R2-01): sizing only on the synthetic pad and on the pad flown afresh, the
+    gate file's outer_high_mass set needs exactly 10 sizings at every offload (contraction
+    0.050), so the design's cap left the flag no margin; the cap flag now records the cap and
+    the measured contraction. The same set's dm'(x) = -0.128 kg/kg at x = 0 (flattening to
+    -0.121 at 60 t) lies below the fast test's
+    half-bound -1/(2 E) (which is asserted on the synthetic file only) and above -1/E; a fast
+    test now holds the four frozen sets to the hard bound (physics.md, Contraction and
+    Monotonicity, carry the per-set sizings, contractions and slopes).
+
+Step S3 (2026-10-11), from its third review round (session-made; to report at S3's gate):
+
+21. **Step item 7's before/after identity test** (honesty finding H-S3-P3-03): the item asked
+    for a fast test of the no-structure-block byte identity of a written run before and after
+    the change. The fast test implemented,
+    `tests/test_structure_pipeline.py::test_a_written_run_without_a_structure_block_has_no_structure_key`,
+    compares the current code with and without a structure loader (the same code on both
+    sides; its docstring and the physics.md test-map row say so). The before/after comparison
+    against 15b4e6e was done as a manual check by the implementer and by the gate:
+    `launchsim run experiments/silo_offload_2d_readme.yaml --no-plots` at 15b4e6e and in the S3
+    working tree gave identical metrics.json, resolved_config.yaml and every CSV, and a
+    summary.md identical apart from its three title, timestamp and git lines.
+
+22. **A third fix round, minors only** (protocol: up to two fix rounds; the design's section 5
+    allows a third for minors, logged): the third review pass left ten minors (docstring numbers,
+    physics.md's over-precise slope statement, the structure flags not promoted to the run's
+    `flags`, an unrefused `stage2_offload_t` with `structure`, the provenance string without
+    the case's sizing, dynamic, entry, margin and cap, a documented but forbidden paired pad);
+    one fixer applied all ten after the independent gate had passed, and the orchestrator
+    re-ran the standing gates before the commit. No number of the model changed.
 
 ## 13. Prompt to start this phase
 
