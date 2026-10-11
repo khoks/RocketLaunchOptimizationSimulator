@@ -492,7 +492,10 @@ def offload_lines(record: dict[str, Any]) -> list[str]:
     the vehicle model, the gross tonnes after it (D-SP1-10). A solve that quotes nothing
     says "not quoted" and why (OFFLOAD_NOT_QUOTED_REASONS, from its ``quoted_basis``; a
     failed solve without the vehicle-model label). A pad control: status, x_pad and, for
-    stage 1, its consistency verdict."""
+    stage 1, its consistency verdict. A structure payload case (SP7 step S3b): status, its
+    P* and P* - P_ref, the dm it carries, the contraction, when it fired the unconverged
+    flag's name, and that the flight check is not applicable to it (the run flies its own
+    P*; ``sim.STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA``)."""
     if record.get("skipped"):
         return [f"  offload: {record['skipped']}"]
 
@@ -537,6 +540,18 @@ def offload_lines(record: dict[str, Any]) -> list[str]:
         lines.append(
             f"    pad control {p.get('mode')}: {p.get('status')}, x_pad "
             f"{sim._fmt(p.get('offload_kg'))} kg{tail}"
+        )
+    for p in record.get("structure_payload_cases") or []:
+        if p.get("skipped"):
+            lines.append(f"    structure payload case {p.get('name')}: {p['skipped']}")
+            continue
+        flag = ", structure_payload_unconverged" if p.get("unconverged") else ""
+        lines.append(
+            f"    structure payload case {p.get('name')}: {p.get('status')}, P* "
+            f"{sim._fmt(p.get('payload_kg'))} kg (P* - P_ref "
+            f"{sim._signed(p.get('payload_delta_kg'))} kg) carrying dm "
+            f"{sim._fmt(p.get('dm_1_kg'))} kg, contraction {sim._fmt(p.get('contraction'))}{flag}"
+            ", flight check not applicable (the run flies its own P*)"
         )
     if record.get("sensitivity"):
         lines.append(f"    sensitivity: {len(record['sensitivity'])} arms")

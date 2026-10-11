@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+import textwrap
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,11 +37,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from matplotlib.animation import FFMpegWriter, PillowWriter
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+from matplotlib.text import Text
 from matplotlib.ticker import MaxNLocator
-from matplotlib.transforms import blended_transform_factory
+from matplotlib.transforms import Bbox, blended_transform_factory, offset_copy
 from numpy.typing import NDArray
 
 from launchsim import run_data
@@ -57,10 +60,13 @@ from launchsim.phases.planar import (
     VERTICAL_RISE,
 )
 from launchsim.replay import EXPLORATORY_CAVEAT, EXPLORATORY_LABEL, penalty_added_kg
-from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, rad_to_deg, to_percent
+from launchsim.structure import ENTRY_AFT_RING, ENTRY_THRUST_STRUCTURE, STAGE1, STAGE2
+from launchsim.summary import STRUCTURE_PAYLOAD_RECORD_KIND, structure_layer_label
+from launchsim.units import kg_to_t, m_to_km, m_to_mm, n_to_mn, pa_to_kpa, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
     from launchsim.sim import Result
+    from launchsim.structure import Increment
 
 
 PLOT_SERIES_COLOR = "#2a78d6"
@@ -299,6 +305,1104 @@ def write_planar_plots(result: Result, plots_dir: Path, prefix: str) -> list[Pat
         fig.savefig(path, format="png")
         written.append(path)
     return written
+
+
+# ------------------------------------------------------------ structure figure (SP7 S3b)
+
+STRUCTURE_FIGURE_QUANTITY = "structure"
+"""The quantity suffix of a structural run's figure: plots/<run>_structure.png."""
+STRUCTURE_FIGSIZE_IN = (9.0, 9.4)
+STRUCTURE_HEIGHT_RATIOS = (2.0, 1.25)
+"""The top (thickness) and bottom (dm) panels' height ratio."""
+STRUCTURE_CAPTION_XY = (0.01, 0.005)
+"""The caption's anchor in figure fraction (bottom left)."""
+STRUCTURE_CAPTION_GAP = 0.015
+"""The gap [figure fraction] between the caption's measured top and the rectangle
+tight_layout lays the panels in (``_layout_rect``), so a longer caption (a payload case, a
+scaled case, a wrapped line) pushes the panels up instead of running under the dm panel's
+axis label."""
+STRUCTURE_CAPTION_WRAP_CHARS = 150
+"""Each caption line is wrapped at this many characters (``_structure_caption``), the
+continuation indented by STRUCTURE_CAPTION_INDENT: at STRUCTURE_FONT_CAPTION_PT on the
+9-in figure about 174 characters reach the right edge (measured in S3b's third review), so
+no line is clipped there."""
+STRUCTURE_CAPTION_INDENT = "    "
+STRUCTURE_ENVELOPE_COLOR = "#444444"
+STRUCTURE_STAGE_COLORS: dict[str, str] = {STAGE1: PLOT_SERIES_COLOR, STAGE2: "#d6742a"}
+STRUCTURE_MODE_MARKERS: dict[str, tuple[str, str]] = {
+    "ring_common_z": ("#3a9e5c", "o"),
+    "ring_common_y": ("#6b8e23", "p"),
+    "ring_improved_z": ("#9c2f6b", "<"),
+    "ring_improved_y": ("#a0522d", ">"),
+    "plate_limited": ("#d1409a", "X"),
+    "monocoque": ("#8c8c00", "D"),
+    "membrane": ("#8a4fbf", "s"),
+    "combined": ("#c23b3b", "^"),
+    "hoop": ("#1f9e9e", "v"),
+    "min_gauge": ("#7a4a1f", "P"),
+}
+"""Colour and marker shape of each governing mode's markers, keyed by the model's mode
+name (the Gerard rows and the plate-limited row, monocoque, membrane, combined, hoop, the
+minimum gauge), so a mode keeps its colour and shape across every figure of a results
+directory; STRUCTURE_MODE_MARKER_UNKNOWN for a name not listed. A palette disjoint from
+STRUCTURE_STAGE_COLORS, each mode with its own shape."""
+STRUCTURE_MODE_MARKER_UNKNOWN: tuple[str, str] = ("#333333", "*")
+STRUCTURE_MARKER_SIZE = 16.0
+"""The governing-mode markers' area [pt^2]."""
+STRUCTURE_MARKER_SPACING_PX = 20.0
+"""The least spacing [px] between two marked stations of a barrel: a denser barrel is
+marked at every k-th station (``_marked_stations``), plus every station where the
+governing mode switches and both ends, so at least a marker's width of push line shows
+between two marks (the markers are about 7 px wide)."""
+STRUCTURE_PUSH_LINE_WIDTH = 1.6
+STRUCTURE_PUSH_ALPHA = 0.9
+STRUCTURE_ENVELOPE_LINE_WIDTH = 1.2
+STRUCTURE_POINT_ENVELOPE_PT = 5.5
+"""Marker size [pt] of a dome's or the tube's hollow envelope square (drawn on top of the
+push point with a thin edge, so it shows when the two values coincide)."""
+STRUCTURE_POINT_ENVELOPE_EDGE_PT = 0.9
+STRUCTURE_POINT_PUSH_PT = 6.0
+"""Marker size [pt] of a dome's or the tube's push point."""
+STRUCTURE_POINT_DROP_LINE_WIDTH = 0.8
+STRUCTURE_POINT_DROP_ALPHA = 0.7
+"""The drop line joining a point element's envelope square to its push point (the stage
+colour), so the pair reads as one element."""
+STRUCTURE_COINCIDENT_OFFSET_PT = 5.0
+"""How far [pt] two point elements at one station height (the aft dome and the tube) are
+set apart in z on the page, so neither's square or point hides the other's."""
+STRUCTURE_LEGEND_MARKER_PT = 5.0
+STRUCTURE_FONT_POINT_LABEL_PT = 6.5
+STRUCTURE_FONT_LABEL_PT = 7.5
+STRUCTURE_FONT_CAPTION_PT = 7.0
+STRUCTURE_FONT_AXIS_PT = 8.5
+STRUCTURE_FONT_TITLE_PT = 10.0
+STRUCTURE_FONT_INSET_PT = 7.5
+STRUCTURE_LABEL_OFFSETS_PT: tuple[tuple[float, float], ...] = (
+    (0.0, 7.0),
+    (0.0, -7.0),
+    (7.0, 7.0),
+    (-7.0, 7.0),
+    (7.0, -7.0),
+    (-7.0, -7.0),
+    (9.0, 0.0),
+    (-9.0, 0.0),
+    (0.0, 16.0),
+    (0.0, -16.0),
+    (12.0, 16.0),
+    (-12.0, 16.0),
+    (12.0, -16.0),
+    (-12.0, -16.0),
+    (0.0, 26.0),
+    (0.0, -26.0),
+    (16.0, 26.0),
+    (-16.0, 26.0),
+    (16.0, -26.0),
+    (-16.0, -26.0),
+)
+"""The candidate offsets [pt] of an element label from its anchor, tried in order (above
+and below first, then the diagonals and the sides, then farther out); the label is
+aligned away from the anchor on the offset's side (``_place_label``)."""
+STRUCTURE_BARREL_ANCHOR_FRACTIONS: tuple[float, ...] = (0.5, 0.3, 0.7, 0.15, 0.85)
+"""Where along a barrel its label may be anchored, as fractions of its stations, tried in
+order with the station of the push's maximum first (``_label_anchors``)."""
+STRUCTURE_LABEL_PAD_PX = 4.0
+"""The margin [px] around an element label's text taken as its box in the overlap test
+(a line within it reads as touching the letters)."""
+STRUCTURE_LABEL_FAR_FRACTIONS: tuple[float, ...] = (0.02, 0.26, 0.5, 0.74, 0.98)
+"""The axes fractions, in x and in y, of the grid of far positions an element label may
+take with a leader line when no offset beside its anchor is clear (``_far_candidates``;
+the grid is tried nearest the anchor first)."""
+STRUCTURE_LABEL_LEADER: dict[str, Any] = {
+    "arrowstyle": "-",
+    "linewidth": 0.6,
+    "alpha": 0.7,
+    "shrinkA": 1.0,
+    "shrinkB": 3.0,
+}
+"""The leader line of an element label that found no clear spot beside its anchor and
+sits at one of STRUCTURE_ANNOTATION_CANDIDATES instead (``_place_label``; the colour is
+the label's)."""
+STRUCTURE_DROP_LINE_SAMPLES = 6
+"""How many points along a point element's drop line join the overlap test, so no label
+is laid across it."""
+STRUCTURE_LABEL_COSTS = (1, 100, 1000)
+"""The cost of a label's box covering a drawn station or envelope point, overlapping a
+placed label, and leaving its axes or covering the stage-2 inset, so a label over a few
+stations is preferred to one over another label, and either to one off the axes."""
+STRUCTURE_LEGEND_COLUMNS = 2
+"""The legend's columns: two, so its self-contained entries fit the figure's width."""
+STRUCTURE_LEGEND_ANCHOR = (0.5, -0.16)
+"""The legend's anchor in axes fraction: centred under the top panel."""
+STRUCTURE_LEGEND_ENVELOPE = "pad envelope, required wall (at the case's margin and cap)"
+"""The legend's entry for the dashed envelope: a margin or a cap row's envelope is its
+own (the pad's loads times 1 + margin, or capped), as the caption's envelope line says."""
+STRUCTURE_LEGEND_POINT_PUSH = "push at a dome's crown or the tube (stage colour, on a drop line)"
+STRUCTURE_LEGEND_POINT_ENVELOPE = "pad envelope at a dome's crown or the tube (hollow square)"
+"""The legend's entry for a point element's envelope square: self-contained, since the
+legend fills column-major and the entry need not follow the push point's."""
+STRUCTURE_ANNOTATION_CANDIDATES: tuple[tuple[float, float, str, str], ...] = (
+    (0.98, 0.96, "right", "top"),
+    (0.02, 0.96, "left", "top"),
+    (0.98, 0.04, "right", "bottom"),
+    (0.02, 0.04, "left", "bottom"),
+    (0.50, 0.96, "center", "top"),
+    (0.50, 0.04, "center", "bottom"),
+    (0.98, 0.25, "right", "center"),
+    (0.02, 0.25, "left", "center"),
+    (0.98, 0.50, "right", "center"),
+    (0.02, 0.50, "left", "center"),
+    (0.98, 0.75, "right", "center"),
+    (0.02, 0.75, "left", "center"),
+    (0.50, 0.25, "center", "center"),
+    (0.50, 0.50, "center", "center"),
+    (0.50, 0.75, "center", "center"),
+)
+"""Where the governing annotation may sit, in axes fraction with its alignment (the
+corners first, then the mid positions): the first candidate whose box covers no drawn
+station, no element label and not the stage-2 inset is taken (``_place_annotation``),
+else the one with the smallest cost (STRUCTURE_ANNOTATION_COSTS)."""
+STRUCTURE_ANNOTATION_COSTS = (1, 100, 1000)
+"""The cost of the annotation's box covering a drawn station or envelope point, an
+element label, and the stage-2 inset, so a box over a few stations is preferred to one
+over a label, and any of them to one over the inset."""
+STRUCTURE_ANNOTATION_PAD_PX = 6.0
+"""The margin [px] around the annotation's text taken as its box (the rounded patch's
+padding) when testing it against the drawn artists."""
+STRUCTURE_ANNOTATION_ARROW: dict[str, Any] = {
+    "arrowstyle": "->",
+    "color": "#222222",
+    "linewidth": 0.8,
+}
+STRUCTURE_TEXT_BOX: dict[str, Any] = {
+    "boxstyle": "round,pad=0.3",
+    "facecolor": "white",
+    "alpha": 0.85,
+    "edgecolor": "none",
+}
+"""The background of the governing annotation, so it stays legible over the grid."""
+STRUCTURE_STAGE2_INSET_RECT = (0.56, 0.40, 0.42, 0.55)
+"""The stage-2 inset's rectangle in the top panel's axes fraction (top right)."""
+STRUCTURE_STAGE2_X_EXTENSION = 0.9
+"""How far the top panel's z range is extended beyond stage 1's data, as a fraction of
+that range, to leave the right part of the panel to the stage-2 inset (stage 1's data
+then occupies the left 1/(1 + extension) of the width, under no inset)."""
+STRUCTURE_INSET_FACE_ALPHA = 0.95
+STRUCTURE_INSET_X_MARGIN = 0.08
+"""The inset's x margins as a fraction of its z range, so an end station's marker and
+label stay inside it."""
+STRUCTURE_INSET_OBSTACLE_MARGIN = (0.07, 0.07, 0.0, 0.04)
+"""How far (left, below, right, above; axes fraction) the stage-2 inset's rectangle is
+widened for the annotation's overlap test: its tick labels and title sit there."""
+STRUCTURE_BAR_EDGE_WIDTH = 0.5
+STRUCTURE_BAR_LABEL_OFFSET_PT = (4.0, 0.0)
+STRUCTURE_BAR_HEADROOM = 1.25
+"""The dm panel's x range as a multiple of the largest bar, so its label fits."""
+STRUCTURE_TITLE_WRAP_CHARS = 90
+"""The title's second line (the layer label and set) is wrapped at this many characters,
+so the outer sets' long labels never run past the figure's edge."""
+STRUCTURE_STAGE2_SIZED_TEXT = (
+    "stage 2 sized by this push: its stations drawn in the inset (its own z range, "
+    "above stage 1's in the stack frame)"
+)
+STRUCTURE_STAGE2_NOT_SIZED_TEXT = (
+    "stage 2 not sized: the push stays inside the upper stack's envelope, so no stage-2 "
+    "station is drawn"
+)
+STRUCTURE_STAGE2_INSET_TITLE = "stage 2 (sized by this push): its stations"
+STRUCTURE_PROFILE_TEXT = (
+    "the modelled structural mass of the push load, first-order station sizing; not a measurement"
+)
+
+
+def _num(value: Any, fmt: str) -> str:
+    """A number formatted with ``fmt``, or n/a."""
+    if value is None or not isinstance(value, int | float) or not math.isfinite(float(value)):
+        return "n/a"
+    return format(float(value), fmt)
+
+
+def _sized_at(record: Mapping[str, Any]) -> str:
+    """At which offload the record's sizing was taken, for the caption: a structure
+    payload case at the full load with payload P_1* (its drawn profile and bars are dm_1,
+    sized at P_1*; the run then flew P_2*, named too; or, when that search found no P*,
+    that it failed), a no_offload end at x = 0, a solved case at its x* (tonnes), else
+    that the record does not state it (a bare structure record, as a test passes)."""
+    if record.get("kind") == STRUCTURE_PAYLOAD_RECORD_KIND:
+        p1, p2 = record.get("payload_1_kg"), record.get("payload_kg")
+        if not isinstance(p2, int | float) or not math.isfinite(float(p2)):
+            return (
+                f"at the full load with payload P_1* {_num(p1, ',.1f')} kg (dm_1; structure "
+                "payload case; its P_2* search failed)"
+            )
+        return (
+            f"at the full load with payload P_1* {_num(p1, ',.1f')} kg (dm_1; the run then "
+            f"flew P_2* {_num(p2, ',.1f')} kg; structure payload case)"
+        )
+    if record.get("status") == NO_OFFLOAD_STATUS:
+        return "at x = 0 (the solve ended no_offload)"
+    x = record.get("offload_kg")
+    if isinstance(x, int | float) and math.isfinite(float(x)):
+        return f"at x* = {float(kg_to_t(float(x))):,.3f} t"
+    return "at an offload the record does not state"
+
+
+def _governing_text(record: Mapping[str, Any]) -> str:
+    """The caption's governing line: the record's ``structure_governing`` element with its
+    push mode, its dm from ``structure_elements`` and, for an element with stations, its
+    station and height; a relation element (the thrust structure, the interstage) or the
+    ring frame has no station profile and the caption is the only place the figure names
+    it."""
+    governing = record.get("structure_governing")
+    if not isinstance(governing, Mapping):
+        return "governing element: none (dm is 0)"
+    name = f"{governing.get('stage')}.{governing.get('element')}"
+    kg = (record.get("structure_elements") or {}).get(name)
+    mode = governing.get("push_mode")
+    if governing.get("station_index") is None:
+        kind = (
+            "the ring frame, closed form"
+            if governing.get("element") == "load_ring"
+            else "a relation element"
+        )
+        where = f"{kind}: no station profile, so it is not drawn in the top panel"
+    else:
+        where = (
+            f"station {governing.get('station_index')}, z {_num(governing.get('z_m'), '.2f')} m, "
+            "annotated in the top panel"
+        )
+    return f"governing element: {name} ({mode}; {_num(kg, ',.1f')} kg of dm; {where})"
+
+
+def _structure_caption(record: Mapping[str, Any], stage2_sized: bool) -> str:
+    """The figure's caption from the case record (the run-level structure keys, with the
+    case's status, x* and kind when the record is a case record): the set with its layer
+    label and the case settings (the summary's band lines carry the sets' label and
+    source; the figure asserts nothing about how the set was found), the envelope pad
+    with the margin and cap the dashed envelope carries (a margin or cap row's envelope
+    is its own), n_peak and F_peak, on a line of its own at which offload the profile was
+    sized (``_sized_at``; a payload case's clause is the longest line of the caption,
+    review NEW-V-01), dm by stage, the governing element (``_governing_text``), whether
+    stage 2 was sized, and, for a plausibility-scaled case, that the profile is the
+    unscaled sizing while the bars and dm carry the factor; what the profile is (the
+    model's sizing, not a measurement). Each line is wrapped at
+    STRUCTURE_CAPTION_WRAP_CHARS with STRUCTURE_CAPTION_INDENT on its continuation, so
+    none runs past the figure's edge."""
+    dm = record.get("structure_dm_kg")
+    dm2 = record.get("structure_dm_stage2_kg")
+    dm1 = None if dm is None or dm2 is None else dm - dm2
+    cap = record.get("structure_envelope_cap_g")
+    cap_text = "no cap" if cap is None else f"cap {cap:g} g0"
+    n_peak = record.get("structure_n_peak_g")
+    f_peak = record.get("structure_F_peak_N")
+    f_peak_mn = None if f_peak is None else float(n_to_mn(float(f_peak)))
+    margin_text = f"margin {_num(record.get('structure_margin'), 'g')}"
+    parts = [
+        f"{structure_layer_label(record)}; {record.get('structure_sizing')}, "
+        f"{record.get('structure_dynamic')} (DLF {_num(record.get('structure_dlf'), '.3f')}), "
+        f"{record.get('structure_entry')}, {margin_text}, {cap_text}",
+        f"pad envelope: {record.get('structure_envelope_pad')}'s own flight (the dashed "
+        f"envelope is at {margin_text}, {cap_text}); push at n_peak "
+        f"{_num(n_peak, '.3f')} g0, F_peak {_num(f_peak_mn, '.3f')} MN",
+        f"sized {_sized_at(record)}",
+        f"dm: stage 1 {_num(dm1, ',.1f')} kg, stage 2 {_num(dm2, ',.1f')} kg "
+        f"({STRUCTURE_PROFILE_TEXT})",
+        _governing_text(record),
+        STRUCTURE_STAGE2_SIZED_TEXT if stage2_sized else STRUCTURE_STAGE2_NOT_SIZED_TEXT,
+    ]
+    if record.get("structure_plausibility_scaled"):
+        factor = _num(record.get("structure_plausibility_factor"), ".4f")
+        parts.append(
+            "the thickness profile is the unscaled sizing; the bars and dm carry the "
+            f"plausibility rule's factor {factor} (D-SP7-33)"
+        )
+    return "\n".join(
+        textwrap.fill(
+            part, STRUCTURE_CAPTION_WRAP_CHARS, subsequent_indent=STRUCTURE_CAPTION_INDENT
+        )
+        for part in parts
+    )
+
+
+@dataclass
+class _DrawnAxes:
+    """What ``_draw_elements`` drew into one axes, for the label and annotation overlap
+    tests and the legend: the data points of every station and envelope point (each
+    array with the page offset [pt] in z its element is drawn at, ``_display_points``),
+    the label texts (placed by ``_label_elements``), the governing annotation (placed
+    first by ``_annotate_governing``, so the labels keep off its box), the stages drawn,
+    the modes drawn (name -> colour, marker), whether a point element was drawn, and,
+    per element, its arrays with that offset (``_mark_modes``)."""
+
+    ax: Any
+    points: list[tuple[Any, float]] = field(default_factory=list)
+    labels: list[Any] = field(default_factory=list)
+    annotations: list[Any] = field(default_factory=list)
+    stages: list[str] = field(default_factory=list)
+    modes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    point_elements: bool = False
+    elements: dict[tuple[str, str], Any] = field(default_factory=dict)
+
+
+def _pt_to_px(fig: Figure, pt: float) -> float:
+    """Points to display pixels at the figure's dpi."""
+    return pt * float(fig.dpi) / POINTS_PER_INCH
+
+
+def _display_points(drawn: _DrawnAxes) -> np.ndarray:
+    """Every drawn station and envelope point of ``drawn`` [display px, (n, 2)], each
+    element's page offset in z applied (the coincident point elements are set apart on
+    the page, not in the data)."""
+    if not drawn.points:
+        return np.empty((0, 2))
+    fig = drawn.ax.figure
+    blocks = []
+    for data, dx_pt in drawn.points:
+        px = drawn.ax.transData.transform(data)
+        blocks.append(px + np.array([_pt_to_px(fig, dx_pt), 0.0]))
+    return np.concatenate(blocks)
+
+
+def _z_offsets_pt(elements: Sequence[Any]) -> dict[tuple[str, str], float]:
+    """The page offset in z [pt] of each point element (a dome or the tube: one station):
+    0 when it shares its station height with no other point element, else the members of
+    the group spread STRUCTURE_COINCIDENT_OFFSET_PT apart around it, so the aft dome's
+    square and point never hide under the tube's."""
+    points = [e for e in elements if np.asarray(e.z_stations_m).shape[0] == 1]
+    groups: dict[float, list[Any]] = {}
+    for e in points:
+        groups.setdefault(round(float(np.asarray(e.z_stations_m)[0]), 6), []).append(e)
+    out: dict[tuple[str, str], float] = {}
+    for members in groups.values():
+        k = len(members)
+        for i, e in enumerate(members):
+            out[(e.stage, e.element)] = (i - (k - 1) / 2.0) * STRUCTURE_COINCIDENT_OFFSET_PT
+    return out
+
+
+def _marked_stations(z: np.ndarray, modes: Sequence[str], px_per_m: float) -> np.ndarray:
+    """The station indices to mark on a barrel: every k-th station with k the least
+    integer giving STRUCTURE_MARKER_SPACING_PX between marks at ``px_per_m`` [px per m of
+    z], plus every station whose governing mode differs from the previous station's and
+    both ends; every station when they are already that far apart."""
+    n = z.shape[0]
+    if n < 2:
+        return np.arange(n)
+    dz_px = px_per_m * float(abs(z[-1] - z[0])) / (n - 1)
+    k = max(1, math.ceil(STRUCTURE_MARKER_SPACING_PX / dz_px)) if dz_px > 0.0 else 1
+    marked = set(range(0, n, k)) | {0, n - 1}
+    marked |= {i for i in range(1, n) if modes[i] != modes[i - 1]}
+    return np.array(sorted(marked), dtype=int)
+
+
+def _mode_style(mode: str) -> tuple[str, str]:
+    """The (colour, marker) of a governing mode (STRUCTURE_MODE_MARKERS, else unknown)."""
+    return STRUCTURE_MODE_MARKERS.get(mode, STRUCTURE_MODE_MARKER_UNKNOWN)
+
+
+def _z_transform(ax: Any, dx_pt: float) -> Any:
+    """The axes' data transform shifted by ``dx_pt`` [pt] in x on the page (the identity
+    at 0): how a coincident point element is set apart (``_z_offsets_pt``)."""
+    if dx_pt == 0.0:
+        return ax.transData
+    return offset_copy(ax.transData, fig=ax.figure, x=dx_pt, y=0.0, units="points")
+
+
+def _draw_elements(drawn: _DrawnAxes, elements: Sequence[Any]) -> None:
+    """Draw the required wall thickness [mm] against the station height z [m] of every
+    given element with stations into ``drawn.ax``: the pad envelope dashed, the push as a
+    line in the stage's colour; a dome or the tube as one push point joined by a drop
+    line in the stage colour to the hollow square of its envelope, the square drawn on
+    top with a thin edge (two point elements at one station height are set
+    STRUCTURE_COINCIDENT_OFFSET_PT apart on the page, ``_z_offsets_pt``; a line drawn
+    through that page-offset transform enters no data limit, matplotlib's autoscale reads
+    transData lines only, so a point element's data coordinates are added to the limits
+    by hand and the axes' z range covers it, review NEW-V-02: the stage-2 inset's range
+    had started at its first barrel and left the aft dome and the tube outside). The
+    labels are placed afterwards by ``_label_elements`` and the governing-mode markers by
+    ``_mark_modes`` (both need the final layout)."""
+    ax = drawn.ax
+    offsets = _z_offsets_pt(elements)
+    for element in elements:
+        z = np.asarray(element.z_stations_m, dtype=float)
+        env_mm = np.asarray(m_to_mm(np.asarray(element.t_env_m, dtype=float)))
+        push_mm = np.asarray(m_to_mm(np.asarray(element.t_push_m, dtype=float)))
+        color = STRUCTURE_STAGE_COLORS.get(element.stage, PLOT_SERIES_COLOR)
+        point = z.shape[0] == 1
+        dx_pt = offsets.get((element.stage, element.element), 0.0)
+        transform = _z_transform(ax, dx_pt)
+        if point:
+            drawn.point_elements = True
+            ax.update_datalim(np.column_stack([[z[0], z[0]], [env_mm[0], push_mm[0]]]))
+            ax.plot(
+                [z[0], z[0]],
+                [env_mm[0], push_mm[0]],
+                color=color,
+                linewidth=STRUCTURE_POINT_DROP_LINE_WIDTH,
+                alpha=STRUCTURE_POINT_DROP_ALPHA,
+                transform=transform,
+                zorder=2,
+            )
+            ax.plot(
+                z,
+                push_mm,
+                color=color,
+                linewidth=0.0,
+                alpha=STRUCTURE_PUSH_ALPHA,
+                marker="o",
+                markersize=STRUCTURE_POINT_PUSH_PT,
+                transform=transform,
+                zorder=3,
+            )
+            ax.plot(
+                z,
+                env_mm,
+                color=STRUCTURE_ENVELOPE_COLOR,
+                linewidth=0.0,
+                marker="s",
+                markersize=STRUCTURE_POINT_ENVELOPE_PT,
+                markerfacecolor="none",
+                markeredgewidth=STRUCTURE_POINT_ENVELOPE_EDGE_PT,
+                transform=transform,
+                zorder=5,
+            )
+        else:
+            ax.plot(
+                z,
+                env_mm,
+                color=STRUCTURE_ENVELOPE_COLOR,
+                linestyle="--",
+                linewidth=STRUCTURE_ENVELOPE_LINE_WIDTH,
+                zorder=2,
+            )
+            ax.plot(
+                z,
+                push_mm,
+                color=color,
+                linewidth=STRUCTURE_PUSH_LINE_WIDTH,
+                alpha=STRUCTURE_PUSH_ALPHA,
+                zorder=3,
+            )
+        if element.stage not in drawn.stages:
+            drawn.stages.append(element.stage)
+        drawn.elements[(element.stage, element.element)] = (z, env_mm, push_mm, element, dx_pt)
+        drawn.points.append((np.column_stack([z, env_mm]), dx_pt))
+        drawn.points.append((np.column_stack([z, push_mm]), dx_pt))
+        if point:  # the drop line joins the overlap test too
+            along = np.linspace(float(env_mm[0]), float(push_mm[0]), STRUCTURE_DROP_LINE_SAMPLES)
+            drawn.points.append((np.column_stack([np.full_like(along, z[0]), along]), dx_pt))
+
+
+def _label_anchors(z: np.ndarray, push_mm: np.ndarray) -> list[tuple[float, float]]:
+    """Where an element's label may be anchored [data]: a point element at its push
+    point; a barrel at the station of its push's maximum, then at the
+    STRUCTURE_BARREL_ANCHOR_FRACTIONS of its stations (each once)."""
+    n = z.shape[0]
+    if n == 1:
+        return [(float(z[0]), float(push_mm[0]))]
+    indices = [int(np.argmax(push_mm))]
+    indices += [min(n - 1, round(f * (n - 1))) for f in STRUCTURE_BARREL_ANCHOR_FRACTIONS]
+    out: list[tuple[float, float]] = []
+    for i in dict.fromkeys(indices):
+        out.append((float(z[i]), float(push_mm[i])))
+    return out
+
+
+def _offset_alignment(dx: float, dy: float) -> tuple[str, str]:
+    """A label's (ha, va) for an offset [pt] from its anchor: aligned away from the
+    anchor on the offset's side, centred along a zero component."""
+    ha = "center" if dx == 0.0 else ("left" if dx > 0.0 else "right")
+    va = "center" if dy == 0.0 else ("bottom" if dy > 0.0 else "top")
+    return ha, va
+
+
+def _far_candidates(ax: Any, anchor_px: np.ndarray) -> list[tuple[float, float, str, str]]:
+    """The far positions an element label may take with a leader line, in axes fraction
+    with their alignment (towards the inside at an edge), the grid of
+    STRUCTURE_LABEL_FAR_FRACTIONS sorted by distance [px] from ``anchor_px`` so the
+    nearest clear spot wins and the leader stays short."""
+    lo, hi = STRUCTURE_LABEL_FAR_FRACTIONS[0], STRUCTURE_LABEL_FAR_FRACTIONS[-1]
+    out = []
+    for x in STRUCTURE_LABEL_FAR_FRACTIONS:
+        for y in STRUCTURE_LABEL_FAR_FRACTIONS:
+            ha = "left" if x == lo else ("right" if x == hi else "center")
+            va = "bottom" if y == lo else ("top" if y == hi else "center")
+            px = ax.transAxes.transform((x, y))
+            out.append((float(np.hypot(*(px - anchor_px))), x, y, ha, va))
+    return [(x, y, ha, va) for _d, x, y, ha, va in sorted(out, key=lambda c: c[0])]
+
+
+def _label_cost(
+    box: Bbox, points: np.ndarray, labels: Sequence[Any], ax_box: Bbox, obstacles: Sequence[Any]
+) -> int:
+    """The cost of an element label's box: the drawn points it covers and the placed
+    labels it overlaps (``_overlaps`` at STRUCTURE_LABEL_COSTS) plus the obstacle weight
+    when it leaves its axes' box or covers one of ``obstacles`` (the stage-2 inset)."""
+    w_point, w_label, w_obstacle = STRUCTURE_LABEL_COSTS
+    cost = _overlaps(box, points, labels, obstacles, costs=(w_point, w_label, w_obstacle))
+    outside = box.x0 < ax_box.x0 or box.x1 > ax_box.x1 or box.y0 < ax_box.y0 or box.y1 > ax_box.y1
+    return cost + (w_obstacle if outside else 0)
+
+
+def _place_label(
+    drawn: _DrawnAxes,
+    text: str,
+    anchors: Sequence[tuple[float, float]],
+    dx_pt: float,
+    *,
+    fontsize: float,
+    color: str,
+    points: np.ndarray,
+    obstacles: Sequence[Any],
+) -> Any:
+    """Place one element label in ``drawn.ax``: at the first (anchor, offset) of
+    ``anchors`` x STRUCTURE_LABEL_OFFSETS_PT whose text box (padded by
+    STRUCTURE_LABEL_PAD_PX) covers no drawn point (the stations, the envelope points and
+    the drop lines), overlaps no placed label and not the governing annotation's box,
+    stays inside the axes and off the ``obstacles``; when no offset is clear (a crowded
+    inset), at the nearest clear far position (``_far_candidates``) with a leader line
+    to the first anchor (STRUCTURE_LABEL_LEADER); else at the candidate of the least
+    cost (``_label_cost``). ``dx_pt`` is the element's page offset in z. Every rejected
+    candidate is removed. Needs the figure's renderer, so it is called after the layout
+    is final."""
+    ax = drawn.ax
+    renderer = _renderer(ax.figure)
+    ax_box = ax.get_window_extent(renderer)
+    placed = [
+        _text_extent(t, renderer).padded(STRUCTURE_LABEL_PAD_PX)
+        for t in (*drawn.annotations, *drawn.labels)
+    ]
+    best: tuple[int, Any] | None = None
+
+    def consider(ann: Any) -> bool:
+        """Keep ``ann`` when it beats the best so far (removing the loser); True when
+        its box is clear, so the search can stop."""
+        nonlocal best
+        box = _text_extent(ann, renderer).padded(STRUCTURE_LABEL_PAD_PX)
+        cost = _label_cost(box, points, placed, ax_box, obstacles)
+        if best is None or cost < best[0]:
+            if best is not None:
+                best[1].remove()
+            best = (cost, ann)
+        else:
+            ann.remove()
+        return cost == 0
+
+    clear = False
+    for xy in anchors:
+        for dx, dy in STRUCTURE_LABEL_OFFSETS_PT:
+            ha, va = _offset_alignment(dx, dy)
+            ann = ax.annotate(
+                text,
+                xy,
+                xycoords=_z_transform(ax, dx_pt),
+                textcoords="offset points",
+                xytext=(dx, dy),
+                fontsize=fontsize,
+                color=color,
+                ha=ha,
+                va=va,
+            )
+            clear = consider(ann)
+            if clear:
+                break
+        if clear:
+            break
+    if not clear:
+        anchor_px = _z_transform(ax, dx_pt).transform(anchors[0])
+        for x, y, ha, va in _far_candidates(ax, np.asarray(anchor_px, dtype=float)):
+            ann = ax.annotate(
+                text,
+                anchors[0],
+                xycoords=_z_transform(ax, dx_pt),
+                textcoords="axes fraction",
+                xytext=(x, y),
+                fontsize=fontsize,
+                color=color,
+                ha=ha,
+                va=va,
+                arrowprops={**STRUCTURE_LABEL_LEADER, "color": color},
+            )
+            if consider(ann):
+                break
+    assert best is not None
+    drawn.labels.append(best[1])
+    return best[1]
+
+
+def _label_elements(drawn: _DrawnAxes, obstacles: Sequence[Any]) -> None:
+    """Label every element drawn into ``drawn.ax`` with ``<stage>.<element>`` in its
+    stage's colour (a point element at STRUCTURE_FONT_POINT_LABEL_PT, a barrel at
+    STRUCTURE_FONT_LABEL_PT), each placed by ``_place_label`` against every drawn point
+    of every element, the labels placed before it, the axes' box and ``obstacles`` (the
+    stage-2 inset's box for the top panel), so no label is struck through by another
+    element's line, sits on another label or runs out of its axes; once the layout is
+    final."""
+    points = _display_points(drawn)
+    for (stage, element), (z, _env_mm, push_mm, _e, dx_pt) in drawn.elements.items():
+        point = z.shape[0] == 1
+        _place_label(
+            drawn,
+            _plot_text(f"{stage}.{element}"),
+            _label_anchors(z, push_mm),
+            dx_pt,
+            fontsize=STRUCTURE_FONT_POINT_LABEL_PT if point else STRUCTURE_FONT_LABEL_PT,
+            color=STRUCTURE_STAGE_COLORS.get(stage, PLOT_SERIES_COLOR),
+            points=points,
+            obstacles=obstacles,
+        )
+
+
+def _mark_modes(drawn: _DrawnAxes) -> None:
+    """Mark the push's governing mode at the stations of every element drawn into
+    ``drawn.ax`` (STRUCTURE_MODE_MARKERS by mode name), thinned on a dense barrel to
+    STRUCTURE_MARKER_SPACING_PX (``_marked_stations``, the mode switches and both ends
+    always marked) once the axes' z range is final, so the push line shows between them;
+    a point element's marker takes its page offset in z."""
+    ax = drawn.ax
+    x_lo, x_hi = ax.get_xlim()
+    width_px = float(ax.get_window_extent().width)
+    px_per_m = width_px / (x_hi - x_lo) if x_hi > x_lo else 0.0
+    for z, _env_mm, push_mm, element, dx_pt in drawn.elements.values():
+        modes = tuple(element.push_modes)
+        marked = _marked_stations(z, modes, px_per_m)
+        for mode in dict.fromkeys(modes):
+            drawn.modes.setdefault(mode, _mode_style(mode))
+            mode_color, marker = drawn.modes[mode]
+            mask = np.array([modes[i] == mode for i in marked], dtype=bool)
+            if not np.any(mask):
+                continue
+            ax.scatter(
+                z[marked][mask],
+                push_mm[marked][mask],
+                s=STRUCTURE_MARKER_SIZE,
+                color=mode_color,
+                marker=marker,
+                zorder=4,
+                linewidths=0.0,
+                transform=_z_transform(ax, dx_pt),
+            )
+
+
+def _with_stations(increment: Increment) -> list[Any]:
+    """The increment's elements that carry a station profile (both arrays and the modes)."""
+    return [
+        e
+        for e in increment.elements
+        if e.z_stations_m is not None
+        and e.t_env_m is not None
+        and e.t_push_m is not None
+        and e.push_modes is not None
+    ]
+
+
+def _thickness_legend(top: Any, drawn: Sequence[_DrawnAxes]) -> None:
+    """The top panel's legend, placed under the panel (outside the plotting area, so it
+    never overprints a station), from synthetic handles independent of the order the
+    elements were drawn in: the envelope line, the push line per stage drawn, the point
+    markers when a dome or the tube was drawn, and one entry per governing mode drawn
+    (its colour and shape, STRUCTURE_MODE_MARKERS)."""
+    items: list[Any] = [
+        Line2D(
+            [],
+            [],
+            color=STRUCTURE_ENVELOPE_COLOR,
+            linestyle="--",
+            linewidth=STRUCTURE_ENVELOPE_LINE_WIDTH,
+        )
+    ]
+    labels: list[str] = [STRUCTURE_LEGEND_ENVELOPE]
+    stages = list(dict.fromkeys(s for d in drawn for s in d.stages))
+    for stage in stages:
+        color = STRUCTURE_STAGE_COLORS.get(stage, PLOT_SERIES_COLOR)
+        items.append(Line2D([], [], color=color, linewidth=STRUCTURE_PUSH_LINE_WIDTH))
+        labels.append(f"push: {stage}")
+    if any(d.point_elements for d in drawn):
+        items.append(
+            Line2D(
+                [],
+                [],
+                linestyle="",
+                marker="o",
+                color=STRUCTURE_ENVELOPE_COLOR,
+                markersize=STRUCTURE_POINT_PUSH_PT,
+            )
+        )
+        labels.append(STRUCTURE_LEGEND_POINT_PUSH)
+        items.append(
+            Line2D(
+                [],
+                [],
+                linestyle="",
+                marker="s",
+                color=STRUCTURE_ENVELOPE_COLOR,
+                markerfacecolor="none",
+                markeredgewidth=STRUCTURE_POINT_ENVELOPE_EDGE_PT,
+                markersize=STRUCTURE_POINT_ENVELOPE_PT,
+            )
+        )
+        labels.append(STRUCTURE_LEGEND_POINT_ENVELOPE)
+    modes: dict[str, tuple[str, str]] = {}
+    for d in drawn:
+        modes.update(d.modes)
+    for mode, (color, marker) in modes.items():
+        items.append(
+            Line2D(
+                [],
+                [],
+                linestyle="",
+                marker=marker,
+                color=color,
+                markersize=STRUCTURE_LEGEND_MARKER_PT,
+            )
+        )
+        labels.append(f"governing mode: {mode}")
+    top.legend(
+        items,
+        labels,
+        frameon=False,
+        fontsize=STRUCTURE_FONT_CAPTION_PT,
+        ncol=STRUCTURE_LEGEND_COLUMNS,
+        loc="upper center",
+        bbox_to_anchor=STRUCTURE_LEGEND_ANCHOR,
+    )
+
+
+def _overlaps(
+    box: Any,
+    points: np.ndarray,
+    labels: Sequence[Any],
+    obstacles: Sequence[Any],
+    *,
+    costs: tuple[int, int, int] = STRUCTURE_ANNOTATION_COSTS,
+) -> int:
+    """The cost of ``box`` (a Bbox [display px]) covering drawn artists: the number of
+    ``points`` [display px, (n, 2)] inside it, the ``labels`` (text boxes) and the
+    ``obstacles`` (the inset's box) it overlaps, each weighted by ``costs``
+    (STRUCTURE_ANNOTATION_COSTS for the governing annotation, STRUCTURE_LABEL_COSTS for
+    an element label)."""
+    inside = 0
+    if points.size:
+        inside = int(
+            np.count_nonzero(
+                (points[:, 0] >= box.x0)
+                & (points[:, 0] <= box.x1)
+                & (points[:, 1] >= box.y0)
+                & (points[:, 1] <= box.y1)
+            )
+        )
+    w_point, w_label, w_obstacle = costs
+    return (
+        w_point * inside
+        + w_label * sum(1 for b in labels if box.overlaps(b))
+        + w_obstacle * sum(1 for b in obstacles if box.overlaps(b))
+    )
+
+
+def _place_annotation(
+    drawn: _DrawnAxes, text: str, xy: tuple[float, float], obstacles: Sequence[Any]
+) -> Any:
+    """Annotate ``xy`` [data] of ``drawn.ax`` with ``text`` in a box and a leader arrow,
+    at the first STRUCTURE_ANNOTATION_CANDIDATES position whose box (the text's extent
+    padded by STRUCTURE_ANNOTATION_PAD_PX) covers no drawn station or envelope point, no
+    element label placed so far and none of ``obstacles`` (the stage-2 inset's box), else
+    at the one of the least cost (``_overlaps``); every rejected candidate is removed
+    and the kept one goes to ``drawn.annotations`` (the element labels, placed after it,
+    keep off its box). Needs the figure's renderer (``_renderer``), so it is called
+    after the layout is final."""
+    ax = drawn.ax
+    renderer = _renderer(ax.figure)
+    points = _display_points(drawn)
+    labels = [_text_extent(t, renderer) for t in drawn.labels]
+    best: tuple[int, Any] | None = None
+    for x, y, ha, va in STRUCTURE_ANNOTATION_CANDIDATES:
+        ann = ax.annotate(
+            text,
+            xy,
+            xytext=(x, y),
+            textcoords="axes fraction",
+            fontsize=STRUCTURE_FONT_LABEL_PT,
+            ha=ha,
+            va=va,
+            bbox=STRUCTURE_TEXT_BOX,
+            arrowprops=STRUCTURE_ANNOTATION_ARROW,
+            zorder=5,
+        )
+        box = _text_extent(ann, renderer).padded(STRUCTURE_ANNOTATION_PAD_PX)
+        count = _overlaps(box, points, labels, obstacles)
+        if best is None or count < best[0]:
+            if best is not None:
+                best[1].remove()
+            best = (count, ann)
+            if count == 0:
+                break
+        else:
+            ann.remove()
+    assert best is not None
+    drawn.annotations.append(best[1])
+    return best[1]
+
+
+def _text_extent(annotation: Any, renderer: Any) -> Bbox:
+    """The extent [display px] of an annotation's text alone: its position resolved for
+    the renderer (``update_positions`` sets the text's transform, which ``annotate``
+    leaves at the identity until a draw) and its arrow, which reaches the annotated
+    point, left out."""
+    annotation.update_positions(renderer)
+    return Text.get_window_extent(annotation, renderer)
+
+
+def _renderer(fig: Figure) -> Any:
+    """The figure's Agg renderer (attached when the figure has none yet: a Figure built
+    outside pyplot has only a base canvas until it is saved)."""
+    canvas = fig.canvas
+    if not hasattr(canvas, "get_renderer"):
+        canvas = FigureCanvasAgg(fig)
+    return canvas.get_renderer()
+
+
+def _annotate_governing(
+    drawn: Sequence[_DrawnAxes], record: Mapping[str, Any], obstacles: Sequence[Any]
+) -> None:
+    """Annotate the record's governing element and station (``structure_governing``) with
+    its push and envelope thickness in the axes that drew it (the top panel, or the
+    stage-2 inset), placed away from the drawn artists (``_place_annotation``); nothing
+    for a relation element without stations (the caption names it,
+    ``_governing_text``)."""
+    governing = record.get("structure_governing")
+    if not isinstance(governing, Mapping) or governing.get("station_index") is None:
+        return
+    key = (str(governing.get("stage")), str(governing.get("element")))
+    holder = next((d for d in drawn if key in d.elements), None)
+    if holder is None:
+        return
+    z, env_mm, push_mm, _element, _dx_pt = holder.elements[key]
+    i = int(governing["station_index"])
+    zg, tp, te = float(z[i]), float(push_mm[i]), float(env_mm[i])
+    text = _plot_text(
+        f"governing: {key[0]}.{key[1]}, station {i}, z {zg:.2f} m\n"
+        f"{governing.get('push_mode')} over {governing.get('envelope_mode')}: "
+        f"push {tp:.2f} mm, envelope {te:.2f} mm"
+    )
+    _place_annotation(holder, text, (zg, tp), obstacles)
+
+
+def _dm_axis_label(entry: Any) -> str:
+    """The dm panel's axis label: how the elements were sized under the case's load entry
+    (``structure_entry``; the rule of ``summary._element_how``, review H-S3B-P3-06): under
+    entry aft_ring the thrust structure is not in the load path (its 0 is by construction,
+    not a sizing) and the hatched ring frame is new hardware in closed form; under entry
+    thrust_structure the thrust structure is sized by its relation and there is no ring
+    frame (its 0 is by construction; a zero-width bar shows no hatch); a record without an
+    entry (a bare structure record) gets the generic text. Three short lines under the
+    unit line, each well inside the panel's width at STRUCTURE_FONT_AXIS_PT (the test
+    measures the panel's tight box against the figure)."""
+    if entry == ENTRY_AFT_RING:
+        how = (
+            " the interstage by its relation;\n"
+            "the thrust structure not in the load path on entry aft_ring, 0 by construction;\n"
+            "hatched: the ring frame, closed form, no envelope credit"
+        )
+    elif entry == ENTRY_THRUST_STRUCTURE:
+        how = (
+            "\nthe interstage and the thrust structure by their relations;\n"
+            "no ring frame on entry thrust_structure: the ring frame's 0 is by construction"
+        )
+    else:
+        how = (
+            "\nthe interstage and the thrust structure by their relations where the entry "
+            "loads them;\nhatched: the ring frame, closed form, no envelope credit"
+        )
+    return f"dm by element [kg]\n(station sizing over the pad envelope;{how})"
+
+
+def _dm_panel(bottom: Any, record: Mapping[str, Any], title: str) -> None:
+    """The bottom panel: dm by element from the record's ``structure_elements`` [kg],
+    horizontal bars by stage, the ring frame hatched, every bar labelled with its kg; the
+    title carries dm1 + dm2 and, for a plausibility-scaled case, the factor the bars
+    carry; the axis label says how the elements were sized under the case's entry
+    (``_dm_axis_label``)."""
+    elements = record.get("structure_elements") or {}
+    names = list(elements)
+    values = [float(elements[n]) for n in names]
+    y = np.arange(len(names))
+    colors = [STRUCTURE_STAGE_COLORS.get(n.split(".")[0], PLOT_SERIES_COLOR) for n in names]
+    bars = bottom.barh(
+        y, values, color=colors, edgecolor="#222222", linewidth=STRUCTURE_BAR_EDGE_WIDTH
+    )
+    for bar, name, value in zip(bars, names, values, strict=True):
+        if name.endswith(".load_ring"):
+            bar.set_hatch("///")
+        bottom.annotate(
+            f"{value:,.1f} kg",
+            (bar.get_width(), bar.get_y() + bar.get_height() / 2.0),
+            textcoords="offset points",
+            xytext=STRUCTURE_BAR_LABEL_OFFSET_PT,
+            va="center",
+            fontsize=STRUCTURE_FONT_LABEL_PT,
+        )
+    bottom.set_yticks(y)
+    bottom.set_yticklabels([_plot_text(n) for n in names], fontsize=STRUCTURE_FONT_LABEL_PT)
+    bottom.invert_yaxis()
+    bottom.set_xlabel(
+        _dm_axis_label(record.get("structure_entry")), fontsize=STRUCTURE_FONT_AXIS_PT
+    )
+    dm = record.get("structure_dm_kg")
+    scaled = ""
+    if record.get("structure_plausibility_scaled"):
+        scaled = (
+            f" (x {_num(record.get('structure_plausibility_factor'), '.4f')}, plausibility-scaled)"
+        )
+    bottom.set_title(
+        _plot_text(f"{title}: dm by element (dm1 + dm2 = {_num(dm, ',.1f')} kg){scaled}"),
+        fontsize=STRUCTURE_FONT_TITLE_PT,
+    )
+    bottom.grid(True, axis="x", color=PLOT_GRID_COLOR, linewidth=PLOT_GRID_LINE_WIDTH)
+    for side in ("top", "right"):
+        bottom.spines[side].set_visible(False)
+    if values:
+        bottom.set_xlim(0.0, max(values) * STRUCTURE_BAR_HEADROOM if max(values) > 0.0 else 1.0)
+
+
+def _style_thickness_axes(ax: Any, fontsize: float | None = None) -> None:
+    """The grid and open spines of a thickness axes (the top panel and the inset)."""
+    ax.grid(True, color=PLOT_GRID_COLOR, linewidth=PLOT_GRID_LINE_WIDTH)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    if fontsize is not None:
+        ax.tick_params(labelsize=fontsize)
+
+
+def structure_figure(increment: Increment, record: Mapping[str, Any], title: str) -> Figure:
+    """The thickness figure of a structural run (SP7 step S3b; design 4.4, "Figures"), two
+    panels, built from the sizing's ``structure.Increment`` and the run's case record
+    (its structure keys, ``sim.structure_record``, with the case's status, x* and kind;
+    the numbers a reviewer checks it against).
+
+    Top (``_draw_elements``, ``_mark_modes``, ``_label_elements``): the required wall
+    thickness [mm] along the station height z [m, stack frame] of every stage-1 element
+    with stations (the aft skirt, both barrels; a dome or the tube as one labelled push
+    point at its crown or bottom, joined by a drop line to the hollow square of its
+    envelope, two at one height set apart on the page): the pad envelope dashed in
+    STRUCTURE_ENVELOPE_COLOR, the push as a line in the stage's colour, the push's
+    governing mode marked by a colour and marker shape fixed per mode name
+    (STRUCTURE_MODE_MARKERS), thinned on a dense barrel so the line shows between the
+    marks (every mode switch and both ends always marked); every element label placed
+    once the layout is final at the first anchor and offset whose box covers no drawn
+    point of any element, no placed label, stays inside its axes and off the inset
+    (``_place_label``); the legend under the panel from synthetic handles
+    (``_thickness_legend``); the governing element and station of the record
+    (``structure_governing``) annotated with its push and envelope thickness in a box
+    placed where it covers no drawn station, label or inset (``_annotate_governing``).
+    Where the push sized stage 2, its elements are drawn in an
+    inset at the top right (STRUCTURE_STAGE2_INSET_RECT) with its own z range, the
+    panel's z range extended past stage 1's data (STRUCTURE_STAGE2_X_EXTENSION) so the
+    inset covers no stage-1 station; otherwise the axis label and the caption say stage
+    2 was not sized. The title's second line (the layer label and set) is wrapped
+    (STRUCTURE_TITLE_WRAP_CHARS). Bottom (``_dm_panel``): dm by element from the record's
+    ``structure_elements`` [kg], horizontal bars by stage, the ring frame hatched (new
+    hardware sized in closed form, no envelope credit), every bar labelled with its kg, a
+    scaled case's factor in the title. The caption (``_structure_caption``) names the set
+    and its layer, the case settings, the envelope pad, n_peak, F_peak, at which offload
+    the profile was sized, dm by stage and the governing element. Pure apart from the
+    Figure it builds (an Agg canvas is attached to measure the texts).
+    """
+    fig = Figure(figsize=STRUCTURE_FIGSIZE_IN, dpi=PLOT_DPI)
+    FigureCanvasAgg(fig)
+    top, bottom = fig.subplots(2, 1, gridspec_kw={"height_ratios": STRUCTURE_HEIGHT_RATIOS})
+    elements = _with_stations(increment)
+    stage1 = [e for e in elements if e.stage == STAGE1]
+    stage2 = [e for e in elements if e.stage != STAGE1]
+    main = _DrawnAxes(top)
+    _draw_elements(main, stage1)
+    drawn = [main]
+    inset = None
+    if increment.stage2_sized and stage2:
+        x_lo, x_hi = top.get_xlim()
+        top.set_xlim(x_lo, x_hi + STRUCTURE_STAGE2_X_EXTENSION * (x_hi - x_lo))
+        inset = top.inset_axes(STRUCTURE_STAGE2_INSET_RECT)
+        inset.patch.set_alpha(STRUCTURE_INSET_FACE_ALPHA)
+        inset.margins(x=STRUCTURE_INSET_X_MARGIN)
+        sub = _DrawnAxes(inset)
+        _draw_elements(sub, stage2)
+        inset.set_title(STRUCTURE_STAGE2_INSET_TITLE, fontsize=STRUCTURE_FONT_INSET_PT)
+        inset.set_xlabel("z [m]", fontsize=STRUCTURE_FONT_INSET_PT)
+        inset.set_ylabel("wall [mm]", fontsize=STRUCTURE_FONT_INSET_PT)
+        _style_thickness_axes(inset, STRUCTURE_FONT_INSET_PT)
+        drawn.append(sub)
+    stage2_note = (
+        " (stage 2 in the inset)"
+        if inset is not None
+        else " (stage 1 only: stage 2 not sized, see the caption)"
+    )
+    top.set_xlabel(_plot_text(f"station height z above the stage-1 load ring [m]{stage2_note}"))
+    top.set_ylabel("required wall thickness [mm]")
+    layer = textwrap.fill(structure_layer_label(record), STRUCTURE_TITLE_WRAP_CHARS)
+    top.set_title(
+        _plot_text(f"{title}: required wall thickness, pad envelope against push\n{layer}"),
+        fontsize=STRUCTURE_FONT_TITLE_PT,
+    )
+    _style_thickness_axes(top)
+    _dm_panel(bottom, record, title)
+    caption = _structure_caption(record, increment.stage2_sized)
+    caption_text = fig.text(
+        *STRUCTURE_CAPTION_XY, _plot_text(caption), fontsize=STRUCTURE_FONT_CAPTION_PT, va="bottom"
+    )
+    for d in drawn:
+        _mark_modes(d)
+    _thickness_legend(top, drawn)
+    fig.tight_layout(rect=_layout_rect(fig, caption_text))
+    obstacles = []
+    if inset is not None:
+        _settle_inset(inset)
+        obstacles = [_inset_obstacle(top)]
+    _annotate_governing(drawn, record, obstacles)  # first: it has the fewer places to go
+    for d in drawn:
+        _label_elements(d, obstacles if d is main else [])
+    return fig
+
+
+def _layout_rect(fig: Figure, caption: Any) -> tuple[float, float, float, float]:
+    """The figure rectangle tight_layout lays the panels in: the full width, from
+    STRUCTURE_CAPTION_GAP above the caption's top (its height measured on the figure's
+    renderer, in figure fraction, above STRUCTURE_CAPTION_XY) to the top, so the dm
+    panel's axis label clears the caption however many lines it has (review NEW-V-01)."""
+    box = caption.get_window_extent(_renderer(fig))
+    top_of_caption = STRUCTURE_CAPTION_XY[1] + float(box.height) / float(fig.bbox.height)
+    return (0.0, top_of_caption + STRUCTURE_CAPTION_GAP, 1.0, 1.0)
+
+
+def _settle_inset(inset: Any) -> None:
+    """Give the stage-2 inset its final position now: an inset axes is placed by its
+    locator at draw time, so until then its data transform and window extent are those
+    of the figure it was created in, and the label and annotation overlap tests would
+    read stale pixels (``Axes.draw`` applies the locator the same way)."""
+    locator = inset.get_axes_locator()
+    if locator is not None:
+        inset.apply_aspect(locator(inset, _renderer(inset.figure)))
+
+
+def _inset_obstacle(top: Any) -> Bbox:
+    """The stage-2 inset's box [display px] for the annotation's overlap test: its
+    rectangle in the top panel's axes fraction (STRUCTURE_STAGE2_INSET_RECT, where the
+    inset's locator places it at draw time) widened by STRUCTURE_INSET_OBSTACLE_MARGIN for
+    its tick labels and title, transformed by the panel's final transAxes."""
+    x0, y0, w, h = STRUCTURE_STAGE2_INSET_RECT
+    left, below, right, above = STRUCTURE_INSET_OBSTACLE_MARGIN
+    corners = [[x0 - left, y0 - below], [x0 + w + right, y0 + h + above]]
+    return Bbox(top.transAxes.transform(corners))
+
+
+def write_structure_figure(
+    increment: Increment, record: Mapping[str, Any], plots_dir: Path, prefix: str
+) -> Path:
+    """Write plots/<plot_stem(prefix, "structure")>.png, the ``structure_figure`` of a
+    structural run (SP7 step S3b: written for every structural case and payload case when
+    plots are on, from its case record), and return its path."""
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    fig = structure_figure(increment, record, prefix)
+    path = plots_dir / f"{plot_stem(prefix, STRUCTURE_FIGURE_QUANTITY)}.png"
+    fig.savefig(path, format="png")
+    return path
 
 
 # ------------------------------------------------------------------- ascent animation

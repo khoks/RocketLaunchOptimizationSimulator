@@ -1661,10 +1661,15 @@ class StructureSettingsConfig(_Model):
     ``envelope_cap_g`` (null or > 1 g0, the cap on the pad's stage-1 felt n; default null)
     and ``overrides`` (design-axis coefficients by their structure-file path, for the axis
     rows: the non-optimum factors, the rise time, the axial frequency, the pad count and
-    k_ts; default none). An outer set records its own margin and cap: a case that gives
-    either with a different value, or any override, is refused when it is resolved against
-    the file (``resolve_structure_settings``), as are an override outside its range and a
-    set the file has not frozen."""
+    k_ts; default none), and ``plausibility_scaled`` (SP7 step S3b; D-SP7-33, D-SP7-41:
+    the sized dm multiplied by the plausibility rule's factor for the case's band end,
+    computed from the pad's envelope at the central coefficients and never typed in;
+    default false; allowed on the two physics sets only, since the rule scales a physics
+    band end and nothing else, so it is refused on the central and the outer sets). An
+    outer set records its own margin and cap: a case that gives either with a different
+    value, or any override, is refused when it is resolved against the file
+    (``resolve_structure_settings``), as are an override outside its range and a set the
+    file has not frozen."""
 
     set: StructureSetChoice = "central"
     dynamic: structure.DynamicMode = "rise_time"
@@ -1672,6 +1677,28 @@ class StructureSettingsConfig(_Model):
     margin: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     envelope_cap_g: float | None = Field(default=None, gt=1.0, allow_inf_nan=False)
     overrides: dict[str, float | int] = Field(default_factory=dict)
+    plausibility_scaled: bool = False
+
+    @field_validator("plausibility_scaled", mode="before")
+    @classmethod
+    def _a_bool(cls, value: Any) -> Any:
+        """``plausibility_scaled`` must be written as a bool (pydantic's lax mode would
+        read 1 or "yes" as True)."""
+        if not isinstance(value, bool):
+            raise ValueError(f"structure plausibility_scaled must be true or false, got {value!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _scaled_on_a_physics_end_only(self) -> StructureSettingsConfig:
+        """``plausibility_scaled`` goes with ``set`` physics_low_mass or physics_high_mass
+        (the rule's factor applies to a physics band end, D-SP7-33); refused elsewhere."""
+        if self.plausibility_scaled and self.set not in STRUCTURE_PHYSICS_SETS:
+            raise ValueError(
+                f"structure plausibility_scaled applies the rule's factor to a physics band "
+                f"end, so it goes with set {' or '.join(STRUCTURE_PHYSICS_SETS)}, not with "
+                f"set {self.set!r}"
+            )
+        return self
 
     @field_validator("overrides", mode="before")
     @classmethod
@@ -1919,7 +1946,8 @@ class OffloadConfig(_Model):
 
 class StructurePayloadCaseConfig(StructureSettingsConfig):
     """One payload case of the experiment's ``structure`` block (design 4.4, "Payload
-    form"; parsed and validated in SP7 step S3, flown in S3b): ``name`` (its run's name),
+    form"; parsed and validated in SP7 step S3, flown by ``results_io._structure_payload_case``
+    since S3b): ``name`` (its run's name),
     ``of`` (a variant with a push, never the baseline) and the structural settings
     (StructureSettingsConfig); the variant flies at its own payload capacity P* with the
     structure sized for its full-load push (no sizing field: the payload form is a
@@ -1933,7 +1961,8 @@ class ExperimentStructureConfig(_Model):
     """The experiment's ``structure`` block (SP7 step S3; design 4.3): ``file``, the
     structure file (a path, resolved like the vehicle's: next to the experiment, then
     the repository root; cli.load_experiment reads it through ``load_structure``), and
-    ``payload_cases`` (StructurePayloadCaseConfig, unique names; flown in S3b). Not a
+    ``payload_cases`` (StructurePayloadCaseConfig, unique names; flown by the offload pass
+    since SP7 step S3b). Not a
     shared block: nothing in it changes a run of the experiment; it is needed by every
     offload case with ``structure`` and by the payload cases."""
 
@@ -2282,9 +2311,11 @@ class ExperimentConfig(_Model):
     def _structure_block(self) -> None:
         """The structure block (SP7 step S3; design 4.3): every structural offload case
         needs it; it needs planar_2d with search.figure_of_merit payload (a structural
-        case is an offload solve, a payload case a payload search); each payload case is
-        ``of`` a variant, never the baseline. A variant with no push is refused when the
-        experiment is resolved (``resolve_experiment``)."""
+        case is an offload solve, a payload case a payload search); a block with payload
+        cases needs an ``offload`` block (SP7 step S3b: the payload form runs inside the
+        offload pass, so without one the cases would silently never fly); each payload
+        case is ``of`` a variant, never the baseline. A variant with no push is refused
+        when the experiment is resolved (``resolve_experiment``)."""
         block = self.structure
         structural = [] if self.offload is None else structural_case_names(self.offload)
         if block is None:
@@ -2302,6 +2333,13 @@ class ExperimentConfig(_Model):
             raise ValueError(
                 "structure: a structural case and a payload case are payload searches, so "
                 f"the block needs search.figure_of_merit payload (got {fom})"
+            )
+        if block.payload_cases and self.offload is None:
+            raise ValueError(
+                f"structure payload case {block.payload_cases[0].name!r}: the payload form "
+                "runs inside the offload pass (against the offload block's reference pad "
+                "and P_ref), so an experiment with payload cases needs an offload: block "
+                "(its reference and at least one case); without it the cases would never fly"
             )
         for case in block.payload_cases:
             if case.of == self.baseline.name:
@@ -3044,6 +3082,7 @@ def offload_solved_run(
     *,
     structure_dm_kg: tuple[float, float] | None = None,
     provenance: str | None = None,
+    what: str | None = None,
 ) -> ResolvedRun:
     """start with the solved offload x* = offload_kg [kg] removed along mode
     (``vehicle.offload_split_kg`` on start's vehicle, ``offload_overrides``), resolved
@@ -3052,11 +3091,16 @@ def offload_solved_run(
     dm at x* by stage, structure_dm_kg = (dm1, dm2) [kg], and its provenance (the
     restated dry masses' ``source``, ``ResolvedStructureCase.provenance``): each stage's
     dry mass is then restated with dm added (``STRUCTURE_DRY_NOTE``), so the verification
-    and the recorded run's dict fly and record the structure; both or neither."""
+    and the recorded run's dict fly and record the structure; both or neither. ``what``
+    (SP7 step S3b) names the run in the restated quantities' notes and the errors: by
+    default ``offload case <case> (solved)``, the solved case's words; a structure payload
+    case, which solves no offload, passes its own (``structure payload case <case>``), so
+    every S3 and SP1 dict is unchanged."""
     if (structure_dm_kg is None) != (provenance is None):
         raise ValueError("a structural solved run takes structure_dm_kg and provenance together")
     removed = list(offload_split_kg(start.to_vehicle(), mode, offload_kg))
-    what = f"offload case {case!r} (solved)"
+    if what is None:
+        what = f"offload case {case!r} (solved)"
     if structure_dm_kg is None:
         overrides = offload_overrides(start.vehicle_dict, removed, 0.0, what)
     else:
@@ -4266,7 +4310,10 @@ class ResolvedStructureCase:
     (StructureSizingBasis); dynamic (structure.DYNAMIC_MODES); entry (structure.ENTRY_PATHS);
     margin [-] and envelope_cap_g [g0 or None], an outer set's own where it records them;
     overrides, the design-axis coefficients by path (file units); coefficients, the
-    StructureCoefficients of the set with the overrides (SI)."""
+    StructureCoefficients of the set with the overrides (SI); plausibility_scaled (SP7
+    step S3b): whether the sized dm is multiplied by the plausibility rule's factor for
+    this physics band end (D-SP7-33; the factor itself comes from the envelope at run
+    time, ``sim.build_structure_transform``)."""
 
     file: StructureFile
     set_name: str
@@ -4277,6 +4324,7 @@ class ResolvedStructureCase:
     envelope_cap_g: float | None
     overrides: dict[str, float | int]
     coefficients: structure.StructureCoefficients
+    plausibility_scaled: bool = False
 
     @property
     def provenance(self) -> str:
@@ -4287,7 +4335,9 @@ class ResolvedStructureCase:
         set never share a source) and, when the case overrides design-axis coefficients,
         ``, overrides <path> <value>[, <path> <value> ...]`` (paths sorted, values as the
         file states them; D-SP7-43: the coefficients that sized the mass are named at
-        source, not the base set alone)."""
+        source, not the base set alone); a plausibility-scaled case (S3b) ends with
+        ``, plausibility-scaled`` (the factor is a run-time number, recorded as
+        ``structure_plausibility_factor``, so the source names the rule, not the value)."""
         cap = "no cap" if self.envelope_cap_g is None else f"cap {self.envelope_cap_g:g} g0"
         text = (
             f"{STRUCTURE_PROVENANCE_PREFIX}, {self.file.path}, set {self.set_name}, "
@@ -4298,11 +4348,13 @@ class ResolvedStructureCase:
                 f"{path} {value!r}" for path, value in sorted(self.overrides.items())
             )
             text = f"{text}, overrides {listed}"
+        if self.plausibility_scaled:
+            text = f"{text}, plausibility-scaled"
         return text
 
     def settings(self) -> dict[str, Any]:
         """The settings as plain data: set, sizing, dynamic, entry, margin,
-        envelope_cap_g and overrides."""
+        envelope_cap_g, overrides and plausibility_scaled."""
         return {
             "set": self.set_name,
             "sizing": self.sizing,
@@ -4311,6 +4363,7 @@ class ResolvedStructureCase:
             "margin": self.margin,
             "envelope_cap_g": self.envelope_cap_g,
             "overrides": dict(self.overrides),
+            "plausibility_scaled": self.plausibility_scaled,
         }
 
     @property
@@ -4324,7 +4377,8 @@ class ResolvedStructureCase:
 
 @dataclass(frozen=True, eq=False)
 class ResolvedStructurePayloadCase:
-    """One payload case of the structure block resolved (flown in S3b): name, of, the
+    """One payload case of the structure block resolved (flown by the offload pass since
+    SP7 step S3b, ``results_io._structure_payload_case``): name, of, the
     variant it flies and its structure (sized at the full load)."""
 
     name: str
@@ -4387,4 +4441,5 @@ def resolve_structure_settings(
         envelope_cap_g=None if cap is None else float(cap),
         overrides=dict(settings.overrides),
         coefficients=coefficients,
+        plausibility_scaled=settings.plausibility_scaled,
     )

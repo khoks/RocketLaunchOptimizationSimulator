@@ -38,6 +38,17 @@ vehicle it is given by a short fixed-point iteration and adds dm to the stages' 
 masses (``charge_structure``); ``structure_record`` gives the run-level record keys and
 ``structure_assumption`` the run's assumption line.
 
+The reporting of the structure (SP7 step S3b; docs/physics.md, "Reporting the structure"):
+``payload_structure_transform`` builds the transform of a structure payload case (the
+payload form, flown by results_io), ``offload_pad_load_set`` is the one seam the pass reads
+the pad's envelope cases through, ``offload_structure_inputs`` gives the block-level
+``structure_inputs`` record (the envelope per element, the plausibility table, the frozen
+sets), ``central_plausibility`` and ``plausibility_factor_for`` the plausibility-scaled
+row's factor (D-SP7-33, computed from the envelope), ``structure_flight_cases`` and
+``structure_flight_check`` the post-hoc flight check of a recorded run (the rows after the
+release against the same envelope, sized and never iterated) and ``with_flight_check`` its
+record keys; ``STRUCTURE_ARM_CAVEAT`` is printed beside the structural sensitivity arms.
+
 The reporting pipeline lives in sibling modules. Every name sim.py defined before the
 split (plus ``NoAssist``) is re-exported here (``__all__``), so each
 ``launchsim.sim.<name>`` import path of Phase 1 keeps working; library names sim.py
@@ -84,6 +95,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
+import numpy as np
 import pandas as pd
 
 from launchsim import structure
@@ -139,14 +151,17 @@ from launchsim.config import (
     NO_SEARCH,
     PLANAR_2D,
     SEARCHED_FIGURES,
+    STRUCTURE_SET_NAMES,
     STRUCTURE_SIZING_FULL_LOAD,
     ChecksConfig,
     ResolvedExperiment,
     ResolvedOffloadCase,
     ResolvedRun,
     ResolvedStructureCase,
+    ResolvedStructurePayloadCase,
     RunConfig,
     StructureConfig,
+    StructureFile,
 )
 from launchsim.constants import MU_EARTH_M3S2, P_SEA_LEVEL_PA
 from launchsim.dynamics import (
@@ -324,12 +339,18 @@ from launchsim.structure import (
     FLIGHT,
     HOLD,
     PUSH,
+    SET_PHYSICS_HIGH,
+    SET_PHYSICS_LOW,
+    STAGE1,
+    STAGE2,
     CoefficientRange,
     CoefficientValue,
     Envelope,
+    FlightCheck,
     Increment,
     LoadCase,
     PadLoadSet,
+    Plausibility,
     PushLoad,
     RampedPlateau,
     ReleaseState,
@@ -343,8 +364,11 @@ from launchsim.structure import (
     StageMasses,
     StructureFlag,
     build_geometry,
+    flight_exceedance,
+    flight_load_set,
     implied_stack_length_m,
     pad_load_set,
+    plausibility,
     screened_search,
     size,
 )
@@ -363,6 +387,12 @@ from launchsim.summary import (  # re-exported
     SENSITIVITY_CASE_COLUMNS,
     SENSITIVITY_HEADER,
     STEP_STARTUP_KIND,
+    STRUCTURE_ARM_CAVEAT,
+    STRUCTURE_FLIGHT_CHECK_SCOPE,
+    STRUCTURE_PAYLOAD_CONTRACTION_MAX,
+    STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA,
+    STRUCTURE_PAYLOAD_RECORD_KIND,
+    STRUCTURE_PAYLOAD_RESIDUAL_FRACTION,
     SWEEP_OPTIMIZED_LABEL,
     VARIANT_ROWS,
     VariantRow,
@@ -492,6 +522,12 @@ __all__ = [
     "SI_SUFFIX_CONVERSIONS",
     "SKIPPED_STATUS_PREFIX",
     "STEP_STARTUP_KIND",
+    "STRUCTURE_ARM_CAVEAT",
+    "STRUCTURE_FLIGHT_CHECK_SCOPE",
+    "STRUCTURE_PAYLOAD_CONTRACTION_MAX",
+    "STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA",
+    "STRUCTURE_PAYLOAD_RECORD_KIND",
+    "STRUCTURE_PAYLOAD_RESIDUAL_FRACTION",
     "SWEEP_INDEX_FIXED_COLUMNS",
     "SWEEP_INDEX_METRICS",
     "SWEEP_OPTIMIZED_LABEL",
@@ -1015,13 +1051,61 @@ def check_resolved(resolved: ResolvedExperiment) -> None:
     (``every_resolved_run``: variants, sweep points, sensitivity runs, bounds, cases)
     as the run will (``run_ignition_specs``), integrating nothing, so a configuration
     refused only when its specs are built (a ramp start at a speed the push never
-    reaches, a height at or above the drag-free apex) writes nothing. Raises
-    ValueError naming the run and where it comes from."""
+    reaches, a height at or above the drag-free apex) writes nothing. With a structure
+    block (SP7 step S3b) the reference pad must light stage 1 before its hold-down
+    release, so that it holds down under thrust above its weight (the skirt's hold-down
+    envelope is built from the pad's HOLD rows, ``structure.pad_load_set``, and only such
+    a pad gives them the restrained-thrust case); a pad lit at or after the release, at a
+    height, or never, is refused here (``structure_block_needs_hold``) rather than after
+    the nominal runs have flown. Raises ValueError naming the run and where it comes
+    from."""
     for label, run in every_resolved_run(resolved):
         try:
             run_ignition_specs(run.run, run.to_vehicle())
         except ValueError as exc:
             raise ValueError(f"{label}: {exc}") from exc
+    if resolved.structure is not None:
+        structure_block_needs_hold(resolved.baseline)
+
+
+def structure_block_needs_hold(pad: ResolvedRun) -> None:
+    """Refuse a structure block whose reference pad never holds down under thrust above
+    its weight (SP7 step S3b; review N-S3b-R3-02 and its follow-up): the pad's first
+    stage must light before the hold-down release (reference "release", t_ign_s < 0, not
+    failing and not lit at a height). The skirt's hold-down envelope is built from the
+    pad's HOLD rows (``structure.pad_load_set``), and only a pad lit before its release
+    holds down with the thrust above the weight, the restrained-thrust case; a pad lit at
+    or after the release holds, if at all, through the liftoff extension at TWR < 1
+    (``prelude.hold_until_liftoff``: with the shipped 2 s startup ramp its HOLD rows carry
+    the weight alone; with a step startup there is no HOLD row and ``pad_load_set``
+    raises), so its envelope would lack that case. A modelling choice of the structural
+    reference, stricter than the pass's own requirement of one HOLD row, not a failure of
+    the run. Raises ValueError naming the pad and how it lights."""
+    specs = run_ignition_specs(pad.run, pad.to_vehicle())
+    stage1 = pad.to_vehicle().stages[0].name
+    spec = specs[stage1]
+    if spec.fails:
+        how = "never lights stage 1"
+    elif spec.lights_at_height:
+        how = "lights stage 1 at a height after its hold-down release"
+    else:
+        t_ign = spec.t_ign_abs_s(0.0, 0.0)
+        if t_ign < 0.0:
+            return
+        how = (
+            "lights stage 1 at its hold-down release"
+            if t_ign == 0.0
+            else f"lights stage 1 {t_ign:g} s after its hold-down release"
+        )
+    raise ValueError(
+        f"structure block: the reference pad {pad.name!r} {how}, so it never holds down "
+        "under thrust above its weight: its HOLD rows, if any, come from the liftoff "
+        "extension at TWR < 1 and carry the weight alone, and the skirt's hold-down envelope "
+        "(structure.pad_load_set, built from the pad's HOLD rows) would lack the "
+        "restrained-thrust case; the block needs the pad's stage 1 lit on the pad before the "
+        "release (ignition.stage1: {t_ign_s: <0, reference: release}); a modelling choice of "
+        "the structural reference, not a failure of the run"
+    )
 
 
 # -------------------------------------------------------------------- planar model
@@ -2153,11 +2237,13 @@ class StructureSizing:
 
     dm_stage1_kg (the stage-1 elements and the interstage, D-SP7-36) and dm_stage2_kg
     [kg]: the last iterate, the increment the transform adds; increment: the Increment
-    that gave it (sized on the vehicle carrying the iterate before); iterations: the
-    sizings made (each call starts from dm = 0, so the first sizes the uncharged vehicle);
-    capped: True when STRUCTURE_FIXED_POINT_MAX_ITERATIONS was reached before the
-    tolerance; steps: each iteration's larger |dm_k+1 - dm_k| of the two stages [kg]
-    (the first is |dm_1 - 0|).
+    that gave it (sized on the vehicle carrying the iterate before; its element masses
+    are unscaled, the iterate is ``factor`` times them); iterations: the sizings made
+    (each call starts from dm = 0, so the first sizes the uncharged vehicle); capped:
+    True when STRUCTURE_FIXED_POINT_MAX_ITERATIONS was reached before the tolerance;
+    steps: each iteration's larger |dm_k+1 - dm_k| of the two stages [kg] (the first is
+    |dm_1 - 0|); factor: the plausibility rule's factor the iterate carries (SP7 step
+    S3b; 1.0 for a case that is not plausibility-scaled).
     """
 
     dm_stage1_kg: float
@@ -2166,6 +2252,7 @@ class StructureSizing:
     iterations: int
     capped: bool
     steps: tuple[float, ...]
+    factor: float = 1.0
 
     @property
     def total_kg(self) -> float:
@@ -2195,7 +2282,11 @@ class StructureTransform:
     from the push start when it lights on the track (None: cold); start_vehicle: the
     solve's full-load vehicle (x = 0, payload P0); mode: the solve's offload mode;
     reference_payload_kg: P_ref [kg]; envelope_pad: the name of the run whose flight is
-    the envelope; envelope_pad_key: its ``compare.trajectory_key``.
+    the envelope; envelope_pad_key: its ``compare.trajectory_key``; plausibility (SP7
+    step S3b): the plausibility rule's check at the central coefficients on this pad's
+    envelope (margin 0, no cap: the rule's basis, D-SP7-33); plausibility_factor: the
+    factor every sizing's dm is multiplied by (the rule's factor for the case's physics
+    band end when ``settings.plausibility_scaled``, else 1.0).
 
     Pure and deterministic: a call depends on its arguments and these fields only and
     starts from dm = 0, so ``OffloadProblem.vehicle_at(x)`` gives the same bits in any
@@ -2215,6 +2306,14 @@ class StructureTransform:
     reference_payload_kg: float
     envelope_pad: str
     envelope_pad_key: str
+    plausibility: Plausibility
+    plausibility_factor: float
+
+    @property
+    def plausibility_ratio(self) -> float:
+        """M_model / R [-]: the model's envelope tank mass over Heineman's relation at the
+        central coefficients (``structure.plausibility``)."""
+        return self.plausibility.m_model_kg / self.plausibility.relation_kg
 
     @property
     def memo_key(self) -> tuple[str, str]:
@@ -2236,12 +2335,15 @@ class StructureTransform:
         )
 
     def iterate(self, flown: Vehicle) -> StructureSizing:
-        """The fixed point dm = S(push(flown + dm)) from dm = 0 (design 4.4): sized with
+        """The fixed point dm = f S(push(flown + dm)) from dm = 0 (design 4.4): sized with
         ``structure.size_increment`` on the closed-over geometry and envelope until the
         larger stage step is below STRUCTURE_FIXED_POINT_TOL_KG, at most
-        STRUCTURE_FIXED_POINT_MAX_ITERATIONS sizings. flown: the vehicle at the payload it
-        flies [kg]."""
+        STRUCTURE_FIXED_POINT_MAX_ITERATIONS sizings; f the ``plausibility_factor`` (1.0
+        unless the case is plausibility-scaled, SP7 step S3b: then the scaled dm is the
+        mass flown, so the fixed point is taken on it). flown: the vehicle at the payload
+        it flies [kg]."""
         st = self.settings
+        f = self.plausibility_factor
         dm1 = dm2 = 0.0
         steps: list[float] = []
         increment: Increment | None = None
@@ -2254,14 +2356,14 @@ class StructureTransform:
                 dynamic=st.dynamic,  # type: ignore[arg-type]
                 entry=st.entry,  # type: ignore[arg-type]
             )
-            n1, n2 = increment.dm_stage1_kg, increment.dm_stage2_kg
+            n1, n2 = f * increment.dm_stage1_kg, f * increment.dm_stage2_kg
             steps.append(max(abs(n1 - dm1), abs(n2 - dm2)))
             dm1, dm2 = n1, n2
             if steps[-1] < STRUCTURE_FIXED_POINT_TOL_KG:
                 break
         assert increment is not None
         capped = steps[-1] >= STRUCTURE_FIXED_POINT_TOL_KG
-        return StructureSizing(dm1, dm2, increment, len(steps), capped, tuple(steps))
+        return StructureSizing(dm1, dm2, increment, len(steps), capped, tuple(steps), f)
 
     def sizing(self, vehicle: Vehicle, payload_kg: float) -> StructureSizing:
         """The sizing a call with vehicle (offloaded, at its own payload) and payload_kg
@@ -2304,7 +2406,10 @@ def build_structure_transform(
     name and trajectory key (the records and the memo key).
     Output: the transform. Raises ValueError for a start with no push and
     NotImplementedError for a drive other than constant_accel (a flown push inside the
-    transform is step S4b's). Frame: the stack axis.
+    transform is step S4b's). The plausibility rule's check (``central_plausibility``) is
+    taken on this pad at the central coefficients, and its factor for the case's physics
+    band end is applied to every sizing when ``settings.plausibility_scaled`` (SP7 step
+    S3b; ``plausibility_factor_for``). Frame: the stack axis.
     """
     config = settings.file.config
     layout = config.stack_layout()
@@ -2320,7 +2425,8 @@ def build_structure_transform(
             f"analytically; a {type(assist).__name__} push is flown inside the transform "
             "in SP7 step S4b, not built yet"
         )
-    geometry = build_geometry(stack_masses(full_load_vehicle), layout, coeffs)
+    masses = stack_masses(full_load_vehicle)
+    geometry = build_geometry(masses, layout, coeffs)
     envelope = structure.build_envelope(
         geometry,
         coeffs,
@@ -2328,6 +2434,7 @@ def build_structure_transform(
         margin=settings.margin,
         envelope_cap_g=settings.envelope_cap_g,
     )
+    check = central_plausibility(config, masses, pad_cases)
     t_push = assist.push_time_s(setup.track.length_m)
     return StructureTransform(
         settings=settings,
@@ -2343,7 +2450,61 @@ def build_structure_transform(
         reference_payload_kg=reference_payload_kg,
         envelope_pad=envelope_pad,
         envelope_pad_key=envelope_pad_key,
+        plausibility=check,
+        plausibility_factor=plausibility_factor_for(settings, check),
     )
+
+
+def central_plausibility(
+    config: StructureConfig, masses: StackMasses, pad_cases: PadLoadSet
+) -> Plausibility:
+    """The plausibility rule's check (design 4.2.5, D-SP7-33; ``structure.plausibility``)
+    at the rule's basis: the structure file's central coefficients, the geometry of the
+    full-load masses and the pad's envelope at margin 0 with no cap (stage 1 only: the
+    rule reads the stage-1 tank elements). Computed from the envelope, never typed in
+    (SP7 step S3b). Frame: the stack axis."""
+    coeffs = config.coefficients()
+    geometry = build_geometry(masses, config.stack_layout(), coeffs)
+    envelope = structure.build_envelope(geometry, coeffs, pad_cases, stages=(STAGE1,))
+    return plausibility(geometry, coeffs, envelope)
+
+
+def plausibility_factor_for(settings: ResolvedStructureCase, check: Plausibility) -> float:
+    """The factor a plausibility-scaled case multiplies its sized dm by (D-SP7-33, applied
+    as approved, D-SP7-41): on set physics_low_mass the rule's favourable-end factor
+    ((1 + band) R / M when the model's tank mass M lies above (1 + band) R, else 1.0), on
+    physics_high_mass its adverse-end factor ((1 - band) R / M below (1 - band) R, else
+    1.0), with band the structure file's ``heineman_band_fraction`` (0.30 in the shipped
+    files; ``Plausibility.band_fraction``); 1.0 for a case that is not
+    plausibility-scaled. ``plausibility_end_factor`` gives the end's factor whether or not
+    the case applies it (the record prints it on every run)."""
+    if not settings.plausibility_scaled:
+        return 1.0
+    return plausibility_end_factor(settings.set_name, check)
+
+
+def plausibility_end_factor(set_name: str, check: Plausibility) -> float:
+    """The plausibility rule's factor for a coefficient set's band end: physics_low_mass
+    the favourable-end factor, physics_high_mass the adverse-end factor, any other set
+    1.0 (the rule scales the two physics band ends and nothing else, D-SP7-33)."""
+    if set_name == SET_PHYSICS_LOW:
+        return check.favourable_end_factor
+    if set_name == SET_PHYSICS_HIGH:
+        return check.adverse_end_factor
+    return 1.0
+
+
+def offload_pad_load_set(
+    pad: RunResult, reference_payload_kg: float, layout: StackLayout
+) -> PadLoadSet:
+    """The envelope's load cases of a reference pad (``structure_pad_cases`` of its Result
+    on its vehicle at the payload it flew, P_ref [kg], prepared by ``pad_load_set``). The
+    one seam every structural builder of the offload pass reads the pad through
+    (``offload_structure_transform``, ``payload_structure_transform``,
+    ``offload_structure_inputs``), looked up on this module at call time by ``results_io``
+    (and replaced by a synthetic pad in the tests)."""
+    pad_vehicle = with_payload(pad.resolved.to_vehicle(), reference_payload_kg)
+    return pad_load_set(structure_pad_cases(pad.result, pad_vehicle, layout, label=pad.name))
 
 
 def offload_structure_transform(
@@ -2351,21 +2512,46 @@ def offload_structure_transform(
 ) -> StructureTransform:
     """The StructureTransform of a resolved structural offload case against its pad
     (``results_io`` looks it up here at call time): the envelope from the pad's own flight
-    (``structure_pad_cases`` of its Result on its vehicle at the payload it flew, P_ref;
-    for a sensitivity arm, the pad flown under the same perturbation), the geometry from
-    the case's variant at its full loads, the push of the case's start. ValueError for a
-    case without structure."""
+    (``offload_pad_load_set``: ``structure_pad_cases`` of its Result on its vehicle at the
+    payload it flew, P_ref; for a sensitivity arm, the pad flown under the same
+    perturbation), the geometry from the case's variant at its full loads, the push of
+    the case's start. ValueError for a case without structure."""
     settings = case.structure
     if settings is None:
         raise ValueError(f"offload case {case.name!r} has no structure")
     layout = settings.file.config.stack_layout()
-    pad_vehicle = with_payload(pad.resolved.to_vehicle(), reference_payload_kg)
-    cases = pad_load_set(structure_pad_cases(pad.result, pad_vehicle, layout, label=pad.name))
+    cases = offload_pad_load_set(pad, reference_payload_kg, layout)
     return build_structure_transform(
         settings,
         case.variant.to_vehicle(),
         case.start,
         case.config.mode,
+        cases,
+        reference_payload_kg,
+        envelope_pad=pad.name,
+        envelope_pad_key=trajectory_key(pad.resolved),
+    )
+
+
+def payload_structure_transform(
+    case: ResolvedStructurePayloadCase, pad: RunResult, reference_payload_kg: float
+) -> StructureTransform:
+    """The StructureTransform of a structure payload case (design 4.4, "Payload form";
+    SP7 step S3b; ``results_io`` looks it up here at call time): the envelope from the
+    reference pad's own flight (``offload_pad_load_set``), the geometry from the case's
+    variant at its full loads, the push of that variant (its start: the payload form flies
+    the variant itself, offloaded by nothing), the sizing basis full_load (the settings
+    were resolved so), the mode STRUCTURE_OFFLOAD_MODE (unused by a full-load sizing: the
+    transform never offloads, ``StructureTransform.sizing`` sizes the start vehicle at the
+    payload it is given)."""
+    settings = case.structure
+    layout = settings.file.config.stack_layout()
+    cases = offload_pad_load_set(pad, reference_payload_kg, layout)
+    return build_structure_transform(
+        settings,
+        case.variant.to_vehicle(),
+        case.variant,
+        STRUCTURE_OFFLOAD_MODE,
         cases,
         reference_payload_kg,
         envelope_pad=pad.name,
@@ -2384,41 +2570,61 @@ def structure_record(
     """The run-level record keys of a structural run (design 4.4, "Records"; SP7 step S3),
     in this order, for the case record and the recorded run's metrics: structure_charged
     (True); structure_dm_kg, dm1 + dm2 at x* [kg], and structure_dm_stage2_kg, dm2 [kg]
-    (dm1 the difference); structure_dm_x0_kg, dm1 + dm2 at x = 0 [kg]; structure_set,
-    structure_sizing, structure_dynamic, structure_entry, structure_margin [-],
-    structure_envelope_cap_g [g0 or None], structure_overrides (the case's design-axis
-    coefficients by path, file units; {} when none; D-SP7-43: the coefficients that sized
-    dm are on disk, not only in the memo key); at x*: structure_dlf [-], structure_t_r_s and
-    structure_f_Hz (the rise time [s] and axial frequency [Hz] behind it),
-    structure_n_q_g and structure_n_peak_g [g0], structure_F_peak_N [N],
+    (dm1 the difference); structure_dm_x0_kg, dm1 + dm2 at x = 0 [kg] (the full-load
+    sizing at P_ref: on a structure payload case's record dm_0, its first pass's sizing,
+    the same quantity, while its structure_dm_kg is dm_1, the mass its run carries);
+    structure_flight_exceedance_kg (SP7 step S3b: the post-hoc flight check's exceedance
+    mass [kg], unscaled, None until ``with_flight_check`` fills it on a recorded run that
+    has a time series); structure_set, structure_sizing, structure_dynamic, structure_entry,
+    structure_margin [-], structure_envelope_cap_g [g0 or None], structure_overrides (the
+    case's design-axis coefficients by path, file units; {} when none; D-SP7-43: the
+    coefficients that sized dm are on disk, not only in the memo key);
+    structure_plausibility_ratio (M_model / R at the central coefficients on this
+    envelope, S3b), structure_plausibility_factor (the rule's factor for the case's band
+    end: physics_low_mass (1 + band) R / M above (1 + band) R, physics_high_mass (1 -
+    band) R / M below (1 - band) R, band the file's ``heineman_band_fraction``; 1.0 when
+    the rule does not fire on that end or the set is not a physics end) and
+    structure_plausibility_scaled (whether dm carries that factor); at x*: structure_dlf
+    [-], structure_t_r_s and structure_f_Hz (the rise time [s] and axial frequency [Hz]
+    behind it), structure_n_q_g and structure_n_peak_g [g0], structure_F_peak_N [N],
     structure_ramp_cost_rel (the constant_accel plateau's raise (a' - a)/a [-]),
-    structure_elements (kg per ``<stage>.<element>``), structure_closed_form_kg and
-    structure_ring_kg [kg], structure_governing (the element with the largest increment:
-    stage, element, push and envelope modes, station index, height z [m], the envelope
-    case's index and label; None when dm is 0), structure_flags (each of
-    structure.size_increment's flags and FLAG_FIXED_POINT_CAP, fired or not, with their
-    numbers; the cap flag's: iterations, last_step_kg, tolerance_kg, max_iterations and
-    contraction, the measured step ratio, so a call at the cap's edge can be told from a
-    comfortably converged one on disk), structure_iterations (the sizings at x*), structure_file and
-    structure_file_sha256, structure_envelope_pad (the run whose flight is the envelope).
-    at_x and at_zero: the transform's sizings at x* and at x = 0; at_x None for a solve
-    that found no x* (search_failed): every key at x* is then None (the flags an empty
-    list), the settings, dm at x = 0 and the file are still recorded, so the record says
-    the case was structural."""
+    structure_elements (kg per ``<stage>.<element>``; a scaled case's times its factor,
+    so they sum to dm), structure_closed_form_kg and structure_ring_kg [kg] (likewise),
+    structure_governing (the element with the largest increment: stage, element, push
+    and envelope modes, station index, height z [m], the envelope case's index and
+    label; None when dm is 0), structure_flags (each of structure.size_increment's flags
+    and FLAG_FIXED_POINT_CAP, fired or not, with their numbers; the cap flag's:
+    iterations, last_step_kg, tolerance_kg, max_iterations and contraction, the measured
+    step ratio, so a call at the cap's edge can be told from a comfortably converged one
+    on disk; ``with_flight_check`` appends FLAG_FLIGHT_EXCEEDANCE), structure_iterations
+    (the sizings at x*), structure_file and structure_file_sha256, structure_envelope_pad
+    (the run whose flight is the envelope). at_x and at_zero: the transform's sizings at
+    x* and at x = 0; at_x None for a solve that found no x* (search_failed): every key at
+    x* is then None (the flags an empty list), the settings, dm at x = 0, the
+    plausibility keys and the file are still recorded, so the record says the case was
+    structural."""
     st = transform.settings
+    settings_items = {
+        "structure_set": st.set_name,
+        "structure_sizing": st.sizing,
+        "structure_dynamic": st.dynamic,
+        "structure_entry": st.entry,
+        "structure_margin": st.margin,
+        "structure_envelope_cap_g": st.envelope_cap_g,
+        "structure_overrides": dict(st.overrides),
+        "structure_plausibility_ratio": transform.plausibility_ratio,
+        "structure_plausibility_factor": plausibility_end_factor(
+            st.set_name, transform.plausibility
+        ),
+        "structure_plausibility_scaled": st.plausibility_scaled,
+    }
     if at_x is None:
         out = dict.fromkeys(STRUCTURE_RECORD_KEYS)
         out.update(
             {
                 "structure_charged": True,
                 "structure_dm_x0_kg": at_zero.total_kg,
-                "structure_set": st.set_name,
-                "structure_sizing": st.sizing,
-                "structure_dynamic": st.dynamic,
-                "structure_entry": st.entry,
-                "structure_margin": st.margin,
-                "structure_envelope_cap_g": st.envelope_cap_g,
-                "structure_overrides": dict(st.overrides),
+                **settings_items,
                 "structure_flags": [],
                 "structure_file": st.file.path,
                 "structure_file_sha256": st.file.sha256,
@@ -2427,6 +2633,7 @@ def structure_record(
         )
         return out
     inc = at_x.increment
+    f = at_x.factor
     req = inc.requirement
     gov = inc.governing
     governing = None
@@ -2461,13 +2668,8 @@ def structure_record(
         "structure_dm_kg": at_x.total_kg,
         "structure_dm_stage2_kg": at_x.dm_stage2_kg,
         "structure_dm_x0_kg": at_zero.total_kg,
-        "structure_set": st.set_name,
-        "structure_sizing": st.sizing,
-        "structure_dynamic": st.dynamic,
-        "structure_entry": st.entry,
-        "structure_margin": st.margin,
-        "structure_envelope_cap_g": st.envelope_cap_g,
-        "structure_overrides": dict(st.overrides),
+        "structure_flight_exceedance_kg": None,
+        **settings_items,
         "structure_dlf": req.dlf,
         "structure_t_r_s": req.rise_time_s,
         "structure_f_Hz": req.axial_frequency_hz,
@@ -2475,11 +2677,11 @@ def structure_record(
         "structure_n_peak_g": req.n_peak_g,
         "structure_F_peak_N": req.f_peak_N,
         "structure_ramp_cost_rel": req.ramp_cost_rel,
-        "structure_elements": {f"{e.stage}.{e.element}": e.kg for e in inc.elements},
-        "structure_closed_form_kg": inc.closed_form_kg,
-        "structure_ring_kg": inc.ring_kg,
+        "structure_elements": {f"{e.stage}.{e.element}": f * e.kg for e in inc.elements},
+        "structure_closed_form_kg": f * inc.closed_form_kg,
+        "structure_ring_kg": f * inc.ring_kg,
         "structure_governing": governing,
-        "structure_flags": [*(_flag_record(f) for f in inc.flags), cap],
+        "structure_flags": [*(_flag_record(fl) for fl in inc.flags), cap],
         "structure_iterations": at_x.iterations,
         "structure_file": st.file.path,
         "structure_file_sha256": st.file.sha256,
@@ -2492,6 +2694,7 @@ STRUCTURE_RECORD_KEYS: tuple[str, ...] = (
     "structure_dm_kg",
     "structure_dm_stage2_kg",
     "structure_dm_x0_kg",
+    "structure_flight_exceedance_kg",
     "structure_set",
     "structure_sizing",
     "structure_dynamic",
@@ -2499,6 +2702,9 @@ STRUCTURE_RECORD_KEYS: tuple[str, ...] = (
     "structure_margin",
     "structure_envelope_cap_g",
     "structure_overrides",
+    "structure_plausibility_ratio",
+    "structure_plausibility_factor",
+    "structure_plausibility_scaled",
     "structure_dlf",
     "structure_t_r_s",
     "structure_f_Hz",
@@ -2570,14 +2776,51 @@ def _structure_flag_line(flag: Mapping[str, Any]) -> str:
             f"{v['release_swing_g']:.3g} g0 against the payload's axial limits "
             f"{v['limit_axial_min_g']:g} to {v['limit_axial_max_g']:g} g0"
         )
+    if name == structure.FLAG_FLIGHT_EXCEEDANCE:
+        cap = v.get("envelope_cap_g")
+        capped = (
+            "no cap"
+            if cap is None or not math.isfinite(float(cap))
+            else f"the flight's stage-1 felt n capped at {float(cap):g} g0 as the envelope's was"
+        )
+        factor = float(v.get(FLIGHT_DM_FACTOR_KEY, 1.0))
+        scaled = (
+            ""
+            if factor == 1.0
+            else (
+                f"; the exceedance is the unscaled sizing while the dm carries the "
+                f"plausibility rule's factor {factor:.4g}"
+            )
+        )
+        stage2 = (
+            "stage 2 not checked (not sized by the push)"
+            if float(v.get("stage2_checked", 1.0)) == 0.0
+            else f"stage 2 {v['stage2_kg']:.3g} kg"
+        )
+        return (
+            f"{name}: the recorded run's own flight after its release needs "
+            f"{v['total_kg']:.3g} kg more wall than the pad envelope its structure was sized "
+            f"to (stage 1 {v['stage1_kg']:.3g} kg, {stage2}; {STRUCTURE_FLIGHT_CHECK_SCOPE}; "
+            f"sized, not charged or iterated; the flight evaluated unfactored against the "
+            f"envelope at margin {v.get('margin', 0.0):g}, {capped}{scaled}; the flag's "
+            f"threshold is {v['threshold_kg']:g} kg)"
+        )
+    if name == STRUCTURE_PAYLOAD_FLAG:
+        return (
+            f"{name}: the payload form's two-pass residual estimate "
+            f"{v['residual_estimate_kg']:.3g} kg against the tolerance {v['tolerance_kg']:g} kg, "
+            f"contraction {v['contraction']:.3g} against {v['contraction_max']:g} (the passes "
+            "are not iterated further; the estimate is never measured)"
+        )
     return f"{name}: fired (its numbers are in structure_flags)"
 
 
 def with_structure_items(rr: RunResult, items: Mapping[str, Any]) -> RunResult:
     """rr with the structural record keys appended to its metrics (``structure_record``)
-    and every fired structure flag (the release, upper-stack and payload-limit flags of
-    ``size_increment`` and the cap flag, in ``structure_flags`` order) appended to its
-    flags as one line each (``_structure_flag_line``), so the case record's ``flags``,
+    and every fired flag in ``structure_flags`` (``size_increment``'s release, upper-stack
+    and payload-limit flags, the cap flag, the flight check's and, on a payload case, the
+    payload form's, in ``structure_flags`` order) appended to its flags as one line each
+    with its numbers (``_structure_flag_line``), so the case record's ``flags``,
     summary.md and a sweep's ``n_flags`` see them; the numbers stay in
     ``structure_flags``. Informational (D-SP7-19): no flag changes a status."""
     metrics = {**rr.result.metrics, **items}
@@ -2586,6 +2829,417 @@ def with_structure_items(rr: RunResult, items: Mapping[str, Any]) -> RunResult:
         if flag["fired"]:
             flags.append(_structure_flag_line(flag))
     return replace(rr, result=replace(rr.result, metrics=metrics, flags=flags))
+
+
+# ------------------------------------------------------- structure reporting (SP7 S3b)
+# STRUCTURE_ARM_CAVEAT (the caveat printed beside the structural sensitivity arms),
+# STRUCTURE_PAYLOAD_RECORD_KIND (the kind of a structure payload case's record),
+# STRUCTURE_PAYLOAD_CONTRACTION_MAX and STRUCTURE_PAYLOAD_RESIDUAL_FRACTION (the payload
+# flag's two limits, which the payload table's labels are built from),
+# STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA (the flight check on a payload case: not applicable)
+# and STRUCTURE_FLIGHT_CHECK_SCOPE (the elements the flight check covers) live in
+# summary.py beside the rows that print them and are re-exported here.
+
+STRUCTURE_PAYLOAD_FLAG = "structure_payload_unconverged"
+"""The payload form's flag: the two-pass residual estimate c |P_2* - P_1*| above
+STRUCTURE_PAYLOAD_RESIDUAL_FRACTION of the final payload tolerance, or the contraction c
+above STRUCTURE_PAYLOAD_CONTRACTION_MAX (both in ``summary``, re-exported here)."""
+STRUCTURE_PAYLOAD_CASE_ASSUMPTION = (
+    "structure payload case: the variant flies at its own payload capacity P* with the "
+    "structure sized for its full-load push in two passes (dm_0 sized at the pad's P_ref, "
+    "P_1* searched on the vehicle carrying dm_0, dm_1 sized at P_1*, P_2* searched on the "
+    "vehicle carrying dm_1, which is the mass this run carries); the passes are not "
+    "iterated further, and the residual of the sizing at P_2* is estimated from the "
+    "contraction of the two passes, never measured; the post-hoc flight check is "
+    f"{STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA}"
+)
+"""The assumption line of a structure payload case's recorded run (SP7 step S3b), carried
+before its structure line; it ends with STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA (the flight check
+is not run on a payload case, review N-S3b-R3-01)."""
+
+
+def plausibility_rule_text(band_fraction: float) -> str:
+    """The plausibility rule in words (design 4.2.5; printed in the Structure subsection)
+    with the band's half-width as the structure file states it
+    (``heineman_band_fraction``: the edges (1 - band) R and (1 + band) R are printed from
+    it, never assumed)."""
+    lo, hi = 1.0 - band_fraction, 1.0 + band_fraction
+    return (
+        "D-SP7-33 (applied as approved, D-SP7-41): the model's envelope mass of the sized "
+        "stage-1 tank elements at the central coefficients (M, the non-optimum factors "
+        "included) is compared with Heineman's tank relation R = c V^e within its "
+        f"+/-{band_fraction:.0%} band (the file's heineman_band_fraction); below {lo:g} R the "
+        f"physics band's high-mass end is multiplied by {lo:g} R / M, above {hi:g} R its "
+        f"low-mass end by {hi:g} R / M, mechanically; a case that states plausibility_scaled "
+        "carries that factor in its dm, and D-SP7-41 asks that the unscaled and the scaled "
+        "ends be printed side by side; a calibration check, not a validation"
+    )
+
+
+STRUCTURE_SETS_NOT_IN_FILE = (
+    "not in the structure file: the structure file freezes the four sets of searches A to C "
+    "and their checks only; the sizing-only tornado and search D's break-even values were "
+    "recorded in the phase file's step S2 session log at SP1's headline push and are not "
+    "frozen in any config file (the sets' method says D is not frozen there)"
+)
+"""What ``offload_structure_inputs`` records under ``tornado`` and ``break_even`` (SP7 step
+S3b): the structure file carries neither, so the record says so rather than quoting a
+number from elsewhere."""
+
+
+def structure_flight_cases(
+    result: Result, vehicle: Vehicle, layout: StackLayout, *, label: str = "flight"
+) -> tuple[LoadCase, ...]:
+    """A recorded assisted run's post-release load cases for the flight check (pure; SP7
+    step S3b; design 4.2: the run's own flight against the envelope its structure was
+    sized to). The pad adapter ``structure_pad_cases`` refuses a Result with a push, so
+    this adapter reads the rows after the release instead of changing that contract.
+
+    Inputs: result, the recorded run's planar Result (its time series and events; HOLD
+    and ASSIST rows are skipped); vehicle, the Vehicle it flew (the offloaded vehicle
+    with the modelled dm in its dry masses, at the payload it flew); layout, the structure
+    file's StackLayout (stage names and each stage's LOX mass fraction); label, the cases'
+    label prefix.
+    Output: one FLIGHT LoadCase per stage-1 row with an engine lit after the release
+    (phase in LIT_KINDS) and per stage-2 burn row, in time-series order, the masses
+    recovered as the pad adapter recovers them (U = stage 2 wet + the fairing while
+    attached + the payload; the stage-1 propellant m - dry1 - U, clamped to [0, the
+    offloaded load] within STRUCTURE_MASS_TOL_KG; the stage-2 propellant on its burn),
+    split by each stage's LOX mass fraction; no hold-down support (no HOLD row). Checked:
+    the first flight row's mass is at most the full stack's and stage 1's propellant is 0
+    at its depletion event, within STRUCTURE_MASS_TOL_KG (else the vehicle is not the one
+    the Result flew). Raises ValueError for a Result that is not planar or has no lit
+    stage-1 row after the release. Frame: the stack axis.
+    """
+    if result.model != PLANAR_MODEL:
+        raise ValueError(f"the flight check reads a planar Result, got {result.model!r}")
+    masses = stack_masses(vehicle)
+    stage1, stage2 = masses.stage1.name, masses.stage2.name
+    if (layout.stage1.name, layout.stage2.name) != (stage1, stage2):
+        raise ValueError("the structure layout's stage names differ from the vehicle's")
+    ts, events = result.timeseries, result.events
+    s1, s2 = vehicle.stages
+    fairing, payload = vehicle.fairing_mass_kg, vehicle.payload_mass_kg
+    drop = _fairing_drop(events)
+    m = ts["m_kg"].to_numpy(dtype=float)
+    t = ts["t_s"].to_numpy(dtype=float)
+
+    def attached(i: int) -> bool:
+        if drop is None or t[i] < drop[0]:
+            return True
+        if t[i] > drop[0]:
+            return False
+        return abs(m[i] - drop[1]) <= 0.5 * fairing
+
+    full = s1.wet_mass_kg + s2.wet_mass_kg + fairing + payload
+    f1, f2 = layout.stage1.lox_mass_fraction, layout.stage2.lox_mass_fraction
+    lox2_full = f2 * s2.propellant_mass_kg
+    rp12_full = s2.propellant_mass_kg - lox2_full
+    cases: list[LoadCase] = []
+    phases = ts["phase"].astype(str).to_numpy()
+    stages = ts["stage"].astype(str).to_numpy()
+    felt = ts["felt_axial_g"].to_numpy(dtype=float)
+    thrust = ts["thrust_N"].to_numpy(dtype=float)
+    for i in range(len(ts)):
+        phase, stage = phases[i], stages[i]
+        if phase not in LIT_KINDS:
+            continue
+        upper2 = payload + (fairing if attached(i) else 0.0)
+        tag = f"{label} {phase} t={t[i]:.4f} s"
+        if stage == stage1:
+            if not cases and m[i] > full + STRUCTURE_MASS_TOL_KG:
+                raise ValueError(
+                    f"the Result's first flight mass {m[i]!r} kg exceeds the vehicle's full "
+                    f"stack {full!r} kg: the vehicle is not the one the Result flew"
+                )
+            upper = s2.wet_mass_kg + upper2
+            prop1 = _non_negative_mass(m[i] - s1.dry_mass_kg - upper, s1.propellant_mass_kg)
+            lox1 = f1 * prop1
+            cases.append(
+                LoadCase(
+                    label=tag,
+                    kind=FLIGHT,
+                    t_s=float(t[i]),
+                    n_g=float(felt[i]),
+                    stage1_attached=True,
+                    lox_stage1_kg=lox1,
+                    rp1_stage1_kg=prop1 - lox1,
+                    lox_stage2_kg=lox2_full,
+                    rp1_stage2_kg=rp12_full,
+                    upper_mass_stage1_kg=upper,
+                    upper_mass_stage2_kg=upper2,
+                    vehicle_mass_kg=float(m[i]),
+                    thrust_N=float(thrust[i]),
+                )
+            )
+        elif stage == stage2:
+            prop2 = _non_negative_mass(m[i] - s2.dry_mass_kg - upper2, s2.propellant_mass_kg)
+            lox2 = f2 * prop2
+            cases.append(
+                LoadCase(
+                    label=tag,
+                    kind=FLIGHT,
+                    t_s=float(t[i]),
+                    n_g=float(felt[i]),
+                    stage1_attached=False,
+                    lox_stage1_kg=0.0,
+                    rp1_stage1_kg=0.0,
+                    lox_stage2_kg=lox2,
+                    rp1_stage2_kg=prop2 - lox2,
+                    upper_mass_stage1_kg=0.0,
+                    upper_mass_stage2_kg=upper2,
+                    vehicle_mass_kg=float(m[i]),
+                    thrust_N=float(thrust[i]),
+                )
+            )
+    if not any(c.stage1_attached for c in cases):
+        raise ValueError("the flight check needs a lit stage-1 row after the release")
+    depletion = events[(events["event"] == "propellant") & (events["stage"] == stage1)]
+    if not depletion.empty:
+        m_dep = float(depletion.iloc[0]["m_kg"])
+        on = drop is None or float(depletion.iloc[0]["t_s"]) < drop[0]
+        left = m_dep - s1.dry_mass_kg - s2.wet_mass_kg - payload - (fairing if on else 0.0)
+        if abs(left) > STRUCTURE_MASS_TOL_KG:
+            raise ValueError(
+                f"stage 1's propellant at its depletion event is {left!r} kg, not 0: the "
+                "vehicle is not the one the Result flew"
+            )
+    return tuple(cases)
+
+
+def structure_flight_check(
+    transform: StructureTransform, rr: RunResult, sizing: StructureSizing
+) -> FlightCheck | None:
+    """The post-hoc flight check of a structural offload case's recorded run (design 4.2;
+    SP7 step S3b): the run's own flight after its release (``structure_flight_cases`` of
+    its Result on its vehicle, which carries the restated dm, at the payload it flew,
+    P_ref) against the transform's envelope (``structure.flight_exceedance``, the tank
+    elements with a station envelope: STRUCTURE_FLIGHT_CHECK_SCOPE; stage 2 when the
+    sizing at x* sized it), the flight's stage-1 felt n capped as the envelope's was and
+    the flight unfactored against the envelope at the case's margin (so a capped case
+    does not report the pad's own loads above the cap, and a margin row's check fires
+    only above the margin's headroom). The exceedance is sized, never charged or
+    iterated: the solve is not repeated. It is the unscaled sizing: a plausibility-scaled
+    case's dm carries the rule's factor (``sizing.factor``), its exceedance does not, and
+    the flag's values carry that factor under FLIGHT_DM_FACTOR_KEY (1.0 for an unscaled
+    case) so the two bases are told apart on disk and in the flag line. None when the run
+    has no time series to check (a solve that recorded no flight, or a test's fake run).
+    Not called on a structure payload case (STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA): its run
+    flies its own P_2* while the envelope is the pad's at P_ref, so the check would
+    measure the payload gain, which the pad's own flight at P_2* would need too."""
+    frame = rr.result.timeseries
+    needed = {"t_s", "phase", "stage", "felt_axial_g", "m_kg", "thrust_N"}
+    if frame.empty or not needed <= set(frame.columns) or rr.result.events is None:
+        return None
+    payload = rr.result.metrics.get("payload_kg")
+    vehicle = rr.resolved.to_vehicle()
+    if payload is not None and math.isfinite(float(payload)):
+        vehicle = with_payload(vehicle, float(payload))
+    cases = structure_flight_cases(rr.result, vehicle, transform.layout, label=rr.name)
+    check = flight_exceedance(
+        transform.geometry,
+        transform.settings.coefficients,
+        transform.envelope,
+        flight_load_set(cases),
+        stage2=sizing.increment.stage2_sized,
+    )
+    flag = check.flag
+    values = (*flag.values, (FLIGHT_DM_FACTOR_KEY, float(sizing.factor)))
+    return replace(check, flag=replace(flag, values=values))
+
+
+FLIGHT_DM_FACTOR_KEY = "dm_plausibility_factor"
+"""The flight check flag's value naming the plausibility factor the case's dm carries
+(``structure_flight_check``; 1.0 unless the case is plausibility-scaled): the exceedance
+itself is never scaled."""
+
+
+def with_flight_check(items: Mapping[str, Any], check: FlightCheck | None) -> dict[str, Any]:
+    """The structure record keys with the flight check filled in (SP7 step S3b):
+    ``structure_flight_exceedance_kg`` set to the check's total (the unscaled sizing, a
+    scaled case's dm carrying the factor its flag names) and FLAG_FLIGHT_EXCEEDANCE
+    appended to ``structure_flags`` (with its numbers, fired above the threshold); the
+    items unchanged, as a copy, when the check is None (``structure_flight_check`` had no
+    time series). Called before ``with_structure_items``, so a fired flag reaches the run's
+    flags like the others."""
+    out = dict(items)
+    if check is None:
+        return out
+    out["structure_flight_exceedance_kg"] = check.total_kg
+    out["structure_flags"] = [*out.get("structure_flags", []), _flag_record(check.flag)]
+    return out
+
+
+def _plausibility_record(check: Plausibility, envelope: Envelope) -> dict[str, Any]:
+    """The plausibility table as plain data (design 4.2.5; ``structure.plausibility``):
+    the element masses, M_model (physical and cylinder-equivalent lengths), the length
+    ratios, R, its per-tank form, band and band fraction, M/R, the factor on each end, the
+    rule's text (``plausibility_rule_text`` at the file's band) and the quantities printed
+    beside; and the rule's trigger (SP7 step S3b, D-SP7-41: "the ratio and its trigger"),
+    computed from the envelope, never typed in: ``dominant``, the stage-1 tank element
+    that carries the largest share of M_model, its share [-], and the governing mode, load
+    case label and station height z [m] of its thickest station in the envelope the rule
+    reads (``_envelope_elements_record``'s point); the summary prints it with the central
+    case's own push increment on that element."""
+    items = dict(check.element_kg)
+    name = max(items, key=lambda n: items[n])
+    element = envelope.element(STAGE1, name)
+    i = int(np.argmax(element.t_m))
+    case = int(element.case_index[i])
+    load_case = envelope.pad.cases[case] if case >= 0 else None
+    return {
+        "element_kg": items,
+        "m_model_kg": check.m_model_kg,
+        "m_model_cylinder_kg": check.m_model_cylinder_kg,
+        "lox_length_ratio": check.lox_length_ratio,
+        "rp1_length_ratio": check.rp1_length_ratio,
+        "relation_kg": check.relation_kg,
+        "relation_per_tank_kg": check.relation_per_tank_kg,
+        "lower_kg": check.lower_kg,
+        "upper_kg": check.upper_kg,
+        "band_fraction": check.band_fraction,
+        "ratio": check.m_model_kg / check.relation_kg,
+        "low_mass_end_factor": check.favourable_end_factor,
+        "high_mass_end_factor": check.adverse_end_factor,
+        "rule": plausibility_rule_text(check.band_fraction),
+        "dominant": {
+            "element": f"{STAGE1}.{name}",
+            "share": items[name] / check.m_model_kg,
+            "mode": element.modes[i],
+            "case_label": None if load_case is None else load_case.label,
+            "z_m": float(element.z_m[i]),
+        },
+        "akin_kg": check.akin_kg,
+        "interstage_relation_kg": check.interstage_relation_kg,
+        "thrust_structure_relation_kg": check.thrust_structure_relation_kg,
+        "stage1_dry_less_engines_kg": check.stage1_dry_less_engines_kg,
+    }
+
+
+def _envelope_elements_record(envelope: Envelope) -> list[dict[str, Any]]:
+    """The envelope per element as plain data: for each element of each built stage, the
+    required thickness's maximum over its stations [m], the station index and height z
+    [m] of that maximum, the governing mode there and the governing load case (its index,
+    label and time [s]; None at the minimum gauge)."""
+    out: list[dict[str, Any]] = []
+    for stage, table in ((STAGE1, envelope.stage1), (STAGE2, envelope.stage2)):
+        if table is None:
+            continue
+        for name, element in table.items():
+            i = int(np.argmax(element.t_m))
+            case = int(element.case_index[i])
+            load_case = envelope.pad.cases[case] if case >= 0 else None
+            out.append(
+                {
+                    "stage": stage,
+                    "element": name,
+                    "t_max_m": float(element.t_m[i]),
+                    "station_index": i,
+                    "z_m": float(element.z_m[i]),
+                    "mode": element.modes[i],
+                    "case_index": case if case >= 0 else None,
+                    "case_label": None if load_case is None else load_case.label,
+                    "case_t_s": None if load_case is None else load_case.t_s,
+                }
+            )
+    return out
+
+
+def _sets_record(config: StructureConfig) -> dict[str, Any] | None:
+    """The frozen sets as the structure file records them (design 4.2.6), as plain data:
+    the label, source, method, evaluation count, fallbacks, seed, parent commit and
+    reproducing test, and per set its values, searches, implied stack length, each
+    search's polish (passes, converged, dm before and after, the moves counted) and each
+    extremality check; None for a file without sets."""
+    sets = config.sets
+    if sets is None:
+        return None
+    out: dict[str, Any] = {
+        "label": sets.label,
+        "source": sets.source,
+        "method": sets.method,
+        "evaluation_count": sets.evaluation_count,
+        "fallbacks": list(sets.fallbacks),
+        "seed": sets.seed,
+        "parent_commit": sets.parent_commit,
+        "test": sets.test,
+    }
+    for name in STRUCTURE_SET_NAMES:
+        item = getattr(sets, name)
+        out[name] = {
+            "values": dict(item.values),
+            "searches": item.searches,
+            "implied_stack_length_m": item.implied_stack_length_m,
+            "polish": [
+                {
+                    "search": p.search,
+                    "passes": p.passes,
+                    "converged": p.converged,
+                    "dm_before_kg": p.dm_before_kg,
+                    "dm_after_kg": p.dm_after_kg,
+                    "moves": len(p.moves),
+                }
+                for p in item.polish
+            ],
+            "extremality": [
+                {
+                    "search": c.search,
+                    "check": c.check,
+                    "trials": c.trials,
+                    "found_dm_kg": c.found_dm_kg,
+                    "extreme_dm_kg": c.extreme_dm_kg,
+                    "excess_kg": c.excess_kg,
+                    "path": c.path,
+                    "value": c.value,
+                }
+                for c in item.extremality
+            ],
+        }
+    return out
+
+
+def offload_structure_inputs(
+    sfile: StructureFile, pad: RunResult, reference_payload_kg: float, full_load_vehicle: Vehicle
+) -> dict[str, Any]:
+    """The block-level ``structure_inputs`` record of an offload pass with a structure
+    block (design 4.4, "Records"; SP7 step S3b; beside ``energy_inputs``): the structure
+    file's path and sha256; the envelope pad and P_ref [kg]; ``envelope``, the pad's
+    envelope per element at the central coefficients, margin 0 and no cap (both stages;
+    ``_envelope_elements_record``: the required thickness's maximum per element, its
+    station, mode and governing load case); ``plausibility``, the rule's table on that
+    envelope (``_plausibility_record``); ``sets``, the frozen sets as the file records
+    them (``_sets_record``, with the method and the evaluation count; their label is
+    structure.SEARCH_LABEL); ``tornado`` and ``break_even`` None with
+    STRUCTURE_SETS_NOT_IN_FILE as ``tornado_note`` (the file freezes neither: a
+    deviation from design 4.4's record list, logged in the phase file's section 12,
+    since the record quotes no value the frozen file does not hold). The pad is read
+    through ``offload_pad_load_set``; the geometry is the full-load vehicle's (the
+    experiment's baseline vehicle at its full loads)."""
+    config = sfile.config
+    layout = config.stack_layout()
+    cases = offload_pad_load_set(pad, reference_payload_kg, layout)
+    masses = stack_masses(full_load_vehicle)
+    coeffs = config.coefficients()
+    geometry = build_geometry(masses, layout, coeffs)
+    envelope = structure.build_envelope(geometry, coeffs, cases)
+    check = plausibility(geometry, coeffs, envelope)
+    return {
+        "file": sfile.path,
+        "sha256": sfile.sha256,
+        "envelope_pad": pad.name,
+        "reference_payload_kg": reference_payload_kg,
+        "envelope_basis": (
+            "the central coefficients, margin 0, no cap; the envelope of a case with a "
+            "margin or a cap is its own"
+        ),
+        "envelope": _envelope_elements_record(envelope),
+        "plausibility": _plausibility_record(check, envelope),
+        "sets": _sets_record(config),
+        "sets_label": structure.SEARCH_LABEL,
+        "tornado": None,
+        "break_even": None,
+        "tornado_note": STRUCTURE_SETS_NOT_IN_FILE,
+    }
 
 
 # ------------------------------------------------------------------- structure search (SP7 S2)

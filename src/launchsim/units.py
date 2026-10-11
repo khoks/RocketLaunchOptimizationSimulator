@@ -52,6 +52,16 @@ def n_to_kn(force_n: Quantity) -> Quantity:
     return force_n / 1000.0
 
 
+def mn_to_n(force_mn: Quantity) -> Quantity:
+    """Meganewtons to newtons."""
+    return force_mn * 1.0e6
+
+
+def n_to_mn(force_n: Quantity) -> Quantity:
+    """Newtons to meganewtons (reports, such as a peak interface force; SP7 step S3b)."""
+    return force_n / 1.0e6
+
+
 def t_to_kg(mass_t: Quantity) -> Quantity:
     """Tonnes to kilograms."""
     return mass_t * 1000.0

@@ -2366,12 +2366,17 @@ def _barrel_envelope(
     feats: CaseFeatures,
     coeffs: StructureCoefficients,
     lam: float,
+    anchor: np.ndarray | None = None,
 ) -> ElementEnvelope:
     """The envelope of one barrel: per station, the largest over the cases of the largest of
     hoop, compression, combined and minimum gauge. Hoop rises with the head driver P alone
     and compression with the load driver Q alone, so each is evaluated at its driver's
     exact maximum; the combined mode rises with both and is maximized exactly by blocks
-    (``_rowwise_max``) above the other modes' floor."""
+    (``_rowwise_max``) above the other modes' floor. ``anchor``: the plate-limited row's
+    anchor load per station [N]; None (the pad's own envelope) anchors the row at this
+    envelope's own design compression N_env, and the flight check passes the pad
+    envelope's N_env so the flight follows the push's linear law t_ref(N_env) N / N_env
+    (``_barrel_push``), not the anchor row's power law at the flight's own load."""
     tank = barrel.tank
     r, area = sg.radius_m, sg.area_m2
     fs, f_tu, eta = coeffs.fs_ult, coeffs.f_tu_pa, coeffs.eta_weld
@@ -2394,7 +2399,7 @@ def _barrel_envelope(
     hoop = _hoop_array(_station_pressure(p_max, lam, p_meop, area), r, fs, f_tu, eta, 0.0)
     n_env = _station_design_load(q_max, lam, fs, p_min, area)
     mode_c = _compression_mode(tank, coeffs)
-    comp = _compression_array(mode_c, n_env, r, coeffs, p_min, n_env)
+    comp = _compression_array(mode_c, n_env, r, coeffs, p_min, n_env if anchor is None else anchor)
     t_min = np.full(k.shape, coeffs.t_min_m)
     floor = np.maximum(np.maximum(hoop, comp), t_min)
 
@@ -2611,11 +2616,19 @@ def _stage_envelope(
     feats: CaseFeatures,
     coeffs: StructureCoefficients,
     lam: float,
+    anchors: Mapping[str, np.ndarray] | None = None,
 ) -> dict[str, ElementEnvelope]:
-    """The barrels, domes and tube of one stage."""
+    """The barrels, domes and tube of one stage. ``anchors``: the plate-limited row's
+    anchor load per station of each barrel, by element name (``_barrel_envelope``); None
+    for the pad's own envelope."""
+    anchors = {} if anchors is None else anchors
     out = {
-        RP1_BARREL: _barrel_envelope(stage, sg, sg.rp1_barrel, feats, coeffs, lam),
-        LOX_BARREL: _barrel_envelope(stage, sg, sg.lox_barrel, feats, coeffs, lam),
+        RP1_BARREL: _barrel_envelope(
+            stage, sg, sg.rp1_barrel, feats, coeffs, lam, anchors.get(RP1_BARREL)
+        ),
+        LOX_BARREL: _barrel_envelope(
+            stage, sg, sg.lox_barrel, feats, coeffs, lam, anchors.get(LOX_BARREL)
+        ),
     }
     for element in (RP1_AFT_DOME, COMMON_DOME, FORWARD_DOME, TRANSFER_TUBE):
         out[element] = _area_envelope(stage, sg, feats, coeffs, element, lam)
@@ -3891,6 +3904,248 @@ def size(
     return size_increment(geometry, coeffs, envelope, push, dynamic=dynamic, entry=entry)
 
 
+# ======================================================================== S3b: the flight check
+
+FLAG_FLIGHT_EXCEEDANCE = "structure_flight_exceedance"
+"""The post-hoc flight check's flag (design 4.2, "The recorded assisted run's own flight is
+checked after the solve against the same envelope"): fired when the exceedance mass is
+above FLIGHT_EXCEEDANCE_FLAG_KG."""
+FLIGHT_EXCEEDANCE_FLAG_KG: float = 1.0
+"""The exceedance mass [kg] above which FLAG_FLIGHT_EXCEEDANCE fires (SP7 step S3b)."""
+FLIGHT_CHECK_ELEMENTS: tuple[str, ...] = (
+    RP1_AFT_DOME,
+    RP1_BARREL,
+    COMMON_DOME,
+    LOX_BARREL,
+    FORWARD_DOME,
+    TRANSFER_TUBE,
+)
+"""The elements the flight check compares (the tank elements with a station envelope). The
+aft skirt and the ring are left out: the skirt's flight load is the thrust path, the same on
+the pad and on the assisted run to the engines' inertia, and its envelope path is a
+modelling choice (SKIRT_ENVELOPE_PATHS, D-SP7-17), so a flight exceedance there would charge
+the assist for a load the pad's own flight carries too; the ring is new hardware sized to
+the push alone."""
+
+
+def flight_load_set(cases: Sequence[LoadCase]) -> PadLoadSet:
+    """Prepare a flown run's post-release load cases for the flight check (SP7 step S3b).
+
+    Input: the LoadCases of the recorded assisted run's flight after its release (sim.py's
+    flight adapter: the stage-1 lit rows and the stage-2 burn), no HOLD or PUSH case, at
+    least one stage-1 flight row.
+    Output: a PadLoadSet with no hold cases (the skirt's hold-down envelope is not built
+    from it, FLIGHT_CHECK_ELEMENTS) and the last stage-1 flight row as its MECO; its
+    ``features`` serve ``flight_exceedance`` as the pad's serve ``build_envelope``.
+    Frame: the stack axis.
+    """
+    cases = tuple(cases)
+    if any(c.kind != FLIGHT for c in cases):
+        raise ValueError("a flight check takes flight cases only (the rows after the release)")
+    stage1 = np.array([i for i, c in enumerate(cases) if c.stage1_attached], dtype=int)
+    burn2 = [i for i, c in enumerate(cases) if not c.stage1_attached]
+    if stage1.size == 0:
+        raise ValueError("the flight check needs the stage-1 flight after the release")
+    meco = max(stage1.tolist(), key=lambda i: (cases[i].t_s, i))
+    return PadLoadSet(
+        cases=cases,
+        stage1_cases=stage1,
+        stage2_cases=np.array([*stage1.tolist(), *burn2], dtype=int),
+        hold_cases=np.array([], dtype=int),
+        meco_case=int(meco),
+    )
+
+
+@dataclass(frozen=True)
+class FlightElementCheck:
+    """One element of the flight check (``flight_exceedance``): stage, element; kg, the
+    exceedance sized as the increment is (the positive part of t_flight - t_env at each
+    station times 2 pi r rho dz and the station's non-optimum factor; domes and the tube
+    area x rho x the positive part x their factor) [kg]; t_excess_max_m, the largest
+    t_flight - t_env over the stations [m] (<= 0 inside the envelope); station_index and
+    z_m [m, stack frame] of that largest excess (the domes and the tube: 0 and their
+    crown or bottom); flight_mode, the governing mode of the flight there; case_label,
+    the flight case governing there (None at the minimum gauge)."""
+
+    stage: str
+    element: str
+    kg: float
+    t_excess_max_m: float
+    station_index: int
+    z_m: float
+    flight_mode: str
+    case_label: str | None
+
+
+@dataclass(frozen=True)
+class FlightCheck:
+    """The post-hoc flight check of a recorded structural run (``flight_exceedance``;
+    design 4.2): elements, one FlightElementCheck per checked element (stage 1, and stage 2
+    when it was sized); total_kg, stage1_kg and stage2_kg, the exceedance masses [kg]
+    (sized, not iterated: the recorded run is not re-solved); cases, the flight cases
+    checked; stage2_checked; flag, FLAG_FLIGHT_EXCEEDANCE with its numbers (fired above
+    FLIGHT_EXCEEDANCE_FLAG_KG). The flight is evaluated as the envelope evaluated the pad:
+    its stage-1 rows' felt n capped at the envelope's cap (the pad's own treatment, so a
+    capped case does not report the pad's own loads above the cap as the push's), and
+    unfactored (as the push is sized) against the envelope at the case's margin, so a
+    margin row's check fires only above the margin's headroom; the flag's values carry
+    both (``margin``, ``envelope_cap_g``: NaN for no cap)."""
+
+    elements: tuple[FlightElementCheck, ...]
+    total_kg: float
+    stage1_kg: float
+    stage2_kg: float
+    cases: int
+    stage2_checked: bool
+    flag: StructureFlag
+
+
+def _element_flight_check(
+    stage: str,
+    sg: StageGeometry,
+    element: str,
+    env: ElementEnvelope,
+    flight: ElementEnvelope,
+    coeffs: StructureCoefficients,
+    pad: PadLoadSet,
+) -> FlightElementCheck:
+    """One element's exceedance of the flight's required thickness over the envelope's,
+    sized as ``_barrel_increment`` and ``_area_increment`` size the push (the factor by the
+    flight's governing mode at each station: nof_stiffened under a stiffened row, else
+    nof_barrel; domes nof_dome with their alloy's density; the tube nof_barrel)."""
+    excess = flight.t_m - env.t_m
+    i = int(np.argmax(excess))
+    if element in (RP1_BARREL, LOX_BARREL):
+        barrel = sg.barrel(RP1 if element == RP1_BARREL else LOX)
+        stiff = np.array([m in STIFFENED_MODES for m in flight.modes], dtype=bool)
+        nof = np.where(stiff, coeffs.nof_stiffened, coeffs.nof_barrel)
+        per_station = (
+            nof * 2.0 * math.pi * sg.radius_m * coeffs.rho_wall_kgm3 * barrel.dz_m
+        ) * np.maximum(excess, 0.0)
+        kg = float(np.sum(per_station))
+    elif element == TRANSFER_TUBE:
+        kg = area_increment_kg(
+            float(flight.t_m[0]),
+            float(env.t_m[0]),
+            sg.tube_area_m2,
+            coeffs.rho_wall_kgm3,
+            coeffs.nof_barrel,
+        )
+    else:
+        kg = area_increment_kg(
+            float(flight.t_m[0]),
+            float(env.t_m[0]),
+            sg.dome_area_m2,
+            coeffs.dome_rho_kgm3,
+            coeffs.nof_dome,
+        )
+    case = int(flight.case_index[i])
+    return FlightElementCheck(
+        stage=stage,
+        element=element,
+        kg=kg,
+        t_excess_max_m=float(excess[i]),
+        station_index=i,
+        z_m=float(flight.z_m[i]),
+        flight_mode=flight.modes[i],
+        case_label=pad.label(case),
+    )
+
+
+def flight_exceedance(
+    geometry: StackGeometry,
+    coeffs: StructureCoefficients,
+    envelope: Envelope,
+    flight: PadLoadSet,
+    *,
+    stage2: bool,
+) -> FlightCheck:
+    """The post-hoc flight check of design 4.2 (SP7 step S3b): the recorded assisted run's
+    own flight after its release against the envelope its structure was sized to.
+
+    Inputs: geometry, coeffs and envelope, the structural transform's (built on the same
+    geometry and coefficients; the envelope at the case's margin and cap); flight, the
+    recorded run's post-release load cases (``flight_load_set``); stage2, whether the
+    push sized stage 2 (``Increment.stage2_sized``: then the stage-2 burn is checked against
+    the stage-2 envelope, which must have been built).
+    Output: a FlightCheck. Each FLIGHT_CHECK_ELEMENTS element's required thickness under
+    the flight's cases is the envelope reduction of ``build_envelope`` (``_stage_envelope``
+    at unit load factor: quasi-static, drag left out, the pad's own treatment) on the
+    flight's features with the flight's stage-1 felt n capped as the envelope's was
+    (``envelope.envelope_cap_g``; stage-2 rows are never capped, as on the pad), so on a
+    capped case the pad's own loads above the cap are not reported as the push's; the
+    flight is unfactored (as the push is sized) against the envelope at the case's margin,
+    so a margin row's check fires only above the margin's headroom; a plate-limited
+    stiffened row is anchored at the pad envelope's design compression N_env, as the push
+    sizing anchors it (``_barrel_push``), so the flight's thickness follows the same
+    linear law t_ref(N_env) N / N_env and not the anchor row's power law at the flight's
+    own load (the reduction's own anchoring, which the pad envelope uses). The exceedance
+    over the envelope is sized per station as the push increment is (the factor by the
+    station's governing mode; the cell split at a factor switch, ``_nof_cells``, is not
+    applied: a station's whole cell takes its mode's factor) and summed, never iterated
+    (the run is not re-solved). The skirt and the ring are not checked
+    (FLIGHT_CHECK_ELEMENTS). The flag fires when the total exceeds
+    FLIGHT_EXCEEDANCE_FLAG_KG; its values: total_kg, stage1_kg, stage2_kg, threshold_kg,
+    cases, stage2_checked (0 or 1), margin, envelope_cap_g (NaN for no cap) and
+    ``<stage>.<element>_kg`` per checked element.
+    Frame: the stack frame of the geometry.
+    """
+    out: list[FlightElementCheck] = []
+    roles: list[str] = [STAGE1]
+    if stage2:
+        if envelope.stage2 is None:
+            raise ValueError("the flight check of stage 2 needs the stage-2 envelope")
+        roles.append(STAGE2)
+    for stage in roles:
+        sg = geometry.stage(stage)
+        feats = flight.features(stage, envelope.envelope_cap_g)
+        anchors = {
+            name: envelope.element(stage, name).design_compression_N
+            for name in (RP1_BARREL, LOX_BARREL)
+        }
+        required = _stage_envelope(stage, sg, feats, coeffs, 1.0, anchors=anchors)
+        for element in FLIGHT_CHECK_ELEMENTS:
+            out.append(
+                _element_flight_check(
+                    stage,
+                    sg,
+                    element,
+                    envelope.element(stage, element),
+                    required[element],
+                    coeffs,
+                    flight,
+                )
+            )
+    kg1 = math.fsum(e.kg for e in out if e.stage == STAGE1)
+    kg2 = math.fsum(e.kg for e in out if e.stage == STAGE2)
+    total = kg1 + kg2
+    cap = envelope.envelope_cap_g
+    values: list[tuple[str, float]] = [
+        ("total_kg", total),
+        ("stage1_kg", kg1),
+        ("stage2_kg", kg2),
+        ("threshold_kg", FLIGHT_EXCEEDANCE_FLAG_KG),
+        ("cases", float(len(flight.cases))),
+        ("stage2_checked", 1.0 if stage2 else 0.0),
+        ("margin", envelope.margin),
+        ("envelope_cap_g", math.nan if cap is None else float(cap)),
+    ]
+    values += [(f"{e.stage}.{e.element}_kg", e.kg) for e in out]
+    return FlightCheck(
+        elements=tuple(out),
+        total_kg=total,
+        stage1_kg=kg1,
+        stage2_kg=kg2,
+        cases=len(flight.cases),
+        stage2_checked=stage2,
+        flag=StructureFlag(
+            name=FLAG_FLIGHT_EXCEEDANCE,
+            fired=total > FLIGHT_EXCEEDANCE_FLAG_KG,
+            values=tuple(values),
+        ),
+    )
+
+
 # ======================================================================== S2: plausibility
 
 
@@ -3905,10 +4160,12 @@ class Plausibility:
     m_model_kg, their sum, and m_model_cylinder_kg on the cylinder-equivalent lengths [kg];
     lox_length_ratio and rp1_length_ratio L_phys/L_model [-]; relation_kg R = c V^e on the
     combined LOX + RP-1 volume and relation_per_tank_kg (printed beside) [kg]; lower_kg and
-    upper_kg, (1 -/+ band) R; adverse_end_factor (0.7 R/M when M < 0.7 R, else 1) and
-    favourable_end_factor (1.3 R/M when M > 1.3 R, else 1); akin_kg (printed); the
-    interstage relation's mass, the thrust-structure relation k_ts T_max and stage 1's dry
-    mass less its engines [kg] (printed beside).
+    upper_kg, (1 -/+ band) R; band_fraction, the band's half-width as a fraction of R
+    (the file's ``heineman_band_fraction``, so a label can print it rather than assume
+    0.3); adverse_end_factor ((1 - band) R/M when M < (1 - band) R, else 1) and
+    favourable_end_factor ((1 + band) R/M when M > (1 + band) R, else 1); akin_kg
+    (printed); the interstage relation's mass, the thrust-structure relation k_ts T_max and
+    stage 1's dry mass less its engines [kg] (printed beside).
     """
 
     element_kg: tuple[tuple[str, float], ...]
@@ -3920,6 +4177,7 @@ class Plausibility:
     relation_per_tank_kg: float
     lower_kg: float
     upper_kg: float
+    band_fraction: float
     adverse_end_factor: float
     favourable_end_factor: float
     akin_kg: float
@@ -3987,6 +4245,7 @@ def plausibility(
         relation_per_tank_kg=per_tank,
         lower_kg=lower,
         upper_kg=upper,
+        band_fraction=band,
         adverse_end_factor=adverse,
         favourable_end_factor=favourable,
         akin_kg=coeffs.akin_lox_tank_fraction * sg.lox_full_kg

@@ -653,6 +653,7 @@ def test_structural_case_and_block_resolve(synthetic_file: config.StructureFile)
         "margin": 0.0,
         "envelope_cap_g": None,
         "overrides": {},
+        "plausibility_scaled": False,
     }
     assert st.provenance == PROVENANCE_CENTRAL
     assert st.coefficients == synthetic_file.config.coefficients()
@@ -1199,6 +1200,8 @@ def fake_pass(
     monkeypatch.setattr(sim, "solve_resolved_offload", solve)
     monkeypatch.setattr(sim, "offload_run_result", offload_run_result)
     monkeypatch.setattr(sim, "offload_structure_transform", transform_for)
+    # S3b: the block-level inputs and the payload cases read the pad through this seam
+    monkeypatch.setattr(sim, "offload_pad_load_set", lambda pad, p_ref, layout: synthetic_pad)
     return state
 
 
@@ -1440,10 +1443,10 @@ def test_arms_size_on_their_own_perturbed_pad(
     the pad its offload is solved at (a vehicle parameter's perturbed pad, a run
     parameter's unchanged one), every arm solve has a transform, and the arm's in-memory
     case record and recorded run (the ``_CaseOutcome`` of ``_offload_case``, spied here)
-    carry the structure keys with that envelope pad. Neither reaches disk at this step: the
-    arm record in offload.sensitivity[] (``_offload_arm_record``) carries no structure key
-    until S3b's arm columns, and the arm's recorded run goes to ``OffloadReport.checked_runs``,
-    whose metrics are not written."""
+    carry the structure keys with that envelope pad. Since S3b the arm record written to
+    offload.sensitivity[] (``_offload_arm_record``) ends with the same keys, naming that
+    pad; the arm's recorded run still goes to ``OffloadReport.checked_runs``, whose
+    metrics are not written (tests/test_structure_reporting.py checks the caveat line)."""
     outcomes: list[tuple[str, results_io._CaseOutcome]] = []
     real = results_io._offload_case
 
@@ -1475,7 +1478,10 @@ def test_arms_size_on_their_own_perturbed_pad(
         assert report.checked_runs[f"{rr.name} (offload sensitivity)"] is rr
     recorded = report.record["sensitivity"]
     assert len(recorded) == 4
-    assert not [k for arm in recorded for k in arm if k.startswith("structure")]  # S3b's columns
+    for arm in recorded:  # S3b: the written arm record ends with the structure keys
+        assert tuple(list(arm)[-n:]) == sim.STRUCTURE_RECORD_KEYS
+        assert arm["structure_envelope_pad"] == expected[arm["run"]]
+        assert arm["structure_charged"] is True and arm["structure_dm_kg"] > 0.0
 
 
 def test_a_written_run_without_a_structure_block_has_no_structure_key(

@@ -54,11 +54,27 @@ from launchsim.config import (
     PLANAR_2D,
     RAMP_START_TIME,
     SEARCHED_FIGURES,
+    STRUCTURE_CENTRAL_SET,
+    STRUCTURE_PHYSICS_SETS,
+    STRUCTURE_SET_NAMES,
+    STRUCTURE_SIZING_FLOWN,
+    STRUCTURE_SIZING_FULL_LOAD,
     SweepPoint,
 )
 from launchsim.offload import NO_OFFLOAD_STATUS
 from launchsim.search import OK_STATUS
-from launchsim.units import j_to_mj, kg_to_t, rad_to_deg, to_percent
+from launchsim.structure import (
+    ENTRY_AFT_RING,
+    ENTRY_THRUST_STRUCTURE,
+    INTERSTAGE,
+    LOAD_RING,
+    SET_OUTER_HIGH,
+    SET_OUTER_LOW,
+    SET_PHYSICS_HIGH,
+    SET_PHYSICS_LOW,
+    THRUST_STRUCTURE,
+)
+from launchsim.units import j_to_mj, kg_to_t, m_to_mm, n_to_mn, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
     from launchsim.results_io import ExperimentResult, SweepResult
@@ -2032,11 +2048,38 @@ def pad_control_lines(controls: Sequence[Mapping[str, Any]]) -> list[str]:
     return lines
 
 
+STRUCTURE_ARM_COLUMNS: tuple[str, ...] = (
+    "modelled dm at x* [kg] (structural arms)",
+    "structure set",
+    "envelope pad (the arm's own)",
+)
+"""The columns the arms table gains when some arm is structural (SP7 step S3b): dm1 + dm2
+at the arm's x*, the set and the pad whose flight is the arm's envelope (its perturbed pad
+for a vehicle parameter)."""
+STRUCTURE_ARM_CAVEAT = (
+    "structural sensitivity arms: an arm is sized on its perturbed vehicle and on the pad "
+    "its offload was solved against (its perturbed pad for a vehicle parameter, the "
+    "unchanged pad for a run parameter), not on perturbed station masses; under the "
+    "vehicle.stages.stage1.dry_mass_t arm the geometry is built from the perturbed variant, "
+    "but the stations are loaded from the structure file's mass breakdown, so the perturbed "
+    "dry mass reaches the sizing only through the push's interface force and the perturbed "
+    "pad's envelope, never through the stage-1 station loads (measured on the synthetic file "
+    "at the headline with the envelope held: +10% stage-1 dry mass gives +10.4 kg of dm, "
+    "+0.20%)"
+)
+"""The caveat printed beside the structural sensitivity arms wherever they are reported
+(phase file SP7 section 12, deviation 17; SP7 step S3b: the arms table of the offload
+section and the Structure subsection); ``sim`` re-exports it."""
+
+
 def offload_sensitivity_table(arms: Sequence[Mapping[str, Any]]) -> str:
     """The offload sensitivity arms: case, parameter, change, whether the pad was
     perturbed, the arm's P_ref, status, offload and its change against the nominal case,
     the share of the stage-1 load, the decomposition and the screening ratio, whether
-    the solve was reused."""
+    the solve was reused; when some arm is structural (SP7 step S3b, ``structure_charged``
+    on its record) also STRUCTURE_ARM_COLUMNS, and ``offload_section`` prints
+    STRUCTURE_ARM_CAVEAT under the table."""
+    structural = any(a.get("structure_charged") for a in arms)
     header = [
         "case",
         "parameter",
@@ -2050,9 +2093,11 @@ def offload_sensitivity_table(arms: Sequence[Mapping[str, Any]]) -> str:
         "decomposition",
         "offload / screening",
         "solve reused (same trajectory)",
+        *(STRUCTURE_ARM_COLUMNS if structural else ()),
     ]
-    rows = [
-        [
+    rows = []
+    for a in arms:
+        row = [
             str(a.get("case")),
             str(a.get("param")),
             f"{a.get('fraction', 0.0):+.0%}",
@@ -2066,9 +2111,1084 @@ def offload_sensitivity_table(arms: Sequence[Mapping[str, Any]]) -> str:
             _fmt(a.get("screening_ratio")),
             "yes" if a.get("trajectory_reused") else "no",
         ]
-        for a in arms
-    ]
+        if structural:
+            row += _structure_arm_cells(a)
+        rows.append(row)
     return _table(header, rows)
+
+
+def _structure_arm_cells(arm: Mapping[str, Any]) -> list[str]:
+    """The STRUCTURE_ARM_COLUMNS cells of one arm: a structural arm's dm, set and
+    envelope pad; an arm that was never solved (its same-perturbation pad has no P*,
+    ``offload_kg`` None) "n/a (not solved: <status>)" rather than a claim that it is
+    uncharged; an arm of an unstructured case "n/a (uncharged)"."""
+    if arm.get("structure_charged"):
+        return [
+            _fmt(arm.get("structure_dm_kg")),
+            _fmt(arm.get("structure_set")),
+            _fmt(arm.get("structure_envelope_pad")),
+        ]
+    if arm.get("offload_kg") is None:
+        return [f"n/a (not solved: {arm.get('status')})", "n/a", "n/a"]
+    return ["n/a (uncharged)", "n/a", "n/a"]
+
+
+# ----------------------------------------------------------- structure subsection (SP7 S3b)
+
+STRUCTURE_SUBSECTION_TITLE = "### Structure"
+"""The title of the offload section's Structure subsection (printed only when the
+experiment declares a structure block)."""
+STRUCTURE_LAYER_LABELS: dict[str, str] = {
+    STRUCTURE_CENTRAL_SET: "central (every coefficient at its central value)",
+    SET_PHYSICS_LOW: "physics band, low-mass end",
+    SET_PHYSICS_HIGH: "physics band, high-mass end",
+    SET_OUTER_LOW: (
+        "outer envelope, low-mass end (the design axes at their corner, the physics "
+        "coefficients searched)"
+    ),
+    SET_OUTER_HIGH: (
+        "outer envelope, high-mass end (the design axes at their corner, the physics "
+        "coefficients searched)"
+    ),
+}
+"""The three layers of D-SP7-18 by set name: the layer and set cell of a case at the
+headline settings (``structure_layer_label`` names a case that moves a design axis as
+layer 2, and one that moves the entry path or the sizing basis as a settings row)."""
+STRUCTURE_OVERRIDES_LAYER = "design axis (layer 2)"
+"""The layer of a case that moves a design axis off the headline (``structure_layer_label``;
+D-SP7-18 and design 4.2.6: the non-optimum factors, t_r, f, the pad count and k_ts by
+``overrides``, the margin, the envelope cap, and the dynamic mode, which sets the DLF's
+basis): its set stays the base set (D-SP7-43), its sizing is not the set's own end."""
+STRUCTURE_OUTER_SETS: tuple[str, ...] = (SET_OUTER_LOW, SET_OUTER_HIGH)
+"""The outer envelope's sets: each fixes every design axis, recording its own margin and
+cap, so those two never count as a departure from the headline on an outer set."""
+STRUCTURE_HEADLINE_DYNAMIC = "rise_time"
+"""The headline's dynamic mode (the DLF from the file's rise time; the sets were searched
+under it): a case under quasi_static or step moves a design axis (``structure_layer_label``)."""
+STRUCTURE_ROW_NOT_BAND = "a row, not a band end"
+"""What the layer cell says of a case that moves the entry path or the sizing basis off the
+headline (design 4.2.6: "rows, not band"); such a case is never a band end."""
+STRUCTURE_KIND_MODELLED = "modelled structure (first-order station sizing of the push load)"
+STRUCTURE_KIND_PENALTY = (
+    "assumed stage-1 dry-mass penalty (a parametric row, not a sized structure)"
+)
+STRUCTURE_NO_OFFLOAD_CELL = "none (no offload at P_ref; see the no_offload line below)"
+"""What the x* cell and the share cell of a structural case whose solve ended no_offload
+print (D-SP7-32: never "0 t", nor 0 %)."""
+STRUCTURE_NOT_FLOWN = "not flown"
+"""What a band or payload line prints for a set or case the experiment did not fly."""
+STRUCTURE_PAYLOAD_RECORD_KIND = "structure payload case"
+"""The ``kind`` of a structure payload case's record (design 4.4, "Payload form": a record
+of its own in the offload record's ``structure_payload_cases`` list, never under the
+offload cases heading); ``sim`` re-exports it."""
+STRUCTURE_PENALTY_ROW_LABEL = (
+    "assumed stage-1 dry mass added [t] (an assumption, not a sized structure)"
+)
+"""The penalty rows' mass row of the Structure case table: the same words as the offload
+cases table's row (``OFFLOAD_CASE_ROWS``), so the two tables read alike."""
+STRUCTURE_AT_X_NOTE = "(a no_offload end: at x = 0)"
+"""The suffix of the case table's rows "at x*": a no_offload end was sized at x = 0."""
+STRUCTURE_FLIGHT_CHECK_SCOPE = (
+    "the tank elements with a station envelope only: the barrels, the domes and the tube; "
+    "the aft skirt and the load ring are not checked"
+)
+"""The element scope of the post-hoc flight check (structure.FLIGHT_CHECK_ELEMENTS; phase
+file SP7 section 12, deviation 24), stated wherever its mass is printed (in short in the
+case table's row label, STRUCTURE_FLIGHT_CHECK_SCOPE_SHORT; in full in the note under the
+table and in the flag line) so a 0 never reads as a clearance of the whole structure;
+``sim`` re-exports it for the flag line."""
+STRUCTURE_FLIGHT_CHECK_SCOPE_SHORT = "tank elements only, not the aft skirt or the ring"
+"""The element scope in the case table's row label (visual V7 of S3b's review: the label
+stays short so the table's first column keeps its width; honesty H-S3B-P3-03: the scope is
+still in the label); the full sentence is STRUCTURE_FLIGHT_CHECK_SCOPE."""
+STRUCTURE_FLIGHT_CHECK_ROW_LABEL = (
+    "flight check: the recorded run's own flight over the pad envelope [kg] "
+    f"({STRUCTURE_FLIGHT_CHECK_SCOPE_SHORT}; sized, not charged; see the note)"
+)
+"""The case table's flight-check row: the quantity, its unit and the element scope in
+short; the full scope, the treatment of the cap, the margin and the plausibility factor
+are STRUCTURE_FLIGHT_CHECK_NOTE."""
+STRUCTURE_FLIGHT_CHECK_NOTE = (
+    "flight check (the row above): the recorded run's own flight after its release, "
+    f"{STRUCTURE_FLIGHT_CHECK_SCOPE}; the exceedance is sized and never charged or "
+    "iterated; the flight's stage-1 felt n is capped as the envelope's was and evaluated "
+    "unfactored against the envelope at the case's margin; the mass is the unscaled sizing "
+    "(a plausibility-scaled row's dm carries the rule's factor, its exceedance does not); "
+    "n/a on a run without a time series; not applicable to a structure payload case (its "
+    "run flies its own P*, so the pad's envelope at P_ref is not its comparison)"
+)
+"""The bullet under the case table that carries the flight-check row's qualifications
+(V7 of S3b's visual review: the row label stays short)."""
+STRUCTURE_CASE_ROWS: tuple[OffloadRow, ...] = (
+    ("assisted run (of)", "text", "of"),
+    ("kind", "structure_kind", ""),
+    ("layer and set (D-SP7-18)", "structure_layer", ""),
+    ("design-axis overrides (path value; none)", "structure_overrides", ""),
+    (
+        "sizing basis (flown: re-sized at every x; full_load: once at x = 0)",
+        "text",
+        "structure_sizing",
+    ),
+    ("dynamic mode", "text", "structure_dynamic"),
+    ("  rise time t_r [s]", "num", "structure_t_r_s"),
+    ("  axial frequency f [Hz]", "num", "structure_f_Hz"),
+    ("  dynamic load factor DLF", "num", "structure_dlf"),
+    ("n_q, the quasi-static plateau [g0]", "num", "structure_n_q_g"),
+    ("n_peak = n_rest + DLF (n_q - n_rest) [g0]", "num", "structure_n_peak_g"),
+    ("F_peak, the peak interface force [MN]", "MN", "structure_F_peak_N"),
+    ("  ramp cost (a' - a)/a (constant_accel under rise_time)", "num", "structure_ramp_cost_rel"),
+    ("load entry", "text", "structure_entry"),
+    ("margin on the envelope's loads and pressures", "num", "structure_margin"),
+    (
+        "envelope cap on the pad's stage-1 felt n [g0] (n/a: no cap)",
+        "num",
+        "structure_envelope_cap_g",
+    ),
+    (
+        "plausibility-scaled (the dm carries the rule's factor)",
+        "text",
+        "structure_plausibility_scaled",
+    ),
+    (
+        "  M_model / R (the model's envelope tank mass over Heineman's relation)",
+        "num",
+        "structure_plausibility_ratio",
+    ),
+    (
+        "  the rule's factor for this band end (1 when it does not fire on that end; a "
+        "central or design-axis case is not a band end and prints n/a)",
+        "plausibility_factor",
+        "structure_plausibility_factor",
+    ),
+    (f"dm1, stage 1 with the interstage, at x* [kg] {STRUCTURE_AT_X_NOTE}", "dm1", ""),
+    (f"dm2, stage 2, at x* [kg] {STRUCTURE_AT_X_NOTE}", "num", "structure_dm_stage2_kg"),
+    ("dm1 + dm2 at x = 0 [kg]", "num", "structure_dm_x0_kg"),
+    (STRUCTURE_PENALTY_ROW_LABEL, "t", "stage1_dry_mass_added_kg"),
+    ("status (the solve)", "text", "status"),
+    ("x* [t]", "xstar", "offload_kg"),
+    ("  % of the stage-1 load", "xstar_pct", "stage1_fraction"),
+    ("verification: P* - P_ref [kg]", "signed", "verification.delta_kg"),
+    ("  passed", "text", "verification.passed"),
+    (STRUCTURE_FLIGHT_CHECK_ROW_LABEL, "num", "structure_flight_exceedance_kg"),
+    (f"fixed-point sizings at x* {STRUCTURE_AT_X_NOTE}", "num", "structure_iterations"),
+    ("structure flags fired (their numbers are in structure_flags)", "structure_flags", ""),
+    ("flags (see Flags)", "count", "flags"),
+)
+"""Rows of the Structure subsection's case table (one column per structural case, SP1's
+penalty rows of the same experiment beside them). dm1 is dm - dm2; a no_offload end's x*
+cell and share cell are STRUCTURE_NO_OFFLOAD_CELL, its rows "at x*" its sizing at x = 0
+(STRUCTURE_AT_X_NOTE); the flight-check row's qualifications are the note under the table
+(STRUCTURE_FLIGHT_CHECK_NOTE)."""
+STRUCTURE_FLAGS_NOT_SIZED = "n/a (no sizing at x*: the solve found no x*)"
+"""What the fired-flags cell (and the sweep index's ``structure_flags`` column) prints for
+a structural case whose solve ended search_failed: no sizing at x* was made, so no flag
+was evaluated (never "none", which would read as "no flag fired")."""
+STRUCTURE_PAYLOAD_NOT_WRITTEN = "n/a (the P_2* search failed: nothing written)"
+"""What a payload case's recorded-run cell prints when its second pass found no P*."""
+STRUCTURE_PAYLOAD_FLAG_NA = "n/a (the P_2* search failed)"
+"""What a payload case's flag cell prints when its second pass found no P* (the record's
+``unconverged`` is None: the flag was never evaluated)."""
+STRUCTURE_PAYLOAD_CONTRACTION_MAX = 0.1
+"""The contraction c above which the payload form's flag fires (design 4.4; the flag and
+the rule live in ``sim``, which re-exports this beside the row label built from it)."""
+STRUCTURE_PAYLOAD_RESIDUAL_FRACTION = 0.5
+"""The fraction of final_payload_xtol_kg the payload form's residual estimate may reach
+before its flag fires (design 4.4; re-exported by ``sim``)."""
+STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA = (
+    "not applicable: the recorded run flies its own P*; the envelope is the pad's at P_ref, "
+    "so a check against it would measure the payload gain P_2* - P_ref (which the pad's own "
+    "flight at P_2* would need too), not the push; the check is made on the offload cases, "
+    "which fly P_ref"
+)
+"""What a structure payload case's record (``flight_check``), its run's assumption line
+and the payload table say of the post-hoc flight check (SP7 step S3b, review N-S3b-R3-01):
+it is not run on a payload case, so ``structure_flight_exceedance_kg`` stays None and no
+flag fires for a payload gain; ``sim`` re-exports it."""
+STRUCTURE_PAYLOAD_SETTINGS_ROWS: tuple[OffloadRow, ...] = (
+    ("layer and set (D-SP7-18)", "structure_layer", ""),
+    ("design-axis overrides (path value; none)", "structure_overrides", ""),
+    ("sizing basis (a payload case: full_load, once at the full load)", "text", "structure_sizing"),
+    ("dynamic mode", "text", "structure_dynamic"),
+    ("  rise time t_r [s]", "num", "structure_t_r_s"),
+    ("  axial frequency f [Hz]", "num", "structure_f_Hz"),
+    ("  dynamic load factor DLF", "num", "structure_dlf"),
+    ("n_peak = n_rest + DLF (n_q - n_rest) [g0] (at P_1*)", "num", "structure_n_peak_g"),
+    ("F_peak, the peak interface force [MN] (at P_1*)", "MN", "structure_F_peak_N"),
+    ("load entry", "text", "structure_entry"),
+    ("margin on the envelope's loads and pressures", "num", "structure_margin"),
+    (
+        "envelope cap on the pad's stage-1 felt n [g0] (n/a: no cap)",
+        "num",
+        "structure_envelope_cap_g",
+    ),
+    (
+        "plausibility-scaled (dm_0 and dm_1 carry the rule's factor)",
+        "text",
+        "structure_plausibility_scaled",
+    ),
+    (
+        "  M_model / R (the model's envelope tank mass over Heineman's relation)",
+        "num",
+        "structure_plausibility_ratio",
+    ),
+    (
+        "  the rule's factor for this band end (1 when it does not fire on that end; a "
+        "central or design-axis case is not a band end and prints n/a)",
+        "plausibility_factor",
+        "structure_plausibility_factor",
+    ),
+)
+"""The settings rows of the payload cases table (SP7 step S3b, review H-S3B-P3-01): what
+sized dm_0 and dm_1 (the same record keys as the case table's rows, so a scaled
+physics-set payload case never reads like a central one)."""
+STRUCTURE_PAYLOAD_ROWS: tuple[OffloadRow, ...] = (
+    ("assisted run (of)", "text", "of"),
+    ("kind", "text", "kind"),
+    ("recorded run (the P_2* search's run, carrying dm_1)", "payload_run", "run"),
+    ("status (the P_2* search's: ok, or the failed search's status)", "text", "status"),
+    ("  pass 1 (the P_1* search's status)", "text", "search_1_status"),
+    *STRUCTURE_PAYLOAD_SETTINGS_ROWS,
+    ("P_ref [kg] (the pad's P*)", "num", "reference_payload_kg"),
+    ("dm_0 [kg] (sized at P_ref on the full-load vehicle)", "num", "dm_0_kg"),
+    ("P_1* [kg] (searched on the vehicle carrying dm_0)", "num", "payload_1_kg"),
+    ("dm_1 [kg] (sized at P_1*)", "num", "dm_1_kg"),
+    ("P_2* [kg] (searched on the vehicle carrying dm_1)", "num", "payload_kg"),
+    ("  P_2* - P_ref [kg]", "signed", "payload_delta_kg"),
+    ("  P_2* - P_1* [kg]", "signed", "payload_2_minus_1_kg"),
+    (
+        "contraction c = abs((P_2* - P_1*)/(dm_1 - dm_0)) x abs((dm_1 - dm_0)/(P_1* - P_ref))",
+        "sci",
+        "contraction",
+    ),
+    ("residual estimate c x abs(P_2* - P_1*) [kg]", "sci", "residual_estimate_kg"),
+    (
+        f"  tolerance [kg] ({STRUCTURE_PAYLOAD_RESIDUAL_FRACTION:g} x final_payload_xtol_kg)",
+        "num",
+        "residual_tolerance_kg",
+    ),
+    (
+        "structure_payload_unconverged (the estimate above the tolerance, or c > "
+        f"{STRUCTURE_PAYLOAD_CONTRACTION_MAX:g})",
+        "payload_flag",
+        "unconverged",
+    ),
+    ("flight check: the recorded run's own flight over the pad envelope", "text", "flight_check"),
+    ("flags (see Flags)", "count", "flags"),
+)
+"""Rows of the payload cases table (design 4.4, "Payload form"): the case's settings
+(STRUCTURE_PAYLOAD_SETTINGS_ROWS), the two passes and the flag (its label built from the
+two constants above), the flight check's row (STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA: not run
+on a payload case); read beside the full_load row of the same variant and settings. A case
+whose P_2* search failed prints its status, STRUCTURE_PAYLOAD_NOT_WRITTEN for the run and
+STRUCTURE_PAYLOAD_FLAG_NA for the flag."""
+STRUCTURE_PAYLOAD_OFFLOADS_NOTHING = (
+    "these runs offload nothing: P_2* - P_ref is the payload change at the full load, not a "
+    "propellant saving"
+)
+"""Printed in the payload cases' heading (they sit under the propellant-saved section)."""
+STRUCTURE_ELEMENT_HOW: dict[str, str] = {
+    INTERSTAGE: (
+        "mass-estimating relation m_is ((N_push / N_env)^n - 1)+ on the upper-stack load, "
+        "scaled by the Gerard exponent n over the pad envelope's N_env (an assumption, design "
+        "4.2.4; no station envelope)"
+    ),
+    THRUST_STRUCTURE: (
+        "thrust-structure relation k_ts max(0, F_peak + T - (1 + margin) T_max), T the thrust "
+        "at the push's peak (design 4.2.3; no station envelope)"
+    ),
+}
+"""How the element table's relation rows were sized, by element name (``_element_how``),
+when the element is in the case's load path (the thrust structure under entry
+thrust_structure); every other element but the ring is a station sizing over the pad
+envelope."""
+STRUCTURE_ELEMENT_STATION_HOW = "station sizing over the pad envelope"
+STRUCTURE_ELEMENT_RING_HOW = "the ring frame: new hardware sized in closed form, no envelope credit"
+STRUCTURE_ELEMENT_NOT_IN_PATH: dict[str, str] = {
+    ENTRY_AFT_RING: (
+        "not in the load path on entry aft_ring (the skirt and the ring carry the push; 0 by "
+        "construction, not a sizing)"
+    ),
+    ENTRY_THRUST_STRUCTURE: (
+        "not in the load path on entry thrust_structure (no ring frame; 0 by construction, "
+        "not a sizing)"
+    ),
+}
+"""What the element table says of the thrust structure under entry aft_ring and of the ring
+frame under entry thrust_structure (review H-S3B-P3-06: never a relation the entry does not
+apply), keyed by the entry that leaves the element unloaded."""
+STRUCTURE_SETS_APPLICABILITY = (
+    "the sets behind the ends above are the extremes in dm the search found, sizing only, at "
+    "that one push; each x* above is this experiment's own solve with that set; a case whose "
+    "push is not the search's (another variant, stroke, drive, start, vehicle or offload) "
+    "reads its set as the headline's sets applied to this push, not as this push's extreme "
+    "(design 4.2.6)"
+)
+"""The applicability line under the band lines (design 4.2.6: other pushes get central
+solves and sizing-only band estimates labelled "the headline's sets"; the x* on a band line
+is always a solve of this experiment, the set behind it the search's)."""
+STRUCTURE_LAYER2_ROWS_LABEL = "design-axis rows (layer 2) flown on a set"
+"""The line naming every structural case that moves a design axis off the headline (a
+margin, a cap, another dynamic mode, overrides; their x* beside the set they move; such a
+case is never a band end, ``_layer2_line``)."""
+STRUCTURE_SETTINGS_ROWS_LABEL = "settings rows (the entry path or the sizing basis moved) on a set"
+"""The line naming every physics- or outer-set case kept off its band for moving only the
+entry path or the sizing basis (design 4.2.6: rows, not band; ``_settings_rows_line``)."""
+
+
+def structure_overrides_text(overrides: Any) -> str | None:
+    """A case's design-axis overrides as one cell: ``<path> <value>; ...`` (paths sorted,
+    values as the file states them), ``none`` for an empty mapping, None for a value that
+    is not a mapping (a failed record, or none recorded)."""
+    if not isinstance(overrides, Mapping):
+        return None
+    if not overrides:
+        return "none"
+    return "; ".join(f"{path} {value!r}" for path, value in sorted(overrides.items()))
+
+
+def structure_axis_departures(record: Mapping[str, Any]) -> list[str]:
+    """What a structural record moves off the headline on the design axes (D-SP7-18,
+    design 4.2.6), as short texts: ``margin <m>`` (a margin above 0), ``cap <c> g0`` (an
+    envelope cap), ``dynamic <mode>`` (a mode other than STRUCTURE_HEADLINE_DYNAMIC) and
+    ``overrides <path value; ...>``; the margin and the cap never count on an outer set,
+    which records its own (STRUCTURE_OUTER_SETS). Empty for a case at the headline's
+    axes."""
+    out: list[str] = []
+    name = record.get("structure_set")
+    if name not in STRUCTURE_OUTER_SETS:
+        margin = record.get("structure_margin")
+        if _is_finite_number(margin) and float(margin) != 0.0:
+            out.append(f"margin {float(margin):g}")
+        cap = record.get("structure_envelope_cap_g")
+        if _is_finite_number(cap):
+            out.append(f"cap {float(cap):g} g0")
+    dynamic = record.get("structure_dynamic")
+    if dynamic is not None and dynamic != STRUCTURE_HEADLINE_DYNAMIC:
+        out.append(f"dynamic {dynamic}")
+    overrides = record.get("structure_overrides")
+    if isinstance(overrides, Mapping) and overrides:
+        out.append(f"overrides {structure_overrides_text(overrides)}")
+    return out
+
+
+def structure_row_departures(record: Mapping[str, Any]) -> list[str]:
+    """What a structural record moves off the headline among the "rows, not band"
+    settings of design 4.2.6 that are not design axes: ``entry <path>`` (an entry other
+    than the aft ring) and ``sizing <basis>`` (a basis other than flown; a structure
+    payload case is always a full-load sizing, the payload form's own basis, so it is
+    not a departure there). Empty at the headline's entry and sizing."""
+    out: list[str] = []
+    entry = record.get("structure_entry")
+    if entry is not None and entry != ENTRY_AFT_RING:
+        out.append(f"entry {entry}")
+    sizing = record.get("structure_sizing")
+    payload_case = record.get("kind") == STRUCTURE_PAYLOAD_RECORD_KIND
+    if sizing is not None and sizing != STRUCTURE_SIZING_FLOWN and not payload_case:
+        out.append(f"sizing {sizing}")
+    return out
+
+
+def structure_is_band_end(record: Mapping[str, Any]) -> bool:
+    """Whether a structural record is an end of its set's band (D-SP7-18, design 4.2.6):
+    a case on a physics or an outer set at the headline settings (no design-axis
+    departure, ``structure_axis_departures``, and no entry or sizing departure,
+    ``structure_row_departures``); the plausibility-scaled twin of an end is an end too
+    (D-SP7-41 prints it beside the unscaled one). A central case is never one."""
+    name = record.get("structure_set")
+    if name not in STRUCTURE_SET_NAMES:
+        return False
+    return not structure_axis_departures(record) and not structure_row_departures(record)
+
+
+def structure_layer_label(record: Mapping[str, Any]) -> str:
+    """The layer and set of a structural record (D-SP7-18, design 4.2.6): at the headline
+    settings ``<layer label>: <set>`` by STRUCTURE_LAYER_LABELS (the central layer-1 label
+    only for the central set at the headline settings); for a case that moves a design
+    axis (``structure_axis_departures``: a margin, a cap, another dynamic mode, overrides)
+    ``design axis (layer 2): <set> at margin m, cap c g0, dynamic d with overrides <path
+    value; ...>`` (the set alone would present the sizing as the set's own, D-SP7-43);
+    for a case that moves only the entry path or the sizing basis
+    (``structure_row_departures``) ``<layer label>, a row, not a band end (entry e, sizing
+    s): <set>``; a design-axis case that also moves those names them after its axes; n/a
+    without a set."""
+    name = record.get("structure_set")
+    if name is None:
+        return "n/a"
+    axes = structure_axis_departures(record)
+    rows = structure_row_departures(record)
+    if axes:
+        moved = [a for a in axes if not a.startswith("overrides ")]
+        overrides = [a for a in axes if a.startswith("overrides ")]
+        label = f"{STRUCTURE_OVERRIDES_LAYER}: {name}"
+        if moved:
+            label += f" at {', '.join(moved)}"
+        if overrides:
+            label += f" with {overrides[0]}"
+        if rows:
+            label += f"; {', '.join(rows)} ({STRUCTURE_ROW_NOT_BAND})"
+        return label
+    base = STRUCTURE_LAYER_LABELS.get(str(name), str(name))
+    if rows:
+        return f"{base}, {STRUCTURE_ROW_NOT_BAND} ({', '.join(rows)}): {name}"
+    return f"{base}: {name}"
+
+
+def structure_settings_text(record: Mapping[str, Any]) -> str:
+    """Every departure of a record from the headline settings in one phrase (the axes,
+    then the entry and sizing), or "the headline settings" when there is none."""
+    moved = [*structure_axis_departures(record), *structure_row_departures(record)]
+    return ", ".join(moved) if moved else "the headline settings"
+
+
+def _structure_cell(record: Mapping[str, Any], fmt: str, path: str) -> str:
+    """One cell of the Structure case table: ``structure_kind`` (modelled or penalty),
+    ``structure_layer`` (``structure_layer_label``), ``structure_overrides`` (the
+    overrides as text, none, or n/a), ``plausibility_factor`` (the end's factor on a
+    physics band end, "n/a (not a band end)" on any other set, n/a on a penalty row),
+    ``dm1`` (dm - dm2), ``MN`` (newtons in MN), ``xstar`` (tonnes) and ``xstar_pct``
+    (percent of the stage-1 load), both STRUCTURE_NO_OFFLOAD_CELL for a no_offload solve
+    (D-SP7-32), ``structure_flags`` (the fired flags' names, or none), ``payload_run``
+    and ``payload_flag`` (a payload case's run and flag; STRUCTURE_PAYLOAD_NOT_WRITTEN and
+    STRUCTURE_PAYLOAD_FLAG_NA when its P_2* search failed); every other format as
+    ``_offload_cell``."""
+    if fmt == "structure_kind":
+        return (
+            STRUCTURE_KIND_MODELLED if record.get("structure_charged") else STRUCTURE_KIND_PENALTY
+        )
+    if fmt == "structure_layer":
+        return structure_layer_label(record)
+    if fmt == "plausibility_factor":
+        if not record.get("structure_charged"):
+            return "n/a"
+        if record.get("structure_set") not in STRUCTURE_PHYSICS_SETS:
+            return "n/a (not a band end)"
+        return _offload_cell(record, "num", path)
+    if fmt == "payload_run":
+        if record.get("run") is None and _payload_search_failed(record):
+            return STRUCTURE_PAYLOAD_NOT_WRITTEN
+        return _offload_cell(record, "text", path)
+    if fmt == "payload_flag":
+        if record.get("unconverged") is None and _payload_search_failed(record):
+            return STRUCTURE_PAYLOAD_FLAG_NA
+        return _offload_cell(record, "text", path)
+    if fmt == "structure_overrides":
+        if not record.get("structure_charged"):
+            return "n/a"
+        text = structure_overrides_text(record.get("structure_overrides"))
+        return "n/a" if text is None else text
+    if fmt == "dm1":
+        dm, dm2 = record.get("structure_dm_kg"), record.get("structure_dm_stage2_kg")
+        if not _is_finite_number(dm) or not _is_finite_number(dm2):
+            return "n/a"
+        return _fmt(float(dm) - float(dm2))
+    if fmt == "MN":
+        value = _dig(record, path)
+        return _fmt(float(n_to_mn(float(value)))) if _is_finite_number(value) else "n/a"
+    if fmt in ("xstar", "xstar_pct"):
+        if record.get("status") == NO_OFFLOAD_STATUS:
+            return STRUCTURE_NO_OFFLOAD_CELL
+        return _offload_cell(record, "t" if fmt == "xstar" else "pct", path)
+    if fmt == "structure_flags":
+        text = structure_flags_text(record)
+        return "n/a" if text is None else text
+    return _offload_cell(record, fmt, path)
+
+
+def structure_flags_text(record: Mapping[str, Any]) -> str | None:
+    """The fired structure flags of a structural record as one cell: their names
+    "; "-joined, ``none`` when none fired, STRUCTURE_FLAGS_NOT_SIZED when the solve found
+    no x* (``structure_dm_kg`` None: no sizing at x*, so no flag was evaluated), None
+    (n/a) when the record carries no flag list; shared by the Structure case table and
+    the sweep index's ``structure_flags`` column."""
+    flags = record.get("structure_flags")
+    if not isinstance(flags, list):
+        return None
+    if record.get("structure_dm_kg") is None and "structure_dm_kg" in record:
+        return STRUCTURE_FLAGS_NOT_SIZED
+    fired = [str(f.get("name")) for f in flags if isinstance(f, Mapping) and f.get("fired")]
+    return "; ".join(fired) if fired else "none"
+
+
+def _payload_search_failed(record: Mapping[str, Any]) -> bool:
+    """Whether a payload case's second pass found no P* (its ``payload_kg`` is not a
+    finite number while its first pass did: ``dm_1_kg`` recorded)."""
+    return "dm_1_kg" in record and not _is_finite_number(record.get("payload_kg"))
+
+
+def _structure_table(
+    records: Sequence[Mapping[str, Any]], rows: Sequence[OffloadRow], label: str
+) -> str:
+    """A table with one row per OffloadRow (``_structure_cell``) and one column per
+    record."""
+    header = ["quantity", *(str(r.get(label)) for r in records)]
+    body = [[row[0], *(_structure_cell(r, row[1], row[2]) for r in records)] for row in rows]
+    return _table(header, body)
+
+
+def structure_cases_of(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The structural cases of an offload record (``structure_charged``) and SP1's penalty
+    rows of the same experiment (``assumed_penalty``), in the block's order, skipped cases
+    left out."""
+    return [
+        c
+        for c in record.get("cases") or []
+        if not c.get("skipped") and (c.get("structure_charged") or c.get("assumed_penalty"))
+    ]
+
+
+STRUCTURE_SETTINGS_NAMES: tuple[str, ...] = (
+    "set",
+    "dynamic",
+    "entry",
+    "margin",
+    "cap",
+    "overrides",
+    "plausibility-scaled",
+)
+"""The settings ``structure_settings_of`` compares, in order (the sizing basis left out:
+a payload case is always a full-load sizing, read beside a flown case's full-load rows)."""
+
+
+def structure_settings_of(record: Mapping[str, Any]) -> tuple[Any, ...]:
+    """The settings that make two structural records comparable (STRUCTURE_SETTINGS_NAMES):
+    the set, dynamic mode, entry, margin, cap, overrides (as text) and whether the dm is
+    plausibility-scaled."""
+    return (
+        record.get("structure_set"),
+        record.get("structure_dynamic"),
+        record.get("structure_entry"),
+        record.get("structure_margin"),
+        record.get("structure_envelope_cap_g"),
+        structure_overrides_text(record.get("structure_overrides")),
+        bool(record.get("structure_plausibility_scaled")),
+    )
+
+
+def _xstar_text(c: Mapping[str, Any]) -> str:
+    """One band end's case: its x* in tonnes with the case name and status, a no_offload
+    end as such (never "0 t", D-SP7-32), or a solve that found no x* (search_failed:
+    ``offload_kg`` not finite) as "no x*" with its status, never a unit on an n/a
+    (review NEW-H-01)."""
+    if c.get("status") == NO_OFFLOAD_STATUS:
+        return f"no offload ({c.get('name')}; the no_offload line below)"
+    if not _is_finite_number(c.get("offload_kg")):
+        return f"no x* ({c.get('name')}, status {c.get('status')})"
+    return f"{_offload_cell(c, 't', 'offload_kg')} t ({c.get('name')}, status {c.get('status')})"
+
+
+def _xstar_phrase(c: Mapping[str, Any]) -> str:
+    """``_xstar_text`` for a row line (the layer-2 and settings-rows lines, where no "x*"
+    precedes it): "x* 15 t (...)" for a solved case, and the bare "no offload (...)" or
+    "no x* (...)" otherwise, so the line never reads "x* no x*"."""
+    text = _xstar_text(c)
+    if c.get("status") == NO_OFFLOAD_STATUS or not _is_finite_number(c.get("offload_kg")):
+        return text
+    return f"x* {text}"
+
+
+def _band_end(cases: Sequence[Mapping[str, Any]]) -> str:
+    """One end of a band from every band-end case of its set (``structure_is_band_end``;
+    D-SP7-41: the unscaled and the plausibility-scaled ends side by side, each named): the
+    unscaled cases' x* (several when the set ran as several cases, joined by "and"), then
+    each plausibility-scaled case's x* with its factor; a set with a scaled case only says
+    so (its x* is not the physics band's end); an unscaled end whose rule fired (its
+    factor differs from 1) with no scaled twin says so with the factor, so the fired rule
+    is never visible in the case table alone; STRUCTURE_NOT_FLOWN for no case."""
+    if not cases:
+        return STRUCTURE_NOT_FLOWN
+    unscaled = [c for c in cases if not c.get("structure_plausibility_scaled")]
+    scaled = [c for c in cases if c.get("structure_plausibility_scaled")]
+    parts = []
+    if unscaled:
+        parts.append(" and ".join(_xstar_text(c) for c in unscaled))
+    for c in scaled:
+        factor = _fmt(c.get("structure_plausibility_factor"))
+        if unscaled:
+            parts.append(f"plausibility-scaled end: {_xstar_text(c)}, factor {factor}")
+        else:
+            parts.append(
+                f"scaled only: {_xstar_text(c)}, factor {factor}; the unscaled end was not flown"
+            )
+    if not scaled:
+        fired = [
+            c.get("structure_plausibility_factor")
+            for c in unscaled
+            if _is_finite_number(c.get("structure_plausibility_factor"))
+            and float(c["structure_plausibility_factor"]) != 1.0
+        ]
+        if fired:
+            parts.append(
+                f"the rule's factor on this end is {_fmt(fired[0])}; no plausibility-scaled "
+                "case was flown"
+            )
+    return "; ".join(parts)
+
+
+def _band_line(
+    label: str,
+    low: Sequence[Mapping[str, Any]],
+    high: Sequence[Mapping[str, Any]],
+    method: str,
+) -> str:
+    """One line of a band: its two ends, each named (``_band_end``: x* in tonnes with the
+    case names, a no_offload end as such, a scaled end beside its unscaled one with the
+    factor, an end the experiment did not fly as STRUCTURE_NOT_FLOWN; the ends are
+    bracketed so a scaled end's factor is never read as running to the other end) and the
+    method's label. Only a case at the headline settings is an end
+    (``structure_is_band_end``): the caller leaves every other case out and names it on
+    the layer-2 line or the settings-rows line (``structure_section``)."""
+    return (
+        f"- {label}: x* at the low-mass end [{_band_end(low)}]; at the high-mass end "
+        f"[{_band_end(high)}]; the sets are {method}"
+    )
+
+
+def _layer2_line(cases: Sequence[Mapping[str, Any]]) -> str | None:
+    """The line naming every structural case that moves a design axis off the headline
+    (``structure_axis_departures``: a margin, a cap, another dynamic mode, overrides), with
+    its base set, what it moves (and any entry or sizing departure) and its x*
+    (``_xstar_phrase``: a no_offload end or a solve without an x* as such); None when none
+    ran."""
+    rows = [c for c in cases if structure_axis_departures(c)]
+    if not rows:
+        return None
+    parts = [
+        f"{c.get('name')} ({c.get('structure_set')} at {structure_settings_text(c)}): "
+        f"{_xstar_phrase(c)}"
+        for c in rows
+    ]
+    return f"- {STRUCTURE_LAYER2_ROWS_LABEL}, never a band end: " + "; ".join(parts)
+
+
+def _settings_rows_line(cases: Sequence[Mapping[str, Any]]) -> str | None:
+    """The line naming every physics- or outer-set case kept off its band for moving the
+    entry path or the sizing basis alone (``structure_row_departures``, design 4.2.6: rows,
+    not band), with its set, what it moves and its x* (``_xstar_phrase``); None when none
+    ran (a central case is never on a band, so it is not named here)."""
+    rows = [
+        c
+        for c in cases
+        if c.get("structure_set") in STRUCTURE_SET_NAMES
+        and structure_row_departures(c)
+        and not structure_axis_departures(c)
+    ]
+    if not rows:
+        return None
+    parts = [
+        f"{c.get('name')} ({c.get('structure_set')} at {structure_settings_text(c)}): "
+        f"{_xstar_phrase(c)}"
+        for c in rows
+    ]
+    return f"- {STRUCTURE_SETTINGS_ROWS_LABEL}, never a band end: " + "; ".join(parts)
+
+
+def _no_offload_line(case: Mapping[str, Any], payload_cases: Sequence[Mapping[str, Any]]) -> str:
+    """The line of a structural case whose solve ended no_offload (D-SP7-32: printed with
+    its delta-v shortfall, the solver's ``dv_shortfall_mps`` at x = 0, and its payload
+    deficit from the payload case of the same variant and settings
+    (``structure_settings_of``) when one was flown, never as "0 t"); a payload case of
+    the same set whose other settings differ is named with what differs, not quoted."""
+    solve = case.get("solve") or {}
+    shortfall = _fmt(solve.get("dv_shortfall_mps"))
+    dm = _fmt(case.get("structure_dm_kg"))
+    mine = structure_settings_of(case)
+    candidates = [
+        p for p in payload_cases if not p.get("skipped") and p.get("of") == case.get("of")
+    ]
+    same = [p for p in candidates if structure_settings_of(p) == mine]
+    if same:
+        p = same[0]
+        deficit = (
+            f"payload deficit at the full load {_signed(p.get('payload_delta_kg'))} kg "
+            f"(P_2* - P_ref of structure payload case {p.get('name')}, the same set and settings)"
+        )
+    else:
+        near = [p for p in candidates if p.get("structure_set") == case.get("structure_set")]
+        if near:
+            p = near[0]
+            theirs = structure_settings_of(p)
+            differs = [
+                n for n, a, b in zip(STRUCTURE_SETTINGS_NAMES, mine, theirs, strict=True) if a != b
+            ]
+            deficit = (
+                f"payload deficit at the full load {STRUCTURE_NOT_FLOWN} for these settings "
+                f"(structure payload case {p.get('name')} is of the same set but differs in "
+                f"{', '.join(differs)})"
+            )
+        else:
+            deficit = (
+                f"payload deficit at the full load {STRUCTURE_NOT_FLOWN} (no structure payload "
+                "case of the same set and settings)"
+            )
+    return (
+        f"- {case.get('name')}: no offload at P_ref: the full-load push carrying dm {dm} kg "
+        f"falls short of P_ref by {shortfall} m/s of delta-v (the solver's dv_shortfall_mps "
+        f"at x = 0); {deficit}"
+    )
+
+
+def _element_how(name: str, entry: Any) -> str:
+    """How an element of the element table was sized, by its ``<stage>.<element>`` name
+    and the case's load entry: the ring frame STRUCTURE_ELEMENT_RING_HOW under entry
+    aft_ring and the thrust structure its relation (STRUCTURE_ELEMENT_HOW) under entry
+    thrust_structure; whichever of the two the entry leaves out of the load path
+    STRUCTURE_ELEMENT_NOT_IN_PATH (its 0 is by construction, not a sizing); the
+    interstage its relation; every other element a station sizing."""
+    element = name.split(".")[-1]
+    if element == LOAD_RING:
+        if entry is not None and entry != ENTRY_AFT_RING:
+            return STRUCTURE_ELEMENT_NOT_IN_PATH[ENTRY_THRUST_STRUCTURE]
+        return STRUCTURE_ELEMENT_RING_HOW
+    if element == THRUST_STRUCTURE and entry == ENTRY_AFT_RING:
+        return STRUCTURE_ELEMENT_NOT_IN_PATH[ENTRY_AFT_RING]
+    return STRUCTURE_ELEMENT_HOW.get(element, STRUCTURE_ELEMENT_STATION_HOW)
+
+
+def _element_table(case: Mapping[str, Any]) -> str:
+    """The element table of a case: one row per element of ``structure_elements`` [kg]
+    with how it was sized under the case's entry (``_element_how``: a station sizing over
+    the pad envelope, the interstage's relation, the thrust structure's relation or "not
+    in the load path"), the station-sized and relation elements first with their sum
+    (``structure_closed_form_kg``), then the ring frame with its sum, then dm1 + dm2."""
+    elements = case.get("structure_elements") or {}
+    entry = case.get("structure_entry")
+    sized = [(n, kg) for n, kg in elements.items() if not n.endswith(".load_ring")]
+    ring = [(n, kg) for n, kg in elements.items() if n.endswith(".load_ring")]
+    rows = [[n, _fmt(kg), _element_how(n, entry)] for n, kg in sized]
+    rows.append(
+        [
+            "station-sized and relation elements, sum",
+            _fmt(case.get("structure_closed_form_kg")),
+            "",
+        ]
+    )
+    rows += [[n, _fmt(kg), _element_how(n, entry)] for n, kg in ring]
+    rows.append(["ring frame, sum", _fmt(case.get("structure_ring_kg")), ""])
+    rows.append(["dm1 + dm2", _fmt(case.get("structure_dm_kg")), ""])
+    return _table(["element (stage.element)", "dm [kg]", "how"], rows)
+
+
+def _central_case_phrase(central: Mapping[str, Any]) -> str:
+    """How the element table's heading and the plausibility trigger name the central case
+    they quote: ``the central case <name>`` at the headline settings, else ``the
+    central-set case <name> (<what it moves>; not the headline settings)`` (review
+    H-S3B-P3-11: the fallback is never called the central case)."""
+    moved = [*structure_axis_departures(central), *structure_row_departures(central)]
+    if not moved:
+        return f"the central case {central.get('name')}"
+    return (
+        f"the central-set case {central.get('name')} ({', '.join(moved)}; not the headline "
+        "settings)"
+    )
+
+
+STRUCTURE_PAYLOAD_NO_FULL_LOAD = "no full_load row of the same variant and settings ran above"
+"""What the payload cases' heading says of a payload case no full_load case of the same
+variant and settings (``structure_settings_of``) stands beside."""
+
+
+def _payload_beside(payload: Mapping[str, Any], structural: Sequence[Mapping[str, Any]]) -> str:
+    """Which full_load case of the case table a payload case is read beside: ``<name>:
+    <full_load cases of the same variant and settings>`` (``structure_settings_of``: the
+    set, dynamic mode, entry, margin, cap, overrides and the plausibility factor's
+    application; the sizing basis is full_load on both), else STRUCTURE_PAYLOAD_NO_FULL_LOAD
+    (review H-S3B-P3-01: a quasi-static or a scaled payload case is never sent to a
+    rise-time or an unscaled row)."""
+    mine = structure_settings_of(payload)
+    matches = [
+        str(c.get("name"))
+        for c in structural
+        if c.get("structure_sizing") == STRUCTURE_SIZING_FULL_LOAD
+        and c.get("of") == payload.get("of")
+        and structure_settings_of(c) == mine
+    ]
+    beside = ", ".join(matches) if matches else STRUCTURE_PAYLOAD_NO_FULL_LOAD
+    return f"{payload.get('name')}: {beside}"
+
+
+def _plausibility_trigger(p: Mapping[str, Any], central: Mapping[str, Any] | None) -> str:
+    """The plausibility rule's trigger in one computed line (D-SP7-41: "the ratio and its
+    trigger"): where M_model / R lies against the band, the element carrying the largest
+    share of M_model (``dominant`` of the record: its share, governing mode, load case
+    and station in the envelope the rule reads) and the central case's own push
+    increment on that element (or that no central case was flown)."""
+    ratio, band = p.get("ratio"), p.get("band_fraction")
+    d = p.get("dominant") or {}
+    if not (_is_finite_number(ratio) and _is_finite_number(band)):
+        return "- trigger: not recorded"
+    r, b = float(ratio), float(band)
+    if r > 1.0 + b:
+        where = (
+            f"lies above {1.0 + b:g} R, so the low-mass end's factor is "
+            f"{_fmt(p.get('low_mass_end_factor'))}"
+        )
+    elif r < 1.0 - b:
+        where = (
+            f"lies below {1.0 - b:g} R, so the high-mass end's factor is "
+            f"{_fmt(p.get('high_mass_end_factor'))}"
+        )
+    else:
+        where = "lies inside the band, so neither factor fires"
+    element = d.get("element")
+    case_label = d.get("case_label")
+    under = "the minimum gauge" if case_label is None else f"load case {case_label}"
+    carries = (
+        f"{element} carries {_fmt(float(to_percent(float(d.get('share')))))} % of M_model, "
+        f"governed by {d.get('mode')} under {under} of the pad envelope at its thickest station "
+        f"(z {_fmt(d.get('z_m'))} m)"
+        if _is_finite_number(d.get("share"))
+        else "the dominant element is not recorded"
+    )
+    if central is None:
+        own = "no central case was flown, so its own push increment is not printed"
+    else:
+        kg = (central.get("structure_elements") or {}).get(str(element))
+        own = f"its own push increment in {_central_case_phrase(central)}: {_fmt(kg)} kg"
+    return f"- trigger: M_model / R = {_fmt(r)} {where}; {carries}; {own}"
+
+
+def _plausibility_lines(inputs: Mapping[str, Any], central: Mapping[str, Any] | None) -> list[str]:
+    """The plausibility table of ``structure_inputs`` (design 4.2.5): the element masses,
+    M_model, R and its band (the edges printed from the record's band fraction, the file's
+    ``heineman_band_fraction``), M/R, the factor on each end, the quantities printed
+    beside, the rule and its trigger (``_plausibility_trigger``)."""
+    p = inputs.get("plausibility") or {}
+    band = p.get("band_fraction")
+    lo = "n/a" if not _is_finite_number(band) else f"{1.0 - float(band):g}"
+    hi = "n/a" if not _is_finite_number(band) else f"{1.0 + float(band):g}"
+    rows = [[n, _fmt(kg)] for n, kg in (p.get("element_kg") or {}).items()]
+    rows += [
+        [
+            "M_model, the stage-1 tank elements' envelope mass with their factors",
+            _fmt(p.get("m_model_kg")),
+        ],
+        ["  on the cylinder-equivalent lengths", _fmt(p.get("m_model_cylinder_kg"))],
+        ["R, Heineman's relation on the combined tank volume", _fmt(p.get("relation_kg"))],
+        ["  per tank (printed beside)", _fmt(p.get("relation_per_tank_kg"))],
+        [
+            "  band half-width as a fraction of R (the file's heineman_band_fraction) [-]",
+            _fmt(band),
+        ],
+        [f"  band, lower edge ({lo} R)", _fmt(p.get("lower_kg"))],
+        [f"  band, upper edge ({hi} R)", _fmt(p.get("upper_kg"))],
+        ["M_model / R", _fmt(p.get("ratio"))],
+        [
+            f"factor on the low-mass end ({hi} R / M above {hi} R, else 1)",
+            _fmt(p.get("low_mass_end_factor")),
+        ],
+        [
+            f"factor on the high-mass end ({lo} R / M below {lo} R, else 1)",
+            _fmt(p.get("high_mass_end_factor")),
+        ],
+        ["Akin's tank fractions (printed beside)", _fmt(p.get("akin_kg"))],
+        ["the interstage relation (printed beside)", _fmt(p.get("interstage_relation_kg"))],
+        [
+            "k_ts T_max, the thrust-structure relation (printed beside)",
+            _fmt(p.get("thrust_structure_relation_kg")),
+        ],
+        [
+            "stage 1's dry mass less its engines (printed beside)",
+            _fmt(p.get("stage1_dry_less_engines_kg")),
+        ],
+    ]
+    return [
+        "Plausibility (calibration, not validation; the envelope at the central coefficients, "
+        "margin 0, no cap):",
+        "",
+        _table(["quantity [kg unless stated]", "value"], rows),
+        "",
+        f"- rule: {p.get('rule')}",
+        _plausibility_trigger(p, central),
+    ]
+
+
+def _envelope_table(inputs: Mapping[str, Any]) -> str:
+    """The pad envelope per element of ``structure_inputs``: the required thickness's
+    maximum [mm], its station and height, the governing mode and load case."""
+    rows = [
+        [
+            f"{e.get('stage')}.{e.get('element')}",
+            _fmt(None if e.get("t_max_m") is None else float(m_to_mm(float(e["t_max_m"])))),
+            _fmt(e.get("station_index")),
+            _fmt(e.get("z_m")),
+            _fmt(e.get("mode")),
+            _fmt(e.get("case_label"))
+            if e.get("case_label") is not None
+            else "none (minimum gauge)",
+        ]
+        for e in inputs.get("envelope") or []
+    ]
+    return _table(
+        [
+            "element",
+            "required wall, max [mm]",
+            "station",
+            "z [m]",
+            "governing mode",
+            "governing load case",
+        ],
+        rows,
+    )
+
+
+STRUCTURE_FIGURES_TEXT = (
+    "figures (written when plots are on): the required wall thickness along the stations of "
+    "stage 1 and, where the push sized stage 2, of stage 2, pad envelope against push, the "
+    "governing mode marked per station, and dm by element"
+)
+"""The figures line of the Structure subsection (``structure_section``), before the list of
+plots/<run>_structure.png files."""
+
+
+def structure_section(record: Mapping[str, Any]) -> str:
+    """The Structure subsection of the offload section (SP7 step S3b; design 4.4,
+    "Summary"), printed only when the record carries ``structure_inputs`` (an experiment
+    with a structure block): the case table (STRUCTURE_CASE_ROWS: one column per
+    structural case, SP1's penalty rows of the same experiment beside, ``structure_cases_of``)
+    with the flight-check note under it (STRUCTURE_FLIGHT_CHECK_NOTE), the no_offload lines
+    (``_no_offload_line``), the physics band and the outer envelope (``_band_line``: each
+    end from every case of that set at the headline settings, ``structure_is_band_end``, the
+    scaled beside the unscaled, with the sets' method label), the design axes' break-even
+    values (what the record says of them), the layer-2 rows that move a design axis
+    (``_layer2_line``) and the settings rows that move the entry path or the sizing basis
+    (``_settings_rows_line``), where the sets were found (the file's ``sets.method``) and
+    the applicability line (STRUCTURE_SETS_APPLICABILITY), the element table of the central
+    case (``_element_table``; the first central case at the headline settings, else the
+    first central case at the headline's axes, else the first central case, named by
+    ``_central_case_phrase``), the pad envelope per element and the plausibility table with
+    the rule's trigger (``_plausibility_lines``), the payload cases (STRUCTURE_PAYLOAD_ROWS,
+    the heading naming for each the full_load case of the same variant and settings,
+    ``structure_settings_of``, or that none ran), the arms line with STRUCTURE_ARM_CAVEAT
+    and the figures named (STRUCTURE_FIGURES_TEXT; plots/<run>_structure.png per structural
+    run)."""
+    inputs = record.get("structure_inputs")
+    if inputs is None:
+        return ""
+    cases = structure_cases_of(record)
+    structural = [c for c in cases if c.get("structure_charged")]
+    payload_cases = [p for p in record.get("structure_payload_cases") or [] if not p.get("skipped")]
+    lines = [
+        STRUCTURE_SUBSECTION_TITLE,
+        "",
+        f"Structure file: {inputs.get('file')} (sha256 {inputs.get('sha256')}); the pad envelope "
+        f"is {inputs.get('envelope_pad')}'s own flight at P_ref = "
+        f"{_fmt(inputs.get('reference_payload_kg'))} kg. "
+        "Every dm is the model's first-order station sizing of the push load, charged to the "
+        "assisted run only; the pad keeps its vehicle (D-SP7-35).",
+        "",
+    ]
+    if cases:
+        lines += [_structure_table(cases, STRUCTURE_CASE_ROWS, "name"), ""]
+        lines.append(f"- {STRUCTURE_FLIGHT_CHECK_NOTE}")
+    else:
+        lines += ["(no structural case or penalty row ran)", ""]
+    for c in structural:
+        if c.get("status") == NO_OFFLOAD_STATUS:
+            lines.append(_no_offload_line(c, payload_cases))
+    sets = inputs.get("sets") or {}
+    method = (
+        f"{sets.get('label')} ({sets.get('source')}; the method and evaluation count are "
+        f"recorded in the file's sets block: {_fmt(sets.get('evaluation_count'))} sizings, "
+        f"frozen at commit {sets.get('parent_commit')}, reproduced by {sets.get('test')})"
+        if sets
+        else f"{inputs.get('sets_label')}: the structure file has no frozen sets"
+    )
+
+    def of_set(name: str) -> list[Mapping[str, Any]]:
+        """The set's own ends: its cases at the headline settings
+        (``structure_is_band_end``; every other case is a layer-2 row or a settings
+        row, ``_layer2_line`` and ``_settings_rows_line``)."""
+        return [
+            c for c in structural if c.get("structure_set") == name and structure_is_band_end(c)
+        ]
+
+    found = (
+        f"- where the sets were found (the file's sets.method; sizing only, at one push): "
+        f"{sets.get('method')}"
+        if sets
+        else "- where the sets were found: the structure file has no frozen sets"
+    )
+    layer2 = _layer2_line(structural)
+    settings_rows = _settings_rows_line(structural)
+    lines += [
+        _band_line(
+            "physics band (layer 1)",
+            of_set(SET_PHYSICS_LOW),
+            of_set(SET_PHYSICS_HIGH),
+            method,
+        ),
+        _band_line(
+            "outer envelope (layer 3)", of_set(SET_OUTER_LOW), of_set(SET_OUTER_HIGH), method
+        ),
+        f"- design-axis break-even values (layer 2): {inputs.get('tornado_note')}",
+        *([layer2] if layer2 else []),
+        *([settings_rows] if settings_rows else []),
+        found,
+        f"- applicability: {STRUCTURE_SETS_APPLICABILITY}",
+        "",
+    ]
+    centrals = [c for c in structural if c.get("structure_set") == STRUCTURE_CENTRAL_SET]
+    central = next(
+        (
+            c
+            for c in centrals
+            if not structure_axis_departures(c) and not structure_row_departures(c)
+        ),
+        None,
+    )
+    if central is None:
+        central = next((c for c in centrals if not structure_axis_departures(c)), None)
+    if central is None and centrals:
+        central = centrals[0]
+    if central is not None:
+        at = (
+            "at x = 0 (the solve ended no_offload)"
+            if central.get("status") == NO_OFFLOAD_STATUS
+            else "at x*"
+        )
+        lines += [
+            f"Elements of {_central_case_phrase(central)} {at} (the station-sized and "
+            "relation elements, then the ring):",
+            "",
+            _element_table(central),
+            "",
+        ]
+    lines += [
+        f"Pad envelope per element ({inputs.get('envelope_basis')}):",
+        "",
+        _envelope_table(inputs),
+        "",
+    ]
+    lines += [*_plausibility_lines(inputs, central), ""]
+    if payload_cases:
+        beside = "; ".join(_payload_beside(p, structural) for p in payload_cases)
+        lines += [
+            "Structure payload cases (design 4.4, the payload form: a full-load sizing like a "
+            f"full_load case's, read beside the full_load row of the same variant and settings "
+            f"above: {beside}; two passes, not iterated further; "
+            f"{STRUCTURE_PAYLOAD_OFFLOADS_NOTHING}):",
+            "",
+            _structure_table(payload_cases, STRUCTURE_PAYLOAD_ROWS, "name"),
+            "",
+        ]
+    for p in record.get("structure_payload_cases") or []:
+        if p.get("skipped"):
+            lines.append(f"- {p.get('name')} (of {p.get('of')}): {p['skipped']}")
+    arms = [a for a in record.get("sensitivity") or [] if a.get("structure_charged")]
+    if arms:
+        lines += [
+            f"- structural sensitivity arms: {len(arms)} (the Sensitivity table below carries "
+            "their dm, set and envelope pad; the caveat follows)",
+            f"- {STRUCTURE_ARM_CAVEAT}",
+        ]
+    figures = [
+        f"plots/{run_data.plot_stem(str(c.get('run')), 'structure')}.png ({c.get('name')})"
+        for c in [*structural, *payload_cases]
+        if c.get("run")
+    ]
+    if figures:
+        lines += [f"- {STRUCTURE_FIGURES_TEXT}: " + "; ".join(figures)]
+    return "\n".join(lines).rstrip()
 
 
 def offload_section(record: Mapping[str, Any]) -> str:
@@ -2076,9 +3196,11 @@ def offload_section(record: Mapping[str, Any]) -> str:
     metrics.json ``offload`` value; pure text): the basis line with the reference
     payload, the sensitivity basis, the caveats (the record's: ``offload_caveats``), the
     cases table (OFFLOAD_CASE_ROWS, plus OFFLOAD_ENERGY_ROWS with energy inputs) and the
-    cases that did not run, the energy note with its exclusions, the decomposition
-    table, the pad controls, the sensitivity arms and the notes. A skipped block prints
-    only why."""
+    cases that did not run, the energy note with its exclusions, with a structure block
+    the Structure subsection (``structure_section``, SP7 step S3b), the decomposition
+    table, the pad controls, the sensitivity arms (with STRUCTURE_ARM_CAVEAT under
+    the table when some arm is structural) and the notes. A skipped block prints only
+    why."""
     if record.get("skipped"):
         return str(record["skipped"])
     lines = [
@@ -2107,12 +3229,16 @@ def offload_section(record: Mapping[str, Any]) -> str:
             f"{OFFLOAD_ENERGY_TEXT}. The heat / electricity ratio is "
             f"{OFFLOAD_ENERGY_RATIO_LABEL}; it leaves out " + "; ".join(excludes) + ".",
         ]
+    if record.get("structure_inputs") is not None:
+        lines += ["", structure_section(record)]
     lines += ["", "### Decomposition", "", OFFLOAD_DECOMPOSITION_TEXT + ".", ""]
     lines.append(offload_decomposition_table(cases))
     lines += ["", "### Pad controls", "", *pad_control_lines(record.get("pad_controls") or [])]
     arms = record.get("sensitivity") or []
     if arms:
         lines += ["", "### Sensitivity", "", offload_sensitivity_table(arms)]
+        if any(a.get("structure_charged") for a in arms):
+            lines += ["", f"- {STRUCTURE_ARM_CAVEAT}"]
     for note in record.get("notes") or []:
         lines += ["", str(note)]
     return "\n".join(lines)

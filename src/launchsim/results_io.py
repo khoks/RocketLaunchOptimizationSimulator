@@ -51,8 +51,17 @@ and, only when a structural case was solved (SP7 step S3), a top-level ``structu
 (the structure file's path, sha256 and content; ``OffloadReport.structure``), and
 summary.md the section "Propellant saved at fixed payload"; a planar sweep that
 names offload cases adds their columns to sweep_index.csv (``offload_sweep_point``).
-Without the block none of these is written. ``planar_experiment_result`` and
-``planar_offload`` write nothing (an in-memory caller gets the whole result).
+With a ``structure`` block (SP7 step S3b) the offload record also carries
+``structure_inputs`` and ``structure_payload_cases`` (``_structure_payload_case``: the
+payload form's runs, written like a case's), summary.md's offload section its Structure
+subsection, a structural case's sweep columns (``OFFLOAD_STRUCTURE_SWEEP_COLUMNS``) and
+arm keys reach sweep_index.csv and ``offload.sensitivity[]``, a sweep point's
+resolved_config.yaml carries the block's file only where a structural case was solved
+at that point (none with --no-offload, for a plain-only sweep, on the baseline copy or a
+paired pad), and plots/<run>_structure.png is written for every structural run
+(``OffloadReport.increments``). Without the block none of these is written.
+``planar_experiment_result`` and ``planar_offload`` write nothing (an in-memory caller
+gets the whole result).
 
 Both entry points first check the names and run the preflight ``sim.check_resolved``
 (the assist model and the ignition specs of every resolved run built, nothing
@@ -121,6 +130,7 @@ from launchsim.config import (
     OFFLOAD_STAGE1_INDEX,
     OFFLOAD_STAGE2_INDEX,
     PLANAR_2D,
+    STRUCTURE_PHYSICS_SETS,
     VERTICAL_1D,
     ChecksConfig,
     OffloadEnergyConfig,
@@ -129,6 +139,7 @@ from launchsim.config import (
     ResolvedOffloadArm,
     ResolvedOffloadCase,
     ResolvedRun,
+    ResolvedStructurePayloadCase,
     SweepPoint,
     offload_run_names,
     offload_solved_run,
@@ -142,13 +153,15 @@ from launchsim.offload import (
     verification_from_record,
     with_verification,
 )
-from launchsim.plots import CALIBRATION_RECORDS, write_plots
+from launchsim.plots import CALIBRATION_RECORDS, write_plots, write_structure_figure
 from launchsim.search import OK_STATUS, as_plain
 from launchsim.summary import (
     OFFLOAD_SECTION_NAME,
     experiment_summary,
     offload_caveats,
     planar_sweep_summary,
+    structure_flags_text,
+    structure_overrides_text,
     sweep_point_header,
     sweep_summary,
 )
@@ -157,6 +170,7 @@ from launchsim.vehicle import offload_split_kg
 
 if TYPE_CHECKING:
     from launchsim.sim import Result, RunResult, StructureSizing, StructureTransform
+    from launchsim.structure import Increment
     from launchsim.vehicle import Vehicle
 
 
@@ -286,12 +300,16 @@ class OffloadReport:
     sensitivity arms' recorded runs), by label; ``structure``, the structure file a
     structural case of the pass used (SP7 step S3: ``{file, sha256, content}``, written
     as resolved_config.yaml's top-level ``structure`` key; None when no structural case
-    was solved)."""
+    was solved); ``increments`` (SP7 step S3b), the ``structure.Increment`` behind each
+    structural run it writes (a structural case's recorded run, a payload case's), by run
+    name, for the thickness figure (``plots.write_structure_figure``; in memory only: the
+    station profiles are not written to metrics.json)."""
 
     record: dict[str, Any]
     runs: dict[str, RunResult] = field(default_factory=dict)
     checked_runs: dict[str, RunResult] = field(default_factory=dict)
     structure: dict[str, Any] | None = None
+    increments: dict[str, Increment] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -713,8 +731,27 @@ def write_run(experiment_result: ExperimentResult, out_dir: Path, plots: bool) -
         write_timeseries(rr.result, out_dir / name)
         if plots:
             write_plots(rr.result, out_dir / "plots", name)
+    if plots and er.offload is not None:
+        for name, increment in er.offload.increments.items():
+            rr = er.offload.runs.get(name)
+            if rr is not None:
+                record = structure_figure_record(er.offload, name) or rr.result.metrics
+                write_structure_figure(increment, record, out_dir / "plots", name)
     write_summary(out_dir, experiment_summary(er))
     return out_dir
+
+
+def structure_figure_record(report: OffloadReport, run: str) -> Mapping[str, Any] | None:
+    """The case record behind a structural run's thickness figure (SP7 step S3b): the
+    offload case or structure payload case whose recorded ``run`` is ``run`` (its
+    structure keys, its status and x*, a payload case's kind and P_2*, so the figure can
+    say at which offload the profile was sized); None when no record names the run (the
+    figure then reads the run's metrics, which carry the structure keys alone)."""
+    cases = [
+        *(report.record.get("cases") or []),
+        *(report.record.get("structure_payload_cases") or []),
+    ]
+    return next((c for c in cases if c.get("run") == run), None)
 
 
 def write_single(
@@ -725,6 +762,7 @@ def write_single(
     plots: bool,
     header_lines: Sequence[str] = (),
     comparison: Mapping[str, Any] | None = None,
+    structure: Mapping[str, Any] | None = None,
 ) -> Path:
     """Flat single-run layout for a sweep point (or the sweep's baseline copy):
     resolved_config.yaml, metrics.json, summary.md, timeseries.csv, events.csv, plots/.
@@ -732,7 +770,13 @@ def write_single(
     ``comparison`` is the point's ``compare`` dict against the baseline when the caller
     already has it (the sweep index uses the same one), computed here otherwise; the
     baseline copy has none. A sweep point runs no sensitivity case, and its summary
-    says so (SENSITIVITY_SWEEP_POINT)."""
+    says so (SENSITIVITY_SWEEP_POINT). ``structure`` (SP7 step S3b): the structure file
+    the experiment's block names (``{file, sha256, content}``, ``structure_block_used``),
+    written as resolved_config.yaml's last key; ``_run_sweeps_into`` passes it for a
+    sweep point at which a structural case was solved (the sweep names one and offload is
+    on: the same rule as the run path's, the key naming a file a run at that point used)
+    and None (no key) otherwise, so an SP1-type sweep's files, the ``baseline/`` copy and
+    a paired pad's are unchanged."""
     out_dir = Path(out_dir)
     rr = run_result
     check_name(rr.name, "run name")  # sweep points are run_NNNN, so no reserved check here
@@ -750,16 +794,16 @@ def write_single(
         comparison = {rr.name: compare(rr.result, baseline.result, rr.resolved.to_vehicle())}
     else:
         comparison = {rr.name: dict(comparison)}
-    write_yaml(
-        out_dir / "resolved_config.yaml",
-        {
-            "experiment": er.experiment_name,
-            "timestamp_utc": er.timestamp_utc,
-            "git": dict(er.git),
-            "run": rr.resolved.run_dict,
-            "vehicle": rr.resolved.vehicle_dict,
-        },
-    )
+    config_out: dict[str, Any] = {
+        "experiment": er.experiment_name,
+        "timestamp_utc": er.timestamp_utc,
+        "git": dict(er.git),
+        "run": rr.resolved.run_dict,
+        "vehicle": rr.resolved.vehicle_dict,
+    }
+    if structure is not None:
+        config_out["structure"] = dict(structure)
+    write_yaml(out_dir / "resolved_config.yaml", config_out)
     write_json(
         out_dir / "metrics.json",
         {
@@ -1122,13 +1166,15 @@ class _CaseOutcome:
     """One case of an offload pass: its record, the runs it writes, the runs whose checks
     are listed besides, whether its solve was reused from another of one trajectory and,
     for a structural case, the structure file it used (``OffloadReport.structure``'s
-    form; None otherwise)."""
+    form; None otherwise) and the ``structure.Increment`` of its recorded run's sizing
+    (SP7 step S3b, for the thickness figure; None without a recorded structural run)."""
 
     record: dict[str, Any]
     written: dict[str, RunResult]
     checked: dict[str, RunResult]
     reused: bool
     structure: dict[str, Any] | None = None
+    increment: Increment | None = None
 
 
 def _run_memo(nominal: Sequence[RunResult]) -> RunMemo:
@@ -1369,6 +1415,18 @@ def _structure_used(transform: StructureTransform) -> dict[str, Any]:
     return {"file": sfile.path, "sha256": sfile.sha256, "content": sfile.content}
 
 
+def structure_block_used(resolved: ResolvedExperiment) -> dict[str, Any] | None:
+    """The structure file an experiment's block names, in resolved_config.yaml's
+    ``structure`` form (``_structure_used``'s: path, sha256, content); None without a block
+    (SP7 step S3b: a sweep point's resolved_config.yaml carries it when the sweep solved a
+    structural case at that point, ``_run_sweeps_into``)."""
+    block = resolved.structure
+    if block is None:
+        return None
+    sfile = block.file
+    return {"file": sfile.path, "sha256": sfile.sha256, "content": sfile.content}
+
+
 def _structural_final(
     case: ResolvedOffloadCase, mode: str, offload_kg: float, sizing: StructureSizing
 ) -> ResolvedRun:
@@ -1416,7 +1474,11 @@ def _offload_case(
     arm's from its perturbed pad); its verification and recorded run fly the start with
     the offload and the modelled dm restated (``_structural_final``, at x* or, for
     no_offload, at 0); the recorded run carries the structure's assumption line and, like
-    the case record, the run-level structure keys (``sim.structure_record``)."""
+    the case record, the run-level structure keys (``sim.structure_record``). After the
+    recorded run is assembled its own flight is checked against the envelope
+    (``sim.structure_flight_check``, SP7 step S3b: the exceedance sized into
+    ``structure_flight_exceedance_kg`` and its flag, never charged or iterated), and the
+    sizing's Increment goes to the outcome for the thickness figure."""
     from launchsim import sim  # late: sim imports this module
 
     cfg = case.config
@@ -1430,6 +1492,7 @@ def _offload_case(
     reused = False
     transform: StructureTransform | None = None
     items: dict[str, Any] | None = None
+    at_x: StructureSizing | None = None
     if cfg.solved:
         if case.structure is not None:
             transform = sim.offload_structure_transform(case, ctx.base, ctx.p_ref)
@@ -1460,11 +1523,15 @@ def _offload_case(
         silo, reused = ctx.run(final)
         rr = silo
         offload_kg = math.nan if case.imposed_kg is None else case.imposed_kg
+    increment = None
     if rr is not None:
         pad_name = None if transform is None else transform.envelope_pad
         if transform is not None:  # its dry masses carry dm: the structural variant instead
             rr = sim.without_assumptions(rr, sim.OFFLOAD_ASSUMPTIONS)
         rr = sim.with_assumptions(rr, _offload_assumptions(case, envelope_pad=pad_name))
+        if items is not None and transform is not None and at_x is not None:
+            items = sim.with_flight_check(items, sim.structure_flight_check(transform, rr, at_x))
+            increment = at_x.increment
         if items is not None:
             rr = sim.with_structure_items(rr, items)
         written[rr.name] = rr
@@ -1505,7 +1572,7 @@ def _offload_case(
     if items is not None:
         record.update(items)
     used = None if transform is None else _structure_used(transform)
-    return _CaseOutcome(record, written, checked, reused, used)
+    return _CaseOutcome(record, written, checked, reused, used, increment)
 
 
 def _case_record(
@@ -1721,10 +1788,16 @@ def _offload_arm_record(
     pad's P*) beside the nominal, its status and offload against the nominal case's,
     the shares of the load, the decomposition's status, residual and screening ratio,
     whether the solve was reused (a trajectory equal to another's: an energy-only or
-    yardstick parameter) and the flags."""
+    yardstick parameter) and the flags; a structural arm's (SP7 step S3b) also ends with
+    the run-level structure keys of its case record (``sim.STRUCTURE_RECORD_KEYS``,
+    ``structure_envelope_pad`` naming the pad its envelope came from, its own perturbed
+    pad for a vehicle parameter), so the arm is marked structural on disk (the caveat
+    ``summary.STRUCTURE_ARM_CAVEAT`` is printed beside the arms, not stored per arm)."""
+    from launchsim import sim  # late: sim imports this module
+
     rec = outcome.record
     xv = rec.get("decomposition") or {}
-    return {
+    out = {
         "case": rec["name"],
         "run": arm_name,
         "param": param,
@@ -1747,6 +1820,175 @@ def _offload_arm_record(
         "trajectory_reused": outcome.reused,
         "flags": rec["flags"],
     }
+    if rec.get("structure_charged"):
+        out.update({key: rec.get(key) for key in sim.STRUCTURE_RECORD_KEYS})
+    return out
+
+
+def _payload_contraction(
+    p_ref: float, p1: float, p2: float, dm0: float, dm1: float
+) -> tuple[float, float]:
+    """The payload form's contraction c = |(P_2* - P_1*)/(dm_1 - dm_0)| x |(dm_1 -
+    dm_0)/(P_1* - P_ref)| and its residual estimate c |P_2* - P_1*| [kg] (design 4.4,
+    "Payload form"), pure: with dm_1 = dm_0 the second pass flew the first's vehicle, so c
+    = 0 (the map did not move); with P_1* = P_ref and dm_1 != dm_0 the contraction is not
+    defined, taken as inf (the flag fires)."""
+    if dm1 == dm0:
+        return 0.0, 0.0
+    if p1 == p_ref:
+        return math.inf, math.inf
+    c = abs((p2 - p1) / (dm1 - dm0)) * abs((dm1 - dm0) / (p1 - p_ref))
+    return c, c * abs(p2 - p1)
+
+
+def _payload_pass_run(
+    case: ResolvedStructurePayloadCase, sizing: StructureSizing, name: str
+) -> ResolvedRun:
+    """The variant of a payload case with the sizing's dm restated under the structure's
+    provenance (``config.offload_solved_run`` at an offload of 0: no propellant is
+    removed; the dry masses gain dm1 and dm2 with their source and note, the note
+    prefixed ``structure payload case <name>``, never the solved case's words: nothing
+    is solved here), resolved under ``name``."""
+    return offload_solved_run(
+        case.variant,
+        OFFLOAD_GROSS_MODES[0],
+        0.0,
+        case.name,
+        name,
+        structure_dm_kg=(sizing.dm_stage1_kg, sizing.dm_stage2_kg),
+        provenance=case.structure.provenance,
+        what=f"structure payload case {case.name!r}",
+    )
+
+
+def _structure_payload_case(
+    case: ResolvedStructurePayloadCase, ctx: _OffloadContext
+) -> _CaseOutcome:
+    """One structure payload case against ctx's reference pad (design 4.4, "Payload form";
+    SP7 step S3b): the variant flown at its own payload capacity P* with the structure
+    sized for its full-load push.
+
+    Two passes on the transform of ``sim.payload_structure_transform`` (the envelope from
+    the reference pad, the geometry from the variant at its full loads, sizing
+    full_load): dm_0 sized at the pad's P* (P_ref) on the full-load vehicle; P_1* searched
+    on the vehicle carrying dm_0 (``_payload_pass_run``, run through ctx's memo under the
+    structure key); dm_1 sized at P_1*; P_2* searched on the vehicle carrying dm_1. The
+    recorded run is the P_2* search's run with dm_1 restated (the same provenance form as
+    S3's), named after the case; the first pass's run goes to the checked runs. Recorded:
+    P_ref, dm_0 and dm_1 (by stage), P_1* and P_2*, P_2* - P_ref, the contraction c and
+    the residual estimate c |P_2* - P_1*| (``_payload_contraction``), the tolerance
+    STRUCTURE_PAYLOAD_RESIDUAL_FRACTION x final_payload_xtol_kg, and the flag
+    STRUCTURE_PAYLOAD_FLAG (the estimate above that tolerance, or c above
+    STRUCTURE_PAYLOAD_CONTRACTION_MAX), promoted to the run's flags; the record kind is
+    STRUCTURE_PAYLOAD_RECORD_KIND and it carries the run-level structure keys of the
+    second sizing (``sim.structure_record`` with dm_1 at x*, the mass the run carries, and
+    dm_0 as the sizing at x = 0: the full-load sizing at P_ref, the same quantity an
+    offload case's ``structure_dm_x0_kg`` holds). The post-hoc flight check is not run
+    on a payload case (review N-S3b-R3-01): its run flies its own P_2* while the
+    envelope is the pad's at P_ref, so the check would measure the payload gain P_2* -
+    P_ref, which the pad's own flight at P_2* would need too, not the push; the record's
+    ``flight_check`` says so (STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA), its
+    ``structure_flight_exceedance_kg`` stays None and no flight flag is appended. The run
+    carries STRUCTURE_PAYLOAD_CASE_ASSUMPTION (ending with the same words) and the
+    structure assumption line. A payload search that found no P* on either pass ends the
+    case with that search's status: ``run`` None, nothing written and no figure (the
+    second pass's record keeps dm_1 and the structure keys, its ``unconverged`` None,
+    ``payload_kg`` the failed search's NaN and no payload flag)."""
+    from launchsim import sim  # late: sim imports this module
+
+    transform = sim.payload_structure_transform(case, ctx.base, ctx.p_ref)
+    start_vehicle = transform.start_vehicle
+    checked: dict[str, RunResult] = {}
+    written: dict[str, RunResult] = {}
+    used = _structure_used(transform)
+    sizing0 = transform.sizing(start_vehicle, ctx.p_ref)
+    first = _payload_pass_run(case, sizing0, f"{case.name}__pass1")
+    run1, _ = ctx.run(first, transform.memo_key)
+    checked[f"{first.name} (structure payload case, pass 1: payload search at dm_0)"] = run1
+    p1 = run1.result.metrics.get("payload_kg")
+    base_record: dict[str, Any] = {
+        "name": case.name,
+        "kind": sim.STRUCTURE_PAYLOAD_RECORD_KIND,
+        "of": case.variant.name,
+        "reference_payload_kg": ctx.p_ref,
+        "dm_0_kg": sizing0.total_kg,
+        "dm_0_stage2_kg": sizing0.dm_stage2_kg,
+        "pass_1_run": first.name,
+        "payload_1_kg": p1,
+        "search_1_status": run1.result.metrics.get("search_status"),
+    }
+    if not _is_finite_number(p1):
+        record = {
+            **base_record,
+            "run": None,
+            "run_status": None,
+            "status": run1.result.metrics.get("search_status"),
+            "flags": list(run1.result.flags),
+        }
+        return _CaseOutcome(record, written, checked, False, used)
+    sizing1 = transform.sizing(start_vehicle, float(p1))
+    final = _payload_pass_run(case, sizing1, case.name)
+    rr, _ = ctx.run(final, transform.memo_key)
+    p2 = rr.result.metrics.get("payload_kg")
+    items = sim.structure_record(transform, sizing1, sizing0)
+    tolerance = sim.STRUCTURE_PAYLOAD_RESIDUAL_FRACTION * ctx.xtol_kg
+    increment = None
+    unconverged: bool | None = None
+    run_name: str | None = None
+    run_status: str | None = None
+    vs_pad = None
+    if _is_finite_number(p2):
+        c, residual = _payload_contraction(
+            ctx.p_ref, float(p1), float(p2), sizing0.total_kg, sizing1.total_kg
+        )
+        # no flight check: the run flies P_2*, the envelope is the pad's at P_ref
+        # (STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA)
+        increment = sizing1.increment
+        status = "ok"
+        unconverged = bool(residual > tolerance or c > sim.STRUCTURE_PAYLOAD_CONTRACTION_MAX)
+        flag_values = {
+            "contraction": c,
+            "residual_estimate_kg": residual,
+            "tolerance_kg": tolerance,
+            "contraction_max": sim.STRUCTURE_PAYLOAD_CONTRACTION_MAX,
+        }
+        items["structure_flags"] = [
+            *items["structure_flags"],
+            {"name": sim.STRUCTURE_PAYLOAD_FLAG, "fired": unconverged, "values": flag_values},
+        ]
+        rr = sim.with_assumptions(
+            rr,
+            [
+                sim.STRUCTURE_PAYLOAD_CASE_ASSUMPTION,
+                sim.structure_assumption(case.structure, transform.envelope_pad),
+            ],
+        )
+        rr = sim.with_structure_items(rr, items)
+        written[rr.name] = rr
+        run_name, run_status, vs_pad = rr.name, rr.result.status, _vs_pad(rr, ctx.base)
+    else:  # the P_2* search found no P*: the case ends with its status, nothing written
+        c, residual = math.nan, math.nan
+        status = str(rr.result.metrics.get("search_status"))
+    record = {
+        **base_record,
+        "run": run_name,
+        "run_status": run_status,
+        "status": status,
+        "dm_1_kg": sizing1.total_kg,
+        "dm_1_stage2_kg": sizing1.dm_stage2_kg,
+        "payload_kg": p2,
+        "payload_delta_kg": _delta(p2, ctx.p_ref),
+        "payload_2_minus_1_kg": _delta(p2, p1),
+        "contraction": c,
+        "residual_estimate_kg": residual,
+        "residual_tolerance_kg": tolerance,
+        "unconverged": unconverged,
+        "vs_pad": vs_pad,
+        "flight_check": sim.STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA,
+        "flags": list(rr.result.flags),
+        **items,
+    }
+    return _CaseOutcome(record, written, checked, False, used, increment)
 
 
 def _has_payload_capacity(rr: RunResult) -> bool:
@@ -1827,7 +2069,15 @@ def planar_offload(
     OFFLOAD_ARMS_SKIPPED otherwise; an arm whose pad has no P* is REFERENCE_FAILED_STATUS,
     unsolved). Runs of one trajectory key are flown once per pass (``_run_memo``, seeded
     with the baseline and the variants). A baseline without a P* solves nothing: the
-    record says why (``skipped``, REFERENCE_FAILED_STATUS)."""
+    record says why (``skipped``, REFERENCE_FAILED_STATUS).
+
+    With a structure block (SP7 step S3b) the record also carries, after
+    ``energy_inputs``, ``structure_inputs`` (``sim.offload_structure_inputs``: the
+    envelope per element, the plausibility table, the frozen sets, the file) and, after
+    ``cases``, ``structure_payload_cases`` (``_structure_payload_case`` for every payload
+    case whose variant ran; one that did not is noted OFFLOAD_NOT_RUN); the report's
+    ``increments`` hold each structural run's sizing for the thickness figure. Without a
+    block neither key exists, so every SP1-type record is unchanged."""
     ro = resolved.offload
     if ro is None:
         return None
@@ -1864,6 +2114,7 @@ def planar_offload(
         checked.update(c)
         if math.isfinite(record["offload_kg"]):
             x_pad[mode] = record["offload_kg"]
+    increments: dict[str, Increment] = {}
     cases: list[dict[str, Any]] = []
     for case in ro.cases:
         if case.config.of not in variants:
@@ -1874,6 +2125,26 @@ def planar_offload(
         written.update(outcome.written)
         checked.update(outcome.checked)
         used = used or outcome.structure
+        if outcome.increment is not None and outcome.record.get("run"):
+            increments[outcome.record["run"]] = outcome.increment
+    structure_inputs: dict[str, Any] | None = None
+    payload_cases: list[dict[str, Any]] = []
+    block = resolved.structure
+    if block is not None:
+        structure_inputs = sim.offload_structure_inputs(
+            block.file, baseline, ctx.p_ref, resolved.baseline.to_vehicle()
+        )
+        for pc in block.payload_cases:
+            if pc.of not in variants:
+                payload_cases.append({"name": pc.name, "of": pc.of, "skipped": OFFLOAD_NOT_RUN})
+                continue
+            outcome = _structure_payload_case(pc, ctx)
+            payload_cases.append(outcome.record)
+            written.update(outcome.written)
+            checked.update(outcome.checked)
+            used = used or outcome.structure
+            if outcome.increment is not None and outcome.record.get("run"):
+                increments[outcome.record["run"]] = outcome.increment
     arms: list[dict[str, Any]] = []
     nominal = {rec["name"]: rec for rec in cases}
     for arm in offload_arms_that_run(ro, variants) if sensitivity else ():
@@ -1920,14 +2191,26 @@ def planar_offload(
         "reference_payload_kg": ctx.p_ref,
         "caveats": offload_caveats(vehicle_name, CALIBRATION_RECORDS.get(vehicle_name)),
         "energy_inputs": _energy_inputs(energy),
-        "pad_control": ro.config.pad_control,
-        "pad_controls": controls,
-        "cases": cases,
-        "sensitivity_basis": OFFLOAD_SENSITIVITY_BASIS if ro.arms else None,
-        "sensitivity": arms,
-        "notes": notes,
     }
-    return OffloadReport(record, written, checked, used)
+    if block is not None:
+        record["structure_inputs"] = structure_inputs
+    record.update(
+        {
+            "pad_control": ro.config.pad_control,
+            "pad_controls": controls,
+            "cases": cases,
+        }
+    )
+    if block is not None:
+        record["structure_payload_cases"] = payload_cases
+    record.update(
+        {
+            "sensitivity_basis": OFFLOAD_SENSITIVITY_BASIS if ro.arms else None,
+            "sensitivity": arms,
+            "notes": notes,
+        }
+    )
+    return OffloadReport(record, written, checked, used, increments)
 
 
 def offload_sweep_point(
@@ -2020,6 +2303,85 @@ def offload_index_values(record: Mapping[str, Any]) -> dict[str, Any]:
         "n_flags": None if flags is None else len(flags),
     }
     return {key: values[key] for key in OFFLOAD_SWEEP_COLUMNS}
+
+
+OFFLOAD_STRUCTURE_SWEEP_COLUMNS: tuple[str, ...] = (
+    "structure_set",
+    "structure_sizing",
+    "structure_dynamic",
+    "structure_entry",
+    "structure_margin",
+    "structure_cap_g",
+    "structure_dm_kg",
+    "structure_dm_stage2_kg",
+    "structure_dm_x0_kg",
+    "structure_dlf",
+    "structure_n_peak_g",
+    "structure_F_peak_N",
+    "structure_ramp_cost_rel",
+    "structure_plausibility_factor",
+    "structure_flags",
+    "structure_plausibility_scaled",
+    "structure_overrides",
+    "structure_plausibility_ratio",
+)
+"""The sweep_index.csv columns of a structural offload case a sweep names (SP7 step S3b;
+design 4.4, "Sweeps"), written ``<case>.<column>`` (``offload_structure_index_values``)
+after every ``<case>.<OFFLOAD_SWEEP_COLUMNS>`` group and only for a case that was
+structural at some point of the sweep (the KI-028 pattern: appended, so every earlier
+column keeps its name and place, and an SP1-type sweep's index is unchanged byte for
+byte): the set, sizing, dynamic mode, entry path, margin and envelope cap of the case;
+dm1 + dm2 at x* [kg], dm2 [kg] and dm at x = 0 [kg]; the DLF, the peak felt load factor
+[g0] and the peak interface force [N]; the constant_accel plateau's ramp cost (a' - a)/a;
+the plausibility rule's factor for the case's band end on the two physics sets, whether
+or not the case applies it (``structure_plausibility_scaled`` says which; 1.0 when the
+rule does not fire on that end; None on the central and the outer sets, which are not
+band ends, as the summary prints "n/a (not a band end)"); the names of the fired
+structure flags, "; "-joined, ``none`` when none fired and
+``summary.STRUCTURE_FLAGS_NOT_SIZED`` when the solve found no x* (no sizing at x*, so no
+flag was evaluated; the numbers are in the case record, which a sweep point does not
+write: the Checks section lists the lines); whether the dm carries the factor
+(``structure_plausibility_scaled``), the case's design-axis overrides
+(``summary.structure_overrides_text``: ``<path> <value>; ...``, ``none`` when none) and
+M_model / R (``structure_plausibility_ratio``, the rule's state on every point, whichever
+set the case is on), so a sweep point's dm has its basis on disk (a sweep point writes no
+case record; the three columns beyond the step's list are logged in the phase file's
+section 12)."""
+
+
+def offload_structure_index_values(record: Mapping[str, Any]) -> dict[str, Any]:
+    """The OFFLOAD_STRUCTURE_SWEEP_COLUMNS values of one case record (None where it has
+    none: an unstructured record at a point of a sweep whose other points were
+    structural, or a failed solve's values at x*; the factor None off the physics sets)."""
+    if not record.get("structure_charged"):
+        return dict.fromkeys(OFFLOAD_STRUCTURE_SWEEP_COLUMNS)
+    fired = structure_flags_text(record)
+    factor = (
+        record.get("structure_plausibility_factor")
+        if record.get("structure_set") in STRUCTURE_PHYSICS_SETS
+        else None
+    )
+    values = {
+        "structure_set": record.get("structure_set"),
+        "structure_sizing": record.get("structure_sizing"),
+        "structure_dynamic": record.get("structure_dynamic"),
+        "structure_entry": record.get("structure_entry"),
+        "structure_margin": record.get("structure_margin"),
+        "structure_cap_g": record.get("structure_envelope_cap_g"),
+        "structure_dm_kg": record.get("structure_dm_kg"),
+        "structure_dm_stage2_kg": record.get("structure_dm_stage2_kg"),
+        "structure_dm_x0_kg": record.get("structure_dm_x0_kg"),
+        "structure_dlf": record.get("structure_dlf"),
+        "structure_n_peak_g": record.get("structure_n_peak_g"),
+        "structure_F_peak_N": record.get("structure_F_peak_N"),
+        "structure_ramp_cost_rel": record.get("structure_ramp_cost_rel"),
+        "structure_plausibility_factor": factor,
+        "structure_flags": fired,
+        "structure_plausibility_scaled": record.get("structure_plausibility_scaled"),
+        "structure_overrides": structure_overrides_text(record.get("structure_overrides")),
+        "structure_plausibility_ratio": record.get("structure_plausibility_ratio"),
+    }
+    return {key: values[key] for key in OFFLOAD_STRUCTURE_SWEEP_COLUMNS}
 
 
 def offload_record(report: OffloadReport) -> dict[str, Any]:
@@ -2156,11 +2518,19 @@ def planar_sweep_index_frame(sweep: SweepResult, root: Path) -> pd.DataFrame:
     PLANAR_SWEEP_INDEX_METRICS (the point's metrics, or its comparison against its
     baseline; non-finite or absent -> empty cell), the PLANAR_SWEEP_INDEX_TEXT, the
     OFFLOAD_SWEEP_COLUMNS of every offload case the sweep solved (``<case>.<column>``,
-    only when it solved some: ``SweepResult.offload``) and status. ValueError when an
-    axis path collides with a column."""
+    only when it solved some: ``SweepResult.offload``), then (SP7 step S3b) the
+    OFFLOAD_STRUCTURE_SWEEP_COLUMNS of every case that was structural at some point
+    (``offload_structure_index_values``; none for an SP1-type sweep, whose columns are
+    unchanged) and status. ValueError when an axis path collides with a column."""
     fixed = {*SWEEP_INDEX_FIXED_COLUMNS, PLANAR_SWEEP_PAIRED_COLUMN}
     names = list(dict.fromkeys(n for records in sweep.offload for n in records))
+    structural = [
+        n
+        for n in names
+        if any(bool(records.get(n, {}).get("structure_charged")) for records in sweep.offload)
+    ]
     offload_cols = [f"{n}.{col}" for n in names for col in OFFLOAD_SWEEP_COLUMNS]
+    offload_cols += [f"{n}.{col}" for n in structural for col in OFFLOAD_STRUCTURE_SWEEP_COLUMNS]
     clash = sorted(
         {*fixed, *PLANAR_SWEEP_INDEX_METRICS, *PLANAR_SWEEP_INDEX_TEXT, *offload_cols}
         & set(sweep.axes)
@@ -2194,6 +2564,11 @@ def planar_sweep_index_frame(sweep: SweepResult, root: Path) -> pd.DataFrame:
             values = offload_index_values(records.get(name, {}))
             for col, value in values.items():
                 is_text = isinstance(value, str) or value is None
+                row[f"{name}.{col}"] = value if is_text or _is_finite_number(value) else None
+        for name in structural:
+            values = offload_structure_index_values(records.get(name, {}))
+            for col, value in values.items():
+                is_text = isinstance(value, str | bool) or value is None
                 row[f"{name}.{col}"] = value if is_text or _is_finite_number(value) else None
         row["status"] = rr.result.status
         rows.append(row)
@@ -2255,10 +2630,12 @@ def run_sweep(
     offload cases (``SweepConfig.offload``) solves them at every point
     (``offload_sweep_point``) unless ``offload`` is False, and adds their columns to
     sweep_index.csv (OFFLOAD_SWEEP_COLUMNS per case). A structural case is solved with
-    its transform at every point and its in-memory case record carries the structure
-    keys, but at SP7 step S3 none of them reaches sweep_index.csv (its structure columns
-    are step S3b's), so on disk a structural point is told apart from an uncharged one
-    only by its case name. Returns the SweepResults and
+    its transform at every point and (SP7 step S3b) its OFFLOAD_STRUCTURE_SWEEP_COLUMNS
+    join the index after every case's plain columns; a point's resolved_config.yaml
+    carries the block's structure file only where a structural case was solved at that
+    point (``structure_block_used``; none with ``offload`` False, at a point of a sweep
+    naming only plain cases, on the baseline copy or a paired pad). Returns the
+    SweepResults and
     the run directory, created before any run starts and after the preflight
     (``sim.check_resolved``: a refused configuration leaves no directory); an exception
     after that leaves FAILED.txt in it (write_failure_marker) and propagates.
@@ -2302,7 +2679,9 @@ def _run_sweeps_into(
     and written beside it as ``run_NNNN__<baseline>``), every other point with the
     experiment's baseline; planar comparisons carry the matched-payload attribution
     (``planar_comparisons``). With offload, the offload cases a planar sweep names are
-    solved at each point against that same baseline (``offload_sweep_point``)."""
+    solved at each point against that same baseline (``offload_sweep_point``); a point
+    at which a structural case is solved writes the block's structure file into its
+    resolved_config.yaml (``write_single``'s ``structure``), no other point does."""
     from launchsim import sim  # late: sim imports this module
 
     exp = resolved.experiment
@@ -2356,8 +2735,18 @@ def _run_sweeps_into(
                 ]
             else:
                 comparison = compare(rr.result, baseline.result, point.run.to_vehicle())
+            structural_point = (
+                planar and offload and any(c.structure is not None for c in point.offload)
+            )
             run_dir = write_single(
-                rr, ref, er, sweep_dir / point.run.name, plots, header, comparison
+                rr,
+                ref,
+                er,
+                sweep_dir / point.run.name,
+                plots,
+                header,
+                comparison,
+                structure=structure_block_used(resolved) if structural_point else None,
             )
             results.append(rr)
             comparisons.append(comparison)
