@@ -841,7 +841,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S1 | Sizing primitives (pure structure.py), units, named constants, test hygiene (D-SP7-34, KI-035) | structure.py, units.py, constants.py, physics.md, tests | each closed form against a hand value at 1e-12 relative; one sizing evaluation timed | [x] | a3bd183 |
 | S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [x] | 45e39d4 |
 | S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [x] | 889f6ea |
-| S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [ ] | |
+| S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [x] | 216a79c |
 | S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line; honesty review | [ ] | |
 | (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | | | | |
 | S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [ ] | |
@@ -1226,6 +1226,25 @@ option fairly with its cost)
   fast suite 1833 passed, 47 deselected; the golden tier, the golden-dump field lists, the
   digest pin and the output capture 126 passed; ruff clean; replay.html's sha256 unchanged.
   Next: S3b.
+- Step S3b (2026-10-11; commit 216a79c): the reporting (the payload cases, the plausibility-scaled
+  row, `structure_inputs`, the sweep and arm columns, the Structure subsection, the thickness
+  figure, the post-hoc flight check). Workflow: implementer; numerics, compliance, honesty and
+  visual reviewers, three passes; two fix rounds. The loop's third pass left six majors (the
+  flight check flagging a payload case's own payload gain as the push's; a payload-only block
+  passing validation and flying nothing; the payload table without its settings; a caption's
+  wrong sizing payload; the flight check's element scope unstated; margin, cap and dynamic
+  cases printed as band ends) and the first gate ended without a verdict (it launched the
+  full suite in the background and ended its turn on a status line, which the workflow took
+  as its result). A third fix round, two verification reviewers (six residuals, fixed), and a
+  fresh independent gate run with every suite command in the foreground followed (deviation
+  31). Gate 2: G1-G8 pass with its own numbers (the payload contraction recomputed to 1e-12;
+  the plausibility factor from its own M_model / R; 297 printed numbers traced to record
+  keys; an SP1-type sweep index byte-identical to the S3 commit's; the flight exceedance
+  re-sized station by station to 1e-9 kg; the figures opened); fast suite 1848 passed, 47
+  deselected; the slow tier 47 passed in 1,150.9 s (the suite 1895); ruff clean; the golden
+  tier, the pins and the golden-dump field lists pass; replay.html's sha256 unchanged. One doc
+  defect the gate found (physics.md's band fraction of the synthetic file) fixed by the
+  orchestrator before the commit. Deviations 23-31. Next: S3a.
 
 ## 12. Deviations from the plan
 
@@ -1386,6 +1405,130 @@ Step S3 (2026-10-11), from its third review round (session-made; to report at S3
     the case's sizing, dynamic, entry, margin and cap, a documented but forbidden paired pad);
     one fixer applied all ten after the independent gate had passed, and the orchestrator
     re-ran the standing gates before the commit. No number of the model changed.
+
+Step S3b (2026-10-11), from its first review round (session-made; to report at S3b's gate):
+
+23. **The tornado and break-even values are not in the record** (compliance finding
+    S3B-C1-04; design 4.4's "Records" lists "the tornado, the axes' break-even values" among
+    `structure_inputs`): the structure file freezes the four sets of searches A to C and
+    their checks only; its `sets.method` says search D is not frozen there, and it holds no
+    tornado table (S2's sizing-only tornado and break-even estimates live in this file's
+    step S2 session log). `structure_inputs` records `tornado` and `break_even` as null
+    with `tornado_note` (`STRUCTURE_SETS_NOT_IN_FILE`) saying so, rather than quoting a
+    number from outside the file. Adding them to the frozen file is a change to
+    configs/structures, which D-SP7-31 governs before S6a.
+24. **The flight check evaluates the flight as the envelope evaluated the pad** (numerics
+    finding N-S3b-R1-02; design 4.2 says only "against the same envelope"): the recorded
+    run's stage-1 rows have their felt n capped at the case's envelope cap, as the pad's
+    were when the envelope was built (stage-2 rows never capped, as on the pad), and the
+    flight is evaluated unfactored (as the push is sized) against the envelope at the
+    case's margin. Without the cap treatment the pre-registered `_st_cap45` row would have
+    reported the pad's own unthrottled loads above 4.5 g0 (736 kg on the synthetic pad; 0 kg
+    capped) as the push's; with the margin treatment a margin row's check fires only above
+    the margin's headroom, which the row label, the flag line and physics.md now say. The
+    check covers the tank elements with a station envelope (`FLIGHT_CHECK_ELEMENTS`: the two
+    barrels, the three domes and the tube of stage 1, and of stage 2 when the push sized
+    it); the aft skirt and the load ring are left out, against the design's "any
+    exceedance": the skirt's flight load is the thrust path, which the pad's own flight
+    carries to the engines' inertia on the pad and on the assisted run alike, and its
+    envelope path is the modelling choice of D-SP7-17, so a flight exceedance there would
+    charge the assist for a pad load; the ring is new hardware sized to the push alone. From
+    the second review round (numerics N-S3b-R2-01): under a plate-limited stiffened row (the
+    frozen file's physics_high_mass and outer_high_mass sets) the flight's barrel is anchored
+    at the pad envelope's N_env, as the push sizing is, not at the flight's own load as the
+    reduction anchors the pad envelope itself, which under-reported the exceedance by ~40 %
+    on the synthetic high-mass set (94.5 against 159.5 kg at +5 % n); the exceedance is the
+    unscaled sizing beside a plausibility-scaled row's scaled dm, and the flag's values name
+    the dm's factor (`sim.FLIGHT_DM_FACTOR_KEY`).
+25. **The band lines' applicability is printed, not computed** (honesty finding H-S3B-04;
+    design 4.2.6: other pushes get central solves, their band ends "sizing-only estimates
+    labelled 'the headline's sets'"): the frozen file records the push the sets were found
+    at in its `sets.method` prose only, so a per-case comparison of the case's push with the
+    search's cannot be made from the file without structured fields (configs/structures,
+    D-SP7-31). The Structure subsection prints the method verbatim (where the sets were
+    found) and an unconditional applicability line (`STRUCTURE_SETS_APPLICABILITY`) on every
+    run; a structured push record in the file is for S6a to decide with D-SP7-31.
+
+Step S3b (2026-10-11), from its second review round (session-made; to report at S3b's gate):
+
+26. **Three sweep columns beyond the step's list** (compliance finding S3B-C2-03; the step's
+    scope item 4 lists fifteen columns): `OFFLOAD_STRUCTURE_SWEEP_COLUMNS` carries eighteen,
+    adding `structure_plausibility_scaled` and `structure_overrides` after the fifteen and,
+    from the third review round (honesty H-S3B-P3-09), `structure_plausibility_ratio`. A
+    sweep point writes no case record, so without them a point's dm would be on disk with
+    neither the plausibility factor's application nor the overridden coefficients that sized
+    it (D-SP7-43's intent: the coefficients that sized dm are on disk, not only in the memo
+    key), and a sweep of a central case would carry no trace of the rule's state (M/R 1.76
+    on the gate file): the factor column is empty off the two physics sets, as the summary
+    prints "n/a (not a band end)", and the ratio column carries M_model / R on every point.
+    Appended, so the fifteen keep their names and places. The sweep point's
+    resolved_config.yaml carries the structure file only when a structural case was solved
+    at that point (the run path's rule; compliance S3B-C2-01), not for every point of an
+    experiment with a block as the step's item 4 words it.
+27. **A payload case whose P_2* search fails writes nothing** (honesty finding H-S3B-P2-01):
+    the first implementation wrote the failed search's run under the case's name, listed its
+    figure and printed the flag as not fired. The case now ends with the search's status,
+    `run` null, nothing written and no figure (the offload cases' rule for a search_failed
+    solve), its dm_1 and structure keys kept on the record, and the payload table prints the
+    status of both passes and n/a cells that say the search failed.
+
+Step S3b (2026-10-11), from its third review round (session-made; to report at S3b's gate):
+
+28. **The post-hoc flight check is not run on a structure payload case** (numerics finding
+    N-S3b-R3-01; the step's item 7 and design 4.2 name the recorded structural run of the
+    solve at P_ref, which the first implementation extended to the payload cases): a payload
+    case's recorded run flies its own P_2* while the envelope is the pad's at P_ref, so the
+    check measured the payload gain P_2* - P_ref, not the push: on SP1's experiment with the
+    synthetic file the pad itself flown at the silo's P* (27,553 kg) against its own P_ref
+    envelope needs 7.65 kg, the silo at that payload 7.97 kg, the push's share about 0.3 kg
+    under the 1 kg threshold, so the flag fired on every payload gain above roughly +0.2 t.
+    Comparing against the pad's own flight at P_2* would cost a further pad flight per case,
+    so the payload cases are marked not applicable instead (`flight_check` on the record,
+    the run's assumption line, the payload table, `STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA`), with
+    `structure_flight_exceedance_kg` null and no flight flag; the offload cases, which fly
+    P_ref, keep the check. Every printed flight-check mass now states the element scope
+    (deviation 24's tank elements only; honesty H-S3B-P3-03: in short in the case table's
+    row label, which visual V7 keeps under 160 characters, in full in the note under the
+    table and in the flag line) and the flag line says "stage 2 not checked" rather than
+    "0 kg" when stage 2 was not sized (H-S3B-P3-08).
+29. **Two refusals the first implementation lacked** (compliance S3B-C3-01, numerics
+    N-S3b-R3-02): a structure block with payload cases and no `offload` block was accepted
+    and its cases silently never flew (the payload form runs inside the offload pass); it is
+    refused when the experiment validates. A block whose reference pad lights stage 1 at or
+    after its hold-down release never holds down under thrust above its weight: with a step
+    startup it flies no HOLD phase and `structure.pad_load_set` raised only after the
+    nominal runs had flown (FAILED.txt); with the shipped 2 s ramp it holds through the
+    liftoff extension at TWR < 1 (lit at 0 s: 1.5 s, 4 HOLD rows, measured in the third
+    review's follow-up), whose HOLD rows carry the weight alone, so the skirt's hold-down
+    envelope would lack the restrained-thrust case. The preflight `sim.check_resolved`
+    refuses both before any run directory exists (`structure_block_needs_hold`): a
+    modelling choice of the structural reference, stricter than the pass's own requirement
+    of one HOLD row. The refusal's first wording claimed "no HOLD phase" for the ramp case
+    too (false: the extension's rows are HOLD rows); the follow-up made the message, the
+    docstrings, physics.md and the test state the real reason and how the pad lights.
+30. **The layer labels follow D-SP7-18 and design 4.2.6 literally** (honesty H-S3B-P3-04;
+    the first implementation treated only the overrides as layer 2): a case that moves a
+    margin above 0, an envelope cap, the dynamic mode or any override is a design-axis row
+    (layer 2), named with what it moves; a case that moves only the entry path or the sizing
+    basis is "a row, not a band end"; only cases at the headline settings (flown, rise_time,
+    aft_ring, margin 0, no cap, no overrides) on the physics or outer sets are band ends
+    (an outer set's own margin and cap never count), and the central layer-1 label applies
+    only to the central set at the headline settings; the band lines, a layer-2 line and a
+    settings-rows line name every case accordingly. The payload table gained the case's
+    settings rows (H-S3B-P3-01) and its heading names, per payload case, the full_load row
+    of the same variant and settings; the figure's caption names the sizing payload P_1*
+    (H-S3B-P3-02), the dashed envelope's margin and cap (H-S3B-P3-12), and its labels are
+    placed by an overlap test with leader lines where an inset is crowded (visual V1 to V6).
+
+31. **A third fix round with majors, and a gate without a verdict** (process; protocol: up to
+    two fix rounds): S3b's third review pass still carried six majors, which the loop does not
+    fix by design, and its gate agent ended its turn while its background full suite was still
+    running, so the workflow recorded a status line as the verdict. An extra workflow ran one
+    fixer over every pass-3 finding, two verification reviewers, a clean-up of their six
+    residuals, and a fresh independent gate instructed to run every suite command in the
+    foreground in chunks under ten minutes. For later steps: a gate must never end its turn
+    on a running command, and a step whose third pass still has majors gets this extra round
+    before its gate. No number of the model changed in the round.
 
 ## 13. Prompt to start this phase
 
