@@ -604,6 +604,16 @@ def with_stage_propellant(vehicle: Vehicle, i: int, propellant_kg: float) -> Veh
     return dataclasses.replace(vehicle, stages=tuple(stages))
 
 
+def with_stage_dry_mass(vehicle: Vehicle, i: int, dry_kg: float) -> Vehicle:
+    """Copy of vehicle with stage i's dry mass set to dry_kg [kg] (>= 0, ``Stage``
+    refuses less); its propellant, engines, the other stages, payload, fairing and
+    aerodynamics are kept. The structural transform of an offload solve adds a modelled
+    increment with it (SP7 step S3; ``sim.StructureTransform``)."""
+    stages = list(vehicle.stages)
+    stages[i] = dataclasses.replace(stages[i], dry_mass_kg=dry_kg)
+    return dataclasses.replace(vehicle, stages=tuple(stages))
+
+
 class OffloadRangeError(ValueError):
     """An offload [kg] at or beyond the load it is taken from (a stage needs propellant >
     0): ``with_offload`` cannot build the vehicle. The offload solver turns it into a

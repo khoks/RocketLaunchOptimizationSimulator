@@ -1,5 +1,5 @@
 {
- "_note": "Record (not validation) of SP1's solved stage-1 offloads that SP7 places on (D-SP7-30): the gate experiment's headline silo_cold_s1 and its +2, +4 and +8.1 t stage-1 dry-mass penalty rows, and the README-loads fork's bridge silo_cold_s1, each at its own pad's P_ref, copied once at full precision from the runs' metrics.json (offload.cases and offload.reference_payload_kg) by SP7 step S2. metrics.json is not tracked in git; the runs' summary.md are, and docs/findings/RQ1-fuel-offload-2d.md quotes the run directories, the git hash and the rounded rows. SI units. src/launchsim/constants.py (SP1_PENALTY_DRY_MASS_KG, SP1_PENALTY_OFFLOAD_KG) and tests/structure_support.py read or equal these values exactly (tests/test_structure_search.py::test_sp1_record_pins_the_placement_inputs); tests never read results/.",
+ "_note": "Record (not validation) of SP1's solved stage-1 offloads that SP7 places on (D-SP7-30): the gate experiment's headline silo_cold_s1 and its +2, +4 and +8.1 t stage-1 dry-mass penalty rows, and the README-loads fork's bridge silo_cold_s1, each at its own pad's P_ref, copied once at full precision from the runs' metrics.json (offload.cases and offload.reference_payload_kg) by SP7 step S2; each row's verification_payload_kg (the P* of its independent verification search, offload.cases[].verification.payload_kg) copied from the same files by SP7 step S3, for the slow pins of the coupling (tests/test_structure_pipeline.py). metrics.json is not tracked in git; the runs' summary.md are, and docs/findings/RQ1-fuel-offload-2d.md quotes the run directories, the git hash and the rounded rows. SI units. src/launchsim/constants.py (SP1_PENALTY_DRY_MASS_KG, SP1_PENALTY_OFFLOAD_KG) and tests/structure_support.py read or equal these values exactly (tests/test_structure_search.py::test_sp1_record_pins_the_placement_inputs); tests never read results/.",
  "gate": {
   "experiment": "experiments/silo_offload_2d.yaml",
   "vehicle": "configs/vehicles/generic_f9_class_2d.yaml",
@@ -14,22 +14,26 @@
    {
     "case": "silo_cold_s1",
     "stage1_dry_mass_added_kg": 0.0,
-    "offload_kg": 41262.90803733282
+    "offload_kg": 41262.90803733282,
+    "verification_payload_kg": 26054.404695649962
    },
    {
     "case": "silo_cold_s1_dry+2t",
     "stage1_dry_mass_added_kg": 2000.0,
-    "offload_kg": 32285.203295407457
+    "offload_kg": 32285.203295407457,
+    "verification_payload_kg": 26054.39923045693
    },
    {
     "case": "silo_cold_s1_dry+4t",
     "stage1_dry_mass_added_kg": 4000.0,
-    "offload_kg": 22875.96053288855
+    "offload_kg": 22875.96053288855,
+    "verification_payload_kg": 26054.399166096893
    },
    {
     "case": "silo_cold_s1_dry+8.1t",
     "stage1_dry_mass_added_kg": 8100.0,
-    "offload_kg": 1980.4767886165673
+    "offload_kg": 1980.4767886165673,
+    "verification_payload_kg": 26054.3968927061
    }
   ]
  },
@@ -47,7 +51,8 @@
    {
     "case": "silo_cold_s1",
     "stage1_dry_mass_added_kg": 0.0,
-    "offload_kg": 36006.44430169878
+    "offload_kg": 36006.44430169878,
+    "verification_payload_kg": 24700.01703917725
    }
   ]
  }

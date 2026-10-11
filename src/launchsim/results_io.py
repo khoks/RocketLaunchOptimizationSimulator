@@ -47,7 +47,9 @@ An experiment with an ``offload`` block (SP1 step 7; ``planar_offload``) also wr
 the block's runs (each case's recorded run ``<case>``, each paired pad
 ``<case>__<baseline>``, each pad control ``<baseline>__offload_<mode>``), metrics.json
 gains the ``offload`` record (``offload_record``), resolved_config.yaml ``offload_runs``
-and summary.md the section "Propellant saved at fixed payload"; a planar sweep that
+and, only when a structural case was solved (SP7 step S3), a top-level ``structure`` key
+(the structure file's path, sha256 and content; ``OffloadReport.structure``), and
+summary.md the section "Propellant saved at fixed payload"; a planar sweep that
 names offload cases adds their columns to sweep_index.csv (``offload_sweep_point``).
 Without the block none of these is written. ``planar_experiment_result`` and
 ``planar_offload`` write nothing (an in-memory caller gets the whole result).
@@ -154,7 +156,7 @@ from launchsim.units import t_to_kg
 from launchsim.vehicle import offload_split_kg
 
 if TYPE_CHECKING:
-    from launchsim.sim import Result, RunResult
+    from launchsim.sim import Result, RunResult, StructureSizing, StructureTransform
     from launchsim.vehicle import Vehicle
 
 
@@ -281,11 +283,15 @@ class OffloadReport:
     the runs it writes (each case's recorded run, the paired pads, the pad controls'
     recorded runs), by name; ``checked_runs``, every run whose per-run checks the
     summary's Checks section lists besides those (the verification searches, the
-    sensitivity arms' recorded runs), by label."""
+    sensitivity arms' recorded runs), by label; ``structure``, the structure file a
+    structural case of the pass used (SP7 step S3: ``{file, sha256, content}``, written
+    as resolved_config.yaml's top-level ``structure`` key; None when no structural case
+    was solved)."""
 
     record: dict[str, Any]
     runs: dict[str, RunResult] = field(default_factory=dict)
     checked_runs: dict[str, RunResult] = field(default_factory=dict)
+    structure: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -591,7 +597,9 @@ def _resolved_config_dict(er: ExperimentResult) -> dict[str, Any]:
     """The resolved_config.yaml content: one vehicle dict, a run dict per run, and the
     vehicle dict again only for runs whose vehicle differs (sensitivity, vehicle sweeps);
     a planar experiment adds its bound runs and cases and, with an offload block, the
-    offload runs it writes (``offload_runs``: each with its offloaded vehicle dict)."""
+    offload runs it writes (``offload_runs``: each with its offloaded vehicle dict) and,
+    only when a structural case was solved (SP7 step S3), the structure file it used
+    (``structure``: its path, sha256 and content)."""
     base_vehicle = er.baseline.resolved.vehicle_dict
     runs: dict[str, Any] = {}
     for name, rr in er.runs.items():
@@ -619,6 +627,8 @@ def _resolved_config_dict(er: ExperimentResult) -> dict[str, Any]:
             out["offload_runs"] = {
                 name: _run_entry(rr, base_vehicle) for name, rr in er.offload_runs.items()
             }
+            if er.offload.structure is not None:
+                out["structure"] = dict(er.offload.structure)
     return out
 
 
@@ -1078,8 +1088,11 @@ OFFLOAD_TRACK_KEYS: tuple[str, ...] = (
 )
 """Metrics of the push an offload case reports (the pad has none)."""
 
-type RunMemo = Callable[[ResolvedRun], tuple[RunResult, bool]]
-"""Runs a resolved run, or reuses one flown with its trajectory key (True when reused)."""
+type RunMemo = Callable[..., tuple[RunResult, bool]]
+"""Runs a resolved run, or reuses one flown with its trajectory key (True when reused);
+an optional second argument, a structural run's memo key (``StructureTransform.memo_key``:
+the structure key and the envelope pad's trajectory key), keeps it apart from every run
+flown without that key (SP7 step S3)."""
 
 
 @dataclass(frozen=True, eq=False)
@@ -1090,7 +1103,8 @@ class _OffloadContext:
     and the vehicle their fuel masses describe (``energy_vehicle``: the experiment's
     baseline vehicle, whose full loads fix each stage's mixture ratio for every case,
     arm and sweep point), the run memo and the solve memo (by start trajectory key,
-    P_ref and mode)."""
+    P_ref and mode; for a structural case also its structure key and the envelope pad's
+    trajectory key, SP7 step S3)."""
 
     base: RunResult
     p_ref: float
@@ -1100,32 +1114,43 @@ class _OffloadContext:
     energy: OffloadEnergyConfig | None
     energy_vehicle: Vehicle
     run: RunMemo
-    solves: dict[tuple[str, float, str], OffloadResult]
+    solves: dict[tuple[Any, ...], OffloadResult]
 
 
 @dataclass(frozen=True, eq=False)
 class _CaseOutcome:
     """One case of an offload pass: its record, the runs it writes, the runs whose checks
-    are listed besides, and whether its solve was reused from another of one
-    trajectory."""
+    are listed besides, whether its solve was reused from another of one trajectory and,
+    for a structural case, the structure file it used (``OffloadReport.structure``'s
+    form; None otherwise)."""
 
     record: dict[str, Any]
     written: dict[str, RunResult]
     checked: dict[str, RunResult]
     reused: bool
+    structure: dict[str, Any] | None = None
 
 
 def _run_memo(nominal: Sequence[RunResult]) -> RunMemo:
     """A run memo by ``compare.trajectory_key`` for one offload pass: a run whose key was
     flown (the nominal runs, then every run of the pass) reuses that trajectory and
     search (``sim.rerun_resolved``: its energy items and assumptions recomputed); the
-    very resolved run of a nominal returns it. Runs through ``sim.run_resolved``."""
+    very resolved run of a nominal returns it. Runs through ``sim.run_resolved``. A run
+    given a structural memo key (a structural case's verification, SP7 step S3:
+    ``StructureTransform.memo_key``) is memoised under (trajectory key, *that key), so it
+    never shares an entry with a run of another structure, another envelope pad or none
+    (design 4.4, "Memo")."""
     from launchsim import sim  # late: sim imports this module
 
-    memo = {trajectory_key(rr.resolved): rr for rr in nominal}
+    memo: dict[str | tuple[str, ...], RunResult] = {
+        trajectory_key(rr.resolved): rr for rr in nominal
+    }
 
-    def run(resolved: ResolvedRun) -> tuple[RunResult, bool]:
-        key = trajectory_key(resolved)
+    def run(
+        resolved: ResolvedRun, structure_key: tuple[str, ...] | None = None
+    ) -> tuple[RunResult, bool]:
+        traj = trajectory_key(resolved)
+        key: str | tuple[str, ...] = traj if structure_key is None else (traj, *structure_key)
         hit = memo.get(key)
         if hit is None:
             rr = sim.run_resolved(resolved)
@@ -1165,28 +1190,50 @@ def _offload_context(
     )
 
 
-def _solve(start: ResolvedRun, mode: str, ctx: _OffloadContext) -> tuple[OffloadResult, bool]:
+def _solve(
+    start: ResolvedRun,
+    mode: str,
+    ctx: _OffloadContext,
+    transform: StructureTransform | None = None,
+) -> tuple[OffloadResult, bool]:
     """The offload solve of start along mode at ctx.p_ref (``sim.solve_resolved_offload``),
     reused from ctx's solve memo for a start of the same trajectory key at the same P_ref
-    (True when reused)."""
+    (True when reused). A structural case passes its transform (SP7 step S3): the solve
+    flies it, and its memo key adds the structure key and the envelope pad's trajectory
+    key, so a structural case never reuses another case's solve (design 4.4, "Memo")."""
     from launchsim import sim  # late: sim imports this module
 
-    key = (trajectory_key(start), ctx.p_ref, mode)
+    key: tuple[Any, ...] = (trajectory_key(start), ctx.p_ref, mode)
+    if transform is not None:
+        key = (*key, *transform.memo_key)
     hit = ctx.solves.get(key)
     if hit is not None:
         return hit, True
-    res = sim.solve_resolved_offload(start, mode, ctx.p_ref)  # type: ignore[arg-type]
+    if transform is None:
+        res = sim.solve_resolved_offload(start, mode, ctx.p_ref)  # type: ignore[arg-type]
+    else:
+        res = sim.solve_resolved_offload(
+            start,
+            mode,  # type: ignore[arg-type]
+            ctx.p_ref,
+            transform=transform,
+        )
     ctx.solves[key] = res
     return res, False
 
 
 def _verified(
-    res: OffloadResult, final: ResolvedRun, ctx: _OffloadContext, label: str
+    res: OffloadResult,
+    final: ResolvedRun,
+    ctx: _OffloadContext,
+    label: str,
+    structure_key: tuple[str, ...] | None = None,
 ) -> tuple[OffloadResult, RunResult]:
     """The independent verification of an ok solve: the payload search of the offloaded
-    run ``final`` (ctx.run, so ``sim.run_resolved``), attached to res
-    (``offload.with_verification``), and that run."""
-    run, _ = ctx.run(final)
+    run ``final`` (ctx.run, so ``sim.run_resolved``; a structural case's under its memo
+    key, ``StructureTransform.memo_key``), attached to res (``offload.with_verification``),
+    and that run."""
+    run, _ = ctx.run(final) if structure_key is None else ctx.run(final, structure_key)
     record = run.result.search
     if record is None:  # a payload figure of merit always carries one
         raise ValueError(f"{label}: the verification run has no search record")
@@ -1288,16 +1335,57 @@ def _quoted_offload(
     return net_kg, OFFLOAD_QUOTED_NET
 
 
-def _offload_assumptions(case: ResolvedOffloadCase, penalty: bool = True) -> list[str]:
+def _offload_assumptions(
+    case: ResolvedOffloadCase, penalty: bool = True, envelope_pad: str | None = None
+) -> list[str]:
     """The assumption lines of a case's offloaded run (``sim.OFFLOAD_ASSUMPTIONS`` and,
-    with penalty, the assumed dry-mass line of a penalty row)."""
+    with penalty, the assumed dry-mass line of a penalty row). With envelope_pad (a
+    structural case's own recorded run, whose dry masses carry dm: the only run of a
+    structural case this function builds lines for, since a structural case has no
+    paired pad, refused, D-SP7-35): the structural variant
+    ``sim.OFFLOAD_STRUCTURE_ASSUMPTIONS`` in place of the sentence that says every dry
+    mass is unchanged, then the structure line, ``sim.structure_assumption`` with the
+    envelope pad's name. The guard ``envelope_pad is not None`` in ``structural`` changes
+    nothing today (every caller of a structural case passes its envelope pad) and stays
+    as the contract: a structure line always names the pad whose flight is the envelope."""
     from launchsim import sim  # late: sim imports this module
 
-    lines = list(sim.OFFLOAD_ASSUMPTIONS)
+    structural = case.structure is not None and envelope_pad is not None
+    lines = list(sim.OFFLOAD_STRUCTURE_ASSUMPTIONS if structural else sim.OFFLOAD_ASSUMPTIONS)
     added = case.config.stage1_dry_mass_added_t
     if penalty and added is not None:
         lines.append(sim.offload_penalty_assumption(added))
+    if structural:
+        assert case.structure is not None and envelope_pad is not None
+        lines.append(sim.structure_assumption(case.structure, envelope_pad))
     return lines
+
+
+def _structure_used(transform: StructureTransform) -> dict[str, Any]:
+    """The structure file a structural case used, as resolved_config.yaml records it: its
+    path as the records quote it (``StructureFile.path``), the sha256 of its bytes and its
+    content."""
+    sfile = transform.settings.file
+    return {"file": sfile.path, "sha256": sfile.sha256, "content": sfile.content}
+
+
+def _structural_final(
+    case: ResolvedOffloadCase, mode: str, offload_kg: float, sizing: StructureSizing
+) -> ResolvedRun:
+    """The offloaded run of a structural case at offload_kg [kg] (x* or 0): its start with
+    the offload removed and the modelled dm of each stage restated with the structure's
+    provenance (``config.offload_solved_run``), so the verification flies the structure
+    and the recorded run's dict records it."""
+    assert case.structure is not None
+    return offload_solved_run(
+        case.start,
+        mode,  # type: ignore[arg-type]
+        offload_kg,
+        case.config.name,
+        case.start.name,
+        structure_dm_kg=(sizing.dm_stage1_kg, sizing.dm_stage2_kg),
+        provenance=case.structure.provenance,
+    )
 
 
 def _offload_case(
@@ -1321,7 +1409,14 @@ def _offload_case(
     paired pad (``config.offload_solved_run`` of the pad start with the same offload,
     run, and compared with the case's own payload search on one vehicle by
     ``compare.attributed_comparison``), the energy comparison (``compare.offload_energy``)
-    and the record."""
+    and the record.
+
+    A structural case (SP7 step S3; design 4.4) solves with its StructureTransform
+    (``sim.offload_structure_transform``: the envelope from ctx's reference pad, so an
+    arm's from its perturbed pad); its verification and recorded run fly the start with
+    the offload and the modelled dm restated (``_structural_final``, at x* or, for
+    no_offload, at 0); the recorded run carries the structure's assumption line and, like
+    the case record, the run-level structure keys (``sim.structure_record``)."""
     from launchsim import sim  # late: sim imports this module
 
     cfg = case.config
@@ -1333,9 +1428,24 @@ def _offload_case(
     silo: RunResult | None = None
     rr: RunResult | None = None
     reused = False
+    transform: StructureTransform | None = None
+    items: dict[str, Any] | None = None
     if cfg.solved:
-        res, reused = _solve(case.start, mode, ctx)
-        if res.status == OK_STATUS:
+        if case.structure is not None:
+            transform = sim.offload_structure_transform(case, ctx.base, ctx.p_ref)
+        res, reused = _solve(case.start, mode, ctx, transform)
+        if transform is not None and res.status in (OK_STATUS, NO_OFFLOAD_STATUS):
+            at_x = transform.sizing_at(res.offload_kg)
+            at_zero = at_x if res.offload_kg == 0.0 else transform.sizing_at(0.0)
+            items = sim.structure_record(transform, at_x, at_zero)
+            final = _structural_final(case, mode, res.offload_kg, at_x)
+            if res.status == OK_STATUS and verify:
+                label = f"offload case {cfg.name!r}"
+                res, silo = _verified(res, final, ctx, label, transform.memo_key)
+                checked[f"{case.start.name} (verification search)"] = silo
+        elif transform is not None:  # search_failed: no x*, the record still says structural
+            items = sim.structure_record(transform, None, transform.sizing_at(0.0))
+        elif res.status == OK_STATUS:
             final = offload_solved_run(case.start, mode, res.offload_kg, cfg.name, case.start.name)
             if verify:
                 res, silo = _verified(res, final, ctx, f"offload case {cfg.name!r}")
@@ -1351,7 +1461,12 @@ def _offload_case(
         rr = silo
         offload_kg = math.nan if case.imposed_kg is None else case.imposed_kg
     if rr is not None:
-        rr = sim.with_assumptions(rr, _offload_assumptions(case))
+        pad_name = None if transform is None else transform.envelope_pad
+        if transform is not None:  # its dry masses carry dm: the structural variant instead
+            rr = sim.without_assumptions(rr, sim.OFFLOAD_ASSUMPTIONS)
+        rr = sim.with_assumptions(rr, _offload_assumptions(case, envelope_pad=pad_name))
+        if items is not None:
+            rr = sim.with_structure_items(rr, items)
         written[rr.name] = rr
     decomposition = None
     base_m = ctx.base_matched
@@ -1387,7 +1502,10 @@ def _offload_case(
             "comparison": comparison,
         }
     record = _case_record(case, ctx, res, rr, offload_kg, decomposition, paired, pad_control)
-    return _CaseOutcome(record, written, checked, reused)
+    if items is not None:
+        record.update(items)
+    used = None if transform is None else _structure_used(transform)
+    return _CaseOutcome(record, written, checked, reused, used)
 
 
 def _case_record(
@@ -1738,6 +1856,7 @@ def planar_offload(
     modes = [m for m in ro.pad_control_modes if any(c.config.solve == m for c in ran)]
     controls: list[dict[str, Any]] = []
     x_pad: dict[str, float] = {}
+    used: dict[str, Any] | None = None
     for mode in modes:
         record, w, c = _pad_control(mode, ctx)
         controls.append(record)
@@ -1754,6 +1873,7 @@ def planar_offload(
         cases.append(outcome.record)
         written.update(outcome.written)
         checked.update(outcome.checked)
+        used = used or outcome.structure
     arms: list[dict[str, Any]] = []
     nominal = {rec["name"]: rec for rec in cases}
     for arm in offload_arms_that_run(ro, variants) if sensitivity else ():
@@ -1774,10 +1894,13 @@ def planar_offload(
             p_ref=p_ref,
             base_matched=sim.matched_run(pad.resolved, pad.result, p_ref),
         )
-        arm_case = ResolvedOffloadCase(case.config, arm.variant, arm.start, None, arm.imposed_kg)
+        arm_case = ResolvedOffloadCase(
+            case.config, arm.variant, arm.start, None, arm.imposed_kg, case.structure
+        )
         outcome = _offload_case(arm_case, arm_ctx, verify=False)
         for name, rr in {**outcome.written, **outcome.checked}.items():
             checked[f"{name} (offload sensitivity)"] = rr
+        used = used or outcome.structure
         arms.append(
             _offload_arm_record(
                 arm.start.name,
@@ -1804,7 +1927,7 @@ def planar_offload(
         "sensitivity": arms,
         "notes": notes,
     }
-    return OffloadReport(record, written, checked)
+    return OffloadReport(record, written, checked, used)
 
 
 def offload_sweep_point(
@@ -2131,7 +2254,11 @@ def run_sweep(
     sweep_<n>/sweep_index.csv and a top-level summary.md. A planar sweep that names
     offload cases (``SweepConfig.offload``) solves them at every point
     (``offload_sweep_point``) unless ``offload`` is False, and adds their columns to
-    sweep_index.csv (OFFLOAD_SWEEP_COLUMNS per case). Returns the SweepResults and
+    sweep_index.csv (OFFLOAD_SWEEP_COLUMNS per case). A structural case is solved with
+    its transform at every point and its in-memory case record carries the structure
+    keys, but at SP7 step S3 none of them reaches sweep_index.csv (its structure columns
+    are step S3b's), so on disk a structural point is told apart from an uncharged one
+    only by its case name. Returns the SweepResults and
     the run directory, created before any run starts and after the preflight
     (``sim.check_resolved``: a refused configuration leaves no directory); an exception
     after that leaves FAILED.txt in it (write_failure_marker) and propagates.

@@ -51,6 +51,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
+import json
 import signal
 import sys
 import webbrowser
@@ -66,6 +68,7 @@ from launchsim.config import (
     OFFLOAD_GROSS_MODES,
     ResolvedExperiment,
     StructureConfig,
+    StructureFile,
     resolve_experiment,
 )
 from launchsim.results_io import OFFLOAD_QUOTED_FAILED, OFFLOAD_QUOTED_NO_CONTROL
@@ -101,13 +104,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-sensitivity",
         action="store_true",
         help="Skip the sensitivity cases (the +/- parameter re-runs), the offload block's "
-        "sensitivity arms included.",
+        "sensitivity arms included (a structural case's arms too).",
     )
     run.add_argument(
         "--no-offload",
         action="store_true",
         help="Skip the experiment's offload block (planar_2d: the propellant saved at fixed "
-        "payload); the summary says it was skipped.",
+        "payload; its structural cases included); the summary says it was skipped.",
     )
 
     sweep = sub.add_parser("sweep", help="Run every sweep declared in an experiment.")
@@ -117,7 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument(
         "--no-offload",
         action="store_true",
-        help="Skip the offload cases a sweep names (no offload columns in sweep_index.csv).",
+        help="Skip the offload cases a sweep names, structural ones included (no offload "
+        "columns in sweep_index.csv).",
     )
 
     animate = sub.add_parser(
@@ -312,16 +316,24 @@ def resolve_vehicle_path(experiment_path: Path, vehicle: str) -> Path:
     the repository root (the nearest ancestor with pyproject.toml). Rooted paths
     (absolute, ``~/...`` or ``/...``) are used as given; a missing one is an error, and so
     is a drive-relative ``C:x`` path."""
-    if is_drive_relative(vehicle):
+    return resolve_config_path(experiment_path, vehicle, "vehicle")
+
+
+def resolve_config_path(experiment_path: Path, name: str, what: str) -> Path:
+    """Locate a file an experiment names (``what``: "vehicle" for its vehicle and a
+    calibration case's, "structure" for its structure file, SP7 step S3) by the vehicle
+    rule: next to the experiment file, then at the repository root; a rooted path as
+    given; a missing file or a drive-relative ``C:x`` path is a CliError naming ``what``."""
+    if is_drive_relative(name):
         raise CliError(
-            f"vehicle path {vehicle!r} is drive-relative and ambiguous; use an absolute path"
+            f"{what} path {name!r} is drive-relative and ambiguous; use an absolute path"
         )
-    if is_rooted(vehicle):
-        candidate = Path(vehicle).expanduser()
+    if is_rooted(name):
+        candidate = Path(name).expanduser()
         if candidate.is_file():
             return candidate
-        raise CliError(f"vehicle file not found: {candidate}")
-    candidate = Path(vehicle)
+        raise CliError(f"{what} file not found: {candidate}")
+    candidate = Path(name)
     tried = [experiment_path.parent / candidate]
     repo_root = find_repo_root(experiment_path.parent)
     if repo_root is not None:
@@ -329,7 +341,25 @@ def resolve_vehicle_path(experiment_path: Path, vehicle: str) -> Path:
     for path in tried:
         if path.is_file():
             return path
-    raise CliError(f"vehicle file {vehicle!r} not found; tried " + ", ".join(str(p) for p in tried))
+    raise CliError(f"{what} file {name!r} not found; tried " + ", ".join(str(p) for p in tried))
+
+
+def recorded_config_path(experiment_path: Path, path: Path, name: str) -> str:
+    """How the records quote a file an experiment names (SP7 step S3: the structure file,
+    in the restated dry masses' ``source``, the run-level ``structure_file`` and
+    resolved_config.yaml's ``structure.file``): ``path``, the file ``resolve_config_path``
+    found, relative to the repository root holding the experiment and in POSIX form when
+    it lies under that root (so a file at the root is quoted as the experiment names it,
+    ``configs/structures/<file>``; one found next to the experiment or named by a rooted
+    path under the repository is quoted the same way, never as a machine-specific path);
+    otherwise ``name`` as the experiment gives it (no repository, or a file outside it)."""
+    root = find_repo_root(experiment_path.parent)
+    if root is None:
+        return name
+    try:
+        return path.resolve().relative_to(root).as_posix()
+    except ValueError:  # outside the repository
+        return name
 
 
 def load_experiment(experiment_path: Path) -> ResolvedExperiment:
@@ -338,7 +368,10 @@ def load_experiment(experiment_path: Path) -> ResolvedExperiment:
     and a run refused by the preflight (``sim.check_resolved``: a ramp start the push
     cannot reach, for example), so neither is written and either prints one ``error:``
     line. A calibration case that names its own vehicle file is read through the
-    same lookup as the experiment's vehicle (``resolve_vehicle_path``)."""
+    same lookup as the experiment's vehicle (``resolve_vehicle_path``), and so is the
+    structure file the experiment's ``structure`` block names (SP7 step S3:
+    ``read_structure_file`` under the path the records quote, ``recorded_config_path``,
+    passed to ``resolve_experiment`` as ``load_structure``)."""
     exp_dict = load_yaml(experiment_path)
     vehicle = exp_dict.get("vehicle")
     if not isinstance(vehicle, str):
@@ -348,8 +381,14 @@ def load_experiment(experiment_path: Path) -> ResolvedExperiment:
     def load_vehicle(path: str) -> dict[str, Any]:
         return load_yaml(resolve_vehicle_path(experiment_path, path))
 
+    def load_structure_file(name: str) -> StructureFile:
+        path = resolve_config_path(experiment_path, name, "structure")
+        return read_structure_file(path, recorded_config_path(experiment_path, path, name))
+
     try:
-        resolved = resolve_experiment(exp_dict, vehicle_dict, load_vehicle)
+        resolved = resolve_experiment(
+            exp_dict, vehicle_dict, load_vehicle, load_structure=load_structure_file
+        )
         sim.check_result_names(resolved)  # names become directories: reject before writing
         sim.check_resolved(resolved)  # every run's specs build (the preflight)
     except ValueError as exc:  # ValidationError, ConfigPathError, InvalidNameError, preflight
@@ -362,13 +401,48 @@ def load_structure(path: Path) -> StructureConfig:
     design 4.3): the YAML by ``load_yaml``, the model by ``config.StructureConfig``, which
     checks every number's provenance, the ranges and that the central set and each range's
     ends convert. Raises CliError on any problem (a missing or unreadable file, bad YAML, a
-    validation error), one ``error:`` line as for an experiment. Passing it to
-    ``resolve_experiment`` as a keyword-only loader arrives in step S3."""
+    validation error), one ``error:`` line as for an experiment. An experiment's
+    structure file is read with ``read_structure_file`` (its content and sha256 too)."""
     data = load_yaml(path)
     try:
         return StructureConfig.model_validate(data)
     except ValueError as exc:  # pydantic's ValidationError included
         raise CliError(f"invalid structure file {path}:\n{exc}") from exc
+
+
+def read_structure_file(path: Path, named: str) -> StructureFile:
+    """The structure file an experiment names (SP7 step S3) as a ``config.StructureFile``:
+    ``named``, the path the records and the provenance quote (``load_experiment`` passes
+    ``recorded_config_path``: repository-relative when the file lies under the
+    repository, else as the experiment's ``structure.file`` gives it); the config
+    validated as ``load_structure`` validates it; the
+    raw mapping (YAML aliases expanded into plain copies, so resolved_config.yaml writes
+    no anchors); the hex sha256 of the bytes that were parsed (read once). Raises CliError
+    with ``load_yaml``'s and ``load_structure``'s messages."""
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise CliError(f"file not found: {path}") from exc
+    except OSError as exc:  # a directory, a permission problem, an unreadable file
+        raise CliError(f"cannot read {path}: {exc}") from exc
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CliError(
+            f"{path} is not UTF-8 (byte {exc.start}: {exc.reason}); save the file as UTF-8"
+        ) from exc
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise CliError(f"cannot parse YAML {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CliError(f"{path}: expected a YAML mapping at the top level")
+    try:
+        config = StructureConfig.model_validate(data)
+    except ValueError as exc:  # pydantic's ValidationError included
+        raise CliError(f"invalid structure file {path}:\n{exc}") from exc
+    content = json.loads(json.dumps(data))  # plain copies of every aliased node
+    return StructureFile(named, config, content, hashlib.sha256(raw).hexdigest())
 
 
 def repo_root_or_cwd(experiment_path: Path) -> Path:

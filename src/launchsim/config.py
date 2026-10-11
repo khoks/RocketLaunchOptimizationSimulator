@@ -31,7 +31,11 @@ the same run dicts as before. Variants, sweeps (except a paired guidance sweep o
 The ``offload`` block (planar_2d with a payload search only; SP1 step 7) is not a
 shared block: it names cases built on the variants (``offload_case_start``, the vehicle
 changes restated through ``apply_overrides``), the pad control, sensitivity arms and
-energy inputs, resolved into ``ResolvedOffload`` and run by ``results_io``.
+energy inputs, resolved into ``ResolvedOffload`` and run by ``results_io``. The
+``structure`` block (SP7 step S3) names the structure file, which the caller reads and
+hands over as ``load_structure`` (``StructureLoader``), and the payload cases; an offload
+case's ``structure`` field makes it a structural case, its settings resolved against the
+file (``resolve_structure_settings``, ``ResolvedStructureCase``).
 
 Limits enforced as validation errors: Earth rotation only on planar_2d runs (the 1-D
 model keeps omega_p = 0: "a Phase 2 feature"), vertical tracks only ("a Phase 3
@@ -1632,6 +1636,79 @@ class OffloadFixedConfig(_Model):
         return fraction * offload_load_kg(vehicle, self.mode)
 
 
+StructureSetChoice = Literal[
+    "central", "physics_low_mass", "physics_high_mass", "outer_low_mass", "outer_high_mass"
+]
+"""The coefficient set a structural case names (design 4.3): the central set or one of the
+structure file's frozen sets (``STRUCTURE_CENTRAL_SET`` and ``STRUCTURE_SET_NAMES``, a test
+checks they agree)."""
+StructureSizingBasis = Literal["flown", "full_load"]
+"""How a structural case sizes dm (design 4.3, D-SP7-02): ``flown``, the offloaded stack
+actually flown, re-sized at every offload x; ``full_load``, once at x = 0 (the full load)
+and that dm added at every x."""
+STRUCTURE_SIZING_FLOWN = "flown"
+STRUCTURE_SIZING_FULL_LOAD = "full_load"
+"""The two sizing bases (``StructureSizingBasis``)."""
+
+
+class StructureSettingsConfig(_Model):
+    """The structural settings a structural run is sized with (design 4.3; the base of
+    ``StructureCaseConfig`` and ``StructurePayloadCaseConfig``): ``set`` (the coefficient
+    set, StructureSetChoice; default central), ``dynamic`` (structure.DYNAMIC_MODES: the
+    dynamic load factor from the rise time, quasi-static 1 or a step 2; default
+    rise_time), ``entry`` (structure.ENTRY_PATHS: the aft ring or the thrust structure;
+    default aft_ring), ``margin`` (>= 0, on the envelope's loads and pressures; default 0),
+    ``envelope_cap_g`` (null or > 1 g0, the cap on the pad's stage-1 felt n; default null)
+    and ``overrides`` (design-axis coefficients by their structure-file path, for the axis
+    rows: the non-optimum factors, the rise time, the axial frequency, the pad count and
+    k_ts; default none). An outer set records its own margin and cap: a case that gives
+    either with a different value, or any override, is refused when it is resolved against
+    the file (``resolve_structure_settings``), as are an override outside its range and a
+    set the file has not frozen."""
+
+    set: StructureSetChoice = "central"
+    dynamic: structure.DynamicMode = "rise_time"
+    entry: structure.EntryPath = structure.ENTRY_AFT_RING
+    margin: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    envelope_cap_g: float | None = Field(default=None, gt=1.0, allow_inf_nan=False)
+    overrides: dict[str, float | int] = Field(default_factory=dict)
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _numbers_as_given(cls, value: Any) -> Any:
+        """Each override as written must be a finite number, never a bool or a string
+        (pydantic's lax mode would read True as 1)."""
+        if isinstance(value, dict):
+            for path, number in value.items():
+                if not _is_number(number) or not math.isfinite(float(number)):
+                    raise ValueError(
+                        f"structure override {path} must be a finite number, got {number!r}"
+                    )
+        return value
+
+    @model_validator(mode="after")
+    def _design_axes_only(self) -> StructureSettingsConfig:
+        """Each override names a design-axis coefficient (its range is checked against the
+        structure file, ``resolve_structure_settings``)."""
+        axes = structure_design_axis_paths()
+        for path in self.overrides:
+            if path not in axes:
+                raise ValueError(
+                    f"structure override {path!r} is not a design-axis coefficient; the "
+                    f"overrides set {', '.join(axes)}"
+                )
+        return self
+
+
+class StructureCaseConfig(StructureSettingsConfig):
+    """An offload case's ``structure`` field (SP7 step S3; design 4.3, D-SP7-21): the case's
+    assisted run carries the modelled structural mass dm(x) of its push load, sized by the
+    experiment's structure file with these settings and ``sizing`` (StructureSizingBasis:
+    flown, the default, or full_load). Absent by default, so no existing case changes."""
+
+    sizing: StructureSizingBasis = STRUCTURE_SIZING_FLOWN
+
+
 class OffloadCaseConfig(_Model):
     """One case of the ``offload`` block: ``name`` (its recorded run's name), ``of`` (a
     variant, never the baseline: the pad's own offload is the pad control) and exactly
@@ -1642,8 +1719,12 @@ class OffloadCaseConfig(_Model):
     stage before the case (stage-1 cases only: the frontier point of a both-stage
     offload), ``stage1_dry_mass_added_t`` [t] (> 0), an assumed structural penalty added
     to the first stage's dry mass of the assisted run only (a penalty row, never a sized
-    structure), and ``paired_pad`` (also fly the pad with the same final propellant
-    change, without the penalty, and compare the case with it on one vehicle)."""
+    structure), ``paired_pad`` (also fly the pad with the same final propellant
+    change, without the penalty, and compare the case with it on one vehicle) and
+    ``structure`` (SP7 step S3, StructureCaseConfig: the assisted run carries the modelled
+    structural mass of its push, a structural case; a stage-1 solve only, never with the
+    assumed penalty, paired_pad or stage2_offload_t; the experiment needs a ``structure``
+    block naming the file)."""
 
     name: str
     of: str
@@ -1652,11 +1733,14 @@ class OffloadCaseConfig(_Model):
     stage2_offload_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     stage1_dry_mass_added_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     paired_pad: bool = False
+    structure: StructureCaseConfig | None = None
 
     @model_validator(mode="after")
     def _one_way(self) -> OffloadCaseConfig:
         """Exactly one of solve and fixed; stage2_offload_t only on a stage-1 case;
-        paired_pad not on a penalty row (the paired pad must fly the case's vehicle)."""
+        paired_pad not on a penalty row (the paired pad must fly the case's vehicle); a
+        structural case is a stage-1 solve without the assumed penalty, paired_pad or
+        stage2_offload_t."""
         if (self.solve is None) == (self.fixed is None):
             raise ValueError(
                 f"offload case {self.name!r}: give exactly one of solve (a mode to solve) "
@@ -1673,7 +1757,49 @@ class OffloadCaseConfig(_Model):
                 "one vehicle (the matched-payload attribution), but stage1_dry_mass_added_t "
                 "is the assisted run's only; give the penalty row without paired_pad"
             )
+        if self.structure is not None:
+            self._structural_rules()
         return self
+
+    @model_serializer(mode="wrap")
+    def _dump_without_structure(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The default dump without ``structure`` when it is None (SP7 step S3), so a case
+        without a structure dumps exactly as before the field existed; a structural
+        case's dump carries it."""
+        out: dict[str, Any] = handler(self)
+        if self.structure is None:
+            out.pop("structure", None)
+        return out
+
+    def _structural_rules(self) -> None:
+        """The refusals of a structural case (design 4.3; D-SP7-21)."""
+        where = f"offload case {self.name!r}"
+        if self.stage1_dry_mass_added_t is not None:
+            raise ValueError(
+                f"{where}: structure charges the modelled structural mass of the push, so "
+                "stage1_dry_mass_added_t (an assumed penalty) cannot be given with it; the "
+                "penalty rows are separate cases"
+            )
+        if self.paired_pad:
+            raise ValueError(
+                f"{where}: structure is the assisted run's only (the pad keeps its "
+                "vehicle, D-SP7-35), but paired_pad compares the case with the pad on one "
+                "vehicle; give the structural case without paired_pad"
+            )
+        if self.solve != OFFLOAD_GROSS_MODES[0]:
+            got = "a fixed offload" if self.fixed is not None else f"solve {self.solve}"
+            raise ValueError(
+                f"{where}: a structural case is a stage-1 solve (the modelled mass is "
+                "sized at each offload x the solve evaluates, and the coupling is argued "
+                f"for stage-1 offloads, design 4.4), got {got}"
+            )
+        if self.stage2_offload_t is not None:
+            raise ValueError(
+                f"{where}: structure sizes the case's start at x = 0 as the full load "
+                "(sizing full_load sizes there once), but stage2_offload_t starts the case "
+                "with stage 2 already offloaded; give the structural case without "
+                "stage2_offload_t"
+            )
 
     @property
     def mode(self) -> OffloadMode:
@@ -1791,6 +1917,39 @@ class OffloadConfig(_Model):
         raise KeyError(name)
 
 
+class StructurePayloadCaseConfig(StructureSettingsConfig):
+    """One payload case of the experiment's ``structure`` block (design 4.4, "Payload
+    form"; parsed and validated in SP7 step S3, flown in S3b): ``name`` (its run's name),
+    ``of`` (a variant with a push, never the baseline) and the structural settings
+    (StructureSettingsConfig); the variant flies at its own payload capacity P* with the
+    structure sized for its full-load push (no sizing field: the payload form is a
+    full-load sizing)."""
+
+    name: str
+    of: str
+
+
+class ExperimentStructureConfig(_Model):
+    """The experiment's ``structure`` block (SP7 step S3; design 4.3): ``file``, the
+    structure file (a path, resolved like the vehicle's: next to the experiment, then
+    the repository root; cli.load_experiment reads it through ``load_structure``), and
+    ``payload_cases`` (StructurePayloadCaseConfig, unique names; flown in S3b). Not a
+    shared block: nothing in it changes a run of the experiment; it is needed by every
+    offload case with ``structure`` and by the payload cases."""
+
+    file: str = Field(min_length=1)
+    payload_cases: list[StructurePayloadCaseConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _unique_names(self) -> ExperimentStructureConfig:
+        """Unique payload-case names."""
+        names = [c.name for c in self.payload_cases]
+        dup = sorted({n for n in names if names.count(n) > 1})
+        if dup:
+            raise ValueError(f"structure payload case names are used twice: {dup}")
+        return self
+
+
 def _path_root(path: str) -> str:
     """First segment of a dotted path."""
     return path.split(".", 1)[0]
@@ -1858,7 +2017,9 @@ def _run_path(path: str) -> str:
 
 class ExperimentConfig(_Model):
     """An experiment file: vehicle path, optional label, the shared blocks, baseline run,
-    variant overrides, sweeps, sensitivity, bounds and calibration cases.
+    variant overrides, sweeps, sensitivity, bounds, calibration cases, the offload block
+    and (SP7 step S3) the structure block (ExperimentStructureConfig: the structure file
+    and the payload cases; not a shared block).
 
     Shared blocks (experiment level, identical for every run): ``dynamics``
     (vertical_1d when absent), ``site`` (a PlanarSiteConfig on planar_2d, where it is
@@ -1895,6 +2056,17 @@ class ExperimentConfig(_Model):
     bounds: list[BoundConfig] = Field(default_factory=list)
     cases: dict[str, CaseConfig] = Field(default_factory=dict)
     offload: OffloadConfig | None = None
+    structure: ExperimentStructureConfig | None = None
+
+    @model_serializer(mode="wrap")
+    def _dump_without_structure(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The default dump without the ``structure`` block when the experiment declares
+        none (SP7 step S3), so such an experiment dumps exactly as before the field
+        existed."""
+        out: dict[str, Any] = handler(self)
+        if self.structure is None:
+            out.pop("structure", None)
+        return out
 
     @model_validator(mode="before")
     @classmethod
@@ -2029,6 +2201,9 @@ class ExperimentConfig(_Model):
         if self.offload is not None:
             names += offload_run_names(self.offload, self.baseline.name)
             what = "runs, bounds, cases and offload runs"
+        if self.structure is not None:
+            names += [c.name for c in self.structure.payload_cases]
+            what = f"{what} and structure payload cases"
         seen: set[str] = set()
         for name in names:
             if name in seen:
@@ -2047,6 +2222,7 @@ class ExperimentConfig(_Model):
         solve (quoted net of a pad control, which a sweep does not solve)."""
         swept = [(k, s) for k, s in enumerate(self.sweeps, start=1) if s.offload]
         block = self.offload
+        self._structure_block()
         if block is None:
             if swept:
                 raise ValueError(
@@ -2102,6 +2278,47 @@ class ExperimentConfig(_Model):
                         "solves and fixed cases only"
                     )
         return self
+
+    def _structure_block(self) -> None:
+        """The structure block (SP7 step S3; design 4.3): every structural offload case
+        needs it; it needs planar_2d with search.figure_of_merit payload (a structural
+        case is an offload solve, a payload case a payload search); each payload case is
+        ``of`` a variant, never the baseline. A variant with no push is refused when the
+        experiment is resolved (``resolve_experiment``)."""
+        block = self.structure
+        structural = [] if self.offload is None else structural_case_names(self.offload)
+        if block is None:
+            if structural:
+                raise ValueError(
+                    f"offload case {structural[0]!r} has structure, but the experiment "
+                    "declares no structure block naming the structure file (structure: "
+                    "{file: ...})"
+                )
+            return
+        if self.dynamics != PLANAR_2D:
+            raise ValueError("structure: a planar_2d block (declare dynamics: planar_2d)")
+        fom = None if self.search is None else self.search.figure_of_merit
+        if fom != "payload":
+            raise ValueError(
+                "structure: a structural case and a payload case are payload searches, so "
+                f"the block needs search.figure_of_merit payload (got {fom})"
+            )
+        for case in block.payload_cases:
+            if case.of == self.baseline.name:
+                raise ValueError(
+                    f"structure payload case {case.name!r}: of {case.of!r} is the baseline, "
+                    "which has no push to size; name a variant"
+                )
+            if case.of not in self.variants:
+                raise ValueError(
+                    f"structure payload case {case.name!r}: of {case.of!r}: no such variant"
+                )
+
+
+def structural_case_names(block: OffloadConfig) -> list[str]:
+    """The names of the offload block's structural cases (those with ``structure``), in
+    order."""
+    return [c.name for c in block.cases if c.structure is not None]
 
 
 def _refuse_integrator(what: str) -> None:
@@ -2442,13 +2659,15 @@ class ResolvedOffloadCase:
     itself; ``pad_start``, the pad with the same propellant changes and no penalty
     (``paired_pad``; None otherwise), named ``<case>__<baseline>``, to which a solved
     case adds its x*; ``imposed_kg``, a fixed case's offload x [kg] along its mode (None
-    for a solved case)."""
+    for a solved case); ``structure``, a structural case's settings resolved against the
+    structure file (``ResolvedStructureCase``; None for every other case, SP7 step S3)."""
 
     config: OffloadCaseConfig
     variant: ResolvedRun
     start: ResolvedRun
     pad_start: ResolvedRun | None
     imposed_kg: float | None
+    structure: ResolvedStructureCase | None = None
 
     @property
     def name(self) -> str:
@@ -2495,7 +2714,8 @@ class ResolvedExperiment:
     """Everything an experiment declares, validated, nothing run. ``bounds`` and
     ``cases`` (calibration only; independent runs, never compared) are empty unless
     declared; neither is part of ``runs``. ``offload`` is the resolved offload block
-    (None unless declared)."""
+    (None unless declared); ``structure`` the resolved structure block (SP7 step S3;
+    None unless declared)."""
 
     experiment: ExperimentConfig
     baseline: ResolvedRun
@@ -2505,6 +2725,7 @@ class ResolvedExperiment:
     bounds: list[BoundCase] = field(default_factory=list)
     cases: dict[str, ResolvedRun] = field(default_factory=dict)
     offload: ResolvedOffload | None = None
+    structure: ResolvedStructureBlock | None = None
 
     @property
     def runs(self) -> dict[str, ResolvedRun]:
@@ -2515,6 +2736,10 @@ class ResolvedExperiment:
 VehicleLoader = Callable[[str], dict[str, Any]]
 """Reads a vehicle file named in an experiment (a calibration case's ``vehicle``) and
 returns its raw dict; supplied by the caller, since config.py does no file I/O."""
+StructureLoader = Callable[[str], "StructureFile"]
+"""Reads the structure file an experiment's ``structure.file`` names and returns it as a
+StructureFile (validated, with its raw content and the sha256 of its bytes); supplied by
+the caller (cli.load_experiment), since config.py does no file I/O (SP7 step S3)."""
 
 
 def _check_planar_vehicle(name: str, run: RunConfig, vehicle: VehicleConfig) -> None:
@@ -2661,34 +2886,73 @@ def _resolve_case(
 
 
 def _restated_quantity(
-    vehicle_dict: dict[str, Any], stage_index: int, key: str, value_t: float, note: str
+    vehicle_dict: dict[str, Any],
+    stage_index: int,
+    key: str,
+    value_t: float,
+    note: str,
+    *,
+    provenance: str | None = None,
 ) -> dict[str, Any]:
-    """The vehicle-file Quantity of a stage mass an offload restates: ``value_t`` [t],
-    ``assumed: true`` (a derived number, not the source's), and a note that names the
-    change and the vehicle dict's own value [t] and provenance. Raises ConfigPathError
-    when the mass is not a Quantity."""
+    """The vehicle-file Quantity of a stage mass an offload restates: ``value_t`` [t], its
+    provenance and a note that names the change and the vehicle dict's own value [t] and
+    provenance. Without ``provenance``, ``assumed: true`` (a derived number, not the
+    source's: an offload's propellant, an assumed penalty's dry mass), the dict exactly as
+    before SP7; with it (SP7 step S3, a modelled structural mass), ``source: provenance``
+    in its place, never ``assumed``. Raises ConfigPathError when the mass is not a
+    Quantity."""
     path = f"stages.{stage_index}.{key}"
     orig = read_path(vehicle_dict, path)
     if not (isinstance(orig, dict) and _is_number(orig.get("value"))):
         raise ConfigPathError(f"{path}: not a Quantity, cannot restate it")
-    provenance = f"source: {orig['source']}" if orig.get("source") else "assumed"
-    return {
-        "value": value_t,
-        "assumed": True,
-        "note": f"{note}; the vehicle's value was {orig['value']:g} t ({provenance})",
-    }
+    was = f"source: {orig['source']}" if orig.get("source") else "assumed"
+    text = f"{note}; the vehicle's value was {orig['value']:g} t ({was})"
+    if provenance is None:
+        return {"value": value_t, "assumed": True, "note": text}
+    if not provenance.strip():
+        raise ValueError(f"{path}: a restated mass's provenance must not be blank")
+    return {"value": value_t, "source": provenance, "note": text}
+
+
+STRUCTURE_DRY_NOTE = (
+    "the modelled structural mass of the push load (first-order station sizing), not an "
+    "assumed penalty"
+)
+"""The note of a dry mass a structural case restates (``offload_solved_run``), after its
+tonnes; S3a words the caveats of the runs that carry it."""
 
 
 def offload_overrides(
-    vehicle_dict: dict[str, Any], removed_kg: list[float], dry_added_kg: float, what: str
+    vehicle_dict: dict[str, Any],
+    removed_kg: list[float],
+    dry_added_kg: float,
+    what: str,
+    *,
+    dry_added_stage2_kg: float = 0.0,
+    note: str | None = None,
+    provenance: str | None = None,
 ) -> dict[str, Any]:
     """The ``vehicle.`` overrides of an offload (docs/physics.md, "Experiment schema
     (planar)"): every stage's ``propellant_mass_t`` less removed_kg[i] [kg] (stages with
     0 left alone; the tanks partly filled, every dry mass unchanged) and the first
-    stage's ``dry_mass_t`` plus dry_added_kg [kg] (an assumed structural penalty; left
-    alone at 0), each a restated Quantity [t] (``_restated_quantity``). Raises
-    ValueError naming ``what`` when a stage would keep no propellant (a stage needs
-    propellant > 0)."""
+    stage's ``dry_mass_t`` plus dry_added_kg [kg] (left alone at 0), each a restated
+    Quantity [t] (``_restated_quantity``).
+
+    Without ``provenance`` the dry mass is an assumed structural penalty (``assumed:
+    true`` and the penalty note, exactly as before SP7; ``note`` and dry_added_stage2_kg
+    must then be left out). With ``provenance`` (SP7 step S3, a structural case's modelled
+    dm) each stage's ``dry_mass_t`` plus its increment (dry_added_kg on stage 1,
+    dry_added_stage2_kg [kg] on stage 2; each left alone at 0) is restated with ``source:
+    provenance`` and ``note`` (required) after the tonnes added. Raises ValueError naming
+    ``what`` when a stage would keep no propellant (a stage needs propellant > 0), for an
+    argument the penalty form does not take, or for a modelled mass without a note."""
+    if provenance is None and (note is not None or dry_added_stage2_kg != 0.0):
+        raise ValueError(
+            f"{what}: a stage-2 dry mass and a note are restated only with a provenance "
+            "(a modelled structural mass); an assumed penalty is the stage-1 dry mass alone"
+        )
+    if provenance is not None and not (note and note.strip()):
+        raise ValueError(f"{what}: a modelled dry mass is restated with a note naming it")
     out: dict[str, Any] = {}
     for i, taken in enumerate(removed_kg):
         if taken == 0.0:
@@ -2702,21 +2966,37 @@ def offload_overrides(
                 f"{units.kg_to_t(load_kg):g} t (an offload beyond the load; a stage keeps "
                 "some propellant)"
             )
-        note = f"{what}: {units.kg_to_t(taken):.9g} t of propellant removed (tanks partly filled)"
+        gone = f"{what}: {units.kg_to_t(taken):.9g} t of propellant removed (tanks partly filled)"
         path = f"{VEHICLE_PREFIX}stages.{i}.{OFFLOAD_PROPELLANT_KEY}"
         value_t = float(units.kg_to_t(load_kg - taken))
-        out[path] = _restated_quantity(vehicle_dict, i, OFFLOAD_PROPELLANT_KEY, value_t, note)
-    if dry_added_kg > 0.0:
-        i = OFFLOAD_STAGE1_INDEX
+        out[path] = _restated_quantity(vehicle_dict, i, OFFLOAD_PROPELLANT_KEY, value_t, gone)
+    if provenance is None:
+        if dry_added_kg > 0.0:
+            i = OFFLOAD_STAGE1_INDEX
+            dry_t = read_value(vehicle_dict, f"stages.{i}.{OFFLOAD_DRY_MASS_KEY}")
+            dry_kg = float(units.t_to_kg(dry_t))
+            text = (
+                f"{what}: {units.kg_to_t(dry_added_kg):.9g} t of stage-1 dry mass added, an "
+                "assumed structural penalty, not a sized structure"
+            )
+            path = f"{VEHICLE_PREFIX}stages.{i}.{OFFLOAD_DRY_MASS_KEY}"
+            value_t = float(units.kg_to_t(dry_kg + dry_added_kg))
+            out[path] = _restated_quantity(vehicle_dict, i, OFFLOAD_DRY_MASS_KEY, value_t, text)
+        return out
+    added = {OFFLOAD_STAGE1_INDEX: dry_added_kg, OFFLOAD_STAGE2_INDEX: dry_added_stage2_kg}
+    for i, kg in added.items():
+        if not (math.isfinite(kg) and kg >= 0.0):
+            raise ValueError(f"{what}: a modelled dry mass must be finite and >= 0, got {kg!r}")
+        if kg == 0.0:
+            continue
         dry_t = read_value(vehicle_dict, f"stages.{i}.{OFFLOAD_DRY_MASS_KEY}")
         dry_kg = float(units.t_to_kg(dry_t))
-        note = (
-            f"{what}: {units.kg_to_t(dry_added_kg):.9g} t of stage-1 dry mass added, an "
-            "assumed structural penalty, not a sized structure"
-        )
+        text = f"{what}: {units.kg_to_t(kg):.9g} t of stage-{i + 1} dry mass added, {note}"
         path = f"{VEHICLE_PREFIX}stages.{i}.{OFFLOAD_DRY_MASS_KEY}"
-        value_t = float(units.kg_to_t(dry_kg + dry_added_kg))
-        out[path] = _restated_quantity(vehicle_dict, i, OFFLOAD_DRY_MASS_KEY, value_t, note)
+        value_t = float(units.kg_to_t(dry_kg + kg))
+        out[path] = _restated_quantity(
+            vehicle_dict, i, OFFLOAD_DRY_MASS_KEY, value_t, text, provenance=provenance
+        )
     return out
 
 
@@ -2756,15 +3036,41 @@ def offload_case_start(
 
 
 def offload_solved_run(
-    start: ResolvedRun, mode: OffloadMode, offload_kg: float, case: str, name: str
+    start: ResolvedRun,
+    mode: OffloadMode,
+    offload_kg: float,
+    case: str,
+    name: str,
+    *,
+    structure_dm_kg: tuple[float, float] | None = None,
+    provenance: str | None = None,
 ) -> ResolvedRun:
     """start with the solved offload x* = offload_kg [kg] removed along mode
     (``vehicle.offload_split_kg`` on start's vehicle, ``offload_overrides``), resolved
     under name: the vehicle dict of a solved case's recorded run, or of its paired pad.
-    At x* = 0 only the name changes."""
+    At x* = 0 only the name changes. A structural case (SP7 step S3) passes its modelled
+    dm at x* by stage, structure_dm_kg = (dm1, dm2) [kg], and its provenance (the
+    restated dry masses' ``source``, ``ResolvedStructureCase.provenance``): each stage's
+    dry mass is then restated with dm added (``STRUCTURE_DRY_NOTE``), so the verification
+    and the recorded run's dict fly and record the structure; both or neither."""
+    if (structure_dm_kg is None) != (provenance is None):
+        raise ValueError("a structural solved run takes structure_dm_kg and provenance together")
     removed = list(offload_split_kg(start.to_vehicle(), mode, offload_kg))
     what = f"offload case {case!r} (solved)"
-    return _offloaded(start, offload_overrides(start.vehicle_dict, removed, 0.0, what), name, what)
+    if structure_dm_kg is None:
+        overrides = offload_overrides(start.vehicle_dict, removed, 0.0, what)
+    else:
+        dm1, dm2 = structure_dm_kg
+        overrides = offload_overrides(
+            start.vehicle_dict,
+            removed,
+            dm1,
+            what,
+            dry_added_stage2_kg=dm2,
+            note=STRUCTURE_DRY_NOTE,
+            provenance=provenance,
+        )
+    return _offloaded(start, overrides, name, what)
 
 
 def _check_offload_energy(energy: OffloadEnergyConfig | None, vehicle: VehicleConfig) -> None:
@@ -2790,14 +3096,19 @@ def _check_offload_energy(energy: OffloadEnergyConfig | None, vehicle: VehicleCo
 
 
 def _resolve_offload(
-    experiment: ExperimentConfig, baseline: ResolvedRun, variants: dict[str, ResolvedRun]
+    experiment: ExperimentConfig,
+    baseline: ResolvedRun,
+    variants: dict[str, ResolvedRun],
+    structures: dict[str, ResolvedStructureCase] | None = None,
 ) -> ResolvedOffload | None:
     """The offload block resolved: each case's start (and paired-pad start), each
     sensitivity arm and the pad-control modes; the energy block checked against the
-    vehicle. None without a block."""
+    vehicle; each structural case carries its resolved structure (``structures``, by case
+    name; its variant must have a push). None without a block."""
     block = experiment.offload
     if block is None:
         return None
+    structures = structures or {}
     _check_offload_energy(block.energy, baseline.vehicle)
     cases: list[ResolvedOffloadCase] = []
     for case in block.cases:
@@ -2807,7 +3118,8 @@ def _resolve_offload(
         if case.paired_pad:
             pad_name = paired_baseline_name(case.name, baseline.name)
             pad_start, _ = offload_case_start(case, baseline, pad_name, penalty=False)
-        cases.append(ResolvedOffloadCase(case, variant, start, pad_start, imposed))
+        st = _case_structure(case, variant, structures)
+        cases.append(ResolvedOffloadCase(case, variant, start, pad_start, imposed, st))
     arms: list[ResolvedOffloadArm] = []
     params = {} if experiment.sensitivity is None else experiment.sensitivity.params
     for name in block.sensitivity_of:
@@ -2837,10 +3149,77 @@ def _resolve_offload(
     return ResolvedOffload(block, cases, arms, block.pad_control_modes)
 
 
+def _require_push(run: ResolvedRun, what: str) -> None:
+    """ValueError when run has no push (assist none): the structural model sizes the push
+    load (design 4.3)."""
+    if isinstance(run.run.assist, NoAssistConfig):
+        raise ValueError(
+            f"{what}: structure sizes the push load, but run {run.name!r} has no push (assist none)"
+        )
+
+
+def _case_structure(
+    case: OffloadCaseConfig, run: ResolvedRun, structures: dict[str, ResolvedStructureCase]
+) -> ResolvedStructureCase | None:
+    """The resolved structure of an offload case built on run (a variant or a sweep
+    point), after checking run has a push; None for a case without ``structure``."""
+    if case.structure is None:
+        return None
+    _require_push(run, f"offload case {case.name!r}")
+    return structures[case.name]
+
+
+def _resolve_structure_block(
+    experiment: ExperimentConfig,
+    baseline: ResolvedRun,
+    variants: dict[str, ResolvedRun],
+    load_structure: StructureLoader | None,
+) -> tuple[ResolvedStructureBlock | None, dict[str, ResolvedStructureCase]]:
+    """The structure block resolved (SP7 step S3): the file read through load_structure
+    and checked to serve the experiment's vehicle, every payload case (its variant with a
+    push, its settings against the file, sized at the full load) and every structural
+    offload case's settings, by case name. (None, {}) without a block; ValueError when the
+    block has no loader to read its file."""
+    block = experiment.structure
+    if block is None:
+        return None, {}
+    if load_structure is None:
+        raise ValueError(
+            f"structure names file {block.file!r}; resolve_experiment needs load_structure "
+            "to read it (config.py does no file I/O)"
+        )
+    sfile = load_structure(block.file)
+    vehicle = baseline.vehicle.name
+    if vehicle not in sfile.config.applies_to:
+        raise ValueError(
+            f"structure file {block.file!r} applies to {sfile.config.applies_to}, not to the "
+            f"experiment's vehicle {vehicle!r}"
+        )
+    payload: list[ResolvedStructurePayloadCase] = []
+    for pc in block.payload_cases:
+        what = f"structure payload case {pc.name!r}"
+        variant = variants[pc.of]
+        _require_push(variant, what)
+        st = resolve_structure_settings(pc, sfile, STRUCTURE_SIZING_FULL_LOAD, what)
+        payload.append(ResolvedStructurePayloadCase(pc.name, pc.of, variant, st))
+    cases: dict[str, ResolvedStructureCase] = {}
+    if experiment.offload is not None:
+        for case in experiment.offload.cases:
+            if case.structure is None:
+                continue
+            what = f"offload case {case.name!r}"
+            cases[case.name] = resolve_structure_settings(
+                case.structure, sfile, case.structure.sizing, what
+            )
+    return ResolvedStructureBlock(sfile, tuple(payload)), cases
+
+
 def resolve_experiment(
     exp_dict: dict[str, Any],
     vehicle_dict: dict[str, Any],
     load_vehicle: VehicleLoader | None = None,
+    *,
+    load_structure: StructureLoader | None = None,
 ) -> ResolvedExperiment:
     """Validate the baseline, every variant, every sweep point (and its paired baseline
     and offload cases), every sensitivity case, every bound, every calibration case and
@@ -2848,7 +3227,12 @@ def resolve_experiment(
     experiment against its vehicle dict, without running anything. Pure (dicts in, a
     ResolvedExperiment out): a caller with an in-memory experiment dict (the SP2 app)
     resolves it here, runs it with ``sim.run_resolved`` and assembles the result with
-    ``results_io.planar_experiment_result`` without writing anything.
+    ``results_io.planar_experiment_result`` without writing anything. ``load_structure``
+    (keyword-only, SP7 step S3) reads the structure file the experiment's ``structure``
+    block names (``StructureLoader``; None: such a block raises): each structural offload
+    case, of the block and of every sweep point, then carries its settings resolved
+    against the file (``ResolvedOffloadCase.structure``), and the block its payload cases
+    (``ResolvedExperiment.structure``).
 
     The experiment's declared shared blocks are injected into every run dict
     (shared_run_blocks, inject_shared); a Phase 1 experiment that declares none gets
@@ -2867,6 +3251,9 @@ def resolve_experiment(
             raise ExclusiveKeysError(f"variant {vname!r}: {exc}") from exc
         variants[vname] = resolve_run(vname, merged, vehicle_dict)
     runs = {baseline.name: baseline, **variants}
+    structure_block, structures = _resolve_structure_block(
+        experiment, baseline, variants, load_structure
+    )
 
     sweeps: list[list[SweepPoint]] = []
     for k, sweep in enumerate(experiment.sweeps, start=1):
@@ -2887,7 +3274,8 @@ def resolve_experiment(
                 assert experiment.offload is not None  # ExperimentConfig checks it
                 case = experiment.offload.case(cname)
                 start, imposed = offload_case_start(case, point, f"{point.name}__{cname}")
-                offload.append(ResolvedOffloadCase(case, point, start, None, imposed))
+                st = _case_structure(case, point, structures)
+                offload.append(ResolvedOffloadCase(case, point, start, None, imposed, st))
             points.append(SweepPoint(k, i, sweep.of, overrides, point, paired, tuple(offload)))
         sweeps.append(points)
 
@@ -2909,7 +3297,7 @@ def resolve_experiment(
         cname: _resolve_case(cname, case, exp_dict, vehicle_dict, load_vehicle)
         for cname, case in experiment.cases.items()
     }
-    offload = _resolve_offload(experiment, baseline, variants)
+    offload = _resolve_offload(experiment, baseline, variants, structures)
     return ResolvedExperiment(
         experiment,
         baseline,
@@ -2919,6 +3307,7 @@ def resolve_experiment(
         bounds=bounds,
         cases=calibration,
         offload=offload,
+        structure=structure_block,
     )
 
 
@@ -3608,6 +3997,16 @@ _STAGE2_ONLY = frozenset(
 """The stage-2-only five (source note section 9.1)."""
 
 
+def structure_design_axis_paths() -> tuple[str, ...]:
+    """The structure-file paths of the design-axis coefficients a structural run may
+    override (design 4.2.6, D-SP7-18: the non-optimum factors, the rise time, the axial
+    frequency, k_ts and the pad count; margin and the envelope cap are case fields of
+    their own), in the file's order."""
+    ranged = [path for path, _, _, group in _STRUCTURE_RANGED if group == structure.GROUP_DESIGN]
+    integer = [path for path, _, group in _STRUCTURE_INTEGER if group == structure.GROUP_DESIGN]
+    return (*ranged, *integer)
+
+
 def _structure_node(config: BaseModel, path: str) -> Any:
     """The model at a dotted path of a StructureConfig."""
     node: Any = config
@@ -3830,3 +4229,162 @@ class StructureConfig(_Model):
             stage1=stage(0, structure.STAGE1),
             stage2=stage(1, structure.STAGE2),
         )
+
+
+# ------------------------------------------------------------ structure in an experiment
+#
+# SP7 step S3: the experiment's ``structure`` block names a structure file, which the
+# caller reads (``StructureLoader``); a structural offload case's settings and a payload
+# case's are resolved against it here. No I/O.
+
+STRUCTURE_PROVENANCE_PREFIX = "first-order station sizing"
+"""The start of the ``source`` of a dry mass a structural run restates (design 4.4):
+``first-order station sizing, <file>, set <set>, <sizing>, <dynamic>, <entry>, margin
+<m>, <no cap or cap <g> g0>[, overrides ...]`` (``ResolvedStructureCase.provenance``)."""
+
+
+@dataclass(frozen=True, eq=False)
+class StructureFile:
+    """A structure file as the caller read it (``StructureLoader``): ``path``, the path the
+    provenance and the records quote (``cli.recorded_config_path``: relative to the
+    repository root when the file lies under it, ``configs/structures/<file>``, else as
+    the experiment's ``structure.file`` names it; no file I/O here, so the caller decides);
+    ``config``, the validated StructureConfig; ``content``, the raw mapping read from the
+    YAML (resolved_config.yaml records it); ``sha256``, the hex sha256 of the file's
+    bytes."""
+
+    path: str
+    config: StructureConfig
+    content: dict[str, Any]
+    sha256: str
+
+
+@dataclass(frozen=True, eq=False)
+class ResolvedStructureCase:
+    """A structural run's settings resolved against the structure file
+    (``resolve_structure_settings``; design 4.3): file; set_name; sizing
+    (StructureSizingBasis); dynamic (structure.DYNAMIC_MODES); entry (structure.ENTRY_PATHS);
+    margin [-] and envelope_cap_g [g0 or None], an outer set's own where it records them;
+    overrides, the design-axis coefficients by path (file units); coefficients, the
+    StructureCoefficients of the set with the overrides (SI)."""
+
+    file: StructureFile
+    set_name: str
+    sizing: str
+    dynamic: str
+    entry: str
+    margin: float
+    envelope_cap_g: float | None
+    overrides: dict[str, float | int]
+    coefficients: structure.StructureCoefficients
+
+    @property
+    def provenance(self) -> str:
+        """The ``source`` of a dry mass this structure restates (and the model text of
+        the structure assumption line): ``first-order station sizing, <file>, set <set>,
+        <sizing>, <dynamic>, <entry>, margin <m>, no cap`` (or ``cap <g> g0``; every case
+        setting that changes dm, in short form: a step case and a rise-time case of one
+        set never share a source) and, when the case overrides design-axis coefficients,
+        ``, overrides <path> <value>[, <path> <value> ...]`` (paths sorted, values as the
+        file states them; D-SP7-43: the coefficients that sized the mass are named at
+        source, not the base set alone)."""
+        cap = "no cap" if self.envelope_cap_g is None else f"cap {self.envelope_cap_g:g} g0"
+        text = (
+            f"{STRUCTURE_PROVENANCE_PREFIX}, {self.file.path}, set {self.set_name}, "
+            f"{self.sizing}, {self.dynamic}, {self.entry}, margin {self.margin:g}, {cap}"
+        )
+        if self.overrides:
+            listed = ", ".join(
+                f"{path} {value!r}" for path, value in sorted(self.overrides.items())
+            )
+            text = f"{text}, overrides {listed}"
+        return text
+
+    def settings(self) -> dict[str, Any]:
+        """The settings as plain data: set, sizing, dynamic, entry, margin,
+        envelope_cap_g and overrides."""
+        return {
+            "set": self.set_name,
+            "sizing": self.sizing,
+            "dynamic": self.dynamic,
+            "entry": self.entry,
+            "margin": self.margin,
+            "envelope_cap_g": self.envelope_cap_g,
+            "overrides": dict(self.overrides),
+        }
+
+    @property
+    def key(self) -> str:
+        """sha256 hex of the settings, the file's path and the file's sha256 in canonical
+        JSON: what a solve's memo key adds for a structural case (design 4.4, "Memo")."""
+        payload = {"file": self.file.path, "file_sha256": self.file.sha256, **self.settings()}
+        text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, eq=False)
+class ResolvedStructurePayloadCase:
+    """One payload case of the structure block resolved (flown in S3b): name, of, the
+    variant it flies and its structure (sized at the full load)."""
+
+    name: str
+    of: str
+    variant: ResolvedRun
+    structure: ResolvedStructureCase
+
+
+@dataclass(frozen=True, eq=False)
+class ResolvedStructureBlock:
+    """The experiment's structure block resolved: the file and the payload cases."""
+
+    file: StructureFile
+    payload_cases: tuple[ResolvedStructurePayloadCase, ...]
+
+
+def resolve_structure_settings(
+    settings: StructureSettingsConfig, sfile: StructureFile, sizing: str, what: str
+) -> ResolvedStructureCase:
+    """A structural run's settings against its structure file (design 4.3): the set must
+    exist in the file (central always; a frozen set once S2's search has written it); an
+    outer set brings its own margin and envelope cap (a case that gives either with
+    another value, or any override, is refused: the outer set fixes every design axis and
+    both case fields); the overrides must lie in their ranges (``StructureConfig.
+    coefficients``). Raises ValueError naming ``what``."""
+    cfg = sfile.config
+    name = settings.set
+    try:
+        recorded = cfg.set_case_fields(name)
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"{what}: structure set {name!r}: {exc}") from exc
+    margin, cap = settings.margin, settings.envelope_cap_g
+    if name in STRUCTURE_SET_NAMES and name not in STRUCTURE_PHYSICS_SETS:
+        if settings.overrides:
+            raise ValueError(
+                f"{what}: structure set {name!r} is an outer set, which fixes every design "
+                "axis; overrides go with the central or a physics set"
+            )
+        given = settings.model_fields_set
+        for key, value in recorded.items():
+            mine = getattr(settings, key)
+            if key in given and mine != value:
+                raise ValueError(
+                    f"{what}: structure set {name!r} records {key} {value!r}, the case gives "
+                    f"{mine!r}; leave it out (the outer set's own value is used)"
+                )
+        margin = float(recorded.get(structure.CASE_MARGIN, margin))  # type: ignore[arg-type]
+        cap = recorded.get(structure.CASE_ENVELOPE_CAP, cap)
+    try:
+        coefficients = cfg.coefficients(name, overrides=dict(settings.overrides))
+    except ValueError as exc:
+        raise ValueError(f"{what}: structure overrides: {exc}") from exc
+    return ResolvedStructureCase(
+        file=sfile,
+        set_name=name,
+        sizing=sizing,
+        dynamic=settings.dynamic,
+        entry=settings.entry,
+        margin=margin,
+        envelope_cap_g=None if cap is None else float(cap),
+        overrides=dict(settings.overrides),
+        coefficients=coefficients,
+    )

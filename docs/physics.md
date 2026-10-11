@@ -2228,6 +2228,13 @@ check against the handoff probe, which read about 41.1 t off by hand. The findin
 from the pre-registered experiment of SP1 step 8, with the pad controls, the
 decomposition, the penalty rows and the caveats beside it.
 
+**A vehicle transform (SP7 step S3).** `OffloadProblem` and `solve_offload` take an optional
+`transform` (vehicle offloaded by x, P_ref) -> vehicle, applied by `vehicle_at` after the
+offload: every evaluation, the recorded run, the offloaded vehicle and the verification fly
+it, once. A structural case passes the structural transform, which adds the modelled
+structural mass dm(x) of the push load to the dry masses ("Coupling the structure to the
+offload solve"); without one the solver is SP1's, line for line.
+
 ## Virtual propellant
 
 In every search evaluation stage 2 has no depletion event: at the same thrust and mass
@@ -3720,7 +3727,10 @@ solves nothing: the record says `reference_failed`. In order:
    quoted figure and labelled gross. Every run the case writes carries
    `sim.OFFLOAD_ASSUMPTIONS`; a penalty row's assisted run also carries
    `sim.offload_penalty_assumption` (its paired pad, if any, never does: a penalty row
-   has none).
+   has none). A structural case (SP7 step S3) solves with the structural transform, its
+   verification and recorded run fly the modelled dm, its run carries
+   `sim.structure_assumption` and its record and run the structure keys ("Coupling the
+   structure to the offload solve").
 3. **Sensitivity arms** (with sensitivity on; `--no-sensitivity` skips them): every
    case of `sensitivity_of` rebuilt on its variant under each sensitivity parameter
    (+ and -), against the pad under the same perturbation (a `vehicle.` parameter; a run
@@ -3771,7 +3781,9 @@ interface force, facility length, electrical energy; the decomposition with its 
 the yardstick and the ratio; the paired pad; the energy comparison; the flags), the
 sensitivity arms, the notes, and `runs`, the metrics record of every run the block
 writes. resolved_config.yaml gains `offload_runs` (each with its offloaded vehicle
-dict). The run directories: every case's recorded run (the case's name), every paired
+dict) and, only when a structural case was solved (SP7 step S3), a top-level `structure`
+key (the structure file's path, sha256 and content; "Coupling the structure to the offload
+solve", Records). The run directories: every case's recorded run (the case's name), every paired
 pad and every pad control's recorded run, each with timeseries.csv and events.csv.
 summary.md gains the section "Propellant saved at fixed payload" after the variants
 table: the basis line with P_ref, the sensitivity basis, the caveat list
@@ -5570,7 +5582,7 @@ payload".
 | Key | Meaning and rules |
 |---|---|
 | `reference` | the baseline's name (refused otherwise): its payload capacity P* is the reference payload P_ref. Read into the field `OffloadConfig.reference_run` (a pydantic alias), because `reference` is a key name of the ignition time family, which no other config model may use as a field name (the family rule is by key name); the block is not a run dict, so the YAML key is never merged by that rule |
-| `cases` | at least one; each `{name, of, solve: stage1 / stage2 / both}` or `{name, of, fixed: {...}}` (exactly one of `solve` and `fixed`). `of` is a variant, never the baseline (the baseline's own offload is the pad control). `fixed` states exactly one of `stage1_t`, `stage2_t` (a mass [t] > 0), `stage1_fraction`, `stage2_fraction` (a fraction in (0, 1) of that stage's load) or `both_fraction` (the same fraction of each load, mode both); a key given as null counts as given and is refused. Optional: `stage2_offload_t` [t] > 0 taken from stage 2 before the case (a stage-1 case only: the frontier point of a both-stage offload), `stage1_dry_mass_added_t` [t] > 0 (an assumed structural penalty on the assisted run only, a penalty row), `paired_pad: true` (the pad flown with the same final propellant change, compared with the case on one vehicle by the matched-payload attribution; refused on a penalty row, whose dry mass is the assisted run's only). Names are unique and may not collide with run, bound or calibration-case names |
+| `cases` | at least one; each `{name, of, solve: stage1 / stage2 / both}` or `{name, of, fixed: {...}}` (exactly one of `solve` and `fixed`). `of` is a variant, never the baseline (the baseline's own offload is the pad control). `fixed` states exactly one of `stage1_t`, `stage2_t` (a mass [t] > 0), `stage1_fraction`, `stage2_fraction` (a fraction in (0, 1) of that stage's load) or `both_fraction` (the same fraction of each load, mode both); a key given as null counts as given and is refused. Optional: `stage2_offload_t` [t] > 0 taken from stage 2 before the case (a stage-1 case only: the frontier point of a both-stage offload), `stage1_dry_mass_added_t` [t] > 0 (an assumed structural penalty on the assisted run only, a penalty row), `paired_pad: true` (the pad flown with the same final propellant change, compared with the case on one vehicle by the matched-payload attribution; refused on a penalty row, whose dry mass is the assisted run's only), `structure: {...}` (SP7 step S3: a structural case, below). Names are unique and may not collide with run, bound, calibration-case or structure payload-case names |
 | `pad_control` | true: solve every distinct solve mode of the cases once on the baseline at P_ref. Required by a `stage2` or `both` solve (refused otherwise), whose offload is quoted net of the pad control (D-SP1-10) |
 | `sensitivity_of` | case names (each once) re-solved under every parameter of the experiment's `sensitivity.params` (+ and -; the block is then required), the assisted run and the pad perturbed alike; `sensitivity.of` may be empty when only the arms are wanted. Stage-1 solves and fixed cases only: a `stage2` or `both` solve is refused (an arm solves no pad control to net it against) |
 | `energy` | `fuel_mass_t`: the fuel (RP-1) mass [t] of every stage's full load, keyed by stage name (every stage, no other key), each > 0 and no more than the stage's propellant (the oxidiser is the remainder); `heating_value_MJ_per_kg`: the fuel's lower heating value (> 0). Both sourced Quantities (`{value, source}` or `{value, assumed: true, note}`), because the vehicle file holds no fuel split and is never edited. They describe the experiment's vehicle: its fuel fraction f_i / m_p,i splits the propellant removed on any vehicle of the block (a sweep point or arm with another load keeps the mixture ratio) |
@@ -5600,6 +5612,49 @@ each once): every point resolves those cases on its own run (named
 (planar)"). Refused on a sweep whose `of` is the baseline (the baseline's own offload
 is the pad control) and for a `stage2` or `both` solve (quoted net of a pad control,
 which a sweep does not solve): a sweep names stage-1 solves and fixed cases.
+
+**Structure block and structural cases (SP7 step S3; design 4.3).** A top-level
+`structure: {file, payload_cases}` names the structure file (`file`, found like the vehicle
+file: next to the experiment, then at the repository root; read by `cli.load_experiment`
+through `cli.read_structure_file` and passed to `resolve_experiment` as the keyword-only
+`load_structure`, a `config.StructureLoader`; resolving the block without a loader is
+refused, config.py doing no I/O; the records quote the file by `cli.recorded_config_path`:
+its path relative to the repository root, POSIX form, whenever it lies under the repository,
+`configs/structures/<file>`, whether the experiment named it relative to itself or by a
+rooted path, so no machine-specific path enters a provenance, metrics.json or a tracked
+summary; a file outside the repository is quoted as named) and lists `payload_cases`
+(`{name, of, set, dynamic, entry, margin, envelope_cap_g, overrides}`: parsed and validated
+now, flown in S3b; `of` a
+variant with a push, never the baseline; names unique and clear of every run name). Not a
+shared block (nothing in it changes a run); planar_2d with `search.figure_of_merit:
+payload` only; the file must name the experiment's vehicle in `applies_to`. An offload case
+gains the optional field
+
+    structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                margin: 0.0, envelope_cap_g: null, overrides: {}}
+
+(the defaults shown; absent by default, so no existing case's dict or dump changes: a dump
+leaves out a null `structure`, and an experiment's dump a null block). `set` is `central` or
+one of the file's frozen sets (`physics_low_mass`, `physics_high_mass`, `outer_low_mass`,
+`outer_high_mass`); `sizing` `flown` (re-sized at every x) or `full_load` (sized once at x =
+0); `dynamic` `rise_time`, `quasi_static` or `step`; `entry` `aft_ring` or
+`thrust_structure`; `margin` >= 0; `envelope_cap_g` null or > 1 g0; `overrides` sets
+design-axis coefficients by their structure-file path (`config.structure_design_axis_paths`:
+the four non-optimum factors, the rise time, the axial frequency, k_ts and the pad count),
+each a finite number (a bool refused) within its range. An outer set records its own margin
+and cap: they are used, and a case that gives either with another value, or any override,
+is refused (the outer set fixes every design axis). Refused: with `stage1_dry_mass_added_t`
+(the penalty rows are separate cases), with `paired_pad` (the pad keeps its vehicle,
+D-SP7-35), with `stage2_offload_t` (the case's start at x = 0 is the full load that
+`sizing: full_load` sizes once; a stage-2 pre-offload would make it something else), on a
+fixed case or a `stage2` or `both` solve (a structural case is a stage-1
+solve: the coupling is argued for stage-1 offloads), on a variant (or a sweep point) with no
+push, and in an experiment without the structure block. Sweep points and sensitivity arms
+inherit the field. Each structural case resolves to a `config.ResolvedStructureCase` on its
+`ResolvedOffloadCase.structure` (the settings, the coefficients, the file with its sha256);
+`--no-offload` skips the structural cases with the block (and, in S3b, the payload cases),
+`--no-sensitivity` their arms. What the pass does with them is "Coupling the structure to the
+offload solve".
 
 **Merge rule (both models).** The two override forms inherit differently:
 
@@ -6600,6 +6655,243 @@ minimum-pressure fraction, its outer sets in the latter; its physics high-mass s
 the gate's). D's break-even values and the sizing-only table are not frozen: they go to the
 session log and the pre-registration (S6a).
 
+### Coupling the structure to the offload solve (SP7 step S3)
+
+Modules: `src/launchsim/offload.py` (`OffloadProblem.transform`, `VehicleTransform`),
+`src/launchsim/sim.py` (`StructureTransform`, `StructureSizing`, `build_structure_transform`,
+`offload_structure_transform`, `charge_structure`, `structure_record`,
+`STRUCTURE_RECORD_KEYS`, `structure_assumption`, `with_structure_items`,
+`OFFLOAD_STRUCTURE_ASSUMPTIONS`, `without_assumptions`,
+`STRUCTURE_FIXED_POINT_TOL_KG`, `STRUCTURE_FIXED_POINT_MAX_ITERATIONS`),
+`src/launchsim/vehicle.py` (`with_stage_dry_mass`), `src/launchsim/structure.py`
+(`FLAG_FIXED_POINT_CAP`), `src/launchsim/config.py` (the case field and the block below;
+`resolve_structure_settings`, `ResolvedStructureCase`, `StructureFile`, `StructureLoader`,
+`offload_solved_run`'s structural form), `src/launchsim/cli.py` (`read_structure_file`,
+`resolve_config_path`, `recorded_config_path`) and `src/launchsim/results_io.py` (the pass). Tests:
+`tests/test_structure_pipeline.py`. Design 4.3 and 4.4, D-SP7-20 to D-SP7-22, D-SP7-35, D-SP7-42
+to D-SP7-44.
+What S3 does not do yet: the payload cases are parsed and validated but not flown, and the
+block-level `structure_inputs`, the Structure subsection, the sweep and arm columns and the
+thickness figure are S3b's; the wording of every caveat that mentions structure is S3a's;
+a pushed drive other than constant_accel is S4b's. Until S3a a structural run written by
+`launchsim run` would contradict itself on disk: its offload block still prints SP1's
+caveat "no structural mass is charged for the push load" (`summary.OFFLOAD_CAVEATS`) and
+the case table's row "assumed stage-1 dry mass added" at 0 beside the same record's
+`structure_charged: true`, `structure_dm_kg` and the structure assumption line (the run's
+own assumptions list no longer contradicts itself: S3's second review round replaced, on a
+structural run only, the offload sentence "every dry mass (tank structure included) ...
+unchanged" by `sim.OFFLOAD_STRUCTURE_ASSUMPTIONS`, whose dry-mass clause excepts the
+modelled increment, "Assumptions" below); no
+experiment under experiments/ has a structure block, and none is written before S3a has
+reworded those lines (the first structural experiment is S6a's).
+
+**The transform.** `OffloadProblem` carries an optional `transform` (a pure callable of the
+vehicle offloaded by x, at its own payload P0, and P_ref [kg]). `vehicle_at(x)` applies it
+after `with_offload`, so the gamma* grid, the searches in x, the recorded run,
+`OffloadResult.offloaded_vehicle` and `verify_offload` all fly the same vehicle and the
+transform is applied exactly once. With `transform` None every line of SP1's path is
+unchanged (the slow pins below reproduce SP1's headline and its +2 t row bit for bit).
+
+**The structural transform.** For a structural case (`StructureTransform`, built once per
+case by `build_structure_transform`, from a resolved case by `offload_structure_transform`):
+
+- the geometry is built once from the case's variant at its full loads (D-SP7-13) and
+  closed over;
+- the envelope is built once from the pad's own flight: `structure_pad_cases` of the
+  reference pad's Result on its vehicle at the payload it flew (P_ref), both stages, at the
+  case's margin and envelope cap; for a sensitivity arm, from the pad flown under the same
+  perturbation (the arm's own reference), and for a run parameter the unchanged pad. A
+  caveat for the `vehicle.stages.stage1.dry_mass_t` arm: its geometry is built from the
+  perturbed variant, but `build_geometry` loads the stations from the structure file's mass
+  breakdown, which still closes the file's stage-1 dry mass (the perturbed value enters
+  `StageGeometry.dry_mass_kg`, the plausibility rule's input, only), so the perturbed dry
+  mass reaches the sizing through the push's interface force m_v (a + g_eff) - T and through
+  the perturbed pad's envelope, never through the stage-1 station loads: measured on the
+  synthetic file at the headline offload with the envelope held, +10% stage-1 dry mass
+  raises F_peak from 23,253,270 to 23,349,979 N and dm from 5,197.495 to 5,207.901 kg (+10.4
+  kg, +0.20%). Wherever the structural arms are reported (S3a's wording, S3b's arm columns,
+  S6a's findings) that sentence goes beside them: the arm is sized on its perturbed vehicle
+  and pad, not on perturbed station masses;
+- the push is the analytic constant_accel case (`constant_accel_push_load`, "The push and
+  the increment") of the vehicle at x flying P_ref, with the case's own track, g_eff and
+  stage-1 ignition (a hot start's thrust and burned propellant included); a drive other
+  than constant_accel raises NotImplementedError (a flown push inside the transform is step
+  S4b), a start without a push ValueError.
+
+Each call starts from dm = 0 and iterates
+
+    (dm1, dm2)_{k+1} = S(push(m(x) + dm_k)),    k = 0, 1, ...
+
+with S the increment of `structure.size_increment` on the closed-over geometry and envelope,
+because the push's interface force F = m_v (a + g_eff) - T counts the vehicle's own mass, dm
+included (and dm2 adds to the upper mass U). It stops when the larger stage step
+|dm_{k+1} - dm_k| falls below `STRUCTURE_FIXED_POINT_TOL_KG` = 1e-6 kg, at most
+`STRUCTURE_FIXED_POINT_MAX_ITERATIONS` = 25 sizings (design 4.4 wrote 10; D-SP7-44 raised it
+after the measurement under "Contraction" found the gate file's outer high-mass set needing
+exactly 10, so the flag had no margin; the loop breaks on convergence, so a converging call
+costs the same); reaching the cap first sets the flag `structure_fixed_point_cap` (recorded
+with the iterations, the last step, the tolerance, the cap and the measured contraction, and
+written into the run's flags). dm1 (the stage-1 elements and the interstage, D-SP7-36) is added to stage
+1's dry mass and dm2 to stage 2's (`charge_structure`, through `vehicle.with_stage_dry_mass`;
+a zero increment leaves its stage alone, so dm = 0 returns the vehicle itself). Sizing
+`full_load` sizes the solve's start vehicle at x = 0 instead, so the same dm is added at
+every x. The transform depends on its arguments and its fields only, so `vehicle_at(x)` is
+bit-identical in any call order, on repeats and on a transform built again (a test).
+
+**Contraction.** The map contracts by about dS/dF x (a + g_eff) DLF, the entry hardware's
+increment per newton of push times the load per kilogram: measured on the synthetic
+structure file (below) at the headline offload the step ratio is 0.0044 to 0.0062 (rise
+time, quasi-static and step), so a call takes six sizings (the first step is dm itself, the
+fifth about 2.5e-6 kg, the sixth about 1e-8 kg); sizing only, the gate file on the same
+synthetic pad gives 0.0054 to 0.0076 at central. The contraction grows with dm, because the
+entry hardware's share of the increment grows with the load: sizing only (no solve, D-SP7-31),
+the gate file's frozen sets on the synthetic pad at x = 0 and at the headline offload give,
+as (sizings, step ratio): physics_low_mass (5, 0.0031), outer_low_mass (5, 0.0019), central
+(6, 0.0057), physics_high_mass (8, 0.023; under dynamic step 9, 0.036) and outer_high_mass
+(10, 0.050; the same under step, its rise time already at the DLF's cap), the last with a
+ninth step of 2.1e-6 kg and a tenth of 1.0e-7 kg, so the design's cap of 10 would have been
+reached by one more iteration (a contraction of 0.064, or a first step 8 times larger, would
+have fired the flag); the pad flown afresh (P* = P_ref to the bit) gives the same counts and
+ratios, dm differing by at most 8 kg between the two pads. The fast test
+`test_gate_sets_exceed_the_hard_bound_inside_the_cap` holds every frozen set to at least five
+sizings under the cap of 25. One sizing on a prebuilt geometry and envelope costs
+about 4 to 13 ms on the development machine (100 to 200 stations, unloaded to loaded), so a
+transform call 21 to 76 ms at central (about 80 ms for the outer high-mass set's ten sizings),
+against about 0.8 s for one cold evaluation of the ascent.
+
+**Monotonicity.** Coupled, dm_res/dx = -s_x (1 + E dm'(x)) with s_x = |dm_res/dx| at fixed
+dry mass and E the offload lost per kg of stage-1 dry mass (survey 03: 4.381 kg/kg at the
+headline, 4.584 at +2 t), so m_res(x, dm(x)) keeps falling, and the solver's one sign change
+holds, while dm'(x) > -1/E, about -0.228 kg/kg. A fast test asserts dm'(x) > -1/(2 E) =
+-0.114 kg/kg at five offloads from 0 to 60 t and that the differences at 1 kg and at 10 g
+agree within 1e-5 kg/kg (measured on the synthetic file: dm' = -0.0134 kg/kg at the
+headline, the two differences agreeing to 3e-9; full_load: 0). That half-bound is asserted
+on the synthetic file only: sizing only on the synthetic pad, the gate file's outer
+high-mass set gives dm'(x) = -0.128 kg/kg at x = 0 (the same on the pad flown afresh),
+flattening with the offload to -0.127, -0.125, -0.123 and -0.121 at 10 t, 20 t, the headline
+and 60 t: below the half-bound at every one of the five offloads but above -1/E (E itself
+grows with the dry mass
+added: between SP1's consecutive rows, the headline to +2 t, +2 to +4 t and +4 to +8.1 t, the
+offload lost per kg is 4.49, 4.70 and 5.10 kg/kg, so -1/E is about -0.2 by +8.1 t; that
+set's dm of 60 t at x = 0 down to 52 t at 60 t lies well beyond SP1's rows, so the hard
+bound there is an
+extrapolation of E, which the in-run `offload_nonmonotone` check covers); physics_high_mass
+under step gives -0.101 at x = 0 (-0.095 at 60 t), the other sets -0.006 to -0.062. The fast
+test `test_gate_sets_exceed_the_hard_bound_inside_the_cap` holds the gate file's four frozen
+sets (physics_high_mass also under step) to the hard bound -1/E and the same smoothness, and
+pins the outer high-mass corner below the half-bound. The solver's
+`offload_nonmonotone` stays the in-run check.
+
+**Verification with dm.** After an ok solve the pass sizes the transform at x*
+(`StructureTransform.sizing_at`) and builds the verification's run with
+`config.offload_solved_run(..., structure_dm_kg=(dm1, dm2), provenance=...)`: each stage's
+`dry_mass_t` is restated with dm added, `source: "first-order station sizing, <file>, set
+<set>, <sizing>, <dynamic>, <entry>, margin <m>, no cap"` (or `cap <g> g0`;
+`ResolvedStructureCase.provenance`: every case setting that changes dm is named at source,
+so a `step` case and a `rise_time` case of one set, whose dm can differ twofold, never
+share a source string; `<file>` the path the records quote:
+repository-relative when the file lies under the repository, `cli.recorded_config_path`;
+a case that overrides design-axis coefficients appends `, overrides <path> <value>[, <path>
+<value> ...]`, the paths sorted and the values as the file states them, so the source names
+the coefficients that sized the mass and not the base set alone, D-SP7-43)
+and the note `config.STRUCTURE_DRY_NOTE` after the tonnes added, never `assumed: true`
+(D-SP7-22); a stage with dm = 0 is left as the vehicle file states it. The verification's
+payload search flies that dict, so when dm > 0 its trajectory key differs from the
+unstructured case's (a structural case whose sizing gives dm = 0 on both stages, such as a
+`thrust_structure` entry under a margin that keeps F_peak below (1 + margin) T_max, restates
+nothing: its final dict and trajectory key are the unstructured final's, and the memos keep
+the two cases apart through the structure key alone, so nothing is reused wrongly),
+and the recorded run is assembled on `offloaded_vehicle`, which carries dm through
+`vehicle_at`; the cross-vehicle decomposition then reads `xv_dry_mass_delta_kg` = dm1 + dm2
+(a slow test, within 1e-6 kg). A `no_offload` structural solve records its x = 0 run with
+dm(0) restated the same way. The modelled mass never enters `stage1_dry_mass_added_kg`,
+which stays 0 with `assumed_penalty` False. A penalty row's dicts are byte-identical to
+before SP7: without a provenance `offload_overrides` writes exactly the assumed penalty it
+wrote (a test pins every offload start of both shipped offload experiments, the four solved
+rows' dicts and the penalty row's Quantity to digests captured at the start commit).
+
+**Memo keys.** A structural case's start equals its variant's dicts (the field changes no
+dict), so the solve memo key of a structural case adds the structure key (sha256 of the
+settings, the file's path and its sha256: `ResolvedStructureCase.key`) and the envelope pad's
+trajectory key to (trajectory key of the start, P_ref, mode); an unstructured case keeps
+SP1's three-part key. The verification run of a structural case is memoised under (its
+trajectory key, the structure key, the envelope pad's trajectory key):
+`StructureTransform.memo_key` gives the last two to both memos. A structural and an unstructured case of one variant
+therefore never share a solve (tests: on fake runs, and in the slow pass, where both are
+solved).
+
+**Records.** The case record and the recorded run's own metrics (metrics.json's
+`offload.runs`) of a structural run end with `sim.STRUCTURE_RECORD_KEYS`, in this order
+(`structure_record`): `structure_charged` (true); `structure_dm_kg`, dm1 + dm2 at x* [kg],
+and `structure_dm_stage2_kg`, dm2 [kg] (dm1 is their difference); `structure_dm_x0_kg`, dm1 +
+dm2 at x = 0 [kg]; the settings `structure_set`, `structure_sizing`, `structure_dynamic`,
+`structure_entry`, `structure_margin`, `structure_envelope_cap_g` (g0 or null) and
+`structure_overrides` (the case's design-axis coefficients by their structure-file path, in
+the file's units; {} when none; D-SP7-43, added to design 4.4's list because an axis row's
+overrides change the sizing and were otherwise recorded only inside the memo key); at x*:
+`structure_dlf`, `structure_t_r_s` [s] and `structure_f_Hz` [Hz] behind it,
+`structure_n_q_g` and `structure_n_peak_g` [g0], `structure_F_peak_N` [N],
+`structure_ramp_cost_rel` ((a' - a)/a, constant_accel under rise_time), `structure_elements`
+(kg by `<stage>.<element>`), `structure_closed_form_kg` and `structure_ring_kg` [kg],
+`structure_governing` (the largest element: stage, element, push and envelope modes,
+station index, height [m], the envelope case's index and label; null when dm is 0),
+`structure_flags` (the release, upper-stack and payload-limit flags of `size_increment` and
+`structure_fixed_point_cap`, each with `fired` and its numbers; the cap flag's `values` are
+`iterations`, `last_step_kg`, `tolerance_kg`, `max_iterations` and `contraction`, the
+measured step ratio of `StructureSizing.contraction`, so a run that converged at the cap's
+edge can be told from a comfortably converged one without re-running the transform; every
+flag that fired is also promoted to the recorded run's `flags`, and so to the case record's
+`flags`, as one line naming it and its numbers, in `structure_flags` order after the run's
+own flags (`sim.with_structure_items`), so summary.md's flags section and a sweep's
+`n_flags` see it; informational, D-SP7-19: no structure flag changes a status),
+`structure_iterations` (the
+sizings at x*), `structure_file`, `structure_file_sha256` and `structure_envelope_pad` (the
+run whose flight is the envelope). A structural case whose solve ends `search_failed`
+writes no run, and its case record still carries every key (the settings, dm at x = 0 and
+the file; every value at x* null, no flag), so an unsolved structural case never reads as
+an uncharged one. Only a structural case carries any of them, so every existing record and
+pin is unchanged. A structural case's recorded run also carries, in place of SP1's offload
+sentence, `sim.OFFLOAD_STRUCTURE_ASSUMPTIONS`, followed once by `sim.structure_assumption`
+(whose provenance names the case's settings and any overrides, so the assumption line does
+too) ("Assumptions"). resolved_config.yaml gains a top-level `structure` key
+(the file's path as the records quote it, the sha256 of its bytes and its content, YAML
+aliases expanded) only when a structural case was solved (`OffloadReport.structure`). A
+sweep point's structural case and a sensitivity arm of one carry the keys on their in-memory
+case records only (`_CaseOutcome.record`; a test spies on them): the arm record written to
+metrics.json's `offload.sensitivity[]` (`_offload_arm_record`) and the sweep point's
+columns (`OFFLOAD_SWEEP_COLUMNS`, its solve's only record on disk) carry no structure key
+until S3b's arm and sweep columns, and an arm's recorded run, keys included, sits in
+`OffloadReport.checked_runs`, whose metrics are not written; so on disk, at this step, such
+a run is marked only by its case name.
+
+**Pins** (slow; `tests/test_structure_pipeline.py`, SP1's experiment at the shipped budget,
+the pad and silo_cold flown once): (a) the structure-off headline: silo_cold_s1 through
+`planar_offload` equals tests/data/silo_offload_2d_record.json (P_ref 26,054.396243494975 kg,
+x* 41,262.90803733282 kg, its verification's P* 26,054.404695649962 kg) within 0.002 kg;
+(b) the constant-2 t cross-check: a structural case whose sizing is replaced by a constant
+2,000.0 kg on stage 1 (the test monkeypatches `structure.size_increment`) equals SP1's
+silo_cold_s1_dry+2t row, x* 32,285.203295407457 kg and its verification's P*
+26,054.39923045693 kg, within 0.002 kg (D-SP7-42), with `xv_dry_mass_delta_kg` = 2,000 kg; (c) a
+structural case on the synthetic file (central, flown) solved beside the headline:
+`xv_dry_mass_delta_kg` = dm1 + dm2 within 1e-6 kg, no `offload_nonmonotone`, the fixed point
+within its cap. Measured: (a) and (b) reproduce SP1's x* and verification P* to 0.0 kg (the
+same bits), (c) gives `xv_dry_mass_delta_kg` - dm = 0.0 kg; the module took 309 s on the
+development machine (the two flights 49 s, the pass with (a) and (c) 157 s, (b) 104 s;
+recorded in the tests' user_properties). The record's `verification_payload_kg` per row
+was copied in S3 from the same untracked metrics.json as its offloads (the record's note
+says so). D-SP7-42 amends the step's item 6(b), which asked that the cross-check's
+verification P* equal P_ref within 0.002 kg: SP1's own +2 t verification ended 0.00299 kg
+above P_ref, so that criterion is unattainable by the very run the cross-check reproduces;
+the cross-check compares x* and the verification's P* with SP1's recorded values within
+0.002 kg (bit identity measured) and holds P* to P_ref only within the flag tolerance (1e-4
+P_ref, 2.605 kg), the design's criterion 3 pinning x* alone.
+The synthetic structure file tests/data/structure_synthetic.yaml is the gate file's
+sections with 100 stations per barrel, the central values of F_tu, the four non-optimum
+factors, the rise time (0.8 s), the axial frequency (3 Hz), the ullage fraction and the four
+MEOPs moved inside their ranges, and synthetic sets (D-SP7-31: no test solves a
+pre-registered case); its numbers, the structural x* among them, are test values, not
+findings.
+
 ## Assumptions
 
 Every assumption string the code emits, in one place, with the code that emits it.
@@ -6815,6 +7107,29 @@ and a penalty row's assisted run also `sim.offload_penalty_assumption`:
 
 - offload: stage-1 dry mass +<t> t is an assumed structural penalty (a parametric row),
   not a structure sized for the push load.
+
+and a structural case's recorded run (SP7 step S3), whose dry masses do carry the modelled
+increment, `sim.OFFLOAD_STRUCTURE_ASSUMPTIONS` in place of the offload sentence above
+(`results_io._offload_assumptions`; the sentence "every dry mass ... unchanged" would
+contradict the structure line one line below it; a structural case has no paired pad, which
+the config refuses, D-SP7-35, so its recorded run is the only run of a structural case
+with offload lines):
+
+- offload: the propellant removed from a full load leaves the tanks partly filled;
+  every dry mass is unchanged except for the modelled structural increment of the push
+  load (the structure line), and the engine, the payload, the fairing and the
+  aerodynamics are unchanged and each stage keeps its mixture ratio; no ullage,
+  centre-of-gravity or tank-mass effect is modelled.
+
+and then `sim.structure_assumption` (neutral: S3a words the caveats):
+
+- structure: the dry masses carry the modelled structural mass of the push load
+  (first-order station sizing, <file>, set <set>, <flown or full_load>, <dynamic mode>,
+  <entry>, margin <m>, <no cap or cap <g> g0>[, overrides <path> <value>, ...]; the
+  envelope is <pad>'s own flight).
+
+(the bracket is `ResolvedStructureCase.provenance`, the restated dry mass's `source`, so
+the line and the source name the same settings).
 
 The summary block of the offload carries its own caveat list (`summary.offload_caveats`:
 the vehicle's calibration caveat, then `summary.OFFLOAD_CAVEATS`; "Reporting
@@ -7596,5 +7911,15 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_structure_search.py::test_structure_sizing_on_the_synthetic_pad` | `sim.structure_sizing` equals `size` on the analytic push of the synthetic pad's vehicle at the headline offload, at x = 0 and at 20 t; a pad count of 3 only with check_ranges False, its ring heavier; `sim.time_structure_sizing` (the call behind the files' recorded timing) returns two positive medians, the step row's (stage 2 sized) the slower (What is sized; Budget and fallbacks) | exact |
 | `test_structure_search.py::test_sets_record_validates_as_the_files_sets_block`, `::test_structure_files_carry_the_frozen_sets` (2 files) | `sim.structure_sets_record` validates as the file's `sets` block, its implied stack lengths recomputed from each set's geometry; config refuses a wrong label, an unknown fallback, a physics set with a design axis or missing a physics coefficient, an outer set without a case field, a negative margin, a cap at 1 g0, an unknown check, a negative excess, a check with trials but no extreme and a set without its polish; both files carry the four sets under the label, parent 4494fe1, no fallback, the seed, the slow test's name, the method naming the headline offload and P_ref, every set converting, every excess >= 0, each search's polish converged with its moves summing to its dm change and its checks against the polished dm, the high corner's 4.0 g0 cap (What the file records) | exact; 1e-6 kg |
 | `test_structure_search.py::test_frozen_sets_reproduce` (slow, 2 files) | each committed experiment's pad baseline flown afresh (P* = SP1's P_ref within 0.002 kg), searches A to C re-run at its headline push with the file's fallbacks, and the file's `sets` block (every value exactly; the searches, the polish records, the extremality checks, the implied stack lengths, the evaluation count, the method, the label and the seed, their floats to 1e-9) equal to the recomputed one; under 10 minutes each, the wall time in user_properties (measured 251 s for the gate and 255 s for the fork, the pad flights 32 s of them, run one after the other) ("The screened search and the frozen sets") | exact (values); 1e-9 relative; < 600 s |
+| `test_structure_pipeline.py::test_offload_problem_without_a_transform_is_sp1s_offload`, `::test_stage_dry_mass_helpers` | `vehicle_at` without a transform is `with_offload` bit for bit; a transform applied once, after the offload, at P_ref, the vehicle keeping P0; `from_factory` passes it; `verify_offload` flies the offloaded vehicle as given; `with_stage_dry_mass` and `charge_structure` (2,000 kg on 22,200 gives 24,200 exactly; dm = 0 returns the vehicle) ("Coupling the structure to the offload solve", The transform) | exact |
+| `test_structure_pipeline.py::test_dm_slope_is_bounded_and_smooth`, `::test_vehicle_at_is_bit_identical_across_call_orders` | on the synthetic file and the synthetic pad: dm'(x) > -1/(2 E), E = 4.381 kg/kg, at 0, 10, 20, 41.26 and 60 t (the half-bound is asserted on the synthetic file only), the 1 kg and 10 g differences agreeing; full_load the x = 0 sizing at every x; `vehicle_at` the same bits forwards, in reverse, repeated and on a rebuilt transform, equal to `charge_structure` of the offloaded vehicle with the sizing at x (Monotonicity; The structural transform) | -1/(2 E); 1e-5 kg/kg; exact (float.hex) |
+| `test_structure_pipeline.py::test_gate_sets_exceed_the_hard_bound_inside_the_cap` (5 cases) | the gate file's four frozen sets (physics_high_mass also under dynamic step), sizing only on the synthetic pad (no solve, D-SP7-31): dm'(x) > -1/E at the same five offloads, the two differences agreeing, the fixed point converged with at least five sizings to spare under the cap of 25 (the outer high-mass corner takes 10, D-SP7-44), its contraction below 0.06 and recorded in the cap flag; the outer high-mass corner alone measured below the half-bound -1/(2 E) (dm' from -0.128 kg/kg at x = 0 to -0.121 at 60 t) (Contraction; Monotonicity) | -1/E; 1e-5 kg/kg; exact |
+| `test_structure_pipeline.py::test_inner_iteration_converges_caps_and_flags`, `::test_structure_record_keys_and_values`, `::test_transform_refuses_a_start_without_a_push_and_other_drives` | the fixed point from dm = 0: the first step dm itself, the steps shrinking, the contraction below 0.01, the last step below 1e-6 kg within the cap of 25 (D-SP7-44), the cap flag's values exactly (iterations, last step, tolerance 1e-6 kg, cap 25, the measured contraction); the cap lowered to 2 sets `capped`, fires `structure_fixed_point_cap` with its numbers (cap 2, contraction null) and adds the run flag last, after the run's own flags and the lines of the record's other fired flags (the release and payload-limit flags on the synthetic pad); the record's keys in `STRUCTURE_RECORD_KEYS` order, dm1 + dm2 and dm2, dm at 0, the settings (`structure_overrides` {}), DLF = min(2, 1 + T/(pi t_r)) at t_r 0.8 s and f 3 Hz, the elements summing to dm and splitting into closed form and ring, the governing element the largest, the four flags, the file's path and sha256; the pad refused (no push) and another drive refused naming S4b (Contraction; Records) | 1e-2 relative (first step); 1e-9 kg; 1e-12 relative (DLF); exact |
+| `test_structure_pipeline.py::test_structural_case_and_block_resolve`, `::test_structural_refusals` (27 cases), `::test_structure_block_needs_its_loader_its_vehicle_and_the_planar_payload_search` | the case field's defaults, the provenance text (`..., set central, flown, rise_time, aft_ring, margin 0, no cap`; an outer set's own cap as `cap 4 g0`), the file's central coefficients, the start's dicts and trajectory key equal to an unstructured case's, the dumps (no null `structure`), an outer set's own margin and cap, the overrides in the coefficients and named in the provenance after the settings (`..., set central, full_load, step, thrust_structure, margin 0.1, cap 4.5 g0, overrides nof.nof_barrel 1.54, ring.ring_pads 4`, paths sorted; D-SP7-43), four distinct structure keys, a sweep point inheriting the case's structure, a payload case at the full load, the set names and design-axis paths; every refusal of design 4.3 and this step (penalty, paired_pad, stage2_offload_t, fixed, both, no push, no block, unknown set, sizing, dynamic, entry or key, a negative margin, a 1 g0 cap, a non-design, bool, out-of-range or fractional override, overrides or another margin or cap on an outer set, payload cases on the baseline, an unknown or push-less variant, twice or named like a run, a blank file); no loader, a file for another vehicle, an unfrozen set, the fixed guidance ("Experiment schema (planar)", Structure block and structural cases) | exact |
+| `test_structure_pipeline.py::test_structure_file_is_read_with_its_sha256_and_plain_content` | `cli.read_structure_file`: the sha256 of the bytes, the content equal to the YAML with the gate file's shared MEOP anchor expanded into distinct copies (no anchor in a dump), one CliError each for a missing, non-UTF-8, non-mapping or invalid file; `cli.load_experiment` finds the file next to the experiment, then at the repository root (the test places it at the root first, then a longer copy next to the experiment, which wins), names a missing "structure file", and quotes it by `cli.recorded_config_path`: repository-relative for a file at the root, next to the experiment or named by a rooted path under the repository, as given for one outside it (Structure block and structural cases) | exact |
+| `test_structure_pipeline.py::test_sp1s_resolved_and_solved_dicts_are_unchanged`, `::test_sp1_record_carries_each_rows_verification`, `::test_structural_solved_run_restates_dm_with_its_provenance` | every offload start of both shipped offload experiments (48 and 2), the solved-run dicts of SP1's four gate rows at their x* and the penalty row's restated dry mass (written out, key order kept) equal their digests captured at the start commit 15b4e6e; the penalty form refusing a stage-2 mass or a note without a provenance, the modelled form a blank note; the record's per-row verification P* (added in S3, its note saying so) within 1e-4 P_ref of its block's P_ref, the +2 t row's 0.00299 kg above it; a structural solved run restates each stage's dry mass with dm added, `source` the provenance, the note, never `assumed`, its vehicle carrying dm1 and dm2, a trajectory key of its own (dm > 0), a stage with dm = 0 untouched (Verification with dm) | exact (sha256); 1e-15 relative; 1e-9 kg |
+| `test_structure_pipeline.py::test_structural_and_plain_cases_never_share_a_solve`, `::test_overrides_are_recorded_and_named_at_source`, `::test_record_keys_assumptions_and_resolved_config_only_with_a_structure`, `::test_fired_structure_flags_reach_the_run_and_the_case_record`, `::test_a_failed_structural_solve_still_records_its_structure`, `::test_arms_size_on_their_own_perturbed_pad` | the pass on fake runs (the sim seams monkeypatched, the real structural sizing on the synthetic pad): an unstructured, two structural (flown, full_load) and a repeated structural case solved as three solves, the repeat reusing its own; the structural verification flying dm1 restated under the provenance, the recorded run's dict the same; a case overriding `nof.nof_barrel` 1.54 and `dynamics.rise_time_s` 0.1 solved apart from the central case with a dm more than 1.5 times its, its record and its run's metrics carrying `structure_overrides` (the central case {}), `structure_t_r_s` 0.1, `structure_set` still central, the provenance on the verified and the recorded dict and in the assumption line naming the overrides (D-SP7-43); the case record and the run's metrics ending with the structure keys, none on the unstructured case, `stage1_dry_mass_added_kg` 0 and `assumed_penalty` False on both; the structure assumption line on the structural run only, whose offload line is `OFFLOAD_STRUCTURE_ASSUMPTIONS` (no line of its says every dry mass is unchanged; it precedes the structure line) while the unstructured run keeps SP1's; the record JSON-safe, the summary block and the console lines rendering it; `OffloadReport.structure` and resolved_config.yaml's last key `structure` only with a structural case (none without one, none with --no-offload); every fired structure flag promoted to the recorded run's `flags` and the case record's (the central case's release and payload-limit flags, a `dynamic: step` case's three: one ASCII line each, name then numbers, in `structure_flags` order, counted by `n_flags`, listed by the summary's flags section, every flag kept with its numbers in `structure_flags`, the statuses unchanged); a search_failed structural case writing no run, its record carrying every structure key with the values at x* null; each arm's transform on its own pad (a vehicle parameter's perturbed pad, a run parameter's unchanged one), its in-memory case record and recorded run (`_offload_case`'s outcome, spied) ending with the structure keys and naming that pad, the written arm records carrying none (S3b's columns) (Memo keys; Records) | exact; 1e-15 relative |
+| `test_structure_pipeline.py::test_a_written_run_without_a_structure_block_has_no_structure_key` | the fixed-guidance experiment of the output capture (pad and silo_cold) resolved with and without a structure loader writes the same metrics.json and summary.md (timestamp and git normalised) and no structure key in them or in resolved_config.yaml (two short flights; 2.9 s unloaded on the development machine, so in the fast tier; both runs by the current code: the start commit's side rests on the output capture of test_planar_pipeline.py, metrics.json's key paths everywhere and summary.md's normalised sha256 in the capture environment, and on the dict digests of `test_sp1s_resolved_and_solved_dicts_are_unchanged`; metrics.json's values before versus after are not byte-pinned) (Records) | exact |
+| `test_structure_pipeline.py::test_structure_off_headline_reproduces_sp1`, `::test_constant_2t_cross_check_equals_sp1s_penalty_row`, `::test_structural_solve_charges_dm_through_the_pipeline` (slow) | SP1's experiment at the shipped budget through `planar_offload`: P_ref, silo_cold_s1's x* and its verification's P* equal the record (26,054.396243494975; 41,262.90803733282; 26,054.404695649962 kg); a constant 2,000.0 kg on stage 1 in place of the sizing equals silo_cold_s1_dry+2t (x* 32,285.203295407457 kg, its verification's P* 26,054.39923045693 kg), two sizings, the recorded run's dict 24.2 t under the provenance, `xv_dry_mass_delta_kg` 2,000 kg; a structural case on the synthetic file solved beside the headline with `xv_dry_mass_delta_kg` = dm1 + dm2, no `offload_nonmonotone`, the cap not reached, decomposition explained; measured differences 0.0 kg, 309 s for the module (Pins) | 0.002 kg; 1e-6 kg |
 | `test_golden_dump_fields.py::test_dataclasses_dumped_field_by_field_keep_their_fields`, `::test_dataclasses_reached_by_attribute_keep_their_fields`, `::test_pinned_budget_fields_are_the_recorded_golden_keys` | D-SP7-27: the field lists of every dataclass the 1-D golden dump reaches (LossBudget and AssistEnergyBudget, converted field by field, and frozen; Result, RunResult, ResolvedRun, SweepPoint, SensitivityRow, ExperimentResult, SweepResult, read by attribute) pinned in order; the two budgets' lists equal the keys of every non-null budget in the golden objects.json files | exact |
 | `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |

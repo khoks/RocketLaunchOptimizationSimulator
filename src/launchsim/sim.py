@@ -28,6 +28,16 @@ by), ``structure_screened_search`` runs searches A to C, and ``structure_sets_re
 ``structure_search_method`` give the structure file's frozen ``sets`` block as plain data
 (the caller writes it; frame: the stack axis).
 
+The coupling to the offload solve (SP7 step S3; docs/physics.md, "Coupling the structure
+to the offload solve"): ``StructureTransform`` is the vehicle transform of a structural
+offload case (``offload.VehicleTransform``), built once per case by
+``build_structure_transform`` (the geometry from the full-load vehicle, the envelope from
+the pad's own flight, closed over) or, from a resolved case and its pad,
+``offload_structure_transform``; each call sizes the analytic constant_accel push of the
+vehicle it is given by a short fixed-point iteration and adds dm to the stages' dry
+masses (``charge_structure``); ``structure_record`` gives the run-level record keys and
+``structure_assumption`` the run's assumption line.
+
 The reporting pipeline lives in sibling modules. Every name sim.py defined before the
 split (plus ``NoAssist``) is re-exported here (``__all__``), so each
 ``launchsim.sim.<name>`` import path of Phase 1 keeps working; library names sim.py
@@ -48,7 +58,11 @@ Monkeypatch seams: ``results_io`` and ``compare.run_sensitivity`` look ``run_res
 what the entry points execute, and patching a name that ``simulate`` or ``run`` calls
 reaches those two. The offload pass of ``results_io`` (SP1 step 7) also looks up
 ``solve_resolved_offload``, ``offload_run_result``, ``matched_run``, ``rerun_resolved``,
-``with_assumptions`` and the offload assumption texts here at call time. These are the
+``with_assumptions`` and the offload assumption texts (``OFFLOAD_ASSUMPTIONS``,
+``offload_penalty_assumption``) here at call time, and (SP7 step S3)
+``offload_structure_transform``, ``structure_record``, ``structure_assumption``,
+``with_structure_items``, ``without_assumptions`` and
+``OFFLOAD_STRUCTURE_ASSUMPTIONS``. These are the
 only live seams on ``sim``: every other reporting
 function (``compare``, ``write_plots``, ``experiment_summary``, ``write_run``,
 ``metrics_record``, ...) is bound in its owning module, so patching it on ``sim`` has no
@@ -63,6 +77,7 @@ The result types (``Result``, ``RunResult``) are imported by the sibling modules
 
 from __future__ import annotations
 
+import itertools
 import math
 import time
 from collections.abc import Mapping, Sequence
@@ -124,9 +139,12 @@ from launchsim.config import (
     NO_SEARCH,
     PLANAR_2D,
     SEARCHED_FIGURES,
+    STRUCTURE_SIZING_FULL_LOAD,
     ChecksConfig,
     ResolvedExperiment,
+    ResolvedOffloadCase,
     ResolvedRun,
+    ResolvedStructureCase,
     RunConfig,
     StructureConfig,
 )
@@ -197,6 +215,7 @@ from launchsim.metrics_planar import (  # re-exported
 from launchsim.offload import (
     OffloadResult,
     ProblemFactory,
+    VehicleTransform,
     planar_problem_factory,
     solve_offload,
 )
@@ -307,6 +326,7 @@ from launchsim.structure import (
     PUSH,
     CoefficientRange,
     CoefficientValue,
+    Envelope,
     Increment,
     LoadCase,
     PadLoadSet,
@@ -317,9 +337,11 @@ from launchsim.structure import (
     SearchEvaluator,
     SizingCase,
     SizingFn,
+    StackGeometry,
     StackLayout,
     StackMasses,
     StageMasses,
+    StructureFlag,
     build_geometry,
     implied_stack_length_m,
     pad_load_set,
@@ -377,6 +399,7 @@ from launchsim.vehicle import (
     propellant_burned_kg,
     with_offload,
     with_payload,
+    with_stage_dry_mass,
 )
 
 # Every name sim.py defined before the split (Phase 1), whether defined here or
@@ -420,6 +443,7 @@ __all__ = [
     "NOT_A_REPO_MARKER",
     "NOT_UNTIL_PHASE2",
     "OFFLOAD_ASSUMPTIONS",
+    "OFFLOAD_STRUCTURE_ASSUMPTIONS",
     "OMEGA_P_PHASE1_RADS",
     "PHASE1_ASSUMPTIONS",
     "PLANAR_ASSUMPTIONS",
@@ -616,6 +640,7 @@ __all__ = [
     "variant_rows",
     "variants_table",
     "with_assumptions",
+    "without_assumptions",
     "write_csv",
     "write_failure_marker",
     "write_json",
@@ -1738,7 +1763,20 @@ OFFLOAD_ASSUMPTIONS: tuple[str, ...] = (
     "centre-of-gravity or tank-mass effect is modelled",
 )
 """The assumptions every offloaded run carries (a case's recorded run, a fixed case's
-run, a paired pad, a pad control's recorded run; docs/physics.md, "Assumptions")."""
+run, a paired pad, a pad control's recorded run; docs/physics.md, "Assumptions"). A
+structural case's recorded run carries OFFLOAD_STRUCTURE_ASSUMPTIONS in its place."""
+
+OFFLOAD_STRUCTURE_ASSUMPTIONS: tuple[str, ...] = (
+    "offload: the propellant removed from a full load leaves the tanks partly filled; "
+    "every dry mass is unchanged except for the modelled structural increment of the push "
+    "load (the structure line), and the engine, the payload, the fairing and the "
+    "aerodynamics are unchanged and each stage keeps its mixture ratio; no ullage, "
+    "centre-of-gravity or tank-mass effect is modelled",
+)
+"""OFFLOAD_ASSUMPTIONS for a structural case's recorded run (SP7 step S3), whose dry
+masses do carry the modelled increment: the sentence "every dry mass ... unchanged" would
+contradict the structure line one line below it, so the run carries this variant instead
+(``results_io._offload_assumptions``; S3a words the caveats)."""
 
 
 def offload_penalty_assumption(added_t: float) -> str:
@@ -1759,6 +1797,15 @@ def with_assumptions(rr: RunResult, lines: Sequence[str]) -> RunResult:
     return replace(rr, result=result)
 
 
+def without_assumptions(rr: RunResult, lines: Sequence[str]) -> RunResult:
+    """rr with the given assumption lines removed (the others keep their order); rr
+    itself when none of them is present."""
+    kept = [line for line in rr.result.assumptions if line not in lines]
+    if len(kept) == len(rr.result.assumptions):
+        return rr
+    return replace(rr, result=replace(rr.result, assumptions=kept))
+
+
 def offload_problem_factory(resolved: ResolvedRun) -> ProblemFactory:
     """The planar problem factory of a resolved run (``offload.planar_problem_factory``
     of its SearchContext, built as ``run_planar`` builds it: ``planar_setup`` and
@@ -1769,14 +1816,24 @@ def offload_problem_factory(resolved: ResolvedRun) -> ProblemFactory:
 
 
 def solve_resolved_offload(
-    resolved: ResolvedRun, mode: OffloadMode, reference_payload_kg: float
+    resolved: ResolvedRun,
+    mode: OffloadMode,
+    reference_payload_kg: float,
+    *,
+    transform: VehicleTransform | None = None,
 ) -> OffloadResult:
     """``offload.solve_offload`` on a resolved run's vehicle along mode at the reference
     payload P_ref [kg], without its built-in verification (the pipeline verifies with
-    ``run_resolved`` of the offloaded run, ``offload.with_verification``). Looked up on
+    ``run_resolved`` of the offloaded run, ``offload.with_verification``); a structural
+    case passes its ``StructureTransform`` (SP7 step S3; None: SP1's solve). Looked up on
     this module at call time by ``results_io``."""
     factory = offload_problem_factory(resolved)
-    return solve_offload(factory, resolved.to_vehicle(), mode, reference_payload_kg, verify=False)
+    vehicle = resolved.to_vehicle()
+    if transform is None:
+        return solve_offload(factory, vehicle, mode, reference_payload_kg, verify=False)
+    return solve_offload(
+        factory, vehicle, mode, reference_payload_kg, verify=False, transform=transform
+    )
 
 
 def offload_run_result(resolved: ResolvedRun, offload: OffloadResult) -> RunResult:
@@ -2061,6 +2118,474 @@ def constant_accel_push_load(
             case=release,
         ),
     )
+
+
+# ----------------------------------------------------------- structure coupling (SP7 S3)
+
+STRUCTURE_FIXED_POINT_TOL_KG = 1.0e-6
+"""The inner iteration's tolerance [kg] (design 4.4): a transform call stops when the
+larger of the two stages' |dm_k+1 - dm_k| falls below it (the push's interface force
+depends on the vehicle mass, dm included)."""
+STRUCTURE_FIXED_POINT_MAX_ITERATIONS = 25
+"""The inner iteration's cap (sizings per transform call): reaching it before the
+tolerance raises ``structure.FLAG_FIXED_POINT_CAP``. Design 4.4 wrote 10; D-SP7-44 raised
+it to 25 after the gate file's outer_high_mass set was measured to need exactly 10 (its
+contraction 0.050 against the gate file's central 0.0057), leaving the flag no margin; the loop
+breaks on convergence, so the raise costs a converging call nothing."""
+
+
+def charge_structure(vehicle: Vehicle, dm_stage1_kg: float, dm_stage2_kg: float) -> Vehicle:
+    """vehicle with a modelled structural increment added to its first two stages' dry
+    masses [kg] (``vehicle.with_stage_dry_mass``; design 4.4: dm1 on stage 1, the
+    interstage included (D-SP7-36), dm2 on stage 2); a zero increment leaves its stage
+    alone, so dm = 0 returns the vehicle itself. Pure."""
+    out = vehicle
+    for i, dm in enumerate((dm_stage1_kg, dm_stage2_kg)):
+        if dm != 0.0:
+            out = with_stage_dry_mass(out, i, out.stages[i].dry_mass_kg + dm)
+    return out
+
+
+@dataclass(frozen=True, eq=False)
+class StructureSizing:
+    """One sizing of a structural transform for one vehicle (``StructureTransform.sizing``;
+    design 4.4).
+
+    dm_stage1_kg (the stage-1 elements and the interstage, D-SP7-36) and dm_stage2_kg
+    [kg]: the last iterate, the increment the transform adds; increment: the Increment
+    that gave it (sized on the vehicle carrying the iterate before); iterations: the
+    sizings made (each call starts from dm = 0, so the first sizes the uncharged vehicle);
+    capped: True when STRUCTURE_FIXED_POINT_MAX_ITERATIONS was reached before the
+    tolerance; steps: each iteration's larger |dm_k+1 - dm_k| of the two stages [kg]
+    (the first is |dm_1 - 0|).
+    """
+
+    dm_stage1_kg: float
+    dm_stage2_kg: float
+    increment: Increment
+    iterations: int
+    capped: bool
+    steps: tuple[float, ...]
+
+    @property
+    def total_kg(self) -> float:
+        """dm_stage1_kg + dm_stage2_kg [kg]."""
+        return self.dm_stage1_kg + self.dm_stage2_kg
+
+    @property
+    def contraction(self) -> float | None:
+        """The measured contraction of the iteration [-]: the largest ratio of consecutive
+        nonzero steps after the first (step k+1 over step k, k >= 2); None with fewer than
+        three steps or no nonzero pair (a constant dm converges in two)."""
+        ratios = [b / a for a, b in itertools.pairwise(self.steps[1:]) if a > 0.0]
+        return max(ratios) if ratios else None
+
+
+@dataclass(frozen=True, eq=False)
+class StructureTransform:
+    """The structural transform of one structural offload case (SP7 step S3; design 4.4,
+    D-SP7-20; an ``offload.VehicleTransform``): the vehicle offloaded by x at its own
+    payload P0 and P_ref [kg] to the same vehicle with the modelled dm added to its dry
+    masses.
+
+    settings: the case's ResolvedStructureCase; geometry: built once from the full-load
+    vehicle (D-SP7-13) and closed over; envelope: built once from the pad's own flight
+    (both stages, at the case's margin and cap); layout; assist, track and g_eff_mps2
+    [m/s^2]: the case's push (constant_accel); stage1_ignition_s [s]: stage 1's ignition
+    from the push start when it lights on the track (None: cold); start_vehicle: the
+    solve's full-load vehicle (x = 0, payload P0); mode: the solve's offload mode;
+    reference_payload_kg: P_ref [kg]; envelope_pad: the name of the run whose flight is
+    the envelope; envelope_pad_key: its ``compare.trajectory_key``.
+
+    Pure and deterministic: a call depends on its arguments and these fields only and
+    starts from dm = 0, so ``OffloadProblem.vehicle_at(x)`` gives the same bits in any
+    call order. Frame: the stack axis.
+    """
+
+    settings: ResolvedStructureCase
+    geometry: StackGeometry
+    envelope: Envelope
+    layout: StackLayout
+    assist: ConstantAccelAssist
+    track: TrackGeometry
+    g_eff_mps2: float
+    stage1_ignition_s: float | None
+    start_vehicle: Vehicle
+    mode: OffloadMode
+    reference_payload_kg: float
+    envelope_pad: str
+    envelope_pad_key: str
+
+    @property
+    def memo_key(self) -> tuple[str, str]:
+        """What the offload pass's solve and run memos add for this transform (design 4.4,
+        "Memo"): the structure key (settings, file and its sha256) and the envelope pad's
+        trajectory key."""
+        return (self.settings.key, self.envelope_pad_key)
+
+    def push(self, vehicle: Vehicle) -> PushLoad:
+        """The analytic constant_accel push of vehicle (its masses as flown, dm included)
+        (``constant_accel_push_load``)."""
+        return constant_accel_push_load(
+            vehicle,
+            self.assist,
+            self.track,
+            self.layout,
+            g_eff_mps2=self.g_eff_mps2,
+            stage1_ignition_s=self.stage1_ignition_s,
+        )
+
+    def iterate(self, flown: Vehicle) -> StructureSizing:
+        """The fixed point dm = S(push(flown + dm)) from dm = 0 (design 4.4): sized with
+        ``structure.size_increment`` on the closed-over geometry and envelope until the
+        larger stage step is below STRUCTURE_FIXED_POINT_TOL_KG, at most
+        STRUCTURE_FIXED_POINT_MAX_ITERATIONS sizings. flown: the vehicle at the payload it
+        flies [kg]."""
+        st = self.settings
+        dm1 = dm2 = 0.0
+        steps: list[float] = []
+        increment: Increment | None = None
+        for _ in range(STRUCTURE_FIXED_POINT_MAX_ITERATIONS):
+            increment = structure.size_increment(
+                self.geometry,
+                st.coefficients,
+                self.envelope,
+                self.push(charge_structure(flown, dm1, dm2)),
+                dynamic=st.dynamic,  # type: ignore[arg-type]
+                entry=st.entry,  # type: ignore[arg-type]
+            )
+            n1, n2 = increment.dm_stage1_kg, increment.dm_stage2_kg
+            steps.append(max(abs(n1 - dm1), abs(n2 - dm2)))
+            dm1, dm2 = n1, n2
+            if steps[-1] < STRUCTURE_FIXED_POINT_TOL_KG:
+                break
+        assert increment is not None
+        capped = steps[-1] >= STRUCTURE_FIXED_POINT_TOL_KG
+        return StructureSizing(dm1, dm2, increment, len(steps), capped, tuple(steps))
+
+    def sizing(self, vehicle: Vehicle, payload_kg: float) -> StructureSizing:
+        """The sizing a call with vehicle (offloaded, at its own payload) and payload_kg
+        [kg] charges: ``flown`` sizes vehicle flying payload_kg; ``full_load`` sizes the
+        full-load start vehicle flying payload_kg (x = 0), whatever vehicle is given."""
+        base = self.start_vehicle if self.settings.sizing == STRUCTURE_SIZING_FULL_LOAD else vehicle
+        return self.iterate(with_payload(base, payload_kg))
+
+    def __call__(self, vehicle: Vehicle, payload_kg: float) -> Vehicle:
+        """vehicle with the sizing's dm added to its dry masses (``charge_structure``); its
+        payload is kept (the solve flies P_ref on it)."""
+        s = self.sizing(vehicle, payload_kg)
+        return charge_structure(vehicle, s.dm_stage1_kg, s.dm_stage2_kg)
+
+    def sizing_at(self, offload_kg: float) -> StructureSizing:
+        """The sizing the solve charges at offload x = offload_kg [kg] along the mode at
+        P_ref (what ``OffloadProblem.vehicle_at(x)`` added)."""
+        offloaded = with_offload(self.start_vehicle, self.mode, offload_kg)
+        return self.sizing(offloaded, self.reference_payload_kg)
+
+
+def build_structure_transform(
+    settings: ResolvedStructureCase,
+    full_load_vehicle: Vehicle,
+    start: ResolvedRun,
+    mode: OffloadMode,
+    pad_cases: PadLoadSet,
+    reference_payload_kg: float,
+    *,
+    envelope_pad: str,
+    envelope_pad_key: str,
+) -> StructureTransform:
+    """The StructureTransform of a structural case (design 4.4), built once.
+
+    Inputs: settings, the case's resolved structure; full_load_vehicle, the variant's
+    vehicle at its full loads (the geometry's masses, D-SP7-13); start, the solve's start
+    run (its push: assist, track, the site's g_eff, stage 1's ignition; its vehicle is the
+    solve's x = 0); mode, the offload mode; pad_cases, the pad's PadLoadSet (the envelope);
+    reference_payload_kg, P_ref [kg]; envelope_pad and envelope_pad_key, the pad run's
+    name and trajectory key (the records and the memo key).
+    Output: the transform. Raises ValueError for a start with no push and
+    NotImplementedError for a drive other than constant_accel (a flown push inside the
+    transform is step S4b's). Frame: the stack axis.
+    """
+    config = settings.file.config
+    layout = config.stack_layout()
+    coeffs = settings.coefficients
+    start_vehicle = start.to_vehicle()
+    setup = planar_setup(start.run, start_vehicle)
+    assist = setup.assist
+    if setup.track is None or isinstance(assist, NoAssist):
+        raise ValueError(f"run {start.name!r}: structure sizes the push load, but it has no push")
+    if not isinstance(assist, ConstantAccelAssist):
+        raise NotImplementedError(
+            f"run {start.name!r}: the structural transform sizes a constant_accel push "
+            f"analytically; a {type(assist).__name__} push is flown inside the transform "
+            "in SP7 step S4b, not built yet"
+        )
+    geometry = build_geometry(stack_masses(full_load_vehicle), layout, coeffs)
+    envelope = structure.build_envelope(
+        geometry,
+        coeffs,
+        pad_cases,
+        margin=settings.margin,
+        envelope_cap_g=settings.envelope_cap_g,
+    )
+    t_push = assist.push_time_s(setup.track.length_m)
+    return StructureTransform(
+        settings=settings,
+        geometry=geometry,
+        envelope=envelope,
+        layout=layout,
+        assist=assist,
+        track=setup.track,
+        g_eff_mps2=setup.env.g_ref_mps2,
+        stage1_ignition_s=_push_stage1_ignition_s(setup, start_vehicle, t_push),
+        start_vehicle=start_vehicle,
+        mode=mode,
+        reference_payload_kg=reference_payload_kg,
+        envelope_pad=envelope_pad,
+        envelope_pad_key=envelope_pad_key,
+    )
+
+
+def offload_structure_transform(
+    case: ResolvedOffloadCase, pad: RunResult, reference_payload_kg: float
+) -> StructureTransform:
+    """The StructureTransform of a resolved structural offload case against its pad
+    (``results_io`` looks it up here at call time): the envelope from the pad's own flight
+    (``structure_pad_cases`` of its Result on its vehicle at the payload it flew, P_ref;
+    for a sensitivity arm, the pad flown under the same perturbation), the geometry from
+    the case's variant at its full loads, the push of the case's start. ValueError for a
+    case without structure."""
+    settings = case.structure
+    if settings is None:
+        raise ValueError(f"offload case {case.name!r} has no structure")
+    layout = settings.file.config.stack_layout()
+    pad_vehicle = with_payload(pad.resolved.to_vehicle(), reference_payload_kg)
+    cases = pad_load_set(structure_pad_cases(pad.result, pad_vehicle, layout, label=pad.name))
+    return build_structure_transform(
+        settings,
+        case.variant.to_vehicle(),
+        case.start,
+        case.config.mode,
+        cases,
+        reference_payload_kg,
+        envelope_pad=pad.name,
+        envelope_pad_key=trajectory_key(pad.resolved),
+    )
+
+
+def _flag_record(flag: StructureFlag) -> dict[str, Any]:
+    """A structure flag as plain data: name, fired and its numbers by key."""
+    return {"name": flag.name, "fired": flag.fired, "values": dict(flag.values)}
+
+
+def structure_record(
+    transform: StructureTransform, at_x: StructureSizing | None, at_zero: StructureSizing
+) -> dict[str, Any]:
+    """The run-level record keys of a structural run (design 4.4, "Records"; SP7 step S3),
+    in this order, for the case record and the recorded run's metrics: structure_charged
+    (True); structure_dm_kg, dm1 + dm2 at x* [kg], and structure_dm_stage2_kg, dm2 [kg]
+    (dm1 the difference); structure_dm_x0_kg, dm1 + dm2 at x = 0 [kg]; structure_set,
+    structure_sizing, structure_dynamic, structure_entry, structure_margin [-],
+    structure_envelope_cap_g [g0 or None], structure_overrides (the case's design-axis
+    coefficients by path, file units; {} when none; D-SP7-43: the coefficients that sized
+    dm are on disk, not only in the memo key); at x*: structure_dlf [-], structure_t_r_s and
+    structure_f_Hz (the rise time [s] and axial frequency [Hz] behind it),
+    structure_n_q_g and structure_n_peak_g [g0], structure_F_peak_N [N],
+    structure_ramp_cost_rel (the constant_accel plateau's raise (a' - a)/a [-]),
+    structure_elements (kg per ``<stage>.<element>``), structure_closed_form_kg and
+    structure_ring_kg [kg], structure_governing (the element with the largest increment:
+    stage, element, push and envelope modes, station index, height z [m], the envelope
+    case's index and label; None when dm is 0), structure_flags (each of
+    structure.size_increment's flags and FLAG_FIXED_POINT_CAP, fired or not, with their
+    numbers; the cap flag's: iterations, last_step_kg, tolerance_kg, max_iterations and
+    contraction, the measured step ratio, so a call at the cap's edge can be told from a
+    comfortably converged one on disk), structure_iterations (the sizings at x*), structure_file and
+    structure_file_sha256, structure_envelope_pad (the run whose flight is the envelope).
+    at_x and at_zero: the transform's sizings at x* and at x = 0; at_x None for a solve
+    that found no x* (search_failed): every key at x* is then None (the flags an empty
+    list), the settings, dm at x = 0 and the file are still recorded, so the record says
+    the case was structural."""
+    st = transform.settings
+    if at_x is None:
+        out = dict.fromkeys(STRUCTURE_RECORD_KEYS)
+        out.update(
+            {
+                "structure_charged": True,
+                "structure_dm_x0_kg": at_zero.total_kg,
+                "structure_set": st.set_name,
+                "structure_sizing": st.sizing,
+                "structure_dynamic": st.dynamic,
+                "structure_entry": st.entry,
+                "structure_margin": st.margin,
+                "structure_envelope_cap_g": st.envelope_cap_g,
+                "structure_overrides": dict(st.overrides),
+                "structure_flags": [],
+                "structure_file": st.file.path,
+                "structure_file_sha256": st.file.sha256,
+                "structure_envelope_pad": transform.envelope_pad,
+            }
+        )
+        return out
+    inc = at_x.increment
+    req = inc.requirement
+    gov = inc.governing
+    governing = None
+    if gov is not None:
+        case = gov.envelope_case
+        label = None
+        if case is not None and case >= 0:
+            label = transform.envelope.pad.cases[case].label
+        governing = {
+            "stage": gov.stage,
+            "element": gov.element,
+            "push_mode": gov.push_mode,
+            "envelope_mode": gov.envelope_mode,
+            "station_index": gov.station_index,
+            "z_m": gov.z_m,
+            "envelope_case": case,
+            "envelope_case_label": label,
+        }
+    cap = {
+        "name": structure.FLAG_FIXED_POINT_CAP,
+        "fired": at_x.capped,
+        "values": {
+            "iterations": at_x.iterations,
+            "last_step_kg": at_x.steps[-1],
+            "tolerance_kg": STRUCTURE_FIXED_POINT_TOL_KG,
+            "max_iterations": STRUCTURE_FIXED_POINT_MAX_ITERATIONS,
+            "contraction": at_x.contraction,
+        },
+    }
+    return {
+        "structure_charged": True,
+        "structure_dm_kg": at_x.total_kg,
+        "structure_dm_stage2_kg": at_x.dm_stage2_kg,
+        "structure_dm_x0_kg": at_zero.total_kg,
+        "structure_set": st.set_name,
+        "structure_sizing": st.sizing,
+        "structure_dynamic": st.dynamic,
+        "structure_entry": st.entry,
+        "structure_margin": st.margin,
+        "structure_envelope_cap_g": st.envelope_cap_g,
+        "structure_overrides": dict(st.overrides),
+        "structure_dlf": req.dlf,
+        "structure_t_r_s": req.rise_time_s,
+        "structure_f_Hz": req.axial_frequency_hz,
+        "structure_n_q_g": req.n_quasi_g,
+        "structure_n_peak_g": req.n_peak_g,
+        "structure_F_peak_N": req.f_peak_N,
+        "structure_ramp_cost_rel": req.ramp_cost_rel,
+        "structure_elements": {f"{e.stage}.{e.element}": e.kg for e in inc.elements},
+        "structure_closed_form_kg": inc.closed_form_kg,
+        "structure_ring_kg": inc.ring_kg,
+        "structure_governing": governing,
+        "structure_flags": [*(_flag_record(f) for f in inc.flags), cap],
+        "structure_iterations": at_x.iterations,
+        "structure_file": st.file.path,
+        "structure_file_sha256": st.file.sha256,
+        "structure_envelope_pad": transform.envelope_pad,
+    }
+
+
+STRUCTURE_RECORD_KEYS: tuple[str, ...] = (
+    "structure_charged",
+    "structure_dm_kg",
+    "structure_dm_stage2_kg",
+    "structure_dm_x0_kg",
+    "structure_set",
+    "structure_sizing",
+    "structure_dynamic",
+    "structure_entry",
+    "structure_margin",
+    "structure_envelope_cap_g",
+    "structure_overrides",
+    "structure_dlf",
+    "structure_t_r_s",
+    "structure_f_Hz",
+    "structure_n_q_g",
+    "structure_n_peak_g",
+    "structure_F_peak_N",
+    "structure_ramp_cost_rel",
+    "structure_elements",
+    "structure_closed_form_kg",
+    "structure_ring_kg",
+    "structure_governing",
+    "structure_flags",
+    "structure_iterations",
+    "structure_file",
+    "structure_file_sha256",
+    "structure_envelope_pad",
+)
+"""The run-level keys ``structure_record`` writes, in order (design 4.4): only a
+structural run carries any of them."""
+
+
+def structure_assumption(settings: ResolvedStructureCase, envelope_pad: str) -> str:
+    """The assumption line of a structural run (SP7 step S3; neutral: S3a words the
+    caveats): the model, the file, the set, the case's sizing, dynamic, entry, margin and
+    cap, and any overrides (``settings.provenance``, D-SP7-43: the one string that is
+    also the restated dry mass's source), and the run whose flight is the envelope. The
+    run carries it after OFFLOAD_STRUCTURE_ASSUMPTIONS
+    (``results_io._offload_assumptions``)."""
+    return (
+        "structure: the dry masses carry the modelled structural mass of the push load "
+        f"({settings.provenance}; the envelope is {envelope_pad}'s own flight)"
+    )
+
+
+def _structure_flag_line(flag: Mapping[str, Any]) -> str:
+    """The run flag of a fired structure flag record (``_flag_record``'s form: name,
+    fired, values): ``<name>: <what fired, with its numbers>``. The release, upper-stack
+    and payload-limit checks are flags with numbers, never sized and never blocking
+    (D-SP7-19); the cap flag names the cap, the last step and the tolerance. A name this
+    function does not know gets a generic line pointing at ``structure_flags``."""
+    name, v = flag["name"], flag["values"]
+    if name == structure.FLAG_FIXED_POINT_CAP:
+        return (
+            f"{name}: the structural fixed point stopped at its cap of "
+            f"{v['max_iterations']} sizings, last step {v['last_step_kg']:.3g} kg "
+            f"(tolerance {v['tolerance_kg']:g} kg)"
+        )
+    if name == structure.FLAG_RELEASE_UNLOAD:
+        return (
+            f"{name}: the push's instant release unloads the stack further than the pad's "
+            f"MECO shutdown (release swing {v['release_swing_g']:.3g} g0 against MECO's "
+            f"{v['meco_swing_g']:.3g} g0; stage-1 LOX and RP-1 bottom pressures "
+            f"{v['lox_bottom_pressure_min_abs_pa']:.3g} and "
+            f"{v['rp1_bottom_pressure_min_abs_pa']:.3g} Pa absolute; common-dome reverse "
+            f"pressure {v['common_dome_reverse_pressure_pa']:.3g} Pa against MECO's "
+            f"{v['meco_common_dome_reverse_pressure_pa']:.3g} Pa; upper-stack swing "
+            f"{v['upper_stack_swing_N']:.3g} N against MECO's "
+            f"{v['meco_upper_stack_swing_N']:.3g} N)"
+        )
+    if name == structure.FLAG_UPPER_STACK:
+        return (
+            f"{name}: the push's peak upper-stack load {v['push_n_upper_N']:.4g} N exceeds "
+            f"the pad envelope's {v['envelope_n_upper_N']:.4g} N, so stage 2's tanks and the "
+            "interstage were sized"
+        )
+    if name == structure.FLAG_PAYLOAD_LIMIT:
+        return (
+            f"{name}: the push's peak axial load {v['n_peak_g']:.3g} g0 and release swing "
+            f"{v['release_swing_g']:.3g} g0 against the payload's axial limits "
+            f"{v['limit_axial_min_g']:g} to {v['limit_axial_max_g']:g} g0"
+        )
+    return f"{name}: fired (its numbers are in structure_flags)"
+
+
+def with_structure_items(rr: RunResult, items: Mapping[str, Any]) -> RunResult:
+    """rr with the structural record keys appended to its metrics (``structure_record``)
+    and every fired structure flag (the release, upper-stack and payload-limit flags of
+    ``size_increment`` and the cap flag, in ``structure_flags`` order) appended to its
+    flags as one line each (``_structure_flag_line``), so the case record's ``flags``,
+    summary.md and a sweep's ``n_flags`` see them; the numbers stay in
+    ``structure_flags``. Informational (D-SP7-19): no flag changes a status."""
+    metrics = {**rr.result.metrics, **items}
+    flags = list(rr.result.flags)
+    for flag in items.get("structure_flags", ()):
+        if flag["fired"]:
+            flags.append(_structure_flag_line(flag))
+    return replace(rr, result=replace(rr.result, metrics=metrics, flags=flags))
 
 
 # ------------------------------------------------------------------- structure search (SP7 S2)

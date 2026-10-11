@@ -45,7 +45,8 @@ geometry and envelope and sizes, the search's one call), the flags of design 4.2
 ring's torsion-and-shear check (``ring_frame_section``), the interstage and
 thrust-structure rows and the plausibility rule (``plausibility``, ``widen_band``). The
 structure file and its conversion live in config.py, the Result adapters in sim.py, and
-the coupling to the offload solve arrives in S3.
+the coupling to the offload solve (SP7 step S3: sim.StructureTransform, which sizes the
+push with ``size_increment`` on a geometry and envelope built once per case) too.
 
 The screened search (S2, source note section 9.3) is pure too: ``band_search`` (design
 4.2.6 steps 1-4: the tornado, the scans, step 3's enumeration, the polish of D-SP7-38 and
@@ -1196,6 +1197,10 @@ partition: any size gives the same envelope; 32 keeps the bound matrix small).""
 FLAG_RELEASE_UNLOAD = "structure_release_unload"
 FLAG_UPPER_STACK = "structure_upper_stack_exceeded"
 FLAG_PAYLOAD_LIMIT = "structure_payload_limit"
+FLAG_FIXED_POINT_CAP = "structure_fixed_point_cap"
+"""The flags of design 4.2.2: the release, the upper stack, the payload limits (sized by
+``size_increment``) and the inner fixed point of the offload coupling hitting its cap
+(sim.StructureTransform, SP7 step S3)."""
 
 MECO_AMBIENT_PA: float = 0.0
 """The ambient pressure [Pa] the release flag takes at the pad's MECO (its load case

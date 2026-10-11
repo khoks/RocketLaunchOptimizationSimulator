@@ -41,6 +41,18 @@ offloaded by x*) must reproduce P_ref within ``checks.search_final_flag_rel`` x 
 (flag ``offload_verify_mismatch`` otherwise). Flags start with ``OFFLOAD_FLAG_PREFIX``; a
 SearchFailed becomes the status ``search_failed`` carrying its kind.
 
+**The vehicle transform (SP7 step S3).** An OffloadProblem may carry a ``transform``
+(``VehicleTransform``: the offloaded vehicle at its own payload P0 and P_ref [kg] to a
+vehicle): ``vehicle_at(x)`` applies it after ``with_offload``, so every evaluation, the
+recorded run, ``OffloadResult.offloaded_vehicle`` and the verification fly the same
+transformed vehicle, and the transform is applied exactly once (``verify_offload`` takes
+the offloaded vehicle as it is). sim.py's structural transform adds the modelled
+structural mass dm(x) of the push load to the stages' dry masses (docs/physics.md,
+"Coupling the structure to the offload solve"). The solver relies on the transform being
+pure and deterministic, as it relies on the factory (``vehicle_at`` is called again for the
+same x by the recorded run and the result). With None every line of SP1's path is
+unchanged.
+
 Pure: no I/O, no globals, no printing. SI units: masses [kg], speeds [m/s], angles
 [rad]; frames are the factory's problem's (planar ECI for the SearchContext).
 """
@@ -85,6 +97,11 @@ from launchsim.vehicle import (
 type ProblemFactory = Callable[[Vehicle], RecordingProblem]
 """A problem factory: the RecordingProblem of a vehicle (its payload P0 is the vehicle's
 own; every other parameter is the factory's)."""
+type VehicleTransform = Callable[[Vehicle, float], Vehicle]
+"""A vehicle transform of an offload solve (SP7 step S3): the vehicle offloaded by x (at
+its own payload P0) and the reference payload P_ref [kg] to the vehicle the solve flies at
+x (sim.StructureTransform adds the modelled structural mass). Must be pure and
+deterministic: the same vehicle and P_ref give the same vehicle, bit for bit."""
 
 OFFLOAD_FLAG_PREFIX = "offload:"
 """Prefix of every flag an offload solve raises."""
@@ -155,14 +172,16 @@ class OffloadProblem:
     factory: vehicle -> RecordingProblem; vehicle: the full-load vehicle (its own payload
     is not flown here: every evaluation flies reference_payload_kg); mode: one of
     ``vehicle.OFFLOAD_MODES``; reference_payload_kg: P_ref [kg]; budget: the shared
-    SearchBudget, the factory's problem's (``from_factory``). Frame: the factory's
-    problem's."""
+    SearchBudget, the factory's problem's (``from_factory``); transform: an optional
+    VehicleTransform that ``vehicle_at`` applies after the offload (None: SP1's path,
+    unchanged). Frame: the factory's problem's."""
 
     factory: ProblemFactory
     vehicle: Vehicle
     mode: OffloadMode
     reference_payload_kg: float
     budget: SearchBudget
+    transform: VehicleTransform | None = None
 
     def __post_init__(self) -> None:
         offload_load_kg(self.vehicle, self.mode)  # ValueError for a mode the vehicle lacks
@@ -177,10 +196,13 @@ class OffloadProblem:
         vehicle: Vehicle,
         mode: OffloadMode,
         reference_payload_kg: float,
+        transform: VehicleTransform | None = None,
     ) -> OffloadProblem:
-        """The problem of factory, vehicle, mode and P_ref [kg], with the budget of
-        ``factory(vehicle)``."""
-        return cls(factory, vehicle, mode, reference_payload_kg, factory(vehicle).budget)
+        """The problem of factory, vehicle, mode, P_ref [kg] and the optional transform,
+        with the budget of ``factory(vehicle)`` (the budget does not depend on the
+        vehicle's masses)."""
+        budget = factory(vehicle).budget
+        return cls(factory, vehicle, mode, reference_payload_kg, budget, transform)
 
     @property
     def payload_kg(self) -> float:
@@ -196,12 +218,16 @@ class OffloadProblem:
 
     def vehicle_at(self, offload_kg: float) -> Vehicle:
         """The vehicle offloaded by offload_kg [kg] along the mode
-        (``vehicle.with_offload``); OffloadInfeasible when a stage would keep no
-        propellant."""
+        (``vehicle.with_offload``), then, when the problem has one, its transform at
+        P_ref (``transform(vehicle, reference_payload_kg)``); OffloadInfeasible when a
+        stage would keep no propellant."""
         try:
-            return with_offload(self.vehicle, self.mode, offload_kg)
+            offloaded = with_offload(self.vehicle, self.mode, offload_kg)
         except OffloadRangeError as exc:
             raise OffloadInfeasible(OFFLOAD_RANGE_KIND, str(exc)) from exc
+        if self.transform is None:
+            return offloaded
+        return self.transform(offloaded, self.reference_payload_kg)
 
     def problem_at(self, offload_kg: float) -> RecordingProblem:
         """The factory's problem of the vehicle offloaded by offload_kg [kg]."""
@@ -419,7 +445,8 @@ def verify_offload(
     """The independent check of a solved offload: ``run_search`` (fresh WarmStore) on
     ``factory(offloaded)``, the vehicle offloaded by x* at its own payload P0, must end
     ok with |P* - P_ref| <= budget.final_flag_rel x P_ref [kg]
-    (``verification_from_record``)."""
+    (``verification_from_record``). ``offloaded`` is flown as given: a problem's
+    transform is already in it (``OffloadProblem.vehicle_at``), never applied again."""
     record = run_search(factory(offloaded))
     return verification_from_record(record, reference_payload_kg, budget.final_flag_rel)
 
@@ -476,9 +503,13 @@ def solve_offload(
     reference_payload_kg: float,
     *,
     verify: bool = True,
+    transform: VehicleTransform | None = None,
 ) -> OffloadResult:
     """The largest offload x* [kg] along mode at which the vehicle still carries
     reference_payload_kg (P_ref [kg]) to the factory problem's orbit, at the shared budget.
+    With a transform (SP7 step S3) every evaluation, the recorded run, the offloaded
+    vehicle and the verification fly ``transform(with_offload(vehicle, mode, x), P_ref)``
+    (``OffloadProblem.vehicle_at``); without one, SP1's solve unchanged.
 
     ``search.optimise_gamma`` (find_payload=True) on the OffloadProblem with a fresh
     OffloadWarmStore: the gamma* grid at x = 0, X1 = the search in x at the best grid
@@ -494,7 +525,7 @@ def solve_offload(
     monotonicity and verification flags and the verification search's own, all prefixed
     OFFLOAD_FLAG_PREFIX. ValueError for an unknown mode, a vehicle without the mode's
     stages, a negative P_ref, or verify with another figure of merit."""
-    problem = OffloadProblem.from_factory(factory, vehicle, mode, reference_payload_kg)
+    problem = OffloadProblem.from_factory(factory, vehicle, mode, reference_payload_kg, transform)
     budget = problem.budget
     if verify and budget.figure_of_merit != "payload":
         raise ValueError(
