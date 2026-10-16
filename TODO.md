@@ -8,7 +8,7 @@ Status marks: [x] done, [~] in progress, [ ] not started, [!] blocked or needs a
 IDs: decisions D-<phase>-<nn>; known issues KI-nnn (severity low|medium|high, status
 open|closed|wontfix, owner phase); backlog B-nnn (priority P0-P3, target phase). Numbers are
 assigned here and never reused; entries are closed or superseded in place, never deleted.
-Last updated: 2026-10-08 (SP7 started: step 0 done, the design approved with decisions D-SP7-01 to D-SP7-35; SP2 closed on 2026-10-07, commit 3a1b243).
+Last updated: 2026-10-16 (SP7 in progress at step S7a: steps 0 to S3a, checkpoint 1 and S6a done, the pre-registered runs of files A and C started from 1b5f9d4, the in-progress handoff written; decisions D-SP7-01 to D-SP7-47; SP2 closed on 2026-10-07, commit 3a1b243).
 
 ## Program
 
@@ -71,11 +71,11 @@ move it by kilograms (D-SP1-18).
 - [ ] M17 SP4 gate: 3-D scene in the app (the launch on a globe); the offload % reported on the planar and the S1 model
 - [ ] M18 SP5 gate: 3-D dynamics S2 (oblate Earth: J2, ellipsoid); offload % on the oblate model, the effects of flattening and J2 separated
 - [ ] M19 SP6 gate: 3-D dynamics S3 (6-DOF fly-out); attitude, gimbal and cold-start controllability results; attitude shown in the 3-D scene
-- [~] M20 SP7 gate (in progress since 2026-10-08; step 0 done: the design approved, D-SP7-01 to D-SP7-35): the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its exit criteria are drafted in its phase file (docs/phases/SP7-structural-mass-push-load.md, section 8, written at SP1's close-out); SP2's close fact-checked the file at 705025f and finalised its prompt (96bbfa1); SP7's Plan mode fixes the tolerances marked "proposed"
+- [~] M20 SP7 gate (in progress since 2026-10-08; on 2026-10-16 steps 0, S0, S1, S2, S3, S3b, S3a, checkpoint 1 and S6a done and S7a in hand, the step table in the phase file): the structural mass of the push load and a force-limited drive (B-004, B-005), so that the stage-1 offload SP1 reported before any structural mass (10.04% of stage 1, docs/findings/RQ1-fuel-offload-2d.md) is re-judged against a modelled structure. **Phase: SP7**, after SP2 and before SP3 (D-SP1-18). Its 12 exit criteria were approved with the design on 2026-10-08, tolerances fixed (docs/phases/SP7-structural-mass-push-load.md, section 8); SP2's close fact-checked the file at 705025f and finalised its prompt (96bbfa1)
 
 ## Priorities
 
-1. P0 SP7 (in progress since 2026-10-08; D-SP1-18, D-SP2-40): the structural mass of the push load and a force-limited drive (B-004, B-005, KI-030, KI-039; parts of B-007). It decides whether SP1's 10% of stage 1 survives.
+1. P0 SP7 (in progress since 2026-10-08; D-SP1-18, D-SP2-40): the structural mass of the push load and a force-limited drive (B-004, B-005, KI-030 and KI-021 to KI-023 open; parts of B-007; KI-039 closed 2026-10-15 in step S3a; KI-035 (S1), KI-036 and KI-038 (S3a) also closed in SP7). It decides whether SP1's 10% of stage 1 survives.
 2. P0 (standing) Physics correctness and honest tests (validation first; closed forms computed in the tests).
 3. P1 SP3, after SP7: 3-D dynamics S1, pinned against the planar gate.
 4. P2 SP4, SP5, SP6: the 3-D scene and the re-check on S1; the oblate Earth; the 6-DOF fly-out.
