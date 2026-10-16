@@ -1860,7 +1860,8 @@ OFFLOAD_STRUCTURE_ASSUMPTIONS: tuple[str, ...] = (
 """OFFLOAD_ASSUMPTIONS for a structural case's recorded run (SP7 step S3), whose dry
 masses do carry the modelled increment: the sentence "every dry mass ... unchanged" would
 contradict the structure line one line below it, so the run carries this variant instead
-(``results_io._offload_assumptions``; S3a words the caveats)."""
+(``results_io._offload_assumptions``). The caveats of such a run are worded from its
+record at every reader (SP7 step S3a: ``summary.modelled_structure_text``)."""
 
 
 def offload_penalty_assumption(added_t: float) -> str:
@@ -2727,12 +2728,13 @@ structural run carries any of them."""
 
 
 def structure_assumption(settings: ResolvedStructureCase, envelope_pad: str) -> str:
-    """The assumption line of a structural run (SP7 step S3; neutral: S3a words the
-    caveats): the model, the file, the set, the case's sizing, dynamic, entry, margin and
-    cap, and any overrides (``settings.provenance``, D-SP7-43: the one string that is
-    also the restated dry mass's source), and the run whose flight is the envelope. The
-    run carries it after OFFLOAD_STRUCTURE_ASSUMPTIONS
-    (``results_io._offload_assumptions``)."""
+    """The assumption line of a structural run (SP7 step S3): the model, the file, the
+    set, the case's sizing, dynamic, entry, margin and cap, and any overrides
+    (``settings.provenance``, D-SP7-43: the one string that is also the restated dry
+    mass's source), and the run whose flight is the envelope. The run carries it after
+    OFFLOAD_STRUCTURE_ASSUMPTIONS (``results_io._offload_assumptions``); the caveats that
+    name the mass are worded from the run's record (SP7 step S3a,
+    ``summary.modelled_structure_text``)."""
     return (
         "structure: the dry masses carry the modelled structural mass of the push load "
         f"({settings.provenance}; the envelope is {envelope_pad}'s own flight)"

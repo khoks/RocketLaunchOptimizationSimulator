@@ -1638,13 +1638,19 @@ def cross_vehicle_decomposition(
 
 OFFLOAD_COMPARISON_BASIS = (
     "Offload basis: propellant saved at fixed payload. Different vehicles (each run's own "
-    "propellant load, tanks partly filled, dry masses unchanged unless a row says so), the "
-    "same payload and the same orbit: every offload is measured at the reference payload "
-    "P_ref, the full-load pad baseline's payload capacity P* on the same vehicle and "
-    "orbit (sweep-optimized guidance, the shared search budget)"
+    "propellant load, tanks partly filled, dry masses unchanged unless a row says so: a "
+    "penalty row's assumed stage-1 dry mass, or a structural case's modelled increment), "
+    "the same payload and the same orbit: every solved offload is measured at the reference "
+    "payload P_ref, the full-load pad baseline's payload capacity P* on the same vehicle and "
+    "orbit (sweep-optimized guidance, the shared search budget); an imposed (fixed) case "
+    "flies its own payload capacity P*, read as P* - P_ref in its own sub-section, never as "
+    "propellant saved"
 )
 """The basis line of the summary's "Propellant saved at fixed payload" block (and of the
-metrics.json ``offload`` record): what an offload row compares."""
+metrics.json ``offload`` record): what an offload row compares. Since SP7 step S3a
+(KI-039, D-SP7-23) "measured at P_ref" covers the solved cases only, and the dry-mass
+clause names the two rows that change one (D-SP7-22); recorded summaries keep the text
+they were written with."""
 OFFLOAD_SENSITIVITY_BASIS = (
     "Offload sensitivity basis: each arm perturbs the assisted run and the pad alike (a "
     "vehicle. parameter on both, a run parameter on the assisted run only: a pad has no "

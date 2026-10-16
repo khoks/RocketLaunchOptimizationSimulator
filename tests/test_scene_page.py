@@ -1916,7 +1916,9 @@ def test_run_selector_groups_follow_run_data(template: str) -> None:
         run_data.OFFLOAD_CASE,
         run_data.OFFLOAD_PAIRED_PAD,
         run_data.OFFLOAD_PAD_CONTROL,
+        run_data.OFFLOAD_STRUCTURE_PAYLOAD,
     }
+    assert ["offload", '"structure payload case"'] in [list(e) for e in entries]
     assert "const hit = ROLE_GROUPS.find(" in _function_source(template, "roleGroup")[0]
 
 

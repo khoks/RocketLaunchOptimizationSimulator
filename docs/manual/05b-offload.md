@@ -160,7 +160,11 @@ The shipped run writes, beside `pad` and its three variants, `pad__offload_stage
 Each has the usual `timeseries.csv` and `events.csv`
 ([8. Outputs](08-outputs.md#a-run-directory)), and every offloaded run carries the
 assumption line about partly filled tanks; a penalty row adds one saying its dry mass is
-an assumed penalty.
+an assumed penalty. A structural case of SP7 (one with a `structure:` field) carries
+instead the variant of that line that excepts the modelled structural increment, then a
+`structure:` line naming the model, the file, the set and the case's settings, and its
+metrics record carries the run-level `structure_*` keys (`structure_charged`,
+`structure_dm_kg`, ...) that every reader words its caveats from.
 
 **Pad controls.** A pad control runs the same solve on the pad. For `stage1` it is a
 consistency test of the solver: the pad should find nothing to remove at its own P\*. For
@@ -220,14 +224,33 @@ after the variants table. In order:
    Then the sensitivity basis line when the block has arms.
 2. **The caveats**, which travel with every number below: the vehicle's calibration (on
    the gate vehicle, +14.3% high: "read every offload as a difference between runs of the
-   vehicle model, not as a Falcon 9 figure"), sweep-optimized and unthrottled guidance, no
-   structural mass for the push except the assumed penalty rows, the prescribed drive,
-   max-Q against the pad's, the partly filled tanks, and stage 1 as the only headline.
-3. **The cases table**, one column per case. It leads with the **quoted offload** and its
-   basis: a stage-1 solve's x\*, gross (the headline); a `stage2` or `both` solve's x\*
-   net of the pad control, labelled a property of the vehicle model; a fixed case's
-   imposed offload. Then the gross propellant removed per stage and its share of the
-   stage-1, stage-2 and total loads, the assumed dry mass added, the payload flown and its
+   vehicle model, not as a Falcon 9 figure"), sweep-optimized and unthrottled guidance, the
+   structural caveat, the drive, max-Q against the pad's, the partly filled tanks, and
+   stage 1 as the only headline. The structural caveat, the drive item and the tanks item
+   are worded from the block's own records, three ways (SP7, D-SP7-22): a block with no
+   structural case prints SP1's sentences word for word (no structural mass for the push
+   except the assumed penalty rows; a prescribed constant-acceleration drive; dry masses
+   and tank structure unchanged); a block with structural cases names each case's and
+   payload case's run with the modelled structural mass it carries by stage and its
+   layer and set (a design-axis row with its axes, a plausibility-scaled mass with its
+   factor, a no_offload end "at x = 0"), counts the structural sensitivity arms (their dm
+   are in the arms table beside its caveat on the dry-mass arm), calls the mass a
+   first-order station sizing (an estimate with its stated ranges, not a detailed
+   structural design, never "assumed"), says where the rest of each one's sizing is (the
+   Structure subsection for the cases and payload cases; the arms table, its structural
+   columns and its caveat for the arms), names the cases that charge nothing and the
+   penalty rows with their assumed stage-1 dry mass when there are any, and excepts from
+   the tanks item the modelled increment and, with a penalty row, its assumed dry mass;
+   a case or payload case whose variant rides a drive other than `constant_accel` gets a
+   drive item naming that drive and its cases, and a case of a variant without a push is
+   said to fly without one.
+3. **The cases table** of the solved cases, one column per case. It leads with the
+   **quoted offload** and its basis: a stage-1 solve's x\*, gross (the headline); a
+   `stage2` or `both` solve's x\* net of the pad control, labelled a property of the
+   vehicle model. Then the gross propellant removed per stage and its share of the
+   stage-1, stage-2 and total loads, the assumed dry mass added (on a structural case the
+   cell says "none: a modelled structural mass is charged instead", pointing at the
+   Structure subsection, rather than a 0 under "assumed"), the payload flown and its
    difference from P_ref, the verification (P\* of the offloaded vehicle, P\* - P_ref, the
    tolerance, passed), the pad control's offload and the net value, liftoff mass, MECO,
    max-Q (unthrottled) and peak felt g in flight beside the pad's, the push (release speed,
@@ -238,15 +261,27 @@ after the variants table. In order:
    the table adds RP-1 and LOX removed, the combustion heat of the removed RP-1 (MJ and
    kWh), the electrical energy of the push and their ratio, labelled "not an efficiency
    claim".
-4. **The energy note**, saying what the ratio leaves out: producing the removed LOX,
-   extracting, refining and delivering the fuel, generation, transmission and storage
-   losses, and the facility beyond the drive.
-5. **Decomposition**: the cross-vehicle decomposition of each case against the pad, term
+4. **The cases that did not run** (led by "Cases that did not run (solved or imposed):"
+   when the block also has imposed cases) and **the energy note**, saying what the ratio
+   leaves out: producing the removed LOX, extracting, refining and delivering the fuel,
+   generation, transmission and storage losses, and the facility beyond the drive. Both
+   sit under the solved table and before the imposed sub-section's heading; with imposed
+   cases the note says it covers the energy rows of both tables.
+5. **Imposed offloads (fixed cases)**, a sub-section of their own (KI-039, D-SP7-23):
+   the section's heading and basis line ("measured at P_ref") describe the solved cases
+   only, so a `fixed` case is filed here under its own one-line basis: each imposed case
+   flies its own payload capacity P\*, read as P\* - P_ref (positive: it carries more than
+   the pad, so the imposed offload is not the largest possible; negative: a payload loss
+   at that offload), never propellant saved at P_ref. Its table has the same rows as the
+   solved table, led by the imposed offload. A block whose every case is imposed says so
+   in place of the solved table. Summaries recorded before SP7 keep the layout they were
+   written with.
+6. **Decomposition**: the cross-vehicle decomposition of each case against the pad, term
    by term in m/s and kg ([9](09-reading-results.md#the-cross-vehicle-decomposition)).
-6. **Pad controls**: a table (x_pad, m_res and the delta-v margin at x_pad, the residual
+7. **Pad controls**: a table (x_pad, m_res and the delta-v margin at x_pad, the residual
    slope, the stage-1 bound, the consistency verdict, the verification) and one line per
    control in words.
-7. **Sensitivity**: one row per arm (parameter, change, whether the pad was perturbed,
+8. **Sensitivity**: one row per arm (parameter, change, whether the pad was perturbed,
    the arm's P_ref, status, offload and its change against the nominal case, the share of
    stage 1, decomposition, ratio, whether the solve was reused).
 
@@ -280,20 +315,45 @@ uv run python -m launchsim replay results/silo_offload_2d/<timestamp> --runs pad
 ```
 
 The page labels each run of the block by its kind, "(offload)" for a case's recorded run,
-"(paired pad)" and "(pad control)", and describes it from metrics.json: how much
+"(paired pad)", "(pad control)" and, since SP7, "(structure payload case)" for a
+structure payload case's run, and describes it from metrics.json: how much
 propellant a case carries less (solved or imposed, with the assumed stage-1 dry mass of a
 penalty row, as a share of the stage-1 or stage-2 and total loads, to two decimals: 41.26 t,
 10.04% and 7.96% for the headline) and the payload it flies against the pad's full load at
 P_ref; for a stage-2 or both-stage solve the figure quoted net of the pad control, a failed
 verification and the flags; for a paired pad the payload capacity it flies and its
-difference from P_ref; for a pad control what it found. A comparison caveat says what the
-runs shown measure: a case's recorded run and a pad control fly P_ref and measure
-propellant saved at the same payload and orbit, not a payload change, while a paired pad
-flies its own payload capacity and measures a payload change against P_ref (a fixed case
-likewise flies its own payload capacity): the shipped paired pad `silo_cold_s1__pad`
+difference from P_ref; for a pad control what it found; for a structure payload case's
+run that it flies its own payload capacity P_2\* on the full load (no propellant removed)
+carrying its modelled structural mass, a payload change against P_ref, not propellant
+saved. A comparison caveat says what the runs shown measure: a case's recorded run and
+a pad control fly P_ref and measure propellant saved at the same payload and orbit, not
+a payload change, while a paired pad flies its own payload capacity and measures a
+payload change against P_ref (a fixed case likewise flies its own payload capacity, and
+a structure payload case's run its P_2\*, pointed at the Structure subsection's payload
+cases): the shipped paired pad `silo_cold_s1__pad`
 carries 24,652.4 kg, 1,402.0 kg short of P_ref. The drive and structure caveats are built
 from the runs shown: what the prescribed drive's omissions do to their numbers, each pushed
-run's own load and peak felt g, and the assumed stage-1 dry mass a penalty row charges.
+run's own load and peak felt g, the assumed stage-1 dry mass a penalty row charges and,
+since SP7, the modelled structural mass a structural run's own record charges (its mass
+by stage, the model, the layer and set, the file, the physics band's ends at the
+structure file's headline push, named from the file's own `sets.method` (the gate
+file's is silo_offload_2d's silo_cold at a stage-1 offload of 41,263 kg, the README-loads
+file's silo_offload_2d_readme's silo_cold at 36,006 kg), where the record has them, each
+end printed unscaled and after the plausibility rule's factor with the rule's trigger in
+that end's parenthesis when the rule fires on it, and that both ends are sizing-only
+numbers from the frozen sets, not the run's own band, with how the run itself is sized:
+at its own push and offload, or, for a full-load-sizing row and every structure payload
+case, at its own push on the full load (x = 0); the layer and set of a payload case's run
+are its payload case's, as the block caveat gives them; the plausibility factor its own dm
+carries; the run's fired flags, and beside a fired release flag that separates a
+stage-1 column D-SP7-39's comparison with the pad's own MECO, which the same single-mode
+step treatment takes through the full stage-2 LOX column; and that it is a first-order
+estimate with its stated ranges, not a detailed structural design; never "assumed").
+A run that charges nothing keeps the sentence "No structural mass is charged for the assist load case: ..."
+word for word; a penalty row's sentence keeps its "no structural model exists" only
+in a directory with no structural record at all (no structural case, payload case or
+arm, no `structure_inputs`): beside a modelled run, or on a page whose block caveat
+names the model, it would be contradicted.
 The site's copies of the shipped pages add editorial sentences only (the pre-registered
 reading of the paired pad's shortfall, the bridge to the README-loads vehicle, the +8.1 t
 structure sentence and the size of the shaft-drag bias) and three canvas-label patches of

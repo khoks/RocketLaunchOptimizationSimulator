@@ -4406,6 +4406,12 @@ minimum RING_PADS_MIN and the whole counts between them (9.3 D)."""
 
 SEARCH_LABEL = "the extremes found by the screened search over the stated ranges"
 """The label of the search's sets (design 4.2.6), never "the bounds"."""
+SEARCH_HEADLINE = "A"
+SEARCH_STEP = "B"
+"""The names of the screened search's two sizing searches as a set's polish and
+extremality records name them (design 4.2.6; ``screened_search``): A sized at the headline
+push, B at the step row. A set's polish record of SEARCH_HEADLINE holds its dm at the
+headline push, which the readers quote as the band's end (``summary.structure_band_ends``)."""
 SET_PHYSICS_LOW = "physics_low_mass"
 SET_PHYSICS_HIGH = "physics_high_mass"
 SET_OUTER_LOW = "outer_low_mass"
@@ -5760,11 +5766,14 @@ def screened_search(
             SearchSet(
                 name=phys_name,
                 values=tuple(physics[direction].items()),
-                searches="A (headline), B (step row)",
-                polish=(("A", a.set(direction).polish), ("B", b.set(direction).polish)),
+                searches=f"{SEARCH_HEADLINE} (headline), {SEARCH_STEP} (step row)",
+                polish=(
+                    (SEARCH_HEADLINE, a.set(direction).polish),
+                    (SEARCH_STEP, b.set(direction).polish),
+                ),
                 extremality=(
-                    *(("A", check) for check in a.set(direction).checks),
-                    *(("B", check) for check in b.set(direction).checks),
+                    *((SEARCH_HEADLINE, check) for check in a.set(direction).checks),
+                    *((SEARCH_STEP, check) for check in b.set(direction).checks),
                 ),
             )
         )

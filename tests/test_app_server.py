@@ -3042,6 +3042,167 @@ def test_api_form(tmp_path: Path, basis: appform.Basis) -> None:
     assert info["exploratory_caveat"] == replay.EXPLORATORY_CAVEAT
 
 
+STRUCTURE_KEYS: dict[str, Any] = {
+    "structure_charged": True,
+    "structure_dm_kg": 9100.3,
+    "structure_dm_stage2_kg": 200.2,
+    "structure_dm_x0_kg": 9000.0,
+    "structure_set": "central",
+    "structure_sizing": "flown",
+    "structure_dynamic": "rise_time",
+    "structure_entry": "aft_ring",
+    "structure_margin": 0.0,
+    "structure_envelope_cap_g": None,
+    "structure_overrides": {},
+    "structure_plausibility_ratio": 1.05,
+    "structure_plausibility_factor": 1.0,
+    "structure_plausibility_scaled": False,
+    "structure_flags": [],
+    "structure_file": "configs/structures/toy.yaml",
+}
+"""The run-level structure keys of D-SP7-22 of a central structural case (synthetic)."""
+
+
+def test_panel_of_a_modelled_structural_case(
+    launched: Path, basis: appform.Basis, tmp_path: Path
+) -> None:
+    """SP7 step S3a: the results panel of a directory whose shown case is a structural
+    run (its case record and its ``offload.runs`` record carry the run-level structure
+    keys) words its caveats from the record (one source, replay.caveats): the structure
+    caveat says the modelled mass is charged on the run, by stage, with the model, the
+    layer and set, the file, the flags and that it is a first-order estimate, never
+    "assumed" of it and never "No structural mass is charged" of that run; the headline
+    carries the modelled mass after the tonnes (replay.structure_clause); the recorded
+    offload caveats of the directory are listed word for word as before. Fix round 1: a
+    structure payload case's run in the same directory (H-S3a-01, S3A-R1-06: recorded
+    under ``structure_payload_cases`` and ``offload.runs``, not ``cases``) is grouped as
+    run_data.OFFLOAD_STRUCTURE_PAYLOAD, labelled '(structure payload case)', headlined
+    by the replay note (HEADLINE_STRUCTURE_PAYLOAD: its own P_2* on the full load, a
+    payload change, not propellant saved; never 'a run of the offload block' or 'flies
+    P_ref'), and worded as modelled in the structure caveat; a penalty row chosen beside
+    a modelled run (H-S3a-02), or alone in this directory of structural runs (fix round 2,
+    H-S3a-P2-03), gets a structure caveat with no 'no structural model exists'."""
+    p_ref = 26_000.0
+    record = {**_case("silo_st", p_ref), **STRUCTURE_KEYS}
+    base_edit = with_case(record)
+    penalty = _case("silo_pen", p_ref, stage1_dry_mass_added_kg=8_100.0, assumed_penalty=True)
+
+    def edit(metrics: dict[str, Any], config: dict[str, Any], out: Path) -> None:
+        base_edit(metrics, config, out)
+        metrics["offload"]["runs"]["silo_st"].update(STRUCTURE_KEYS)
+        for name in ("silo_pstar", "silo_pen"):
+            shutil.copytree(out / "silo", out / name)
+            flown = json.loads(json.dumps(metrics["offload"]["runs"]["silo_st"]))
+            metrics["offload"]["runs"][name] = flown
+            config["offload_runs"][name] = json.loads(json.dumps(config["runs"]["silo"]))
+        metrics["offload"]["runs"]["silo_pstar"]["payload_kg"] = p_ref + 10.0
+        for key in STRUCTURE_KEYS:
+            metrics["offload"]["runs"]["silo_pen"].pop(key)
+        metrics["offload"]["runs"]["silo_pen"]["payload_kg"] = p_ref
+        metrics["offload"]["cases"].append(penalty)
+        metrics["offload"]["structure_payload_cases"] = [
+            {
+                "name": "silo_pstar",
+                "kind": "structure payload case",
+                "of": "silo",
+                "run": "silo_pstar",
+                "status": "ok",
+                "reference_payload_kg": p_ref,
+                "payload_kg": p_ref + 10.0,
+                "payload_delta_kg": 10.0,
+                "flags": [],
+                **STRUCTURE_KEYS,
+            }
+        ]
+
+    run_dir = derive(launched, tmp_path / "root", "20260107T000001Z", edit)
+    metrics = app.read_capped_json(run_dir / run_data.METRICS_FILE, app.MAX_METRICS_BYTES)
+    config = app.read_capped_yaml(run_dir / run_data.CONFIG_FILE, app.MAX_CONFIG_BYTES)
+    detail = app.results_panel(run_dir, "app", run_dir.name, basis, metrics, config)
+    panel = detail["panel"]
+    assert panel["shown"] == "silo_st" and panel["pair"] == ["pad", "silo_st"]
+    head = panel["headline"]
+    assert head["kind"] == app.HEADLINE_SOLVED
+    assert head["text"].startswith(
+        "Propellant removed at the pad's payload (P_ref = 26,000.0 kg): 20.00 t"
+    )
+    assert head["text"].endswith(
+        " with 9,100.3 kg of modelled structural mass (stage 1 8,900.1 kg, stage 2 200.2 kg; "
+        "a first-order station sizing, not an assumed penalty)"
+    )
+    structure = [c for c in panel["caveats"] if "structural mass" in c]
+    assert len(structure) == 1
+    assert structure[0].startswith(
+        "The modelled structural mass of the push load is charged on silo_st ("
+    )
+    assert "20.00 t less propellant" in structure[0]
+    assert (
+        "): 9,100.3 kg (stage 1 8,900.1 kg, stage 2 200.2 kg): a first-order station sizing of "
+        "the push load (layer and set central (every coefficient at its central value): central; "
+        "configs/structures/toy.yaml); no structure flag fired; a first-order estimate with its "
+        "stated ranges, not a detailed structural design."
+    ) in structure[0]
+    assert "No structural mass is charged" not in structure[0] and "assumed" not in structure[0]
+    assert panel["offload_caveats"] == list(OFFLOAD_CAVEATS)
+    assert panel["error"] is None
+    # the structure payload case's run
+    views = {r["name"]: r for r in detail["runs"]}
+    pstar = views["silo_pstar"]
+    assert pstar["label"] == "silo_pstar (structure payload case)"
+    assert (pstar["role"], pstar["offload_kind"]) == (
+        run_data.ROLE_OFFLOAD,
+        run_data.OFFLOAD_STRUCTURE_PAYLOAD,
+    )
+    assert pstar["headline"]["kind"] == app.HEADLINE_STRUCTURE_PAYLOAD == "structure_payload_case"
+    assert pstar["headline"]["text"] == pstar["note"]
+    assert pstar["note"].startswith(
+        "structure payload case silo_pstar of silo: flies its own payload capacity P_2* on the "
+        "full load (no propellant removed) with 9,100.3 kg of modelled structural mass (stage 1 "
+        "8,900.1 kg, stage 2 200.2 kg; a first-order station sizing, not an assumed penalty), "
+        "26,010.0 kg (10.0 kg above P_ref = 26,000.0 kg): a payload change against P_ref, not "
+        "propellant saved"
+    )
+    assert pstar["verification"] is None
+    chosen = app.results_panel(
+        run_dir, "app", run_dir.name, basis, metrics, config, chosen=["pad", "silo_pstar"]
+    )["panel"]
+    assert chosen["shown"] == "silo_pstar" and chosen["headline"] == pstar["headline"]
+    structure = [c for c in chosen["caveats"] if "structural mass" in c]
+    assert len(structure) == 1 and structure[0].startswith(
+        "The modelled structural mass of the push load is charged on silo_pstar ("
+    )
+    assert "less propellant" not in structure[0].split("):")[0]
+    comparison = next(c for c in chosen["caveats"] if "offload block" in c)
+    assert comparison == (
+        "silo_pstar is a run of the offload block, not compared with pad here: it is the "
+        "structure payload case of silo and flies its own payload capacity P_2* on the full "
+        "load carrying its modelled structure (dm_1), a payload change against P_ref = "
+        "26,000.0 kg, not propellant saved (summary.md, the Structure subsection's payload "
+        "cases)."
+    )
+    assert not any("flies P_ref" in c for c in chosen["caveats"])
+    # a penalty row beside a modelled run: no program-level clause in the structure caveat
+    mixed = app.results_panel(
+        run_dir, "app", run_dir.name, basis, metrics, config, chosen=["silo_pen", "silo_st"]
+    )["panel"]
+    structure = [c for c in mixed["caveats"] if "structural mass" in c]
+    assert len(structure) == 1
+    assert structure[0].startswith("An assumed +8.1 t of stage-1 dry mass is charged on silo_pen (")
+    assert "a parametric assumption, not a sized structure. The modelled structural" in structure[0]
+    assert "no structural model exists" not in structure[0]
+    # a penalty row shown alone in a directory that holds structural runs (fix round 2,
+    # H-S3a-P2-03): no program-level clause either, since the directory charges a modelled
+    # mass and the panel's block caveats sit beside it
+    penalty_only = app.results_panel(
+        run_dir, "app", run_dir.name, basis, metrics, config, chosen=["pad", "silo_pen"]
+    )["panel"]
+    structure = [c for c in penalty_only["caveats"] if "sized structure" in c]
+    assert len(structure) == 1 and structure[0].endswith(
+        ": a parametric assumption, not a sized structure."
+    )
+    assert not any("no structural model exists" in c for c in penalty_only["caveats"])
+
+
 def test_sp1_headline_matches_the_findings_note() -> None:
     """D-SP2-36: the headline text is the note's bold headline verbatim (whitespace
     normalised, '**' removed: only the groups may paraphrase); every number of the

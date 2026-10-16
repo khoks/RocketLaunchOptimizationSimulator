@@ -188,7 +188,7 @@ It raised after the directory was created. See
 | **pad control** | The offload solve run on the pad itself: for stage 1 a consistency test of the solver; for stage 2 and both the amount those cases are quoted net of |
 | **paired pad** | The pad flown with an offload case's propellant change and no push (`<case>__<baseline>`); it separates the head start from the lighter stack |
 | **paired sweep** | A sweep that re-runs the baseline at every point with the same overrides (2-D) |
-| **penalty row** | An offload case with `stage1_dry_mass_added_t`: an assumed stage-1 dry mass added to the assisted run, a parametric stand-in for structure, not a sized one |
+| **penalty row** | An offload case with `stage1_dry_mass_added_t`: an assumed stage-1 dry mass added to the assisted run, a parametric stand-in for structure, not a sized one. Not to be confused with a structural case (SP7, `structure:` on the case), whose run carries the modelled structural mass of the push load, a first-order station sizing that every summary row, caveat, page and frame names as modelled, never as assumed |
 | **pre-registration** | Fixing inputs and rules in a commit before a run, so they cannot drift toward a wanted answer |
 | **probe** | A labelled one-off calculation outside the shipped experiments. Never a finding |
 | **q-alpha** | Dynamic pressure times the angle between thrust and air-relative velocity, an aerodynamic load indicator |

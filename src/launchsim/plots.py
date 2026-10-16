@@ -28,6 +28,7 @@ stay here.
 from __future__ import annotations
 
 import math
+import re
 import subprocess
 import textwrap
 from collections.abc import Mapping, Sequence
@@ -60,8 +61,22 @@ from launchsim.phases.planar import (
     VERTICAL_RISE,
 )
 from launchsim.replay import EXPLORATORY_CAVEAT, EXPLORATORY_LABEL, penalty_added_kg
-from launchsim.structure import ENTRY_AFT_RING, ENTRY_THRUST_STRUCTURE, STAGE1, STAGE2
-from launchsim.summary import STRUCTURE_PAYLOAD_RECORD_KIND, structure_layer_label
+from launchsim.structure import (
+    ENTRY_AFT_RING,
+    ENTRY_THRUST_STRUCTURE,
+    FLAG_RELEASE_UNLOAD,
+    STAGE1,
+    STAGE2,
+)
+from launchsim.summary import (
+    STRUCTURE_PAYLOAD_RECORD_KIND,
+    release_flag_comparison_short,
+    structure_axis_departures,
+    structure_charged,
+    structure_layer_label,
+    structure_row_departures,
+    structure_run_record,
+)
 from launchsim.units import kg_to_t, m_to_km, m_to_mm, n_to_mn, pa_to_kpa, rad_to_deg, to_percent
 
 if TYPE_CHECKING:
@@ -1516,7 +1531,8 @@ ANIMATION_GRID: dict[str, float] = {
     "wspace": 0.15,
 }
 """Figure fractions of the panel grid: the title block sits above ``top``, the axis
-labels and the three-line footnote below ``bottom``."""
+labels and the footnote below ``bottom`` (three lines, or four with the exploratory line;
+a structural line beyond FOOTNOTE_BASE_LINES moves ``bottom`` up, ``_AscentFigure``)."""
 ANIMATION_MAIN_WIDTH_RATIO = 1.6
 """Width of the trajectory panel relative to the right-hand column."""
 ANIMATION_CLOSEUP_HEIGHT_RATIO = 1.35
@@ -1602,6 +1618,7 @@ PHASE_LABELS: dict[str, str] = {
 OFFLOAD_CASE = run_data.OFFLOAD_CASE
 OFFLOAD_PAIRED_PAD = run_data.OFFLOAD_PAIRED_PAD
 OFFLOAD_PAD_CONTROL = run_data.OFFLOAD_PAD_CONTROL
+OFFLOAD_STRUCTURE_PAYLOAD = run_data.OFFLOAD_STRUCTURE_PAYLOAD
 """What a run of metrics.json's ``offload.runs`` is (``offload_role``): an offload case's
 recorded run, the paired pad of a case or a pad control. The run_data constants (moved
 there in SP2 step A1) under their names here."""
@@ -1649,10 +1666,11 @@ class AnimationEvent:
 @dataclass(frozen=True)
 class OffloadTag:
     """How the animation labels a run of metrics.json's ``offload.runs``
-    (``offload_tag``): its kind (OFFLOAD_CASE, OFFLOAD_PAIRED_PAD, OFFLOAD_PAD_CONTROL, or
-    'offload' for a run the block records but names in no case or control), the legend
-    text after its name, and whether its recorded run ends grams of propellant short of
-    orbit by a resolution effect (a pad control: read as a pad control, not a failure)."""
+    (``offload_tag``): its kind (OFFLOAD_CASE, OFFLOAD_PAIRED_PAD, OFFLOAD_PAD_CONTROL,
+    OFFLOAD_STRUCTURE_PAYLOAD, or 'offload' for a run the block records but names in no
+    case, payload case or control), the legend text after its name, and whether its
+    recorded run ends grams of propellant short of orbit by a resolution effect (a pad
+    control: read as a pad control, not a failure)."""
 
     kind: str
     legend: str
@@ -1670,7 +1688,22 @@ class AnimationRun:
     for a penalty row (an offload case whose record charges an assumed stage-1 dry mass
     on its run: replay.penalty_added_kg), that mass [kg] (0.0 when unrecorded), else
     None (A6v fix round 2: the footnote's structural line names what a penalty row
-    charges)."""
+    charges); for a run whose own metrics record charges a modelled structural mass
+    (summary.structure_charged, SP7 step S3a) ``modelled`` True and that mass [kg]
+    (``structure_dm_kg``, dm1 + dm2; None when unrecorded) and its stage-2 share
+    (``structure_dm_stage2_kg``, dm2, the record's own key, as replay's modelled sentence
+    reads it, dm1 the difference; None when unrecorded; S3a gate fix), its set (``structure_set``),
+    the plausibility rule's factor when the record says the dm carries it
+    (``structure_scale_factor``, None otherwise), the names of its fired structure flags
+    (``structure_flags_fired``) and, beside a fired release flag that separates a stage-1
+    column, D-SP7-39's comparison in short (``structure_release_note``,
+    summary.release_flag_comparison_short); fix round 2, H-S3a-P2-04: all read from the
+    record, as the mass is; and what its sizing moves off the headline settings
+    (``structure_departures``: summary.structure_axis_departures, then
+    summary.structure_row_departures; fix round 3, H-S3a-P3-04: a design-axis row on the
+    central set never shares the headline case's qualifier; the record read through
+    summary.structure_run_record, so a structure payload case's run is not a
+    full-load-sizing row: final clean-up, N3a-03); else False, None and empty."""
 
     name: str
     t_s: FloatArray
@@ -1687,6 +1720,14 @@ class AnimationRun:
     baseline: bool
     offload: OffloadTag | None = None
     penalty_added_kg: float | None = None
+    modelled: bool = False
+    structure_dm_kg: float | None = None
+    structure_dm_stage2_kg: float | None = None
+    structure_set: str | None = None
+    structure_scale_factor: float | None = None
+    structure_flags_fired: tuple[str, ...] = ()
+    structure_release_note: str | None = None
+    structure_departures: tuple[str, ...] = ()
 
     @property
     def t_start_s(self) -> float:
@@ -1779,8 +1820,11 @@ def offload_tag(offload: Mapping[str, Any], name: str, record: Mapping[str, Any]
     of orbit its recorded run ends [kg of propellant, 2 significant figures] when its
     record's ``resolution_effect`` holds ('<m> kg of propellant short of orbit: a
     resolution effect, not a failure'), else 'short of orbit by more than the search
-    resolution'. A run without a payload, or one the block names in no case or control,
-    gets one line: 'payload n/a (<status>)' or 'payload <P> kg'."""
+    resolution'; a structure payload case's run (OFFLOAD_STRUCTURE_PAYLOAD; SP7 step S3a
+    fix round 1) 'P* <P> kg (<P - P_ref> kg vs P_ref)' / 'on the full load, carrying its
+    modelled structure'. A run without a payload, or one the block names in no case,
+    payload case or control, gets one line: 'payload n/a (<status>)' or 'payload <P>
+    kg'."""
     role = offload_role(offload, name)
     kind, rec = ("offload", {}) if role is None else role
     payload = _finite_kg(record.get("payload_kg"))
@@ -1799,6 +1843,9 @@ def offload_tag(offload: Mapping[str, Any], name: str, record: Mapping[str, Any]
     near = False
     if kind == OFFLOAD_PAIRED_PAD:
         head, detail = f"P* {payload:,.0f} kg{vs_ref}", "with the same offload, no push"
+    elif kind == OFFLOAD_STRUCTURE_PAYLOAD:
+        head = f"P* {payload:,.0f} kg{vs_ref}"
+        detail = "on the full load, carrying its modelled structure"
     elif kind == OFFLOAD_CASE and rec.get("kind") != OFFLOAD_SOLVED_KIND:
         head, detail = f"P* {payload:,.0f} kg{vs_ref}", less
     elif kind == OFFLOAD_CASE and rec.get("status") == NO_OFFLOAD_STATUS:
@@ -1849,8 +1896,22 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
     offset_s = run_data.release_offset_s(frame)
     record, tag = animation_record(metrics, name)
     payload = record.get("payload_kg")
-    role = offload_role(run_data.as_mapping(metrics.get("offload")), name)
+    offload = run_data.as_mapping(metrics.get("offload"))
+    role = offload_role(offload, name)
     penalty = penalty_added_kg(role[1]) if role is not None and role[0] == OFFLOAD_CASE else None
+    modelled = structure_charged(record)
+    dm = record.get("structure_dm_kg") if modelled else None
+    dm2 = record.get("structure_dm_stage2_kg") if modelled else None
+    factor = record.get("structure_plausibility_factor")
+    scaled = modelled and bool(record.get("structure_plausibility_scaled"))
+    flags = record.get("structure_flags") if modelled else None
+    fired = tuple(
+        str(f.get("name"))
+        for f in (flags if isinstance(flags, list) else [])
+        if isinstance(f, Mapping) and f.get("fired")
+    )
+    structure_set = record.get("structure_set") if modelled else None
+    sized = structure_run_record(record, offload, name)  # a payload case's run: N3a-03
     return AnimationRun(
         name=name,
         t_s=t,
@@ -1867,6 +1928,24 @@ def read_animation_run(run_dir: Path, name: str, metrics: dict[str, Any]) -> Ani
         baseline=name == metrics.get("baseline"),
         offload=tag,
         penalty_added_kg=penalty,
+        modelled=modelled,
+        structure_dm_kg=float(dm) if isinstance(dm, int | float) and math.isfinite(dm) else None,
+        structure_dm_stage2_kg=(
+            float(dm2) if isinstance(dm2, int | float) and math.isfinite(dm2) else None
+        ),
+        structure_set=None if structure_set is None else str(structure_set),
+        structure_scale_factor=(
+            float(factor)
+            if scaled and isinstance(factor, int | float) and math.isfinite(factor)
+            else None
+        ),
+        structure_flags_fired=fired,
+        structure_release_note=release_flag_comparison_short(record) if modelled else None,
+        structure_departures=(
+            (*structure_axis_departures(record), *structure_row_departures(sized))
+            if modelled
+            else ()
+        ),
     )
 
 
@@ -2142,6 +2221,57 @@ def calibration_caveat(vehicle_name: str | None) -> str:
     return f"{who} calibrates {gap:+.1f}% {side} on payload{band} ({note})."
 
 
+STRUCTURE_FOOTNOTE_HEAD = "Structure, per run: "
+"""How the footnote's structural line opens when a shown run charges a modelled
+structural mass (SP7 step S3a; ``animation_caveats``)."""
+FOOTNOTE_LINE_SPACING = 1.3
+"""The footnote's line spacing (a multiple of the font size)."""
+FOOTNOTE_BASE_LINES = 4
+"""The footnote lines the panel grid leaves room for as drawn (the three fixed lines and
+the exploratory line); each line beyond them moves the panels' bottom up by one line
+(``_AscentFigure``)."""
+FOOTNOTE_MEASURE_WIDTH_PX = 1280
+"""The frame width the footnote's structural line is wrapped at by default
+(``footnote_wrap``; the app's video footer takes the line unwrapped, ``width_px`` None,
+and the scene canvas wraps it at the frame's width: fix round 3, S3A-NUM-01). The
+footnote is set in points on a figure whose size in inches is fixed and whose dpi scales
+with the width (``frame_geometry``), but font hinting differs by dpi, so a line that fits
+at one width can overrun at another (measured, fix round 2, N2-03: up to 9 px at 480 and
+960 px): ``_AscentFigure`` wraps at the width it draws (``animation_caveats``'
+``width_px``)."""
+FOOTNOTE_WRAP_MARGIN = 0.01
+"""The share of the frame width a wrapped footnote line stops short of the footnote's
+right limit (12.8 px at 1280 px): a margin against rounding at the measured width."""
+STRUCTURE_FOOTNOTE_TAIL = "first-order sizing, not an assumed penalty"
+"""How each modelled run's qualifier in the footnote ends: what the mass is set against,
+as every other source words it (fix round 3, H-S3a-P3-01: the mass is a model output on
+many assumed coefficients, so the footnote never says it is "not assumed")."""
+STRUCTURE_FOOTNOTE_POINTER = (
+    "modelled mass by stage: the caveats of summary.md's offload section; structure file "
+    "and x* at the physics band's ends: its Structure subsection"
+)
+"""The clause the footnote's structural line ends with, once per line (S3a gate fix and
+its review, R-G1-02 and R-G1-03): where the rest of a modelled run's sizing is read in
+summary.md. The offload section's caveats give every structural case's and structure
+payload case's mass by stage (the Structure subsection's tables give a case's dm1 and
+dm2 but a payload case's dm_0 and dm_1 totals only); the Structure subsection names the
+structure file and gives x* (tonnes of offload) of the experiment's cases at the physics
+band's ends, 'not flown' at an end no case ran: a different quantity from the band's
+sizing-only dm ends at the structure file's headline push (the frozen sets' numbers),
+which the replay caveat and the scene frame's per-run note quote with their scope
+sentence and which no summary.md prints. The frame states each run's mass (by stage when stage 2
+carries any), set, scaling and fired flags and leaves the file's path and those dm ends
+off by a choice about vertical space, not width (R-G1-01: the path alone ends 427.5 px
+into the 1,260.8 px of a 1280 px footnote line): the path and the dm ends with a
+shortened scope sentence take one or two footnote lines more than this pointer on the
+tests' selections at 480 and 1280 px (two or three with it kept), and each line past
+FOOTNOTE_BASE_LINES moves the panels' bottom up one line (phase file SP7, section 12,
+deviation 38). The app's video footer is the footnote's lines with this pointer, not
+the full sentence, which an app video frame carries in the scene page's per-run note
+(R-G1-04)."""
+FOOTNOTE_UNIT_PATTERN = re.compile(r"(g|kg|t)[,.;:)]*")
+"""A footnote token that is a bare unit (with trailing punctuation): it is never wrapped
+away from the number before it (SP7 step S3a fix round 1, H-S3a-06: '3.0' / 'g')."""
 EXPLORATORY_FOOTNOTE = EXPLORATORY_CAVEAT
 """The footnote line prepended for a directory the local app launched (metrics.json
 label replay.EXPLORATORY_LABEL; D-SP2-12): the replay page's EXPLORATORY_CAVEAT, the
@@ -2151,35 +2281,245 @@ config.ExperimentLabel and drops this module's import of replay."""
 
 
 def animation_caveats(
-    runs: Sequence[AnimationRun], vehicle_name: str | None, label: str | None = None
+    runs: Sequence[AnimationRun],
+    vehicle_name: str | None,
+    label: str | None = None,
+    width_px: int | None = FOOTNOTE_MEASURE_WIDTH_PX,
 ) -> list[str]:
-    """The three footnote lines: the model; its limits and, when a run has an assist
-    push, the structural caveat of the push load (no sized structural mass for the peak
-    felt axial g of the ASSIST rows) and, when a shown run is a penalty row
-    (``AnimationRun.penalty_added_kg``), that the penalty row charges an assumed stage-1
+    """The footnote lines: the model; its limits and, when a run has an assist push,
+    the structural caveat of the push load worded from each run's record, three ways
+    (D-SP7-22; SP7 step S3a): no sized structural mass for the peak felt axial g of the
+    ASSIST rows of the runs that charge none, when a shown run is a penalty row
+    (``AnimationRun.penalty_added_kg``) that the penalty row charges an assumed stage-1
     dry mass (A6v fix round 2: the fixed line and the run's own structure line no longer
     read against each other on a penalty row's frame; one source, D-SP2-23; the clause is
     kept to what the 1280 px footnote line holds, tested, so 'an assumption' is said by
-    'assumed' alone); the vehicle's calibration and the replay disclaimer. ``label``: the
-    directory's metrics.json ``label``; EXPLORATORY_LABEL puts EXPLORATORY_FOOTNOTE first
-    (four lines), any other value or None adds nothing."""
+    'assumed' alone), and when a shown run charges a modelled structural mass
+    (``AnimationRun.modelled``) that it carries that many kg of modelled structural mass
+    (the dm, the modelled increment over the pad envelope, never "a structure" of that
+    mass: fix round 1, H-S3a-06) with its set, the plausibility rule's factor when the
+    dm carries it and its fired structure flags (with D-SP7-39's comparison beside a
+    release flag; fix round 2, H-S3a-P2-04: ``_footnote_qualifier``), a first-order
+    sizing, not an assumed penalty (STRUCTURE_FOOTNOTE_TAIL), the mass by stage when the
+    record's stage-2 share is above zero (S3a gate fix: '8,900.1 kg (stage 1) and 200.2 kg
+    (stage 2) of modelled structural mass', to 0.1 kg as the replay caveat gives it, its
+    review's R-G1-05; the total alone otherwise); the vehicle's calibration and the
+    replay disclaimer. Three lines, word for word as before, when no
+    shown run charges a modelled mass. With one, the structural clauses move to a line of
+    their own after the limits line (STRUCTURE_FOOTNOTE_HEAD: the modelled runs first,
+    then the penalty rows named with their assumed stage-1 dry mass, which then leaves the
+    limits line, then the uncharged pushed runs named, so the "no sized" clause is read
+    of them alone and never of a penalty row; fix round 3, H-S3a-P3-02; then, once per
+    line, STRUCTURE_FOOTNOTE_POINTER, where in summary.md the mass by stage, the
+    structure file and x* at the physics band's ends are read: S3a gate fix), wrapped by
+    measured width (``footnote_wrap``) at ``width_px``, the frame's own width when
+    ``_AscentFigure`` draws it (fix round 2, N2-03), so every line fits the frame (tested
+    at several widths, with the footnote block clear of the panels' axis labels);
+    ``width_px`` None leaves the structural line unwrapped, one line, for a caller that
+    wraps it itself (the app's video footer, which the scene canvas wraps at the frame's
+    own width: fix round 3, S3A-NUM-01, since a line pre-wrapped at 1280 px cost the
+    canvas an extra line at every break; the app's video footer is these lines, the
+    pointer included). The replay caveat and the scene frame's per-run structure note
+    (which an app video frame draws under the video footer, scene.html's
+    ``frameFooterLines``) carry the full sentence: the stages, layer, file, the band's
+    sizing-only dm ends at the structure file's headline push with their scope sentence
+    and the flags' numbers. This footnote, the only caveat of an ``animate`` frame,
+    quotes neither the file's path nor those dm ends, by a choice about vertical space,
+    not width (the path fits the line; with it and the ends with their scope sentence the
+    structural line takes one to three lines more, each moving the panels' bottom up one
+    line), and points to summary.md instead, whose Structure subsection gives x* at the
+    band's ends, a different quantity (STRUCTURE_FOOTNOTE_POINTER; phase file SP7,
+    section 12, deviation 38). ``label``: the directory's metrics.json ``label``;
+    EXPLORATORY_LABEL puts EXPLORATORY_FOOTNOTE first, any other value or None adds
+    nothing."""
     first = (
         "Planar 2-D model (rotating spherical Earth, ICAO atmosphere, drag); "
         "sweep-optimized guidance, not optimal control."
     )
     second = "Unthrottled (no max-Q or g limit)"
-    peaks = [g for g in (r.push_peak_g() for r in runs) if g is not None]
-    if peaks:
-        second += f"; no sized structural mass for the {max(peaks):.1f} g push load"
-    penalties = sum(1 for r in runs if r.penalty_added_kg is not None)
-    if penalties == 1:
-        second += "; the penalty row charges an assumed stage-1 dry mass"
-    elif penalties > 1:
-        second += "; the penalty rows charge an assumed stage-1 dry mass"
+    modelled = [r for r in runs if r.modelled]
+    penalty_rows = [r for r in runs if r.penalty_added_kg is not None and not r.modelled]
+    structure: list[str] = []
+    if modelled:
+        structure.append(_footnote_modelled_clause(modelled))
+        if penalty_rows:
+            verb = "charges" if len(penalty_rows) == 1 else "charge"
+            names = _footnote_names([r.name for r in penalty_rows])
+            structure.append(f"{names} {verb} an assumed stage-1 dry mass")
+        peaks = [
+            (r, g)
+            for r, g in ((r, r.push_peak_g()) for r in runs if not r.modelled)
+            if g and r.penalty_added_kg is None
+        ]
+        if peaks:
+            structure.append(
+                f"no sized structural mass for the {max(g for _, g in peaks):.1f} g push load "
+                f"of {_footnote_names([r.name for r, _ in peaks])}"
+            )
+        structure.append(STRUCTURE_FOOTNOTE_POINTER)
+    else:
+        peaks = [(r, g) for r, g in ((r, r.push_peak_g()) for r in runs) if g]
+        if peaks:
+            second += (
+                f"; no sized structural mass for the {max(g for _, g in peaks):.1f} g push load"
+            )
+        if len(penalty_rows) == 1:
+            second += "; the penalty row charges an assumed stage-1 dry mass"
+        elif len(penalty_rows) > 1:
+            second += "; the penalty rows charge an assumed stage-1 dry mass"
     third = calibration_caveat(vehicle_name) + " A model replay, not a design result."
-    lines = [first, second + ".", third]
+    lines = [first, second + "."]
+    if structure:
+        text = STRUCTURE_FOOTNOTE_HEAD + "; ".join(structure) + "."
+        lines += [text] if width_px is None else footnote_wrap(text, width_px)
+    lines.append(third)
     if label == EXPLORATORY_LABEL:
         lines.insert(0, EXPLORATORY_FOOTNOTE)
+    return lines
+
+
+def _footnote_qualifier(run: AnimationRun) -> str:
+    """The parenthesis after a modelled run's mass in the footnote (fix rounds 2 and 3,
+    H-S3a-P2-04 and H-S3a-P3-04): '(set physics_low_mass, scaled x0.846 by the
+    plausibility rule; flags fired: structure_release_unload (D-SP7-39: ...) and
+    structure_payload_limit; first-order sizing, not an assumed penalty)': the set (when
+    recorded) with what its sizing moves off the headline settings ('set central at
+    margin 0.05', ``AnimationRun.structure_departures``, so a design-axis row never shares
+    the headline case's clause), the plausibility rule's factor when the dm carries it,
+    the fired flags by name with the release flag's short comparison, and
+    STRUCTURE_FOOTNOTE_TAIL."""
+    bits = []
+    scale = None
+    if run.structure_scale_factor is not None:
+        scale = f"scaled x{run.structure_scale_factor:.3g} by the plausibility rule"
+    moved = ", ".join(run.structure_departures)
+    if run.structure_set is not None:
+        head = f"set {run.structure_set}" + (f" at {moved}" if moved else "")
+        bits.append(head + ("" if scale is None else f", {scale}"))
+    elif moved or scale is not None:
+        bits.append(", ".join(b for b in (moved, scale) if b))
+    if run.structure_flags_fired:
+        names = [
+            f"{name} ({run.structure_release_note})"
+            if name == FLAG_RELEASE_UNLOAD and run.structure_release_note
+            else name
+            for name in run.structure_flags_fired
+        ]
+        bits.append(f"flags fired: {_footnote_names(names)}")
+    bits.append(STRUCTURE_FOOTNOTE_TAIL)
+    return f"({'; '.join(bits)})"
+
+
+def _footnote_stage_split(run: AnimationRun) -> str | None:
+    """'8,900.1 kg (stage 1) and 200.2 kg (stage 2)': a modelled run's mass by stage in
+    the footnote (S3a gate fix), dm1 = dm - dm2 from the record's ``structure_dm_kg`` and
+    ``structure_dm_stage2_kg`` as replay's modelled sentence reads them, to 0.1 kg as it
+    gives them (summary.modelled_mass_split_text; S3a gate review, R-G1-05: whole kg
+    printed a share under 0.5 kg as '0 kg (stage 2)' beside replay's '0.3 kg'), when
+    both are recorded and dm2 is above zero; None otherwise (the footnote then gives the
+    total alone, as before)."""
+    dm, dm2 = run.structure_dm_kg, run.structure_dm_stage2_kg
+    if dm is None or dm2 is None or not dm2 > 0.0:
+        return None
+    return f"{dm - dm2:,.1f} kg (stage 1) and {dm2:,.1f} kg (stage 2)"
+
+
+def _footnote_modelled_clause(modelled: Sequence[AnimationRun]) -> str:
+    """The footnote's clause of the shown runs that charge a modelled structural mass:
+    'silo_s1_st carries 9,100 kg of modelled structural mass (set central; first-order
+    sizing, not an assumed penalty)' (``_footnote_qualifier``); a run whose stage 2
+    carries part of it by stage, 'silo_s1_st carries 8,900.1 kg (stage 1) and 200.2 kg
+    (stage 2) of modelled structural mass (...)' (``_footnote_stage_split``; S3a gate
+    fix); several runs with one qualifier and no stage split, 'a
+    and b carry 9,100 and 9,300 kg of modelled structural mass (...)'; a run whose dm is
+    unrecorded 'carries a modelled structural mass of unrecorded size', and among several
+    'an unrecorded size' takes its place in the list; runs whose qualifiers differ (a
+    set, a scaling, a flag), or among which a run's mass is given by stage (a list of
+    stage pairs would not read), get one clause each, joined by '; '."""
+    tails = list(dict.fromkeys(_footnote_qualifier(r) for r in modelled))
+    split = any(_footnote_stage_split(r) is not None for r in modelled)
+    if len(modelled) > 1 and (len(tails) > 1 or split):
+        return "; ".join(_footnote_modelled_clause([r]) for r in modelled)
+    tail = tails[0]
+    names = _footnote_names([r.name for r in modelled])
+    if len(modelled) == 1:
+        dm = modelled[0].structure_dm_kg
+        if dm is None:
+            return f"{names} carries a modelled structural mass of unrecorded size {tail}"
+        by_stage = _footnote_stage_split(modelled[0])
+        mass = f"{dm:,.0f} kg" if by_stage is None else by_stage
+        return f"{names} carries {mass} of modelled structural mass {tail}"
+    if all(r.structure_dm_kg is not None for r in modelled):
+        masses = _footnote_names([f"{r.structure_dm_kg:,.0f}" for r in modelled])
+        return f"{names} carry {masses} kg of modelled structural mass {tail}"
+    masses = _footnote_names(
+        [
+            "an unrecorded size" if r.structure_dm_kg is None else f"{r.structure_dm_kg:,.0f} kg"
+            for r in modelled
+        ]
+    )
+    return f"{names} carry {masses} of modelled structural mass {tail}"
+
+
+def _footnote_names(names: Sequence[str]) -> str:
+    """'a', 'a and b', 'a, b and c' for the footnote's structural clause."""
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
+
+
+def footnote_tokens(text: str) -> list[str]:
+    """The pieces a footnote line may be wrapped between: the words of ``text`` split on
+    single spaces, except that a bare unit token (FOOTNOTE_UNIT_PATTERN: 'g', 'kg,', 't.')
+    stays glued to the number before it, so '3.0 g' is never split across lines."""
+    out: list[str] = []
+    for word in text.split(" "):
+        if out and FOOTNOTE_UNIT_PATTERN.fullmatch(word) and re.search(r"\d$", out[-1]):
+            out[-1] = f"{out[-1]} {word}"
+        else:
+            out.append(word)
+    return out
+
+
+def footnote_right_px(
+    lines: Sequence[str], width_px: int = FOOTNOTE_MEASURE_WIDTH_PX
+) -> tuple[list[float], float]:
+    """(the right edge of each of ``lines`` drawn as the animation's footnote on a frame
+    ``width_px`` wide, the footnote's right limit) [px], measured with the Agg renderer at
+    the frame's geometry, the footnote's font size and its left anchor
+    (ANIMATION_GRID['left']; the text escaped as the frame escapes it, ``_plot_text``)."""
+    size_in, dpi, (frame_w, _frame_h) = frame_geometry(width_px)
+    fig = Figure(figsize=size_in, dpi=dpi)
+    renderer = FigureCanvasAgg(fig).get_renderer()
+    rights = []
+    for line in lines:
+        artist = fig.text(ANIMATION_GRID["left"], 0.0, _plot_text(line), fontsize=FONT_FOOTNOTE_PT)
+        rights.append(float(artist.get_window_extent(renderer=renderer).x1))
+        artist.remove()
+    return rights, frame_w * ANIMATION_GRID["right"]
+
+
+def footnote_wrap(text: str, width_px: int = FOOTNOTE_MEASURE_WIDTH_PX) -> list[str]:
+    """``text`` wrapped into footnote lines by measured width (SP7 step S3a fix round 1,
+    N-S3a-R1-01: a character budget on a proportional font let digit- and wide-glyph
+    names run past the frame): greedy over ``footnote_tokens``, each candidate line
+    measured by ``footnote_right_px`` on a frame ``width_px`` wide and kept while its
+    right edge stays FOOTNOTE_WRAP_MARGIN of the frame width short of the footnote's
+    limit; a single token wider than that stands on a line of its own (it cannot be
+    split)."""
+    tokens = footnote_tokens(text)
+    lines: list[str] = []
+    current = ""
+    for token in tokens:
+        candidate = token if not current else f"{current} {token}"
+        (right,), limit = footnote_right_px([candidate], width_px)
+        if current and right >= limit - FOOTNOTE_WRAP_MARGIN * width_px:
+            lines.append(current)
+            current = token
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
     return lines
 
 
@@ -2250,9 +2590,19 @@ class _AscentFigure:
         self.t1 = max(r.t_end_s for r in runs)
         self.window = TIMELINE_KNEE_S if self.t1 > TIMELINE_KNEE_S else self.t1
         self.names = readout_names([r.name for r in runs])
-        gs = self.fig.add_gridspec(
-            1, 2, width_ratios=(ANIMATION_MAIN_WIDTH_RATIO, 1.0), **ANIMATION_GRID
+        # the footnote's lines (SP7 step S3a: a modelled run adds a structural line of its
+        # own, wrapped at this frame's width, fix round 2, N2-03); beyond the
+        # FOOTNOTE_BASE_LINES the grid as drawn leaves room for,
+        # the panels' bottom moves up one footnote line per extra line, so the block never
+        # reaches the panels' axis labels (tested at 1280 px)
+        width_px = round(size_in[0] * dpi - FRAME_PX_EPS)
+        self.caveats = animation_caveats(
+            runs, vehicle, label=metrics.get("label"), width_px=width_px
         )
+        extra = max(0, len(self.caveats) - FOOTNOTE_BASE_LINES)
+        per_line = FONT_FOOTNOTE_PT * FOOTNOTE_LINE_SPACING / POINTS_PER_INCH / size_in[1]
+        grid = {**ANIMATION_GRID, "bottom": ANIMATION_GRID["bottom"] + extra * per_line}
+        gs = self.fig.add_gridspec(1, 2, width_ratios=(ANIMATION_MAIN_WIDTH_RATIO, 1.0), **grid)
         right = gs[0, 1].subgridspec(
             2, 1, height_ratios=(ANIMATION_CLOSEUP_HEIGHT_RATIO, 2.0), hspace=0.3
         )
@@ -2268,14 +2618,14 @@ class _AscentFigure:
         self._small_axes()
         self._readout_setup()
         self._layout_events()
-        self.fig.text(
+        self.footnote = self.fig.text(
             ANIMATION_GRID["left"],
             0.012,
-            _plot_text("\n".join(animation_caveats(runs, vehicle, label=metrics.get("label")))),
+            _plot_text("\n".join(self.caveats)),
             fontsize=FONT_FOOTNOTE_PT,
             color=ANIMATION_FOOTNOTE_COLOR,
             va="bottom",
-            linespacing=1.3,
+            linespacing=FOOTNOTE_LINE_SPACING,
         )
 
     def _style(self, i: int) -> tuple[str, str, str]:

@@ -278,10 +278,12 @@ def test_the_pad_alone_launches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_an_imposed_offload_is_not_called_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exit criterion 7 and D-SP2-27 in summary.md (SP1's section title is printed for
-    any offload block): a launch of silo_cold_fix5pct says in its banner that an imposed
-    offload is not propellant saved; an Advanced imposed stage-2 offload adds that it is
-    not netted (no pad control); a stage-1 solve's banner says neither."""
+    """Exit criterion 7, D-SP2-27 and KI-039 (D-SP7-23, SP7 step S3a): a launch of
+    silo_cold_fix5pct files its imposed case under the summary's own imposed sub-section
+    with its own basis line (never under "Propellant saved at fixed payload"'s table), so
+    the banner no longer carries a disclaimer for it; an Advanced imposed stage-2 offload
+    still adds to the banner that it is not netted (no pad control); a stage-1 solve's
+    banner says neither and its summary has no imposed sub-section."""
     sup.install_fake_sim(monkeypatch)
     sup.git_states(monkeypatch, LAUNCH_CLEAN)
     basis = sup.searched_basis()
@@ -289,6 +291,7 @@ def test_an_imposed_offload_is_not_called_saved(
     fix5 = appform.preset_form(basis, "silo_cold_fix5pct")
     s2 = dataclasses.replace(fix5, fixed_key="stage2_fraction", advanced=True)
     banners = {}
+    texts = {}
     for name, form in (
         ("fix5", fix5),
         ("s2", s2),
@@ -298,12 +301,157 @@ def test_an_imposed_offload_is_not_called_saved(
         assert outcome.kind == app.OUTCOME_COMPLETE, outcome
         text = (outcome.out_dir / "summary.md").read_text(encoding="utf-8")
         banners[name] = text.splitlines()[0]
-    assert banners["fix5"].endswith(summary.EXPLORATORY_IMPOSED_TEXT)
-    assert summary.EXPLORATORY_IMPOSED_NOT_NETTED_TEXT not in banners["fix5"]
-    assert banners["s2"].endswith(
-        f"{summary.EXPLORATORY_IMPOSED_TEXT} {summary.EXPLORATORY_IMPOSED_NOT_NETTED_TEXT}"
-    )
+        texts[name] = text
+    assert not hasattr(summary, "EXPLORATORY_IMPOSED_TEXT")  # dropped with KI-039
+    assert "imposed" not in banners["fix5"].lower() and "netted" not in banners["fix5"]
+    assert "not propellant saved" not in banners["fix5"]
+    assert banners["s2"].endswith(summary.EXPLORATORY_IMPOSED_NOT_NETTED_TEXT)
+    assert "not propellant saved" not in banners["s2"]
     assert "imposed" not in banners["s1"].lower() and "netted" not in banners["s1"]
+    for name in ("fix5", "s2"):
+        section = texts[name].split(summary.OFFLOAD_SECTION_TITLE)[1]
+        assert summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE in section
+        assert f"{summary.OFFLOAD_IMPOSED_BASIS}." in section
+        assert summary.OFFLOAD_NO_SOLVED_CASE in section  # the launch flies one imposed case
+        assert section.index(summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE) < section.index(
+            "| quantity |"
+        )
+    assert summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE not in texts["s1"]
+    assert summary.OFFLOAD_NO_SOLVED_CASE not in texts["s1"]
+    # the push caveat of these launches: the form charges no modelled structural mass and
+    # these carry no penalty row (D-SP7-08), so the banner keeps SP1's words for a solve and
+    # an imposed case alike
+    for banner in banners.values():
+        assert f", {summary.EXPLORATORY_PUSH_CAVEAT}, " in banner
+
+
+def test_the_banners_push_caveat_branches_three_ways_from_the_offload_record() -> None:
+    """SP7 step S3a (D-SP7-22): ``exploratory_push_caveat`` keeps EXPLORATORY_PUSH_CAVEAT
+    word for word without an offload record and for a record whose written runs charge
+    nothing (every app launch: the form has no structural switch, D-SP7-08); a penalty
+    row's record (``assumed_penalty``) adds that its run carries an assumed stage-1 dry
+    mass, an assumption; a structural record (``structure_charged``, a case or a
+    structure payload case whose run was written) says a modelled mass is charged on
+    that run, a first-order station sizing, never "assumed", then names the penalty rows
+    beside it with their assumed mass and says that every other case charges none (fix
+    round 1, H-S3a-05: the modelled branch no longer drops what the rest of the block
+    charges); a structural record whose run was not written (a solve without an x*, a
+    payload case whose P_2* search failed) is named by its case name as one that found no
+    sized result (fix round 3, S3A-NUM-04: the block caveat lists it as structural, so the
+    banner never says "no structural mass for the push" or "every other case of the
+    block charges none" of it); a run-less record that is not structural counts for
+    nothing. The banner of a pad launch keeps EXPLORATORY_NO_PUSH_CAVEAT."""
+    plain = summary.EXPLORATORY_PUSH_CAVEAT
+    assert plain == "no structural mass for the push"
+    assert summary.exploratory_push_caveat(None) == plain
+    assert summary.exploratory_push_caveat({}) == plain
+    solved = {"name": "silo_s1", "run": "silo_s1", "kind": "solve", "assumed_penalty": False}
+    assert summary.exploratory_push_caveat({"cases": [solved]}) == plain
+    penalty = {**solved, "name": "silo_s1_dry+2t", "run": "silo_s1_dry+2t", "assumed_penalty": True}
+    text = summary.exploratory_push_caveat({"cases": [solved, penalty]})
+    assert text == (
+        "no structural mass for the push except the assumed stage-1 dry mass of the penalty "
+        "row silo_s1_dry+2t (an assumption, not a sized structure)"
+    )
+    two = summary.exploratory_push_caveat({"cases": [penalty, {**penalty, "run": "p2"}]})
+    assert "penalty rows silo_s1_dry+2t and p2" in two
+    modelled = {**solved, "name": "silo_s1_st", "run": "silo_s1_st", "structure_charged": True}
+    alone = "a modelled structural mass for the push on silo_s1_st (a first-order station sizing, "
+    alone += "not an assumed penalty; the offload section's Structure subsection)"
+    assert summary.exploratory_push_caveat({"cases": [modelled]}) == alone
+    text = summary.exploratory_push_caveat({"cases": [penalty, modelled]})
+    assert text == (
+        f"{alone}; the penalty row silo_s1_dry+2t charges an assumed stage-1 dry mass (an "
+        "assumption, not a sized structure)"
+    )
+    text = summary.exploratory_push_caveat({"cases": [solved, penalty, modelled]})
+    assert text == (
+        f"{alone}; the penalty row silo_s1_dry+2t charges an assumed stage-1 dry mass (an "
+        "assumption, not a sized structure); every other case of the block charges none"
+    )
+    text = summary.exploratory_push_caveat({"cases": [solved, modelled]})
+    assert text == f"{alone}; every other case of the block charges none"
+    text = summary.exploratory_push_caveat({"cases": [penalty, {**penalty, "run": "p2"}, modelled]})
+    assert "; the penalty rows silo_s1_dry+2t and p2 charge an assumed" in text
+    assert "every other case" not in text
+    payload_case = {"name": "cold_pstar", "run": "cold_pstar", "structure_charged": True}
+    failed_payload = {**payload_case, "name": "hot_pstar", "run": None}
+    text = summary.exploratory_push_caveat(
+        {"cases": [solved], "structure_payload_cases": [payload_case, failed_payload]}
+    )
+    assert text == (
+        "a modelled structural mass for the push on cold_pstar (a first-order station sizing, "
+        "not an assumed penalty; the offload section's Structure subsection); the structural "
+        "case hot_pstar found no sized result (no run written, so no structural mass flown; "
+        "the offload section's Structure subsection); every other case of the block charges "
+        "none"
+    )
+    # fix round 3, S3A-NUM-04: a structural case whose solve wrote no run is never read as
+    # charging nothing, alone or beside an uncharged written case
+    unwritten = {**modelled, "run": None}
+    unsized = (
+        "the structural case silo_s1_st found no sized result (no run written, so no "
+        "structural mass flown; the offload section's Structure subsection)"
+    )
+    assert summary.exploratory_push_caveat({"cases": [unwritten]}) == unsized
+    assert summary.exploratory_push_caveat({"cases": [solved, unwritten]}) == (
+        f"{unsized}; every other case of the block charges none"
+    )
+    assert summary.exploratory_push_caveat({"cases": [solved, unwritten]}, ["silo"]) == (
+        f"{unsized}; every other case of the block charges none; the experiment's pushed run "
+        "silo charges none"
+    )
+    two_unsized = summary.exploratory_push_caveat(
+        {"cases": [unwritten, {**unwritten, "name": "silo_s2_st"}]}
+    )
+    assert two_unsized.startswith("the structural cases silo_s1_st and silo_s2_st found no")
+    assert plain not in summary.exploratory_push_caveat({"cases": [unwritten]})
+    not_structural = {**solved, "run": None}
+    assert summary.exploratory_push_caveat({"cases": [not_structural]}) == plain
+    # fix round 2, N2-02: the experiment's own pushed runs (no record's run) charge none,
+    # and the modelled branch says so; the other branches already cover them
+    assert summary.exploratory_push_caveat({"cases": [modelled]}, ["silo_cold"]) == (
+        f"{alone}; the experiment's pushed run silo_cold charges none"
+    )
+    assert (
+        summary.exploratory_push_caveat(
+            {"cases": [modelled]}, ["silo_cold", "silo_s1_st", "silo_warm"]
+        )
+        == f"{alone}; the experiment's pushed runs silo_cold and silo_warm charge none"
+    )
+    assert summary.exploratory_push_caveat({"cases": [solved, penalty]}, ["silo_cold"]) == (
+        summary.exploratory_push_caveat({"cases": [solved, penalty]})
+    )
+    assert summary.exploratory_push_caveat(None, ["silo_cold"]) == plain
+    assert (
+        "assumed" not in summary.exploratory_push_caveat({"cases": [modelled]}).split("not an")[0]
+    )
+
+
+def test_the_banner_names_the_experiments_pushed_runs_beside_a_modelled_record() -> None:
+    """Fix round 2, N2-02: ``exploratory_banner`` passes its pushed runs to
+    ``exploratory_push_caveat``, so an exploratory-labelled run of a structural case says
+    that the experiment's pushed variant charges none (it is in the variants table with no
+    structure), and a pad-only banner keeps EXPLORATORY_NO_PUSH_CAVEAT."""
+
+    def rr(model: str) -> SimpleNamespace:
+        assist = SimpleNamespace(model=model)
+        return SimpleNamespace(
+            resolved=SimpleNamespace(run=SimpleNamespace(assist=assist)),
+            result=SimpleNamespace(metrics={}),
+        )
+
+    runs = {"pad": rr("none"), "silo_cold": rr("constant_accel")}
+    modelled = {"name": "s1_st", "run": "s1_st", "structure_charged": True}
+    git = {"hash": "abc123", "dirty": False}
+    banner = summary.exploratory_banner(git, "toy", runs, {"cases": [modelled]})  # type: ignore[arg-type]
+    assert (
+        "a modelled structural mass for the push on s1_st (a first-order station sizing, not an "
+        "assumed penalty; the offload section's Structure subsection); the experiment's pushed "
+        "run silo_cold charges none, fixed guidance"
+    ) in banner
+    pad_only = summary.exploratory_banner(git, "toy", {"pad": rr("none")}, {"cases": [modelled]})  # type: ignore[arg-type]
+    assert f", {summary.EXPLORATORY_NO_PUSH_CAVEAT}, " in pad_only
 
 
 def test_progress_is_told_the_five_stages_in_order(fixed_launch: SimpleNamespace) -> None:

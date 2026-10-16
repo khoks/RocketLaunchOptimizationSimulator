@@ -74,7 +74,17 @@ it:
   commit imported at server start (<hash>, clean or dirty); working tree at launch: clean or
   dirty. Do not cite; findings are in docs/findings/. Calibration +14.3%, no structural mass
   for the push, sweep-optimized, unthrottled.`, followed by which names are reproductions
-  of committed runs and cases and that no sensitivity check ran;
+  of committed runs and cases and that no sensitivity check ran (the push caveat is worded
+  from the offload record, three ways: an app launch without a penalty row reads so, since
+  the form charges no modelled structural mass (it has no structural switch, D-SP7-08); a
+  launch whose form adds a stage-1 dry mass (a penalty
+  row) reads "no structural mass for the push except the assumed stage-1 dry mass of the
+  penalty row ... (an assumption, not a sized structure)", since SP7 step S3a; an
+  exploratory-labelled run of a structural case from the command line reads "a modelled
+  structural mass for the push on ...", names a structural case whose solve wrote no run
+  as one that "found no sized result", then names the penalty rows with their assumed
+  mass, says that every other case of the block charges none and that the experiment's
+  own pushed runs charge none);
 - `metrics.json` and `resolved_config.yaml` carry `label: exploratory` (the third label
   value beside the experiment labels of [4](04-experiments.md)); the `git` record holds the
   launch-time state (`launch_dirty`), the server-start state (`server_start`) and the
@@ -95,8 +105,11 @@ Each launch's `summary.md` is tracked in git like every other run's; the rest is
 `./<experiment>_<timestamp>_scene.html`, under the one output rule of
 [7](07-commands.md#where-the-default-output-goes)); the app serves the same page and frames
 it. Its data block holds the selected rows of the runs' time series, the events, the
-display-only coasts of the separated bodies, the caveats and the directory's provenance
-(the git state recorded in the directory). The app's Save-video control writes
+display-only coasts of the separated bodies, the caveats, the directory's provenance
+(the git state recorded in the directory; a state git could not establish, or a
+directory written outside a repository, reads "state unknown", never clean) and the
+package version of the renderer (KI-038; its Data line ends "drawn by launch-assist-sim
+<version>"). The app's Save-video control writes
 `<experiment>_<timestamp>_<left>-vs-<right>_scene.mp4` (h264, 16:9, the chosen frame rate
 and width) into the folder the app was started from, with the caveat footer on every
 frame ([7b](07b-app.md#save-video-mp4)). Git ignores `*_scene.html` and `*_scene.mp4`, as it
@@ -144,7 +157,7 @@ describe the offloaded run.
 | Header: experiment, timestamp, git hash, comparison basis, vehicle, baseline (2-D: the search budget id and a guidance note) | yes | yes | yes |
 | Variants against the baseline: one column per run, one row per quantity | yes | yes | |
 | `sweep_<n>`: the sweep index as a table | | | yes |
-| Propellant saved at fixed payload (only with an `offload:` block; [5b](05b-offload.md#what-the-summary-reports)) | | yes | |
+| Propellant saved at fixed payload (only with an `offload:` block; [5b](05b-offload.md#what-the-summary-reports); its imposed cases in their own sub-section since SP7) | | yes | |
 | Bounds | | yes | |
 | Cases (calibration) | | yes | |
 | Sensitivity | yes | yes | |
@@ -225,7 +238,11 @@ A sweep point's `metrics.json` holds `experiment`, `timestamp_utc`, `git`, `run`
 - what was removed, gross: `stage2_preoffload_kg`, `stage1_offload_kg`,
   `stage2_offload_kg`, `total_offload_kg`, the loads (`stage1_load_kg`, `stage2_load_kg`,
   `total_load_kg`) and the shares (`stage1_fraction`, `stage2_fraction`,
-  `total_fraction`); the penalty (`stage1_dry_mass_added_kg`, `assumed_penalty`);
+  `total_fraction`); the penalty (`stage1_dry_mass_added_kg`, `assumed_penalty`); on a
+  structural case (SP7) the run-level structure keys (`structure_charged`,
+  `structure_dm_kg`, `structure_dm_stage2_kg`, `structure_set`, `structure_file`,
+  `structure_flags`, ...), which its recorded run's record under `offload.runs` carries
+  too and which every reader words its structure caveat from;
 - the payload: `payload_kg` (P_ref for a solved case, its own P\* for a fixed one) and
   `payload_delta_kg`;
 - `solve` (status, `offload_kg`, `root_kg`, `load_kg`, `fraction_of_load`,

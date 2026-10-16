@@ -426,6 +426,7 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     ["offload", "offload case", "Offload cases"],
     ["offload", "paired pad", "Paired pads"],
     ["offload", "pad control", "Pad controls"],
+    ["offload", "structure payload case", "Structure payload cases"],
     ["case", null, "Cases"],
     ["bound", null, "Bounds"],
     ["paired_baseline", null, "Paired baselines"]
@@ -2442,6 +2443,9 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
       S.detail = res.body;
       renderPanel(res.body);
       renderJob();
+      // the fit check asks again under this panel's video footer (videoFit, panelFooter)
+      S.video.fit = null;
+      renderVideo();
     }).catch(err => {
       if (S.dir !== dir || S.panelAsked !== key) return;
       clear($("panelBody")).appendChild(el("p", "err", "The results panel could not be loaded: " + err.message));
@@ -2694,17 +2698,27 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
     S.video.planKey = key;
     return plan;
   }
+  function panelFooter() {
+    // The caveat footer the server would give a video of the runs in the frame (the results panel's video_footer,
+    // SP7 step S3a fix round 3, S3A-NUM-01), when the panel describes exactly the scene's runs; else null.
+    const p = S.detail && S.detail.panel ? S.detail.panel : null;
+    if (!p || !S.scene || !Array.isArray(p.video_footer) || !samePair(S.scene.runs, p.pair)) return null;
+    return p.video_footer.every(s => typeof s === "string") ? p.video_footer : null;
+  }
   function videoFit(hook, c, plan) {
     // Whether the scene in the frame can draw a frame of the chosen size under a caveat footer (two panels under a
-    // long footer do not fit 960 x 540 px): captureFrame of the clip's first time with the page's own footer lines
-    // (the server's are of the same order; a capture that still fails records the server's reason, startVideo),
-    // asked once per scene and size; the answer is kept and the control re-rendered when it arrives.
+    // long footer do not fit 960 x 540 px): captureFrame of the clip's first time under the server's footer lines
+    // when the panel carries them (panelFooter: a modelled run's structural line makes them longer than the page's
+    // own frame caveat), else the page's own (a capture that still fails records the server's reason, startVideo),
+    // asked once per scene and size (a newly loaded panel asks again, loadPanel); the answer is kept and the
+    // control re-rendered when it arrives.
     const key = sceneKey(S.scene) + "|" + c.width;
     const fit = S.video.fit;
     if (fit && fit.key === key) return fit;
     const pending = { key: key, state: "checking", error: "" };
     S.video.fit = pending;
-    hook.captureFrame(plan.times[0], c.width, c.height).then(
+    const footer = panelFooter();
+    hook.captureFrame(plan.times[0], c.width, c.height, footer === null ? undefined : footer).then(
       () => { if (S.video.fit === pending) { pending.state = "ok"; renderVideo(); } },
       err => { if (S.video.fit === pending) { pending.state = "no"; pending.error = String(err && err.message ? err.message : err); renderVideo(); } });
     return pending;

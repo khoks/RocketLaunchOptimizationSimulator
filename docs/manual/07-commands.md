@@ -118,7 +118,7 @@ is re-simulated.
 | Argument | Default | Meaning |
 |---|---|---|
 | `run_dir` | required | One results directory of a `planar_2d` `run` |
-| `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | At most four. Experiment runs, bound re-runs (compared with their paired baseline), calibration cases (compared with nothing) and runs of the offload block, labelled by kind: a case's recorded run "(offload)", a paired pad "(paired pad)" or a pad control "(pad control)" ([5b](05b-offload.md#replaying-an-offloaded-run)) can be named |
+| `--runs NAME [NAME ...]` | the baseline plus up to three variants, in summary order | At most four. Experiment runs, bound re-runs (compared with their paired baseline), calibration cases (compared with nothing) and runs of the offload block, labelled by kind: a case's recorded run "(offload)", a paired pad "(paired pad)", a pad control "(pad control)" or a structure payload case's run "(structure payload case)" ([5b](05b-offload.md#replaying-an-offloaded-run)) can be named |
 | `--out PATH` | `./<experiment>_<timestamp>_replay.html` | Output `.html` file |
 
 The output follows the one rule below. The console prints `replay: <path> (<size> KiB)`.

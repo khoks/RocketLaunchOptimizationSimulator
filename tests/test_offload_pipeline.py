@@ -858,15 +858,21 @@ def test_offload_section_renders_every_row_and_caveat() -> None:
     """The summary block of a synthetic record: the basis with P_ref, the sensitivity
     basis, every caveat (the record's: the calibration caveat, then OFFLOAD_CAVEATS),
     every case and energy row (tonnes = kg / 1000, percent = 100 x fraction; the quoted
-    offload leading the gross rows), the energy note with "not an efficiency claim" and
-    every exclusion, the decomposition table (every term, the residual unrounded), the
-    pad control's resolution effect and consistency verdict (no bound text: the bound
-    judges an ok control only), the arms, a case that did not run, the notes; every
-    table row has its table's cell count (no "|" inside a label); without energy inputs
-    no energy row; a skipped block prints only why."""
+    offload leading the gross rows), the solved case in the section's own table and the
+    imposed case under its own sub-section with its own basis line (KI-039, D-SP7-23,
+    SP7 step S3a: the heading "Propellant saved at fixed payload" and "measured at P_ref"
+    describe solved cases only; a record of imposed cases alone says so in place of the
+    solved table; a record without one has no sub-section), the energy note with "not an
+    efficiency claim" and every exclusion, the decomposition table (every term, the
+    residual unrounded), the pad control's resolution effect and consistency verdict (no
+    bound text: the bound judges an ok control only), the arms, a case that did not run,
+    the notes; every table row has its table's cell count (no "|" inside a label);
+    without energy inputs no energy row; a skipped block prints only why."""
     record = _synthetic_record()
     text = summary.offload_section(record)
     assert text.startswith(compare.OFFLOAD_COMPARISON_BASIS)
+    assert "every solved offload is measured at the reference payload P_ref" in text
+    assert "an imposed (fixed) case flies its own payload capacity P*" in text
     assert "Reference payload P_ref = 26054.4 kg" in text
     assert compare.OFFLOAD_SENSITIVITY_BASIS in text
     for caveat in record["caveats"]:
@@ -874,12 +880,68 @@ def test_offload_section_renders_every_row_and_caveat() -> None:
     for caveat in summary.OFFLOAD_CAVEATS:
         assert caveat in record["caveats"]
     for label, _fmt, _key in (*summary.OFFLOAD_CASE_ROWS, *summary.OFFLOAD_ENERGY_ROWS):
-        assert f"| {label} |" in text, label
+        assert text.count(f"| {label} |") >= 2, label  # the solved table and the imposed one
     t1, t10 = f"{41262.9 / 1000:.6g}", f"{41090 / 1000:.6g}"
-    assert f"| stage-1 propellant removed, gross [t] | {t1} | {t10} |" in text
-    assert f"| quoted offload [t] | {t1} | {t10} |" in text
+    assert f"| stage-1 propellant removed, gross [t] | {t1} |\n" in text
+    assert f"| stage-1 propellant removed, gross [t] | {t10} |\n" in text
+    assert (
+        f"| quoted offload [t] | {t1} |\n" in text and f"| quoted offload [t] | {t10} |\n" in text
+    )
     assert f"|   % of the stage-1 load | {100 * 41262.9 / 410900:.6g} |" in text
-    assert "| kind | solved, stage1 | fixed, stage1_fraction = 0.1 |" in text
+    assert (
+        "| kind | solved, stage1 |\n" in text
+        and "| kind | fixed, stage1_fraction = 0.1 |\n" in text
+    )
+    assert "| quantity | s1 |\n" in text and "| quantity | f10 |\n" in text
+    # the imposed sub-section: after the solved table, before the decomposition, with its basis
+    assert summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE in text
+    solved_at = text.index("| quantity | s1 |")
+    imposed_at = text.index(summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE)
+    assert (
+        solved_at < imposed_at < text.index("| quantity | f10 |") < text.index("### Decomposition")
+    )
+    assert f"{summary.OFFLOAD_IMPOSED_BASIS}." in text
+    assert text.index(f"{summary.OFFLOAD_IMPOSED_BASIS}.") < text.index("| quantity | f10 |")
+    assert "never propellant saved at P_ref" in summary.OFFLOAD_IMPOSED_BASIS
+    assert summary.OFFLOAD_NO_SOLVED_CASE not in text
+    assert (
+        "| assumed stage-1 dry mass added [t] (an assumption, not a sized structure) | 0 |" in text
+    )
+    only_fixed = summary.offload_section(
+        {**record, "cases": [c for c in record["cases"] if c.get("kind") != "solve"]}
+    )
+    assert summary.OFFLOAD_NO_SOLVED_CASE in only_fixed and "| quantity | f10 |" in only_fixed
+    assert "| quantity | s1 |" not in only_fixed
+    # final clean-up (N3a-04): without a solved table the energy note names the imposed
+    # cases' table alone, never "the solved table above"
+    assert summary.OFFLOAD_ENERGY_BOTH_TABLES not in only_fixed
+    assert "solved table above" not in only_fixed
+    assert summary.OFFLOAD_ENERGY_IMPOSED_TABLE in only_fixed
+    assert (
+        only_fixed.index(summary.OFFLOAD_NO_SOLVED_CASE)
+        < only_fixed.index(summary.OFFLOAD_ENERGY_IMPOSED_TABLE)
+        < only_fixed.index(summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE)
+    )
+    assert summary.OFFLOAD_ENERGY_IMPOSED_TABLE not in text
+    no_fixed = summary.offload_section(
+        {**record, "cases": [c for c in record["cases"] if c.get("kind") != "fixed"]}
+    )
+    assert summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE not in no_fixed
+    assert summary.OFFLOAD_IMPOSED_BASIS not in no_fixed and "| quantity | s1 |" in no_fixed
+    # fix round 3 (H-S3a-P3-06, S3A-CMP3-01, S3A-NUM-02): the cases that did not run and the
+    # energy note come before the imposed sub-section's heading, the list after a lead line
+    # saying it covers both kinds and the note saying it covers both tables; a block
+    # without imposed cases has neither addition
+    energy_at = text.index("Energy comparison: ")
+    assert solved_at < text.index(summary.OFFLOAD_NOT_RUN_LEAD) < imposed_at
+    assert text.index(summary.OFFLOAD_NOT_RUN_LEAD) < text.index("- x (of silo_hot): ")
+    assert text.index("- x (of silo_hot): ") < energy_at < imposed_at
+    assert text.index(summary.OFFLOAD_ENERGY_BOTH_TABLES) < imposed_at
+    imposed_part = text[imposed_at : text.index("### Decomposition")]
+    assert "Energy comparison" not in imposed_part and "not run" not in imposed_part
+    assert summary.OFFLOAD_NOT_RUN_LEAD not in no_fixed
+    assert summary.OFFLOAD_ENERGY_BOTH_TABLES not in no_fixed
+    assert no_fixed.index("- x (of silo_hot): ") < no_fixed.index("Energy comparison: ")
     assert "not an efficiency claim" in text
     for item in compare.OFFLOAD_ENERGY_EXCLUSIONS:
         assert item in text
@@ -2029,6 +2091,208 @@ def test_calibration_caveat_follows_the_vehicle() -> None:
     for text in (gate, other):
         assert text.endswith(summary.OFFLOAD_MODEL_READING)
     assert summary.offload_caveats(GATE, record) == [gate, *summary.OFFLOAD_CAVEATS]
+
+
+STRUCTURAL_RECORD = {
+    "name": "s1_st",
+    "run": "s1_st",
+    "kind": "solve",
+    "mode": "stage1",
+    "structure_charged": True,
+    "structure_dm_kg": 9100.3,
+    "structure_dm_stage2_kg": 200.2,
+    "structure_set": "central",
+    "structure_file": "configs/structures/x.yaml",
+    "structure_flags": [],
+    "stage1_dry_mass_added_kg": 0.0,
+    "assumed_penalty": False,
+}
+"""A synthetic structural case record (the run-level keys of D-SP7-22 a block caveat
+reads: the mass by stage, the set)."""
+
+
+def test_block_caveats_branch_three_ways_from_the_records() -> None:
+    """SP7 step S3a (D-SP7-22): ``offload_caveats`` keeps SP1's items word for word for a
+    block with no structural record and only prescribed drives (every SP1-type block, the
+    gallery's directories); with structural records (a case, a payload case, an arm or a
+    sweep point's case record, each named by its run or case name) the structure item
+    names each case's and payload case's modelled mass by stage with its layer and set
+    (fix round 2, H-S3a-P2-05: a design-axis row with its axes, a plausibility-scaled mass
+    with its factor, a no_offload end "at x = 0"), counts the arms (their dm is the arms
+    table's, beside its caveat), the model and where the rest is by record kind (fix
+    round 1, H-S3a-04: the Structure subsection for the cases and payload cases, the arms
+    table with its structural columns and caveat for the arms; only the kinds present),
+    never calls that mass assumed, and says what the uncharged cases and the penalty rows
+    charge, naming them, only when there are any (fix round 2, H-S3a-P2-06); the tanks
+    item excepts the modelled increment and, with a penalty row, its assumed dry mass; a drive
+    other than constant_accel changes the drive item, naming its cases and that its
+    settings are the variant's own, while the constant_accel cases keep the prescribed
+    sentence, and a case of a variant without a push (assist model none, S3A-R1-02) is
+    said to fly without a push, never to ride a "none" drive."""
+    record = plots.CALIBRATION_RECORDS[GATE]
+    gate = summary.offload_calibration_caveat(GATE, record)
+    plain = summary.offload_caveats(GATE, record)
+    assert plain == [gate, *summary.OFFLOAD_CAVEATS]
+    assert plain == summary.offload_caveats(
+        GATE, record, structural=(), drives={"s1": "constant_accel"}
+    )
+    arm = {
+        **STRUCTURAL_RECORD,
+        "run": "s1_st__arm",
+        "case": "s1_st",
+        "param": "vehicle.stages.stage1.dry_mass_t",
+        "structure_set": "physics_low_mass",
+    }
+    point = {
+        **STRUCTURAL_RECORD,
+        "run": None,
+        "structure_dm_kg": 9300.0,
+    }  # a sweep point writes no run
+    items = summary.offload_caveats(GATE, record, structural=[STRUCTURAL_RECORD, arm, point])
+    assert items[0] == gate and len(items) == len(plain)
+    structure = items[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX]
+    head = (
+        "the structural cases charge the modelled structural mass of the push load on their "
+        "assisted runs, a first-order station sizing of the push load (a first-order estimate "
+        "with its stated ranges, not a detailed structural design; "
+    )
+    assert structure.startswith(
+        f"{head}the Structure subsection gives each case's and payload case's layer and set, "
+        "file, band and flags; the arms table, its structural columns and its caveat give each "
+        "arm's dm, set and envelope pad): "
+    )
+    cases_only = summary.offload_caveats(GATE, record, structural=[STRUCTURAL_RECORD, point])
+    assert cases_only[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX].startswith(
+        f"{head}the Structure subsection gives each case's and payload case's layer and set, "
+        "file, band and flags): s1_st: "
+    )
+    assert "arms table" not in cases_only[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX]
+    arms_only = summary.offload_caveats(GATE, record, structural=[arm])
+    assert arms_only[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX] == (
+        "the structural sensitivity arms charge the modelled structural mass of the push load "
+        "on their assisted runs, a first-order station sizing of the push load (a first-order "
+        "estimate with its stated ranges, not a detailed structural design; the arms table, its "
+        "structural columns and its caveat give each arm's dm, set and envelope pad): 1 "
+        "structural sensitivity arm of s1_st"
+    )
+    central = "layer and set central (every coefficient at its central value): central"
+    assert structure == (
+        f"{head}the Structure subsection gives each case's and payload case's layer and set, "
+        "file, band and flags; the arms table, its structural columns and its caveat give each "
+        "arm's dm, set and envelope pad): s1_st: 9,100.3 kg of modelled structural mass (stage 1 "
+        f"8,900.1 kg, stage 2 200.2 kg), {central}; s1_st: 9,300.0 kg of modelled structural "
+        f"mass (stage 1 9,099.8 kg, stage 2 200.2 kg), {central}; 1 structural sensitivity arm "
+        "of s1_st"
+    )
+    assert "s1_st__arm" not in structure  # the arms' dm is the arms table's (H-S3a-P2-05)
+    assert "assumed" not in structure and "charges none" not in structure
+    assert "bounds" not in structure and "no structural mass is charged" not in structure
+    tanks = items[1 + summary.OFFLOAD_TANKS_CAVEAT_INDEX]
+    assert tanks == summary.OFFLOAD_TANKS_STRUCTURE_CAVEAT
+    assert "except for the modelled structural increment" in tanks
+    # the rest of the block from its records (H-S3a-P2-06): named, only when present
+    rest = summary.offload_caveats(
+        GATE, record, structural=[STRUCTURAL_RECORD], penalties=["d2"], uncharged=["s1", "s2"]
+    )
+    assert rest[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX].endswith(
+        f"{central}; s1 and s2 charge none ({summary.OFFLOAD_STRUCTURE_UNCHARGED_TEXT}); the "
+        f"penalty row d2 adds {summary.OFFLOAD_STRUCTURE_PENALTY_TEXT}"
+    )
+    assert rest[1 + summary.OFFLOAD_TANKS_CAVEAT_INDEX] == (
+        summary.OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT
+    )
+    assert "except for the penalty rows' assumed stage-1 dry mass and the modelled" in (
+        summary.OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT
+    )
+    # a design-axis row, a scaled end and a no_offload end are told apart (H-S3a-P2-05)
+    axis = {
+        **STRUCTURAL_RECORD,
+        "name": "s1_qs",
+        "run": "s1_qs",
+        "structure_dynamic": "quasi_static",
+    }
+    scaled = {
+        **STRUCTURAL_RECORD,
+        "name": "s1_lo",
+        "run": "s1_lo",
+        "structure_set": "physics_low_mass",
+        "structure_plausibility_scaled": True,
+        "structure_plausibility_factor": 0.845549,
+    }
+    none = {**STRUCTURAL_RECORD, "name": "s1_none", "run": "s1_none", "status": "no_offload"}
+    marked = summary.offload_structure_caveat([axis, scaled, none])
+    assert (
+        "s1_qs: 9,100.3 kg of modelled structural mass (stage 1 8,900.1 kg, stage 2 200.2 kg), "
+        "layer and set design axis (layer 2): central at dynamic quasi_static;"
+    ) in marked
+    assert summary.structure_layer_label(axis) != summary.structure_layer_label(STRUCTURAL_RECORD)
+    assert (
+        "layer and set physics band, low-mass end: physics_low_mass (plausibility-scaled, "
+        "x0.845549);"
+    ) in marked
+    assert marked.endswith(f"{central} (at x = 0: the solve found no offload)")
+    for i, item in enumerate(items[1:]):
+        if i not in (summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX, summary.OFFLOAD_TANKS_CAVEAT_INDEX):
+            assert item == summary.OFFLOAD_CAVEATS[i]
+    # a solve without an x*: the mass is said to be unsized, not 0
+    unsized = summary.offload_caveats(
+        GATE, record, structural=[{**STRUCTURAL_RECORD, "structure_dm_kg": None}]
+    )[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX]
+    assert (
+        "s1_st: a modelled structural mass with no sizing at x* (the solve found no x*)" in unsized
+    )
+    # the drive item by drive
+    drives = {"s1": "constant_accel", "lm": "linear_motor", "lm2": "linear_motor"}
+    drive = summary.offload_caveats(GATE, record, drives=drives)[
+        1 + summary.OFFLOAD_DRIVE_CAVEAT_INDEX
+    ]
+    assert drive == (
+        "the drive of lm and lm2 is the linear_motor drive of the variant (its force and power "
+        "limits, carriage and shaft are the variant's own settings, recorded in "
+        "resolved_config.yaml); for s1 "
+        + summary.OFFLOAD_CAVEATS[summary.OFFLOAD_DRIVE_CAVEAT_INDEX]
+    )
+    other_only = summary.offload_caveats(GATE, record, drives={"lm": "linear_motor"})
+    assert "for " not in other_only[1 + summary.OFFLOAD_DRIVE_CAVEAT_INDEX].split(")")[1]
+    assert (
+        "prescribed constant acceleration" not in other_only[1 + summary.OFFLOAD_DRIVE_CAVEAT_INDEX]
+    )
+    unpushed = summary.offload_caveats(GATE, record, drives={"x": "none", "s1": "constant_accel"})
+    assert unpushed[1 + summary.OFFLOAD_DRIVE_CAVEAT_INDEX] == (
+        "x flies without a push (assist none: no drive); for s1 "
+        + summary.OFFLOAD_CAVEATS[summary.OFFLOAD_DRIVE_CAVEAT_INDEX]
+    )
+    assert "none drive" not in unpushed[1 + summary.OFFLOAD_DRIVE_CAVEAT_INDEX]
+    assert summary.offload_drive_caveat({"x": "none", "y": "none"}) == (
+        "x and y fly without a push (assist none: no drive)"
+    )
+    assert summary.OFFLOAD_NO_ASSIST_MODEL == "none"
+    assert summary.OFFLOAD_CAVEATS[summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX].startswith(
+        "no structural mass is charged for the push load"
+    )
+    assert summary.OFFLOAD_CAVEATS[summary.OFFLOAD_DRIVE_CAVEAT_INDEX].startswith("the drive is a")
+    assert summary.OFFLOAD_CAVEATS[summary.OFFLOAD_TANKS_CAVEAT_INDEX].startswith("the tanks are")
+
+
+def test_block_drives_name_the_payload_cases_by_their_own_drive() -> None:
+    """Fix round 2 (S3A-C2-01, N2-05): the drive item of a block is worded from each case's
+    and each structure payload case's own variant (``results_io.offload_block_drives``), so
+    a payload case of a variant on a drive other than constant_accel is named with that
+    drive, never put under the prescribed constant acceleration; a name whose variant did
+    not run is left out."""
+
+    def variant(model: str) -> SimpleNamespace:
+        assist = SimpleNamespace(model=model)
+        return SimpleNamespace(resolved=SimpleNamespace(run=SimpleNamespace(assist=assist)))
+
+    variants = {"silo": variant("constant_accel"), "lm": variant("linear_motor")}
+    drives = results_io.offload_block_drives(
+        [("s1", "silo"), ("lm_pstar", "lm"), ("gone", "absent")], variants
+    )
+    assert drives == {"s1": "constant_accel", "lm_pstar": "linear_motor"}
+    item = summary.offload_drive_caveat(drives)
+    assert item.startswith("the drive of lm_pstar is the linear_motor drive of the variant")
+    assert item.endswith("for s1 " + summary.OFFLOAD_CAVEATS[summary.OFFLOAD_DRIVE_CAVEAT_INDEX])
 
 
 def test_calibration_caveat_of_the_readme_loads_fork() -> None:

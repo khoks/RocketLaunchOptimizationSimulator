@@ -67,7 +67,7 @@ from typing import Any
 
 import pytest
 
-from launchsim import app, appform, video
+from launchsim import app, appform, run_data, video
 
 
 def _load_support() -> ModuleType:
@@ -756,6 +756,13 @@ RUNS = [
         "offload_kind": "pad control",
         "has_rows": False,
     },
+    # SP7 step S3a fix round 3 (S3A-CMP3-06): a structure payload case's run has a group
+    {
+        "name": "silo_cold_pstar",
+        "role": "offload",
+        "offload_kind": "structure payload case",
+        "has_rows": True,
+    },
     {"name": "silo_cold__aero_bound", "role": "bound", "offload_kind": None, "has_rows": True},
     {"name": "pad__aero_bound", "role": "paired_baseline", "offload_kind": None, "has_rows": True},
     {"name": "odd", "role": None, "offload_kind": None, "has_rows": True},
@@ -777,6 +784,36 @@ PAIR_CASES = (
     ((RUNS, ["pad__offload_stage1", "pad"], None), ["pad"]),
     (([], [], ["pad"]), []),
 )
+
+
+def test_run_picker_groups_follow_run_data(template: str) -> None:
+    """The app page's run pickers group the runs with run_data's own role and offload kind
+    strings (the scene page's test_run_selector_groups_follow_run_data, twinned here: SP7
+    step S3a fix round 3, S3A-CMP3-06), so a structure payload case's run has its group
+    "Structure payload cases" and a rename in run_data fails here rather than dropping
+    such runs into "Other run folders"."""
+    script = _script(template)
+    block = script[script.index("const ROLE_GROUPS") :]
+    block = block[: block.index("];")]
+    entries = re.findall(r'\["(\w+)", (null|"[^"]+"), "([^"]+)"\]', block)
+    assert {role for role, _, _ in entries} == {
+        run_data.ROLE_RUN,
+        run_data.ROLE_OFFLOAD,
+        run_data.ROLE_CASE,
+        run_data.ROLE_BOUND,
+        run_data.ROLE_PAIRED_BASELINE,
+    }
+    assert {kind.strip('"') for _, kind, _ in entries if kind != "null"} == {
+        run_data.OFFLOAD_CASE,
+        run_data.OFFLOAD_PAIRED_PAD,
+        run_data.OFFLOAD_PAD_CONTROL,
+        run_data.OFFLOAD_STRUCTURE_PAYLOAD,
+    }
+    assert (
+        run_data.ROLE_OFFLOAD,
+        f'"{run_data.OFFLOAD_STRUCTURE_PAYLOAD}"',
+        "Structure payload cases",
+    ) in entries
 
 
 @pytest.mark.skipif(NODE is None, reason="node not installed: page functions not run")
@@ -824,6 +861,7 @@ def test_hash_scene_path_and_helpers_under_node(template: str, tmp_path: Path) -
         ["Offload cases", ["silo_cold_s1"]],
         ["Paired pads", ["silo_cold_s1__pad"]],
         ["Pad controls", ["pad__offload_stage1"]],
+        ["Structure payload cases", ["silo_cold_pstar"]],
         ["Bounds", ["silo_cold__aero_bound"]],
         ["Paired baselines", ["pad__aero_bound"]],
         ["Other run folders", ["odd"]],
@@ -2342,7 +2380,22 @@ def test_video_control_structure_and_routes(template: str) -> None:
     # offered (two panels under the caveat footer do not fit 960 x 540 px); a capture that
     # fails during a save keeps the size off and its message on the page
     assert "const fit = videoFit(hook, c, plan);" in render
-    assert "hook.captureFrame(plan.times[0], c.width, c.height)" in _body(script, "videoFit")
+    # SP7 step S3a fix round 3 (S3A-NUM-01): the test frame is drawn under the server's own
+    # footer lines when the results panel carries them for exactly the scene's runs
+    # (app.panel_video_footer), since a modelled run's structural line makes them longer
+    # than the payload's frame caveat; a newly loaded panel asks again
+    fit = _body(script, "videoFit")
+    assert "const footer = panelFooter();" in fit
+    assert (
+        "hook.captureFrame(plan.times[0], c.width, c.height, "
+        "footer === null ? undefined : footer)" in fit
+    )
+    footer = _body(script, "panelFooter")
+    assert "Array.isArray(p.video_footer)" in footer
+    assert "samePair(S.scene.runs, p.pair)" in footer
+    assert 'p.video_footer.every(s => typeof s === "string")' in footer
+    panel = _body(script, "loadPanel")
+    assert panel.index("S.video.fit = null;") < panel.index("renderVideo();")
     assert "if (err.capture === true) S.video.fit = " in start
     assert "cancelSession(v, true)" in start
     assert "if (quiet === true) return;" in _body(script, "cancelSession")

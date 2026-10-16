@@ -1336,9 +1336,12 @@ HEADLINE_DID_NOT_FLY = "did_not_fly"
 HEADLINE_NOT_IN_ORBIT = "not_in_orbit"
 HEADLINE_PAIRED_PAD = "paired_pad"
 HEADLINE_PAD_CONTROL = "pad_control"
+HEADLINE_STRUCTURE_PAYLOAD = "structure_payload_case"
 HEADLINE_FLAGGED = "flagged"
 """Kinds of a run's headline in the results panel (one per launch kind, design 4.7;
-HEADLINE_FLAGGED: a run whose own checks failed, status bug_suspect)."""
+HEADLINE_FLAGGED: a run whose own checks failed, status bug_suspect;
+HEADLINE_STRUCTURE_PAYLOAD: a structure payload case's run, SP7 step S3a fix round 1,
+whose text is the replay page's note for it)."""
 FINDINGS_BLOCKED_TEXT = "findings blocked until investigated (summary.md, Checks)"
 """What a headline adds for a run or a comparison that is bug_suspect."""
 YARDSTICK_TEXT = "a yardstick (instant full thrust), not a design"
@@ -1966,22 +1969,19 @@ could not compare)."""
 
 def tree_state(dirty: Any, hash_: Any) -> str:
     """'clean', 'dirty' or 'unknown' for a git record's dirty flag and hash: a hash that
-    is missing, not a non-empty string, a no-git hash or GIT_HASH_UNKNOWN, or a flag that
-    is not a boolean, is unknown, never clean."""
-    if (
-        not isinstance(hash_, str)
-        or not hash_
-        or hash_ in (*summary.EXPLORATORY_NO_GIT_HASHES, GIT_HASH_UNKNOWN)
-        or not isinstance(dirty, bool)
-    ):
+    is missing, not a non-empty string or GIT_HASH_UNKNOWN is unknown, never clean; the
+    rest is summary.tree_state, the one rule of the banner, the replay page's git string
+    (KI-036) and this app (a no-git hash or a flag that is not a boolean: unknown)."""
+    if not isinstance(hash_, str) or not hash_ or hash_ == GIT_HASH_UNKNOWN:
         return "unknown"
-    return "dirty" if dirty else "clean"
+    return summary.tree_state(dirty, hash_)
 
 
 def git_view(git: Any) -> dict[str, Any]:
     """{hash, state} of a git record as metrics.json holds it: the recorded hash
     (GIT_HASH_UNKNOWN when it is absent or not a non-empty string) and ``tree_state`` of
-    the recorded flag and hash (scene.git_record's dirty: None unless a boolean)."""
+    the recorded flag and hash (scene.git_record's dirty: None unless a boolean on a hash
+    summary.tree_state can read)."""
     raw = run_data.as_mapping(git)
     record = scene.git_record(raw)
     hash_ = raw.get("hash")
@@ -2030,6 +2030,7 @@ def _gross_solve_text(record: Mapping[str, Any], ref: str, removed: float | None
             + ("an unknown amount" if removed is None else _t(removed))
             + f", {_pct(run_data.finite(record.get('total_fraction')))} of all, in total"
             + replay.penalty_clause(record)
+            + replay.structure_clause(record)
         )
     figure = quoted if quoted is not None else removed
     shares = replay.offload_shares(record).removeprefix("; ")
@@ -2038,6 +2039,7 @@ def _gross_solve_text(record: Mapping[str, Any], ref: str, removed: float | None
         + ("an unknown amount" if figure is None else _t(figure))
         + ("" if not shares else f", {shares}")
         + replay.penalty_clause(record)
+        + replay.structure_clause(record)
     )
 
 
@@ -2053,7 +2055,9 @@ def case_headline(record: Mapping[str, Any], offload: Mapping[str, Any]) -> dict
     net figure that subtracts a flagged pad control) and ``flagged``; an imposed offload
     P* - P_ref with its reading (replay.payload_reading), never 'saved', and its assumed
     stage-1 dry mass when it carries one (replay.penalty_clause, as a solved figure
-    does); one whose search did not end ok says so."""
+    does) or, for a structural case, its modelled structural mass by stage
+    (replay.structure_clause, SP7 step S3a; never "assumed"); one whose search did not
+    end ok says so."""
     name = record.get("name")
     mode = record.get("mode")
     p_ref = run_data.finite(offload.get("reference_payload_kg"), 1)
@@ -2144,6 +2148,7 @@ def case_headline(record: Mapping[str, Any], offload: Mapping[str, Any]) -> dict
     text = (
         amount
         + replay.penalty_clause(record)
+        + replay.structure_clause(record)
         + (": P* - P_ref not recorded" if delta is None else f": P* - P_ref {delta:+,.1f} kg")
         + reading
     )
@@ -2163,7 +2168,8 @@ def run_headline(
     name: str, source: Mapping[str, Any], metrics: Mapping[str, Any]
 ) -> dict[str, Any]:
     """The headline of one run (design 4.7): an offload case's run by ``case_headline``;
-    a paired pad or a pad control by the replay page's note; a run that did not fly or
+    a paired pad, a pad control or a structure payload case's run
+    (HEADLINE_STRUCTURE_PAYLOAD) by the replay page's note; a run that did not fly or
     did not reach the target orbit says so with its status; a run whose own checks
     failed (status bug_suspect, its trajectory's end kept in ``trace_status``) says
     findings are blocked, how its trajectory ended and its payload as not to be quoted
@@ -2179,7 +2185,10 @@ def run_headline(
         role = run_data.offload_role(offload, name)
         if kind == run_data.OFFLOAD_CASE and role is not None:
             return case_headline(role[1], offload)
-        what = HEADLINE_PAD_CONTROL if kind == run_data.OFFLOAD_PAD_CONTROL else HEADLINE_PAIRED_PAD
+        what = {
+            run_data.OFFLOAD_PAD_CONTROL: HEADLINE_PAD_CONTROL,
+            run_data.OFFLOAD_STRUCTURE_PAYLOAD: HEADLINE_STRUCTURE_PAYLOAD,
+        }.get(str(kind), HEADLINE_PAIRED_PAD)
         return {"kind": what, "text": str(source.get("note", ""))}
     status = str(m.get("status", "unknown"))
     if status in NOT_FLOWN_STATUSES:
@@ -2848,6 +2857,29 @@ def panel_caveats(
     }
 
 
+def panel_video_footer(
+    run_dir: Path,
+    metrics: Mapping[str, Any],
+    config: Mapping[str, Any],
+    runs: Sequence[dict[str, Any]],
+    pair: Sequence[str],
+) -> list[str] | None:
+    """The caveat footer a video of the panel's ``pair`` would carry (``video_footer``,
+    the lines POST /api/videos answers), so the page's fit check (app.html's videoFit)
+    draws its test frame under the server's own lines rather than the payload's shorter
+    frame caveat (fix round 3, S3A-NUM-01: a modelled run's structural line made the two
+    differ by several canvas lines); None when the pair is empty, a run of it holds no
+    row (``run_view``'s has_rows) or the footer cannot be built (the page then tests with
+    its own lines, as before)."""
+    by_name = {r["name"]: r for r in runs}
+    if not pair or any(by_name.get(n, {}).get("has_rows") is not True for n in pair):
+        return None
+    try:
+        return video_footer(run_dir, pair, metrics, config)
+    except (ValueError, OSError, KeyError):  # run_data.RunDataError is a ValueError
+        return None
+
+
 def results_panel(
     run_dir: Path,
     experiment: str,
@@ -2869,9 +2901,10 @@ def results_panel(
     (``sp1_comparison``; ``sp1_same``: whether the basis files at the directory's recorded
     basis commit are SP1's, ``sp1_files_same``, ``AppServer.sp1_same_at``), the push,
     flight, flags and verification, the outcome (``classify``), the caveats of the pair
-    (``panel_caveats``) and what the scene draws that the model does not compute
-    (scene.DISPLAY_ONLY, design 4.9). Raises ValueError for a ``chosen`` that is not 1 to
-    PANEL_RUNS distinct run folders."""
+    (``panel_caveats``), what the scene draws that the model does not compute
+    (scene.DISPLAY_ONLY, design 4.9) and the caveat footer a video of the pair would
+    carry (``panel_video_footer``, for the page's fit check). Raises ValueError for a
+    ``chosen`` that is not 1 to PANEL_RUNS distinct run folders."""
     rows = run_folders(run_dir, metrics)
     runs = [run_view(n, metrics, config, rows) for n in rows]
     available = [n for n in rows if rows[n]]
@@ -2907,6 +2940,7 @@ def results_panel(
         "outcome": {"kind": kind, "message": message, "notes": list(notes)},
         **panel_caveats(run_dir, metrics, runs, pair),
         "display_only": list(scene.DISPLAY_ONLY),
+        "video_footer": panel_video_footer(run_dir, metrics, config, runs, pair),
     }
     return {
         "baseline": baseline,
@@ -3702,11 +3736,20 @@ def video_footer(
     run_dir: Path, names: Sequence[str], metrics: Mapping[str, Any], config: Mapping[str, Any]
 ) -> list[str]:
     """The caveat footer of every frame of a video of ``names`` (design 4.8; honesty
-    review 02 finding 9): the three lines of plots.animation_caveats for the shown runs
-    (the model and its sweep-optimized guidance; unthrottled, no sized structural mass for
-    the runs' own peak push load and, when a shown run is a penalty row, that it charges an
-    assumed stage-1 dry mass (fix round 2); the vehicle's calibration and the replay
-    disclaimer), with the exploratory line first for a directory labelled exploratory. The
+    review 02 finding 9): the lines of plots.animation_caveats for the shown runs, three,
+    or four with a modelled run's structural line (SP7 step S3a fix rounds 2 and 3,
+    S3A-C2-07 and S3A-NUM-01): the model and its sweep-optimized guidance; unthrottled, then the
+    structural clause worded from each run's record three ways (SP7 step S3a): no sized
+    structural mass for the runs' own peak push load for the runs that charge none, when a
+    shown run is a penalty row that it charges an assumed stage-1 dry mass (fix round 2 of
+    A6v), when a shown run charges a modelled structural mass a line of its own saying it
+    carries that many kg with its set, scaling and fired flags, a first-order sizing; the
+    vehicle's calibration and the replay disclaimer; with the exploratory line first for
+    a directory labelled exploratory. The structural line is handed over unwrapped
+    (``width_px`` None): the scene canvas wraps every line at the frame's own width, so a
+    line pre-wrapped at plots.FOOTNOTE_MEASURE_WIDTH_PX would cost a canvas line at each
+    of its breaks (fix round 3, S3A-NUM-01: two modelled runs then did not fit the app's
+    default 1280 x 720 frame). The
     display-only caveat of design 4.8 is the scene page's own footer line
     (scene.FOOTER_TEXT), which the page puts on every captured frame before these lines
     (frameFooterLines), so it is not repeated here (D-SP2-23: one source per caveat; fix
@@ -3717,7 +3760,9 @@ def video_footer(
     runs = [plots.read_animation_run(run_dir, n, dict(metrics)) for n in names]
     vehicle = str(run_data.as_mapping(config.get("vehicle")).get("name", "unknown vehicle"))
     label = metrics.get("label")
-    return list(plots.animation_caveats(runs, vehicle, None if label is None else str(label)))
+    return list(
+        plots.animation_caveats(runs, vehicle, None if label is None else str(label), width_px=None)
+    )
 
 
 def _refused_from(exc: video.VideoError) -> Refused:

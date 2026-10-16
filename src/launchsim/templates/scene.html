@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-AFBjg9EdZCOpmmxhVFeIZg0d+0V4D+XuT3oCQU15FkU='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-TtWpTafZNyCi4/MFrUpF90BF0BF6Lm+UwSo1bqmiSTw='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Launch Scene</title>
@@ -1087,7 +1087,8 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
   // run selector groups: [role, offload kind (null: any), group label], in this order
   const ROLE_GROUPS = [
     ["run", null, "Experiment runs"], ["offload", "offload case", "Offload cases"], ["offload", "paired pad", "Paired pads"],
-    ["offload", "pad control", "Pad controls"], ["case", null, "Cases"], ["bound", null, "Bounds"], ["paired_baseline", null, "Paired baselines"]
+    ["offload", "pad control", "Pad controls"], ["offload", "structure payload case", "Structure payload cases"],
+    ["case", null, "Cases"], ["bound", null, "Bounds"], ["paired_baseline", null, "Paired baselines"]
   ];
   const NO_PANEL = "none: one full-width panel";
   const R_E = DATA.constants.R_E_m;
@@ -2653,7 +2654,7 @@ html[data-embed="1"] #scene.two { height: clamp(640px, calc(var(--app-vh, 100vh)
     const lines = [];
     if (DATA.exploratory_caveat) lines.push(DATA.exploratory_caveat);
     lines.push(DATA.footer);
-    lines.push("Data: " + DATA.source + ", experiment " + DATA.experiment + ", " + DATA.timestamp + ", git " + git.hash + " (" + state + ").");
+    lines.push("Data: " + DATA.source + ", experiment " + DATA.experiment + ", " + DATA.timestamp + ", git " + git.hash + " (" + state + "), drawn by launch-assist-sim " + DATA.version + ".");
     return lines;
   }
   function frameFooterLines(prs, given) {

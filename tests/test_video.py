@@ -98,7 +98,7 @@ from typing import Any
 
 import pytest
 
-from launchsim import app, appform, plots, replay, run_data, scene, video
+from launchsim import app, appform, plots, replay, results_io, run_data, scene, video
 
 
 def _load_support() -> ModuleType:
@@ -512,6 +512,185 @@ def root(tmp_path: Path, launched: Path) -> Path:
 @pytest.fixture
 def directory(root: Path, launched: Path) -> Path:
     return root / launched.parent.name / launched.name
+
+
+STRUCTURE_KEYS: dict[str, Any] = {
+    "structure_charged": True,
+    "structure_dm_kg": 9100.3,
+    "structure_dm_stage2_kg": 200.2,
+    "structure_set": "central",
+    "structure_flags": [],
+    "structure_file": "configs/structures/toy.yaml",
+}
+"""The run-level structure keys (D-SP7-22) the video footer reads from a modelled run's
+metrics record: whether it is charged and its dm (dm2 200.2 kg of it on stage 2)."""
+FOOTNOTE_POINTER = (
+    "modelled mass by stage: the caveats of summary.md's offload section; structure file "
+    "and x* at the physics band's ends: its Structure subsection"
+)
+"""The clause the structural line ends with (S3a gate fix and its review, R-G1-02 and
+R-G1-03: plots.STRUCTURE_FOOTNOTE_POINTER), word for word."""
+
+
+def _with_modelled_run(
+    directory: Path, name: str = "silo_st", payload_case: str = "silo_pstar"
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Add to the launched directory's copy a structural run ``name``: silo's folder
+    copied, an offload block whose one case and whose ``offload.runs`` record for it
+    carry STRUCTURE_KEYS, and its ``offload_runs`` config entry; and a structure payload
+    case's run ``payload_case`` (fix round 1, S3A-R1-06): silo's folder copied, its record
+    under ``structure_payload_cases`` and ``offload.runs`` (never ``cases``) carrying
+    STRUCTURE_KEYS and flying P_ref + 10 kg; returns (metrics, config) as written."""
+    shutil.copytree(directory / "silo", directory / name)
+    shutil.copytree(directory / "silo", directory / payload_case)
+    metrics = run_data.read_json(directory / run_data.METRICS_FILE)
+    config = run_data.read_yaml(directory / run_data.CONFIG_FILE)
+    flown = {**json.loads(json.dumps(metrics["runs"]["silo"])), **STRUCTURE_KEYS}
+    pstar = {**flown, "payload_kg": 26_010.0}
+    metrics["offload"] = {
+        "reference": "pad",
+        "reference_payload_kg": 26_000.0,
+        "cases": [
+            {
+                "name": name,
+                "of": "silo",
+                "kind": "solve",
+                "mode": "stage1",
+                "run": name,
+                "status": "ok",
+                "total_offload_kg": 20_000.0,
+                "payload_kg": 26_000.0,
+                "paired_pad": None,
+                "flags": [],
+                **STRUCTURE_KEYS,
+            }
+        ],
+        "structure_payload_cases": [
+            {
+                "name": payload_case,
+                "kind": "structure payload case",
+                "of": "silo",
+                "run": payload_case,
+                "status": "ok",
+                "payload_kg": 26_010.0,
+                "payload_delta_kg": 10.0,
+                "flags": [],
+                **STRUCTURE_KEYS,
+            }
+        ],
+        "runs": {name: flown, payload_case: pstar},
+    }
+    silo_cfg = json.loads(json.dumps(config["runs"]["silo"]))
+    config["offload_runs"] = {name: silo_cfg, payload_case: json.loads(json.dumps(silo_cfg))}
+    (directory / run_data.METRICS_FILE).write_text(json.dumps(metrics), encoding="utf-8")
+    results_io.write_yaml(directory / run_data.CONFIG_FILE, config)
+    return metrics, config
+
+
+def test_video_footer_words_a_modelled_structure_from_the_runs_record(directory: Path) -> None:
+    """SP7 step S3a: the footer of every frame of a video (app.video_footer, the lines of
+    plots.animation_caveats with the exploratory line first) words its
+    structural clause from each shown run's record: a run whose metrics record charges a
+    modelled structural mass is said to carry that many kg of modelled structural mass
+    with its set (fix rounds 1 and 2, H-S3a-06 and H-S3a-P2-04), "first-order sizing,
+    not an assumed penalty" (fix round 3, H-S3a-P3-01), never "not assumed" and never "no
+    sized structural mass" of it; the uncharged pushed run beside it is named as the one
+    the "no sized" clause is read of; the uncharged selection's line is unchanged word for
+    word; a structure payload case's run (S3A-R1-06: no ``cases`` record) is worded from
+    its own record alike. Fix round 3, S3A-NUM-01: the structural line is one line,
+    unwrapped (plots.animation_caveats with width_px None), since the scene canvas wraps
+    every footer line at the frame's own width and a line pre-wrapped at 1280 px cost a
+    canvas line at each break; the results panel carries the same lines for the pair it
+    describes (app.panel_video_footer), which the page's fit check draws under. S3a gate
+    fix: the record's stage-2 share is above zero, so the mass reads by stage ('8,900.1 kg
+    (stage 1) and 200.2 kg (stage 2)', to 0.1 kg as replay prints it, R-G1-05), and the
+    line ends with the pointer to summary.md once (its offload section's caveats for the
+    mass by stage, its Structure subsection for the file and x* at the physics band's
+    ends: R-G1-02 and R-G1-03), the file path off the line. The full sentence is not this
+    footer's (R-G1-04): the scene page's per-run structure note, which frameFooterLines
+    draws under these lines, carries it."""
+    metrics, config = _with_modelled_run(directory)
+    before = app.video_footer(directory, ["pad", "silo"], metrics, config)
+    assert before[0] == replay.EXPLORATORY_CAVEAT and len(before) == 4
+    assert before[2].startswith(
+        "Unthrottled (no max-Q or g limit); no sized structural mass for the "
+    )
+    assert before[2].endswith(" g push load.")
+    footer = app.video_footer(directory, ["pad", "silo", "silo_st"], metrics, config)
+    assert footer[0] == replay.EXPLORATORY_CAVEAT and len(footer) == 5
+    assert footer[2] == "Unthrottled (no max-Q or g limit)."
+    assert footer[3] == (
+        "Structure, per run: silo_st carries 8,900.1 kg (stage 1) and 200.2 kg (stage 2) of "
+        "modelled structural mass (set central; first-order sizing, not an assumed penalty); "
+        + before[2].split("; ")[1]
+    ).replace(" g push load.", f" g push load of silo; {FOOTNOTE_POINTER}.")
+    assert footer[-1] == before[3]
+    assert "not assumed" not in " ".join(footer)
+    # the animation's own footnote wraps the same line by measured width
+    runs, _ = plots.load_animation_runs(directory, ["pad", "silo", "silo_st"])
+    wrapped = plots.animation_caveats(runs, config["vehicle"]["name"], metrics["label"])
+    assert len(wrapped) > len(footer) and " ".join(wrapped[3:-1]) == footer[3]
+    alone = app.video_footer(directory, ["pad", "silo_st"], metrics, config)
+    assert len(alone) == 5 and alone[2] == "Unthrottled (no max-Q or g limit)."
+    assert alone[3] == (
+        "Structure, per run: silo_st carries 8,900.1 kg (stage 1) and 200.2 kg (stage 2) of "
+        "modelled structural mass (set central; first-order sizing, not an assumed penalty); "
+        f"{FOOTNOTE_POINTER}."
+    )
+    assert alone[3].count("summary.md") == 1 and "configs/structures" not in " ".join(alone)
+    assert "3,677" not in " ".join(alone) and "band's ends are" not in " ".join(alone)
+    assert "assumed stage-1" not in " ".join(alone) and "no sized structural mass" not in " ".join(
+        alone
+    )
+    assert "structure (" not in " ".join(alone)
+    assert footer == plots.animation_caveats(
+        runs, config["vehicle"]["name"], metrics["label"], width_px=None
+    )
+    pstar = app.video_footer(directory, ["pad", "silo", "silo_pstar"], metrics, config)
+    assert (
+        pstar[0] == replay.EXPLORATORY_CAVEAT and pstar[2] == "Unthrottled (no max-Q or g limit)."
+    )
+    assert pstar[3] == footer[3].replace("silo_st", "silo_pstar") and len(pstar) == 5
+    (run,), _ = plots.load_animation_runs(directory, ["silo_pstar"])
+    assert run.modelled is True and run.offload is not None
+    assert run.offload.kind == plots.OFFLOAD_STRUCTURE_PAYLOAD
+    assert run.offload.legend == (
+        "P* 26,010 kg (+10 kg vs P_ref)\non the full load, carrying its modelled structure"
+    )
+
+
+def test_results_panel_carries_the_video_footer_of_its_pair(
+    directory: Path, basis: appform.Basis
+) -> None:
+    """Fix round 3, S3A-NUM-01: the results panel carries ``video_footer``, the lines
+    POST /api/videos would answer for the runs it describes (app.panel_video_footer, the
+    same app.video_footer), so the page's fit check (videoFit) draws its test frame under
+    the server's own footer, whose modelled structural line the payload's frame caveat
+    lacks; a pair with a run that holds no row, or an empty pair, gets None (the page
+    then tests under its own lines)."""
+    metrics, config = _with_modelled_run(directory)
+    for pair in (["pad", "silo_st"], ["silo", "silo_st"], ["pad"]):
+        detail = app.results_panel(
+            directory, directory.parent.name, directory.name, basis, metrics, config, chosen=pair
+        )
+        assert detail["panel"]["pair"] == pair
+        assert detail["panel"]["video_footer"] == app.video_footer(directory, pair, metrics, config)
+    modelled = app.results_panel(
+        directory,
+        directory.parent.name,
+        directory.name,
+        basis,
+        metrics,
+        config,
+        chosen=["pad", "silo_st"],
+    )["panel"]["video_footer"]
+    assert any(line.startswith("Structure, per run: silo_st carries") for line in modelled)
+    rows = [{"name": "pad", "has_rows": True}, {"name": "silo", "has_rows": False}]
+    assert app.panel_video_footer(directory, metrics, config, rows, ["pad", "silo"]) is None
+    assert app.panel_video_footer(directory, metrics, config, rows, []) is None
+    assert app.panel_video_footer(directory, metrics, config, rows, ["pad"]) == (
+        app.video_footer(directory, ["pad"], metrics, config)
+    )
 
 
 # ------------------------------------------------------------------ the PNG header check

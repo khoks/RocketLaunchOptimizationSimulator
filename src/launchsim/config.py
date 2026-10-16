@@ -2957,7 +2957,8 @@ STRUCTURE_DRY_NOTE = (
     "assumed penalty"
 )
 """The note of a dry mass a structural case restates (``offload_solved_run``), after its
-tonnes; S3a words the caveats of the runs that carry it."""
+tonnes; the caveats of the runs that carry it are worded from their records (SP7 step
+S3a, ``summary.modelled_structure_text``)."""
 
 
 def offload_overrides(

@@ -248,7 +248,10 @@ same panel as a fresh launch. In order:
   (P_ref = ...)" with the tonnes and the shares of the stage-1 and total loads for a solve;
   an imposed offload's P\* - P_ref with its reading (positive: the run carries more than the
   pad, so the offload is not the largest possible; negative: a payload loss); what is left
-  of the offload with a penalty; "did not reach orbit" with no payload line;
+  of the offload with a penalty; "did not reach orbit" with no payload line; for a
+  structure payload case's run of a recorded SP7 directory, the replay page's note (its
+  own payload capacity P_2\* on the full load carrying its modelled structural mass, a
+  payload change against P_ref, not propellant saved);
 - "SP1's headline", folded, when the launch reproduces SP1's case: "This launch reproduces
   only its silo_cold_s1 figure (x\* 41.26 t): a reproduction, not new evidence. The penalty
   rows, the +/-10% range, the screening ratio and the README-loads bridge come from SP1's
@@ -267,9 +270,16 @@ same panel as a fresh launch. In order:
 - "Read before quoting: the caveats of the runs shown", built from the runs shown: the
   exploratory line, the planar model and sweep-optimized guidance, the +14.3% calibration
   miss, no structural mass for the run's own push load ("silo_cold_s1 (531.1 t at push
-  start, 41.26 t less propellant) feels up to 4.0 g during the push" in the demo), the
-  prescribed drive, the reading of the offload block, the directory's recorded offload
-  caveats word for word, and the display-only items of the scene, folded.
+  start, 41.26 t less propellant) feels up to 4.0 g during the push" in the demo; a
+  penalty row's assumed dry mass, or, for a recorded structural run of SP7 opened from the
+  run browser, the modelled structural mass its own record charges, worded as the replay
+  page words it, and its headline "with ... kg of modelled structural mass (stage 1 ...,
+  stage 2 ...; a first-order station sizing, not an assumed penalty)", with "scaled
+  x<factor> by the plausibility rule" before the model when the rule scaled the mass; the
+  form itself charges no modelled structural mass: it has no structural switch, D-SP7-08),
+  the prescribed drive, the reading of the offload block,
+  the directory's recorded offload caveats word for word, and the display-only items of
+  the scene, folded.
 
 A stage-2 or both-stage solve is shown net of its pad control as a property of the vehicle
 model; an imposed stage-2 or both-stage offload says that it is not netted (it has no pad
@@ -390,7 +400,12 @@ why it is off. Frame rate: 10, 15, 20, 24 or 30 fps (default 20); width: 960, 12
 px, 16:9 (default 1280 x 720). The length line says what the clip will be ("Natural length
 86.4 s at 20 fps: 1727 frames of 1280 x 720 px, from the first row to the end."); a clip
 over 1,800 frames is scaled to fit and the line says by how much (at 24 fps the default pair
-plays 1.15x faster over 75 s). The page captures every frame from the scene and posts it to
+plays 1.15x faster over 75 s). Before Save is offered the page draws one test frame of the
+chosen size under the caveat footer the server will put on the video (the results panel
+carries it for the runs shown); a size the footer leaves no room in is refused with "The
+scene does not fit a ... px frame under its caveat footer: choose a wider frame" (two
+panels at 960 x 540 px under the demo's footer; since SP7, two structural runs with their
+full structure notes need 1920 x 1080). The page captures every frame from the scene and posts it to
 the server, which pipes it to ffmpeg; the control shows "Saving frame n of N; elapsed ...,
 ... ms per frame" and a Cancel button, then "Saved:" with the file's path and "Copy the path".
 
@@ -398,13 +413,24 @@ The file is `<experiment>_<timestamp>_<left>-vs-<right>_scene.mp4` in the server
 directory (the folder you started the app from), never inside a results tree and never
 overwriting (a taken name gets `-2`, `-3`, ... as results directories do); git ignores
 `*_scene.mp4`. Every frame carries a
-footer: the display-only line above; the data line (the directory and its git state); the
-three model lines ("Planar 2-D model (rotating spherical Earth, ICAO atmosphere, drag);
-sweep-optimized guidance, not optimal control.", "Unthrottled (no max-Q or g limit); no sized
-structural mass for the 4.0 g push load.", "Gate vehicle calibrates +14.3% high on payload
+footer: the display-only line above; the data line (the directory and its git state, and
+since SP7 the package version that drew the page); the three model lines ("Planar 2-D
+model (rotating spherical Earth, ICAO atmosphere, drag); sweep-optimized guidance, not
+optimal control.", "Unthrottled (no max-Q or g limit); no sized structural mass for the
+4.0 g push load.", "Gate vehicle calibrates +14.3% high on payload
 (docs/findings/CAL-f9-leo-2d). A model replay, not a design result."); a penalty row's
-assumed dry mass and the run's own structure note; and, for an app run, the exploratory
-line. A launch and a video never run together. The demo's export (1,727 frames at 20 fps,
+assumed dry mass and the run's own structure note (for a structural run of SP7 the
+modelled mass it carries, by stage to 0.1 kg when stage 2 carries any ("... kg (stage 1)
+and ... kg (stage 2) of modelled structural mass"), with its set, any plausibility
+scaling and its fired flags, on a footnote line of its own, "Structure, per run: ...",
+ending "modelled mass by stage: the caveats of summary.md's offload section; structure
+file and x* at the physics band's ends: its Structure subsection", which the frame wraps
+at its own width; that line is `animate`'s footnote line and quotes neither the file nor
+the band's ends, which the frame takes, in the full sentence with their scope, from the
+scene's per-run structure note drawn under it: the band's sizing-only dm ends at the
+structure file's headline push, not the x* the Structure subsection gives at the band's
+ends, which is the experiment's own offload); and, for an app run,
+the exploratory line. A launch and a video never run together. The demo's export (1,727 frames at 20 fps,
 86.35 s, 6.0 MB; docs/demos/SP2/README.md, "The video export") is not in the repository;
 the gallery's scene video was made from a recorded directory, not from an app run.
 

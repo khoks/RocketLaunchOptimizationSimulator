@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import dataclasses
+import itertools
 import json
 import math
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -575,8 +578,66 @@ def test_help_names_the_specified_metavars_and_defaults(
 
 P_REF_KG = 1000.0
 """The synthetic offload block's reference payload: the baseline pad's P*."""
+STRUCTURE_KEYS: dict[str, Any] = {
+    "structure_charged": True,
+    "structure_dm_kg": 9100.3,
+    "structure_dm_stage2_kg": 200.2,
+    "structure_dm_x0_kg": 9000.0,
+    "structure_set": "central",
+    "structure_sizing": "flown",
+    "structure_dynamic": "rise_time",
+    "structure_entry": "aft_ring",
+    "structure_margin": 0.0,
+    "structure_envelope_cap_g": None,
+    "structure_overrides": {},
+    "structure_plausibility_ratio": 1.05,
+    "structure_plausibility_factor": 1.0,
+    "structure_plausibility_scaled": False,
+    "structure_flags": [{"name": "release_unload", "fired": False, "values": {}}],
+    "structure_file": "configs/structures/toy.yaml",
+}
+"""The run-level structure keys of D-SP7-22 a structural run's metrics record carries (a
+central case at the headline settings: dm1 + dm2 = 9,100.3 kg, dm2 = 200.2 kg, no fired
+flag, not plausibility-scaled); synthetic, never read from results/."""
+SETS_METHOD = (
+    "Design 4.2.6, sizing only, at the headline push of toy_offload's silo_cold (the analytic "
+    "constant_accel case at a stage-1 offload of 36006.44430169878 kg and P_ref "
+    "24700.013061881455 kg) on the envelope of its pad baseline as flown."
+)
+"""A frozen sets' ``method`` in sim.structure_search_method's form, naming the push the
+sets were searched at (synthetic: toy_offload's silo_cold at 36,006 kg, not SP1's
+headline; final clean-up, N3a-02)."""
+STRUCTURE_INPUTS: dict[str, Any] = {
+    "file": "configs/structures/toy.yaml",
+    "sets": {
+        "method": SETS_METHOD,
+        "physics_low_mass": {
+            "polish": [
+                {"search": "A", "dm_after_kg": 3677.06},
+                {"search": "B", "dm_after_kg": 8492.47},
+            ]
+        },
+        "physics_high_mass": {"polish": [{"search": "A", "dm_after_kg": 18603.8}]},
+    },
+}
+"""A block's ``structure_inputs`` record as far as the readers go: the frozen sets'
+method (SETS_METHOD, the push they were searched at) and the physics sets' polish of the
+headline search A (the band's ends, dm 3,677 and 18,604 kg)."""
+MODELLED_CORE = (
+    "9,100.3 kg (stage 1 8,900.1 kg, stage 2 200.2 kg): a first-order station sizing of the "
+    "push load (layer and set central (every coefficient at its central value): central; "
+    "configs/structures/toy.yaml); the physics band's ends at the structure file's headline "
+    "push (toy_offload's silo_cold at a stage-1 offload of 36,006 kg, per its sets.method) "
+    "are dm 3,677 kg and 18,604 kg; both ends are sizing-only numbers from the frozen sets, "
+    "not this run's band: the run is sized at its own push and offload; no structure flag "
+    "fired; a first-order estimate with its stated ranges, not a detailed structural design"
+)
+"""summary.modelled_structure_text of STRUCTURE_KEYS with STRUCTURE_INPUTS, as every reader
+quotes it (the replay and scene caveats, the scene frame's footer)."""
 PENALTY_ADDED_KG = 2000.0
 """The assumed stage-1 dry mass the fixed case silo_fix5 charges (a penalty row)."""
+PSTAR_DELTA_KG = 10.0
+"""P_2* - P_ref of the structure payload case silo_pstar_st."""
 CASE_OFFLOAD_KG = 41262.9
 FIXED_OFFLOAD_KG = 20000.0
 FIXED_PAYLOAD_KG = 1030.0
@@ -637,6 +698,34 @@ def _make_offload_run_dir(root: Path, orbit: bool = False) -> Path:
                 "payload_kg": P_REF_KG,
                 "paired_pad": None,
             },
+            {
+                # a structural case (SP7 step S3a): its record and its run's carry the
+                # run-level structure keys of D-SP7-22
+                "name": "silo_s1_st",
+                "of": "silo",
+                "kind": "solve",
+                "mode": "stage1",
+                "run": "silo_s1_st",
+                "total_offload_kg": CASE_OFFLOAD_KG,
+                "payload_kg": P_REF_KG,
+                "paired_pad": None,
+                **STRUCTURE_KEYS,
+            },
+        ],
+        # a structure payload case (fix round 1, H-S3a-01 and S3A-R1-06): its run flies
+        # its own P_2* on the full load; recorded here and in ``runs``, never in ``cases``
+        "structure_payload_cases": [
+            {
+                "name": "silo_pstar_st",
+                "kind": "structure payload case",
+                "of": "silo",
+                "run": "silo_pstar_st",
+                "status": "ok",
+                "payload_kg": P_REF_KG + PSTAR_DELTA_KG,
+                "payload_delta_kg": PSTAR_DELTA_KG,
+                "flags": [],
+                **STRUCTURE_KEYS,
+            }
         ],
         "pad_controls": [
             {
@@ -669,6 +758,12 @@ def _make_offload_run_dir(root: Path, orbit: bool = False) -> Path:
             "silo_s1__pad": {"payload_kg": PAIRED_PAD_KG, "status": inserted},
             "silo_fix5": {"payload_kg": FIXED_PAYLOAD_KG, "status": inserted},
             "silo_none": {"payload_kg": P_REF_KG, "status": short},
+            "silo_s1_st": {"payload_kg": P_REF_KG, "status": inserted, **STRUCTURE_KEYS},
+            "silo_pstar_st": {
+                "payload_kg": P_REF_KG + PSTAR_DELTA_KG,
+                "status": inserted,
+                **STRUCTURE_KEYS,
+            },
             "pad__offload_stage1": {"payload_kg": P_REF_KG, "status": short},
             "pad__offload_stage2": {"payload_kg": P_REF_KG, "status": inserted},
             "pad__offload_both": {"payload_kg": P_REF_KG, "status": short},
@@ -676,9 +771,401 @@ def _make_offload_run_dir(root: Path, orbit: bool = False) -> Path:
     }
     (run_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
     for name in metrics["offload"]["runs"]:
-        assist = name in ("silo_s1", "silo_fix5", "silo_none")
+        assist = name in ("silo_s1", "silo_fix5", "silo_none", "silo_s1_st", "silo_pstar_st")
         _write_run(run_dir, name, assist=assist, orbit=orbit)
     return run_dir
+
+
+def metrics_of(run_dir: Path) -> dict[str, Any]:
+    """The directory's metrics.json."""
+    return json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+
+
+def _footnote_right_px(line: str) -> tuple[float, float]:
+    """(the right edge of ``line`` drawn as the animation's footnote at 1280 px, the
+    footnote's right limit) [px]."""
+    size_in, dpi, (width_px, _height_px) = plots.frame_geometry(1280)
+    fig = Figure(figsize=size_in, dpi=dpi)
+    canvas = FigureCanvasAgg(fig)
+    artist = fig.text(plots.ANIMATION_GRID["left"], 0.0, line, fontsize=plots.FONT_FOOTNOTE_PT)
+    canvas.draw()
+    return artist.get_window_extent(renderer=canvas.get_renderer()).x1, (
+        width_px * plots.ANIMATION_GRID["right"]
+    )
+
+
+def _assert_footnote_fits(lines: list[str]) -> None:
+    """Every line ends left of the footnote's right limit at 1280 px, measured here
+    (``_footnote_right_px``) and by plots.footnote_right_px alike."""
+    rights, limit = plots.footnote_right_px(lines)
+    for line, right in zip(lines, rights, strict=True):
+        right_px, limit_px = _footnote_right_px(line)
+        assert right_px < limit_px, line
+        assert right == pytest.approx(right_px) and limit == pytest.approx(limit_px)
+
+
+FOOTNOTE_TEST_WIDTHS_PX = (320, 480, 640, 960, 1280, 1920)
+"""Frame widths the footnote's wrapped lines are checked at (fix round 2, N2-03: the
+smallest width ``animate --width`` accepts, the gallery GIFs' 640, the app's three video
+widths and two between)."""
+FOOTNOTE_POINTER = (
+    "modelled mass by stage: the caveats of summary.md's offload section; structure file "
+    "and x* at the physics band's ends: its Structure subsection"
+)
+"""The clause the footnote's structural line ends with, once per line, word for word (S3a
+gate fix and its review, R-G1-02 and R-G1-03: plots.STRUCTURE_FOOTNOTE_POINTER)."""
+SPLIT_9100 = "8,900.1 kg (stage 1) and 200.2 kg (stage 2)"
+"""STRUCTURE_KEYS' mass by stage as the footnote prints it, to 0.1 kg as the replay caveat
+does (S3a gate review, R-G1-05): dm1 = 9,100.3 - 200.2 kg."""
+
+
+def test_footnote_words_a_modelled_structure_from_the_runs_record(tmp_path: Path) -> None:
+    """SP7 step S3a (D-SP7-22): the footnote's structural clause is worded from each
+    run's own record. A shown run whose metrics record charges a modelled structural mass
+    (``AnimationRun.modelled``, its ``structure_dm_kg``) is said to carry that many kg of
+    modelled structural mass (fix round 1, H-S3a-06: the dm is the modelled increment,
+    never "a structure" of that mass), "first-order sizing, not an assumed penalty" (fix
+    round 3, H-S3a-P3-01: never "not assumed" of a model output on assumed coefficients);
+    beside it a penalty row is named on the structural line with its assumed stage-1 dry
+    mass, which then leaves the limits line, and the "no sized structural mass" clause
+    names only the uncharged pushed runs, never a penalty row (fix round 3, H-S3a-P3-02);
+    word for word as before when no modelled run is shown; a design-axis row on the
+    central set gets its own clause, 'set central at margin 0.05' (fix round 3,
+    H-S3a-P3-04, ``structure_departures`` read from the record); two modelled runs take
+    the plural; an unrecorded dm reads "of unrecorded size"; ``width_px`` None hands the
+    structural line over unwrapped, one line (fix round 3, S3A-NUM-01: the app's video
+    footer, which the scene canvas wraps itself); a structure payload case's run
+    (S3A-R1-06: in ``offload.runs`` and
+    ``structure_payload_cases``, not in ``cases``) is modelled from its own record and
+    its legend names its kind and P_2*. Every line of every selection, wide-glyph and
+    digit-heavy names included, ends left of the 1280 px frame's right edge: the line
+    is wrapped by measured width (N-S3a-R1-01, plots.footnote_wrap) and never splits a
+    number from its unit ('3.0 g'). The full sentence (stages, layer, set, file, band,
+    flags) is the scene frame's per-run structure note and the replay caveat, not this
+    footnote. S3a gate fix: the record's stage-2 share is above zero here, so the mass
+    is given by stage ('8,900.1 kg (stage 1) and 200.2 kg (stage 2)'), each such run in a
+    clause of its own; a run whose stage-2 share is unrecorded keeps the total and the
+    plural; the line ends with FOOTNOTE_POINTER once."""
+    run_dir = _make_offload_run_dir(tmp_path)
+    runs, _ = plots.load_animation_runs(run_dir, ["pad", "silo", "silo_s1_st", "silo_fix5"])
+    pad, silo, modelled, penalty = runs
+    assert (pad.modelled, silo.modelled, modelled.modelled, penalty.modelled) == (
+        False,
+        False,
+        True,
+        False,
+    )
+    assert modelled.structure_dm_kg == pytest.approx(9100.3)
+    assert modelled.structure_dm_stage2_kg == pytest.approx(200.2)
+    assert (pad.structure_dm_kg, silo.structure_dm_kg, penalty.structure_dm_kg) == (None,) * 3
+    assert modelled.penalty_added_kg is None
+    mixed = plots.animation_caveats(runs, "toy_2d")
+    assert len(mixed) >= 4  # the structural line(s) of its own, wrapped
+    assert mixed[1] == "Unthrottled (no max-Q or g limit)."
+    assert " ".join(mixed[2:-1]) == (
+        f"Structure, per run: silo_s1_st carries {SPLIT_9100} of modelled structural mass "
+        "(set central; first-order sizing, not an assumed penalty); silo_fix5 charges an "
+        "assumed stage-1 dry mass; no sized structural mass for the 3.0 g push load of silo; "
+        f"{FOOTNOTE_POINTER}."
+    )
+    two_penalties = dataclasses.replace(penalty, name="silo_fix7")
+    assert " ".join(
+        plots.animation_caveats([modelled, penalty, two_penalties], "toy_2d")[2:-1]
+    ) == (
+        f"Structure, per run: silo_s1_st carries {SPLIT_9100} of modelled structural mass "
+        "(set central; first-order sizing, not an assumed penalty); silo_fix5 and silo_fix7 "
+        f"charge an assumed stage-1 dry mass; {FOOTNOTE_POINTER}."
+    )
+    # the uncharged selection with the penalty row keeps its limits line word for word
+    assert plots.animation_caveats([pad, silo, penalty], "toy_2d")[1] == (
+        "Unthrottled (no max-Q or g limit); no sized structural mass for the 3.0 g push load; "
+        "the penalty row charges an assumed stage-1 dry mass."
+    )
+    # fix round 3, S3A-NUM-01: width_px None gives the structural line in one piece
+    unwrapped = plots.animation_caveats(runs, "toy_2d", width_px=None)
+    assert len(unwrapped) == 4 and unwrapped[2] == " ".join(mixed[2:-1])
+    assert unwrapped[:2] == mixed[:2] and unwrapped[-1] == mixed[-1]
+    assert mixed[-1].startswith("Vehicle toy_2d: no calibration record on file.")
+    _assert_footnote_fits(mixed)
+    alone = plots.animation_caveats([pad, modelled], "toy_2d")
+    assert alone[1] == "Unthrottled (no max-Q or g limit)."
+    assert " ".join(alone[2:-1]) == (
+        f"Structure, per run: silo_s1_st carries {SPLIT_9100} of modelled structural mass "
+        f"(set central; first-order sizing, not an assumed penalty); {FOOTNOTE_POINTER}."
+    )
+    assert "no sized structural mass" not in " ".join(alone)
+    # runs whose stage-2 share is unrecorded keep the total and share one clause
+    whole = dataclasses.replace(modelled, structure_dm_stage2_kg=None)
+    two = " ".join(plots.animation_caveats([pad, whole, whole], "toy_2d")[2:-1])
+    assert two == (
+        "Structure, per run: silo_s1_st and silo_s1_st carry 9,100 and 9,100 kg of modelled "
+        "structural mass (set central; first-order sizing, not an assumed penalty); "
+        f"{FOOTNOTE_POINTER}."
+    )
+    assert "structure (" not in two and "structures" not in two
+    unrecorded = dataclasses.replace(modelled, structure_dm_kg=None)
+    assert " ".join(plots.animation_caveats([pad, unrecorded], "toy_2d")[2:-1]) == (
+        "Structure, per run: silo_s1_st carries a modelled structural mass of unrecorded size "
+        f"(set central; first-order sizing, not an assumed penalty); {FOOTNOTE_POINTER}."
+    )
+    assert " ".join(plots.animation_caveats([pad, whole, unrecorded], "toy_2d")[2:-1]) == (
+        "Structure, per run: silo_s1_st and silo_s1_st carry 9,100 kg and an unrecorded size of "
+        "modelled structural mass (set central; first-order sizing, not an assumed penalty); "
+        f"{FOOTNOTE_POINTER}."
+    )
+    plain = plots.animation_caveats([pad, silo], "toy_2d")
+    assert len(plain) == 3
+    assert (
+        plain[1]
+        == "Unthrottled (no max-Q or g limit); no sized structural mass for the 3.0 g push load."
+    )
+    assert "of silo" not in plain[1]  # the uncharged wording is unchanged without a modelled run
+    # the structure payload case's run: modelled from its own record, labelled by its kind
+    (pstar,), _ = plots.load_animation_runs(run_dir, ["silo_pstar_st"])
+    assert pstar.modelled is True and pstar.structure_dm_kg == pytest.approx(9100.3)
+    assert pstar.penalty_added_kg is None and pstar.offload is not None
+    assert pstar.offload.kind == plots.OFFLOAD_STRUCTURE_PAYLOAD == "structure payload case"
+    assert plots._legend_label(pstar, pad) == (
+        f"silo_pstar_st (structure payload case): P* {P_REF_KG + PSTAR_DELTA_KG:,.0f} kg "
+        f"({PSTAR_DELTA_KG:+,.0f} kg vs P_ref)\non the full load, carrying its modelled structure"
+    )
+    assert " ".join(plots.animation_caveats([pad, silo, pstar], "toy_2d")[2:-1]) == (
+        f"Structure, per run: silo_pstar_st carries {SPLIT_9100} of modelled structural mass "
+        "(set central; first-order sizing, not an assumed penalty); no sized structural mass "
+        f"for the 3.0 g push load of silo; {FOOTNOTE_POINTER}."
+    )
+    # fix round 2, H-S3a-P2-04: the footnote says the set, the plausibility rule's factor
+    # when the dm carries it and the fired flags (the release flag with D-SP7-39's
+    # comparison), all read from the run's own record; runs whose qualifiers differ get one
+    # clause each
+    assert (modelled.structure_set, modelled.structure_scale_factor) == ("central", None)
+    assert modelled.structure_flags_fired == () and modelled.structure_release_note is None
+    scaled = dataclasses.replace(
+        modelled,
+        name="silo_lo_st",
+        structure_dm_kg=3476.4,
+        structure_dm_stage2_kg=0.0,
+        structure_set="physics_low_mass",
+        structure_scale_factor=0.845549,
+        structure_flags_fired=("structure_release_unload", "structure_payload_limit"),
+        structure_release_note=(
+            "D-SP7-39: the pad's own MECO separates stage 2's LOX column too under the same "
+            "step treatment"
+        ),
+    )
+    both = " ".join(plots.animation_caveats([pad, modelled, scaled], "toy_2d")[2:-1])
+    assert both == (
+        f"Structure, per run: silo_s1_st carries {SPLIT_9100} of modelled structural mass (set "
+        "central; first-order sizing, not an assumed penalty); silo_lo_st carries 3,476 kg of "
+        "modelled structural mass (set physics_low_mass, scaled x0.846 by the plausibility "
+        "rule; flags fired: structure_release_unload (D-SP7-39: the pad's own MECO separates "
+        "stage 2's LOX column too under the same step treatment) and structure_payload_limit; "
+        f"first-order sizing, not an assumed penalty); {FOOTNOTE_POINTER}."
+    )
+    assert "not assumed" not in both and both.count("not an assumed penalty)") == 2
+    # fix round 3, H-S3a-P3-04: a design-axis row on the central set never shares the
+    # headline central case's clause
+    margin = dataclasses.replace(
+        whole,
+        name="silo_s1_st_m05",
+        structure_dm_kg=9800.0,
+        structure_departures=("margin 0.05",),
+    )
+    assert " ".join(plots.animation_caveats([whole, margin], "toy_2d")[2:-1]) == (
+        "Structure, per run: silo_s1_st carries 9,100 kg of modelled structural mass (set "
+        "central; first-order sizing, not an assumed penalty); silo_s1_st_m05 carries 9,800 kg "
+        "of modelled structural mass (set central at margin 0.05; first-order sizing, not an "
+        f"assumed penalty); {FOOTNOTE_POINTER}."
+    )
+    for width in FOOTNOTE_TEST_WIDTHS_PX:
+        lines = plots.animation_caveats([pad, silo, modelled, scaled], "toy_2d", width_px=width)
+        rights, limit = plots.footnote_right_px(lines, width)
+        assert all(right < limit for right in rights), (width, lines)
+    # read from a record: the scale factor only when the record says the dm carries it
+    metrics = metrics_of(run_dir)
+    record = metrics["offload"]["runs"]["silo_s1_st"]
+    record.update(
+        structure_set="physics_low_mass",
+        structure_plausibility_scaled=True,
+        structure_plausibility_factor=0.845549,
+        structure_flags=[
+            {"name": "structure_payload_limit", "fired": True, "values": {}},
+            {"name": "structure_upper_stack_exceeded", "fired": False, "values": {}},
+        ],
+    )
+    read = plots.read_animation_run(run_dir, "silo_s1_st", metrics)
+    assert (read.structure_set, read.structure_scale_factor) == ("physics_low_mass", 0.845549)
+    assert read.structure_flags_fired == ("structure_payload_limit",)
+    assert read.structure_departures == ()
+    record["structure_plausibility_scaled"] = False
+    unscaled = plots.read_animation_run(run_dir, "silo_s1_st", metrics)
+    assert unscaled.structure_scale_factor is None
+    record.update(structure_set="central", structure_margin=0.05, structure_dynamic="step")
+    axis = plots.read_animation_run(run_dir, "silo_s1_st", metrics)
+    assert axis.structure_departures == ("margin 0.05", "dynamic step")
+    assert plots._footnote_qualifier(axis).startswith("(set central at margin 0.05, dynamic step;")
+    # a long structural line wraps by measured width, every piece within the frame
+    long_names = [dataclasses.replace(modelled, name=f"silo_structural_case_{k}") for k in range(3)]
+    wrapped = plots.animation_caveats([pad, silo, *long_names], "toy_2d")
+    assert len(wrapped) >= 5 and wrapped[2].startswith(plots.STRUCTURE_FOOTNOTE_HEAD)
+    _assert_footnote_fits(wrapped)
+    assert " ".join(wrapped[2:-1]).endswith(f"push load of silo; {FOOTNOTE_POINTER}.")
+    # names rich in digits, underscores and wide glyphs (N-S3a-R1-01: a character budget
+    # let them run past the frame), three modelled runs beside an uncharged one
+    for names, dm in (
+        (
+            (
+                "silo_warm_200m_mmw_st_dry+8.1t",
+                "silo_warm_300m_mmw_st_dry+10.0t",
+                "silo_warm_100m_mmw_st_dry+12.5t",
+            ),
+            123456.7,
+        ),
+        (tuple(f"1234567890_1234567890_1234567890_{k}" for k in range(3)), 1234567.0),
+        (tuple("mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm_" + str(k) for k in range(3)), 99999.0),
+    ):
+        heavy = [dataclasses.replace(modelled, name=n, structure_dm_kg=dm) for n in names]
+        wide = dataclasses.replace(silo, name="silo_warm_mmw_wwmm_200m")
+        lines = plots.animation_caveats([pad, wide, *heavy], "generic_f9_class_2d")
+        _assert_footnote_fits(lines)
+        # wrapped at each frame's own width (fix round 2, N2-03), every line fits that frame
+        for width in FOOTNOTE_TEST_WIDTHS_PX:
+            at = plots.animation_caveats([pad, wide, *heavy], "generic_f9_class_2d", width_px=width)
+            structural = [line for line in at if line not in (at[0], at[1], at[-1])]
+            rights, limit = plots.footnote_right_px(structural, width)
+            assert all(right < limit for right in rights), (width, structural)
+        joined = " ".join(lines[2:-1])
+        assert joined.startswith(plots.STRUCTURE_FOOTNOTE_HEAD) and all(n in joined for n in names)
+        assert joined.endswith(f"push load of silo_warm_mmw_wwmm_200m; {FOOTNOTE_POINTER}.")
+        for a, b in itertools.pairwise(lines[2:-1]):
+            assert not (a[-1].isdigit() and b.split(" ")[0] in ("g", "kg", "t")), (a, b)
+    assert plots.footnote_tokens("for the 3.0 g push; 9,100 kg, 2 t.") == [
+        "for",
+        "the",
+        "3.0 g",
+        "push;",
+        "9,100 kg,",
+        "2 t.",
+    ]
+    # the footnote block with its extra lines stays clear of every panel's axis label at 1280 px
+    size, dpi, _ = plots.frame_geometry(1280)
+    fig = plots._AscentFigure([pad, silo, *long_names], metrics_of(run_dir), "toy_2d", size, dpi)
+    canvas = FigureCanvasAgg(fig.fig)
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    top_px = fig.footnote.get_window_extent(renderer=renderer).y1
+    labels = [
+        ax.xaxis.label.get_window_extent(renderer=renderer).y0
+        for ax in fig.fig.axes
+        if ax.xaxis.label.get_text()
+    ]
+    assert labels and top_px < min(labels), (top_px, min(labels))
+
+
+def test_footnote_gives_the_stage_split_and_points_to_the_summary(tmp_path: Path) -> None:
+    """S3a gate fix (G1): the footnote is the only caveat of an ``animate`` frame, so a
+    modelled run whose record's stage-2 share (``structure_dm_stage2_kg``) is above zero
+    gives its mass by stage, dm1 = dm - dm2 as replay's modelled sentence reads it and
+    to 0.1 kg as it prints it ('8,900.1 kg (stage 1) and 200.2 kg (stage 2) of modelled
+    structural mass'; S3a gate review, R-G1-05: a share under 0.5 kg reads '0.3 kg
+    (stage 2)', never '0 kg'), and a run whose share is zero, absent, None or not finite
+    keeps the total as before; runs whose mass is given by stage take a clause each (same
+    qualifier or not); the structural line ends, once, with the pointer to summary.md
+    (R-G1-02 and R-G1-03): the mass by stage in its offload section's caveats (where a
+    structure payload case's split is given too), the structure file and x* at the
+    physics band's ends in its Structure subsection, neither of which the frame quotes
+    (phase file, deviation 38: no file path, no band end on the frame); a footnote with no
+    modelled run is unchanged word for word and has no pointer; every line of every
+    selection fits each test width and, at 1280 px, by this file's own Agg measurement
+    too (R-G1-06); ``width_px`` None gives the line, pointer included, in one piece."""
+    run_dir = _make_offload_run_dir(tmp_path)
+    metrics = metrics_of(run_dir)
+    record = metrics["offload"]["runs"]["silo_s1_st"]
+    pad, silo, penalty = (
+        plots.read_animation_run(run_dir, n, metrics) for n in ("pad", "silo", "silo_fix5")
+    )
+    read = plots.read_animation_run(run_dir, "silo_s1_st", metrics)
+    assert read.structure_dm_stage2_kg == pytest.approx(200.2)
+    assert (pad.structure_dm_stage2_kg, silo.structure_dm_stage2_kg) == (None, None)
+    assert plots.STRUCTURE_FOOTNOTE_POINTER == FOOTNOTE_POINTER
+    vehicle = "generic_f9_class_2d"
+    one = plots.animation_caveats([pad, read], vehicle)
+    assert " ".join(one[2:-1]) == (
+        "Structure, per run: silo_s1_st carries 8,900.1 kg (stage 1) and 200.2 kg (stage 2) "
+        "of modelled structural mass (set central; first-order sizing, not an assumed "
+        "penalty); modelled mass by stage: the caveats of summary.md's offload section; "
+        "structure file and x* at the physics band's ends: its Structure subsection."
+    )
+    total = (
+        "Structure, per run: silo_s1_st carries 9,100 kg of modelled structural mass (set "
+        f"central; first-order sizing, not an assumed penalty); {FOOTNOTE_POINTER}."
+    )
+    for share in (0.0, None, float("nan"), "absent"):
+        if share == "absent":
+            del record["structure_dm_stage2_kg"]
+        else:
+            record["structure_dm_stage2_kg"] = share
+        whole = plots.read_animation_run(run_dir, "silo_s1_st", metrics)
+        expected = 0.0 if share == 0.0 else None
+        assert whole.structure_dm_stage2_kg == expected, share
+        assert " ".join(plots.animation_caveats([pad, whole], vehicle)[2:-1]) == total, share
+    # a mass all on stage 2 still reads by stage, dm1 the difference
+    upper = dataclasses.replace(read, structure_dm_kg=312.4, structure_dm_stage2_kg=312.4)
+    assert plots._footnote_stage_split(upper) == "0.0 kg (stage 1) and 312.4 kg (stage 2)"
+    # a stage-2 share under 0.5 kg reads as the replay caveat prints it (R-G1-05)
+    small = dataclasses.replace(read, structure_dm_kg=9100.3, structure_dm_stage2_kg=0.3)
+    assert plots._footnote_stage_split(small) == "9,100.0 kg (stage 1) and 0.3 kg (stage 2)"
+    assert " 0 kg (stage 2)" not in " ".join(plots.animation_caveats([pad, small], vehicle))
+    # two runs given by stage take a clause each, the pointer once at the end
+    high = dataclasses.replace(
+        read,
+        name="silo_hi_st",
+        structure_dm_kg=18603.8,
+        structure_dm_stage2_kg=312.4,
+        structure_set="physics_high_mass",
+    )
+    twin = dataclasses.replace(read, name="silo_s1_st_b")
+    two = " ".join(plots.animation_caveats([read, high], vehicle)[2:-1])
+    assert two == (
+        f"Structure, per run: silo_s1_st carries {SPLIT_9100} of "
+        "modelled structural mass (set central; first-order sizing, not an assumed penalty); "
+        "silo_hi_st carries 18,291.4 kg (stage 1) and 312.4 kg (stage 2) of modelled "
+        "structural mass (set physics_high_mass; first-order sizing, not an assumed penalty); "
+        f"{FOOTNOTE_POINTER}."
+    )
+    same = " ".join(plots.animation_caveats([read, twin], vehicle)[2:-1])
+    assert same.count(f" carries {SPLIT_9100} of modelled ") == 2
+    assert " carry " not in same
+    mixed = " ".join(plots.animation_caveats([pad, silo, read, penalty], vehicle)[2:-1])
+    assert mixed.endswith(f"for the 3.0 g push load of silo; {FOOTNOTE_POINTER}.")
+    selections = ([pad, read], [read, high], [read, twin], [pad, silo, read, penalty])
+    for runs in selections:
+        joined = " ".join(plots.animation_caveats(runs, vehicle))
+        assert joined.count(FOOTNOTE_POINTER) == 1 and joined.count("summary.md") == 1
+        # the file path and the band's dm ends stay off the frame (deviation 38); the
+        # pointer names x* at the band's ends, the Structure subsection's quantity
+        assert "configs/structures" not in joined and "toy.yaml" not in joined
+        assert "3,677" not in joined and "18,604" not in joined and " are dm " not in joined
+        assert "headline push" not in joined and "x* at the physics band's ends" in joined
+        for width in FOOTNOTE_TEST_WIDTHS_PX:
+            lines = plots.animation_caveats(runs, vehicle, width_px=width)
+            rights, limit = plots.footnote_right_px(lines, width)
+            assert all(right < limit for right in rights), (width, lines)
+            assert " ".join(lines[2:-1]).endswith(f"; {FOOTNOTE_POINTER}."), (width, lines)
+        unwrapped = plots.animation_caveats(runs, vehicle, width_px=None)
+        assert len(unwrapped) == 4 and unwrapped[2].endswith(f"; {FOOTNOTE_POINTER}.")
+        # and at 1280 px by this file's own Agg measurement (R-G1-06)
+        _assert_footnote_fits(plots.animation_caveats(runs, vehicle))
+    # no modelled run: the three lines word for word, no pointer
+    plain = plots.animation_caveats([pad, silo, penalty], "toy_2d")
+    assert plain == [
+        "Planar 2-D model (rotating spherical Earth, ICAO atmosphere, drag); "
+        "sweep-optimized guidance, not optimal control.",
+        "Unthrottled (no max-Q or g limit); no sized structural mass for the 3.0 g push load; "
+        "the penalty row charges an assumed stage-1 dry mass.",
+        "Vehicle toy_2d: no calibration record on file. A model replay, not a design result.",
+    ]
+    assert "summary.md" not in " ".join(plain)
 
 
 def _end_phase(run: plots.AnimationRun) -> str:

@@ -107,10 +107,14 @@ case's recorded run, a paired pad or a pad control: ``offload.runs``; run_source
 OFFLOAD_CASE = "offload case"
 OFFLOAD_PAIRED_PAD = "paired pad"
 OFFLOAD_PAD_CONTROL = "pad control"
+OFFLOAD_STRUCTURE_PAYLOAD = "structure payload case"
 """What a run of metrics.json's ``offload.runs`` is (``offload_role``): an offload case's
 recorded run (``offload.cases``, by ``run``), the paired pad of a case (its
 ``paired_pad.run``: the reference baseline with the case's propellant change and no
-assist) or a pad control (``offload.pad_controls``, by ``run``)."""
+assist), a pad control (``offload.pad_controls``, by ``run``) or a structure payload
+case's run (``offload.structure_payload_cases``, by ``run``; SP7 step S3a fix round 1,
+H-S3a-01: the variant flying its own payload capacity P_2* on the full load, carrying
+its modelled structure, a payload change against P_ref, never propellant saved)."""
 OFFLOAD_SOLVED_KIND = "solve"
 """``kind`` of an offload case whose offload was solved at P_ref, so it flies P_ref (a
 ``fixed`` case imposes its offload, and its figure is its own P* against P_ref)."""
@@ -511,8 +515,10 @@ def run_source(
 def offload_role(offload: Mapping[str, Any], name: str) -> tuple[str, dict[str, Any]] | None:
     """(kind, record) of run ``name`` in metrics.json's ``offload`` block: OFFLOAD_CASE
     and the case record whose ``run`` it is; OFFLOAD_PAIRED_PAD and the case record whose
-    ``paired_pad.run`` it is; OFFLOAD_PAD_CONTROL and its ``pad_controls`` record; None
-    when the block names it in no case or control. Shared by the animation's legend
+    ``paired_pad.run`` it is; OFFLOAD_STRUCTURE_PAYLOAD and the
+    ``structure_payload_cases`` record whose ``run`` it is (SP7 step S3a fix round 1);
+    OFFLOAD_PAD_CONTROL and its ``pad_controls`` record; None when the block names it in
+    no case, payload case or control. Shared by the animation's legend
     (plots.offload_tag) and the replay page's note (``offload_note``)."""
     for case in offload.get("cases") or []:
         case = as_mapping(case)
@@ -520,6 +526,10 @@ def offload_role(offload: Mapping[str, Any], name: str) -> tuple[str, dict[str, 
             return OFFLOAD_CASE, case
         if as_mapping(case.get("paired_pad")).get("run") == name:
             return OFFLOAD_PAIRED_PAD, case
+    for case in offload.get("structure_payload_cases") or []:
+        case = as_mapping(case)
+        if case.get("run") == name:
+            return OFFLOAD_STRUCTURE_PAYLOAD, case
     for control in offload.get("pad_controls") or []:
         control = as_mapping(control)
         if control.get("run") == name:
@@ -531,8 +541,11 @@ def offload_note(offload: Mapping[str, Any], name: str, baseline: str) -> str:
     """What an offload run is, from metrics.json's ``offload`` record: an offload case's
     recorded run (how much propellant it carries less, in tonnes and as a share of the
     stage-1 and total loads, and the payload [kg] it flies against the reference
-    payload), a paired pad (the pad with a case's propellant change) or a pad control.
-    Which one is ``offload_role``, shared with the animation's labels."""
+    payload), a paired pad (the pad with a case's propellant change), a pad control or a
+    structure payload case's run (its own payload capacity P_2* on the full load carrying
+    its modelled structure, a payload change against P_ref, not propellant saved; SP7
+    step S3a fix round 1). Which one is ``offload_role``, shared with the animation's
+    labels."""
     p_ref = finite(offload.get("reference_payload_kg"), 1)
     ref = f"{p_ref:,.1f} kg" if p_ref is not None else "the reference payload"
     role = offload_role(offload, name)
@@ -546,6 +559,14 @@ def offload_note(offload: Mapping[str, Any], name: str, baseline: str) -> str:
         )
     if kind == OFFLOAD_PAD_CONTROL:
         return f"pad control ({record.get('mode')}): {baseline}'s own offload at P_ref = {ref}"
+    if kind == OFFLOAD_STRUCTURE_PAYLOAD:
+        payload = finite(record.get("payload_kg"), 1)
+        flies = "" if payload is None else f", {payload:,.1f} kg"
+        return (
+            f"structure payload case {name} of {record.get('of')}: flies its own payload "
+            f"capacity P_2* on the full load carrying its modelled structure (dm_1){flies}, a "
+            f"payload change against P_ref = {ref}, not propellant saved"
+        )
     removed = finite(record.get("total_offload_kg"))
     s1 = finite(record.get("stage1_fraction"))
     tot = finite(record.get("total_fraction"))

@@ -37,8 +37,10 @@ control); ``run_source`` finds which.
 The page's text is built from the run data and the metrics, never fixed (SP2 step A1a,
 D-SP2-23, KI-029): the drive caveat says what each omission of the assist model does to
 the numbers of the runs shown (``drive_caveat``), the structure caveat names each pushed
-run's own flown load and peak felt g and, for a penalty row, the assumed stage-1 dry mass
-its record charges (``structure_caveat``), an offload run's label and note say which kind
+run's own flown load and peak felt g and what structural mass its record charges, three
+ways (none; a penalty row's assumed stage-1 dry mass; since SP7 step S3a a structural
+run's modelled mass, worded from the run's own metrics keys; ``structure_caveat``), an
+offload run's label and note say which kind
 it is, what it measures and how it is quoted (a stage-2 or both-stage solve net of the pad
 control, a failed verification read by its sign, a solve that found no offload, the
 flags, a pad control's own result: ``run_label``, ``replay_offload_note``,
@@ -72,7 +74,17 @@ from launchsim.metrics_planar import KICK_NONE
 from launchsim.offload import NO_OFFLOAD_STATUS
 from launchsim.phases import HOLD_KIND
 from launchsim.search import OK_STATUS, SEARCH_FAILED_STATUS
-from launchsim.summary import UPPER_BOUND_REASONS
+from launchsim.summary import (
+    STRUCTURE_NO_SIZING_TEXT,
+    UPPER_BOUND_REASONS,
+    modelled_mass_split_text,
+    modelled_structure_text,
+    offload_charges_modelled,
+    plausibility_scale_text,
+    structure_charged,
+    structure_run_record,
+    tree_state,
+)
 from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, t_to_kg, to_percent
 
 
@@ -235,7 +247,8 @@ def run_source(metrics: dict[str, Any], config: dict[str, Any], name: str) -> di
     comparison, the run it is compared with (None: not compared), its run block, its
     vehicle name (None: the experiment's vehicle), a note on what it is and, for a run
     of the offload block, its ``offload_kind`` (run_data.offload_role: OFFLOAD_CASE,
-    OFFLOAD_PAIRED_PAD or OFFLOAD_PAD_CONTROL; None otherwise). An offload run's note is
+    OFFLOAD_PAIRED_PAD, OFFLOAD_PAD_CONTROL or OFFLOAD_STRUCTURE_PAYLOAD; None
+    otherwise). An offload run's note is
     the page's own (``replay_offload_note``: two decimals, a paired pad said to fly its
     own payload capacity), not run_data.offload_note's. Raises ReplayError for a run
     folder that metrics.json does not describe (run_data.run_source)."""
@@ -468,6 +481,35 @@ def payload_reading(delta: float, ref: str, imposed: bool) -> str:
     return f" ({abs(delta):,.1f} kg short of {ref}{why if imposed else ''})"
 
 
+def structure_payload_note(
+    record: Mapping[str, Any], name: str, ref: str, p_ref: float | None
+) -> str:
+    """The note of a structure payload case's run (SP7 step S3a fix round 1, H-S3a-01):
+    'structure payload case silo_pstar_st of silo: flies its own payload capacity P_2* on
+    the full load (no propellant removed) with 9,100.3 kg of modelled structural mass
+    (...), 1,010.0 kg (10.0 kg above P_ref = 1,000.0 kg): a payload change against P_ref,
+    not propellant saved; 2 flags (summary.md, Flags)'. ``ref`` names P_ref as the page
+    calls it, ``p_ref`` is its value (None: the reading is left out unless the record's
+    ``payload_delta_kg`` gives it)."""
+    text = (
+        f"structure payload case {name} of {record.get('of')}: flies its own payload "
+        f"capacity P_2* on the full load (no propellant removed){structure_clause(record)}"
+    )
+    payload = _finite(record.get("payload_kg"), PAYLOAD_DECIMALS)
+    delta = _finite(record.get("payload_delta_kg"), PAYLOAD_DECIMALS)
+    if delta is None and payload is not None and p_ref is not None:
+        delta = round(payload - p_ref, PAYLOAD_DECIMALS)
+    if payload is not None:
+        text += f", {payload:,.1f} kg"
+    if delta is not None:
+        text += payload_reading(delta, f"P_ref = {ref}", imposed=False)
+    text += ": a payload change against P_ref, not propellant saved"
+    if has_flags(record):
+        n = len(record["flags"])
+        text += f"; {n} flag{'' if n == 1 else 's'} (summary.md, Flags)"
+    return text
+
+
 def penalty_added_kg(record: Mapping[str, Any]) -> float | None:
     """The assumed stage-1 dry mass a penalty row charges on its run [kg], from the case
     record: ``stage1_dry_mass_added_kg`` when it is above 0; 0.0 for a record whose
@@ -495,6 +537,26 @@ def penalty_clause(record: Mapping[str, Any]) -> str:
     return "" if added is None else f" with an assumed {penalty_mass_text(added)}"
 
 
+def structure_clause(record: Mapping[str, Any]) -> str:
+    """' with 9,100.3 kg of modelled structural mass (stage 1 8,900.1 kg, stage 2 200.2
+    kg; a first-order station sizing, not an assumed penalty)' for a structural case's
+    note and headline (SP7 step S3a: its record's ``structure_charged``,
+    summary.modelled_mass_split_text; a solve without an x* 'with a modelled structural
+    mass with no sizing at x* (the solve found no x*; ...)'); with 'scaled x<factor> by
+    the plausibility rule' before the model's name when the dm carries the rule's factor
+    (summary.plausibility_scale_text; fix round 3, H-S3a-P3-03: the headline is the
+    panel's first figure); '' for any other record. The penalty and the modelled clauses
+    never both apply: a structural case has no penalty (the config refuses the pair)."""
+    if not structure_charged(record):
+        return ""
+    tail = "a first-order station sizing, not an assumed penalty"
+    dm = _finite(record.get("structure_dm_kg"))
+    if dm is None:
+        return f" with a modelled structural mass with {STRUCTURE_NO_SIZING_TEXT[:-1]}; {tail})"
+    inner = [modelled_mass_split_text(record), plausibility_scale_text(record), tail]
+    return f" with {dm:,.1f} kg of modelled structural mass ({'; '.join(b for b in inner if b)})"
+
+
 def solve_outcome(record: Mapping[str, Any]) -> str | None:
     """How a solved case's solve ended when it found no x*, so the note never reads like
     a successful solve of 0.00 t: 'the solve found no offload (status no_offload)' (the
@@ -520,7 +582,8 @@ def replay_offload_note(offload: Mapping[str, Any], name: str, baseline: str) ->
     (run_data.offload_role tells which): an offload case's recorded run (the propellant
     it carries less, in tonnes, naming the stage when one stage carries it all, how it
     was taken out (``offload_how``, with the assumed stage-1 dry mass of a penalty row,
-    ``penalty_clause``), its shares of the loads (``offload_shares``) and the payload [kg]
+    ``penalty_clause``, or the modelled structural mass of a structural case,
+    ``structure_clause``), its shares of the loads (``offload_shares``) and the payload [kg]
     it flies against the reference payload; for a fixed case the payload's difference
     from P_ref with its reading (``payload_reading``, D-SP2-27); for a stage-2 or
     both-stage solve how it is quoted, net of the pad control (``offload_quoted_clause``);
@@ -529,7 +592,11 @@ def replay_offload_note(offload: Mapping[str, Any], name: str, baseline: str) ->
     search_failed) how it ended instead of an amount, with the recorded run at x = 0 when
     there is one (``solve_outcome``)), a paired pad (the baseline with the case's offload
     and no push, flying its own payload capacity, the recorded ``payload_kg``, against
-    P_ref) or a pad control with what it found (``pad_control_result``). Tonnes and
+    P_ref), a pad control with what it found (``pad_control_result``) or a structure
+    payload case's run (SP7 step S3a fix round 1, H-S3a-01: the variant flying its own
+    payload capacity P_2* on the full load, no propellant removed, carrying its modelled
+    structural mass, ``structure_clause``, the recorded payload and its reading against
+    P_ref, a payload change and never propellant saved, then its flags). Tonnes and
     percentages carry two decimals, as every other page of the project prints them
     (run_data.offload_note, the animation's wording, keeps one); payloads
     PAYLOAD_DECIMALS."""
@@ -543,6 +610,8 @@ def replay_offload_note(offload: Mapping[str, Any], name: str, baseline: str) ->
         text = f"pad control ({record.get('mode')}): {baseline}'s own offload at P_ref = {ref}"
         result = pad_control_result(record)
         return text if result is None else f"{text}: {result}"
+    if kind == run_data.OFFLOAD_STRUCTURE_PAYLOAD:
+        return structure_payload_note(record, name, ref, p_ref)
     removed = _finite(record.get("total_offload_kg"))
     stage = offload_stage_word(record)
     if kind == run_data.OFFLOAD_PAIRED_PAD:
@@ -584,7 +653,7 @@ def replay_offload_note(offload: Mapping[str, Any], name: str, baseline: str) ->
         "an unknown amount of propellant"
         if removed is None
         else f"{_tonnes(removed)} less {what} ({offload_how(record, removed)}"
-        f"{penalty_clause(record)}{offload_shares(record)})"
+        f"{penalty_clause(record)}{structure_clause(record)}{offload_shares(record)})"
     )
     flies = "" if payload is None else f", flying {payload:,.1f} kg"
     reading = ""
@@ -980,6 +1049,8 @@ def penalty_structure_sentence(
     penalties: Mapping[str, float],
     sources: Mapping[str, Mapping[str, Any]],
     offload: Mapping[str, Any],
+    *,
+    program_clause: bool = True,
 ) -> str:
     """The sentence of the pushed runs that are penalty rows (RQ1-fuel-offload-2d,
     'Structural penalty rows and break-even'), each with its own flown load and peak felt
@@ -987,7 +1058,16 @@ def penalty_structure_sentence(
     at push start, 1.98 t less propellant, up to 4.0 g during the push): a parametric
     assumption, not a sized structure; no structural model exists.' Runs with the same
     penalty are grouped; another penalty follows as 'and an assumed +2 t of stage-1 dry
-    mass on ...'. ``penalties``: ``penalty_added_kg`` per run key."""
+    mass on ...'. ``penalties``: ``penalty_added_kg`` per run key. The closing clause
+    '; no structural model exists' is the program-level claim of SP1 (S7c's to reword
+    once the findings note exists); ``program_clause`` False drops it, which
+    ``structure_caveat`` does when the selection also holds a run that charges a modelled
+    structural mass (SP7 step S3a fix round 1, H-S3a-02: the next sentence would
+    contradict it) or the directory's offload record charges one anywhere
+    (summary.offload_charges_modelled; fix round 2, H-S3a-P2-03: the block caveat beside
+    it on the scene page and in the app's panel names the model), so a penalty-only
+    selection of a directory without a structural record keeps SP2's text word for
+    word."""
     groups: dict[float, list[str]] = {}
     for r in charged:
         bits = flown_load_bits(r, sources[r["key"]], offload)
@@ -1005,7 +1085,45 @@ def penalty_structure_sentence(
         if len(charged) == 1
         else "parametric assumptions, not sized structures"
     )
-    return f"{text[0].upper()}{text[1:]}: {closing}; no structural model exists."
+    tail = "; no structural model exists." if program_clause else "."
+    return f"{text[0].upper()}{text[1:]}: {closing}{tail}"
+
+
+def modelled_structure_sentence(
+    modelled: Sequence[dict[str, Any]],
+    sources: Mapping[str, Mapping[str, Any]],
+    offload: Mapping[str, Any],
+) -> str:
+    """The sentence of the pushed runs whose own metrics record charges a modelled
+    structural mass (SP7 step S3a, D-SP7-22: the run-level keys of ``structure_charged``,
+    on a solved structural case's recorded run and on a structure payload case's run
+    alike; ``case_record`` finds no record for the latter, so the run's own metrics are
+    read): 'The modelled structural mass of the push load is charged on silo_s1_st
+    (531.1 t at push start, 39.90 t less propellant, up to 4.0 g during the push):
+    9,100.3 kg (stage 1 8,900.1 kg, stage 2 200.2 kg): a first-order station sizing of
+    the push load (layer and set ...; <file>); the physics band's ends at the search's
+    push are dm ... (where the block's structure_inputs record them); the dm carries the
+    plausibility rule's factor ... (when scaled); <the run's own fired flags, or that
+    none fired>; a first-order estimate with its stated ranges, not a detailed structural
+    design.' (summary.modelled_structure_text of the run's record as
+    summary.structure_run_record gives it: a structure payload case's run is worded as
+    that payload case, never as a full-load-sizing row; final clean-up, N3a-03). Several
+    runs: ', and on <run> (...): ...'. Never 'assumed', never 'bounds'."""
+    inputs = offload.get("structure_inputs")
+    inputs = inputs if isinstance(inputs, Mapping) else None
+    pieces = []
+    for r in modelled:
+        bits = flown_load_bits(r, sources[r["key"]], offload)
+        if r["felt_g_track"] is not None:
+            bits.append(f"up to {r['felt_g_track']:.1f} g during the push")
+        item = r["key"] + (f" ({', '.join(bits)})" if bits else "")
+        record = structure_run_record(sources[r["key"]]["metrics"], offload, r["key"])
+        pieces.append(f"{item}: {modelled_structure_text(record, inputs)}")
+    return (
+        "The modelled structural mass of the push load is charged on "
+        + ", and on ".join(pieces)
+        + "."
+    )
 
 
 def structure_caveat(
@@ -1013,33 +1131,51 @@ def structure_caveat(
     metrics: dict[str, Any],
     sources: Mapping[str, Mapping[str, Any]],
 ) -> str | None:
-    """The structural-mass caveat of the assisted runs, worded from each run's record:
-    for the runs without a structural penalty, that none is charged, with each run's own
-    flown load and peak felt g (``uncharged_structure_sentence``); for a penalty row (an
-    offload case whose record charges an assumed stage-1 dry mass, ``penalty_added_kg``),
-    that this assumed mass is charged on it, an assumption and not a sized structure, and
-    that no structural model exists (``penalty_structure_sentence``); then, when
-    sensitivity cases give dP*/d(stage-1 dry mass), the extra stage-1 structure that
-    would cancel each positive gain. Each run uses its own dry-mass cases; a run without
-    them borrows the slope of the first selected assisted run that has them (else any
-    run's) and the text says so. None without an assisted run."""
+    """The structural-mass caveat of the assisted runs, worded from each run's record,
+    three ways (D-SP7-22): for the runs without a structural penalty or a modelled mass,
+    that none is charged, with each run's own flown load and peak felt g
+    (``uncharged_structure_sentence``); for a penalty row (an offload case whose record
+    charges an assumed stage-1 dry mass, ``penalty_added_kg``), that this assumed mass is
+    charged on it, an assumption and not a sized structure, and, unless a modelled run is
+    shown beside it or the directory charges a modelled mass anywhere, that no structural
+    model exists (``penalty_structure_sentence``; H-S3a-02, H-S3a-P2-03); for a run whose
+    own metrics record charges a modelled structural mass (``structure_charged``, SP7
+    step S3a), what it is (``modelled_structure_sentence``); then, when sensitivity cases
+    give dP*/d(stage-1 dry mass), the extra stage-1 structure that would cancel each
+    positive gain. Each run
+    uses its own dry-mass cases; a run without them borrows the slope of the first
+    selected assisted run that has them (else any run's) and the text says so. None
+    without an assisted run."""
     assisted = [r for r in runs if r["assisted"]]
     if not assisted:
         return None
     offload = _mapping(metrics.get("offload"))
+    modelled = [r for r in assisted if structure_charged(sources[r["key"]]["metrics"])]
     penalties: dict[str, float] = {}
     for r in assisted:
+        if r in modelled:
+            continue
         record = case_record(sources[r["key"]], offload, r["key"])
         added = None if record is None else penalty_added_kg(record)
         if added is not None:
             penalties[r["key"]] = added
-    free = [r for r in assisted if r["key"] not in penalties]
+    free = [r for r in assisted if r["key"] not in penalties and r not in modelled]
     charged = [r for r in assisted if r["key"] in penalties]
     sentences = []
     if free:
         sentences.append(uncharged_structure_sentence(free, sources, offload))
     if charged:
-        sentences.append(penalty_structure_sentence(charged, penalties, sources, offload))
+        sentences.append(
+            penalty_structure_sentence(
+                charged,
+                penalties,
+                sources,
+                offload,
+                program_clause=not (modelled or offload_charges_modelled(offload)),
+            )
+        )
+    if modelled:
+        sentences.append(modelled_structure_sentence(modelled, sources, offload))
     text = " ".join(sentences)
     slopes = {k: v for k, v in dry_mass_slopes(metrics).items() if v[0] < 0.0}
     gains = [r for r in assisted if (r["payload_delta_kg"] or 0.0) > 0.0]
@@ -1356,9 +1492,12 @@ def offload_comparison_caveat(
     stage-1 headline (D-SP1-10; summary.md's basis row); a fixed case imposes its offload
     and flies its own payload capacity, a payload change at that offload; a paired pad
     (the baseline with the case's offload and no push) flies its own payload capacity
-    and measures a payload change against P_ref, not propellant saved. One sentence per
-    kind shown, with the runs named when more than one kind is; None without an offload
-    run."""
+    and measures a payload change against P_ref, not propellant saved; a structure
+    payload case's run (SP7 step S3a fix round 1, H-S3a-01) flies its own payload
+    capacity P_2* on the full load carrying its modelled structure, a payload change
+    against P_ref, not propellant saved (summary.md, the Structure subsection's payload
+    cases). One sentence per kind shown, with the runs named when more than one kind is;
+    None without an offload run."""
     offload = [r["key"] for r in runs if r["role"] == ROLE_OFFLOAD]
     if not offload:
         return None
@@ -1366,13 +1505,24 @@ def offload_comparison_caveat(
     p_ref = _finite(block.get("reference_payload_kg"), PAYLOAD_DECIMALS)
     ref = f"P_ref = {p_ref:,.1f} kg" if p_ref is not None else "P_ref, the reference payload"
     cases = {str(c.get("run")): c for c in map(_mapping, block.get("cases") or [])}
-    kinds: dict[str, list[str]] = {"at_ref": [], "net": [], "fixed": [], "paired": []}
+    payload_cases = {
+        str(c.get("run")): c for c in map(_mapping, block.get("structure_payload_cases") or [])
+    }
+    kinds: dict[str, list[str]] = {
+        "at_ref": [],
+        "net": [],
+        "fixed": [],
+        "paired": [],
+        "structure": [],
+    }
     controls: list[str] = []
     for name in offload:
         kind = sources[name].get("offload_kind")
         case = cases.get(name, {})
         if kind == run_data.OFFLOAD_PAIRED_PAD:
             kinds["paired"].append(name)
+        elif kind == run_data.OFFLOAD_STRUCTURE_PAYLOAD:
+            kinds["structure"].append(name)
         elif kind == run_data.OFFLOAD_CASE and case.get("kind") != run_data.OFFLOAD_SOLVED_KIND:
             kinds["fixed"].append(name)
         elif (
@@ -1412,6 +1562,14 @@ def offload_comparison_caveat(
                 f"{subject} {'imposes' if one else 'impose'} {its} offload and "
                 f"{'flies' if one else 'fly'} {its} own payload capacity: {its} figure is that "
                 f"payload against {ref}, a payload change at the imposed offload"
+            )
+        if kind == "structure":
+            of = _names([str(payload_cases.get(n, {}).get("of")) for n in names])
+            return (
+                f"{subject} {'is' if one else 'are'} the structure payload case{s} of {of} and "
+                f"{'flies' if one else 'fly'} {its} own payload capacity P_2* on the full load "
+                f"carrying {its} modelled structure (dm_1), a payload change against {ref}, "
+                "not propellant saved (summary.md, the Structure subsection's payload cases)"
             )
         return (
             f"{subject} {'is' if one else 'are'} the paired pad{s} ({baseline} with the same "
@@ -1625,10 +1783,13 @@ OFFLOAD_LABELS = {
     run_data.OFFLOAD_CASE: "offload",
     run_data.OFFLOAD_PAIRED_PAD: "paired pad",
     run_data.OFFLOAD_PAD_CONTROL: "pad control",
+    run_data.OFFLOAD_STRUCTURE_PAYLOAD: "structure payload case",
 }
 """Label suffix of a run of the offload block by kind (run_data.offload_role): an
 offload case's recorded run, the paired pad of a case (the baseline with the same
-offload and no push, flying its own payload capacity) or a pad control."""
+offload and no push, flying its own payload capacity), a pad control or a structure
+payload case's run (SP7 step S3a fix round 1: never '(offload)', which would read as a
+case's recorded run flying P_ref)."""
 
 
 def run_label(name: str, role: str, baseline: bool, offload_kind: str | None = None) -> str:
@@ -1793,6 +1954,11 @@ def replay_data(run_dir: Path, runs: Sequence[str] | None) -> dict[str, Any]:
     orbit = orbit_text(base_cfg)
     experiment = str(metrics.get("experiment", run_dir.resolve().parent.name))
     git = _mapping(metrics.get("git"))
+    # KI-036 (SP7 step S3a): a directory whose git state is unknown (dirty not a boolean,
+    # or a no-git hash) says so in the git string, since the frozen template renders only
+    # "(git <string>[, dirty])"; ``dirty`` stays a bool for the template
+    state = tree_state(git.get("dirty"), git.get("hash"))
+    git_text = str(git.get("hash", "unknown")) + (", state unknown" if state == "unknown" else "")
     results_notes = [
         "Payload capacity is the largest payload that still reaches the run's target orbit "
         "with zero propellant left, found by the simulator's search (sweep-optimized).",
@@ -1816,8 +1982,8 @@ def replay_data(run_dir: Path, runs: Sequence[str] | None) -> dict[str, Any]:
         "experiment": experiment,
         "timestamp": str(metrics.get("timestamp_utc", run_dir.resolve().name)),
         "source": source_text(run_dir),
-        "git": str(git.get("hash", "unknown")),
-        "dirty": bool(git.get("dirty")),
+        "git": git_text,
+        "dirty": state == "dirty",
         "version": __version__,
         "vehicle": vehicle,
         "baseline": baseline,

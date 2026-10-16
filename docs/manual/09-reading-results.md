@@ -27,7 +27,8 @@ preliminary.
    number.
 6. **The Assumptions section.** Each line names the runs it applies to.
 7. **With an offload block, the section "Propellant saved at fixed payload"**: its caveats
-   first, then each case as described in [Reading an offload result](#reading-an-offload-result).
+   first, then each solved case as described in [Reading an offload result](#reading-an-offload-result),
+   the imposed (fixed) cases in their own sub-section with their own basis line (SP7).
 
 ## Run statuses
 
@@ -170,7 +171,10 @@ Each case quotes one offload, and the cases table prints it first with its basis
   property of the vehicle model, not of the assist". The gross rows beside it are not a
   saving of the assist. Stage 1 is the only headline.
 - **A fixed case** quotes its imposed offload; its figure is its own P\* against P_ref
-  (`payload_delta_kg`).
+  (`payload_delta_kg`). Since SP7 it is filed under the sub-section "Imposed offloads
+  (fixed cases)" with its own basis line (it flies its own P\*, read as P\* - P_ref, never
+  propellant saved at P_ref); the section's heading and "measured at P_ref" describe the
+  solved cases only.
 - **"not quoted"** means the case's own solve did not end `ok` or `no_offload`, or (for
   stage 2 and both) the pad control has no offload to net it against.
 
@@ -311,7 +315,21 @@ reading, and the note gives both:
   headline's is 226.9 Pa rad at the kick, 3.04 times the pad's 74.7 (no angle-of-attack
   aerodynamics; the kick costs nothing it would in flight).
 - **On the track** the stack still feels 4.0 g (20.81 MN at the interface for the headline),
-  and no structural mass is charged for it except in the assumed penalty rows.
+  and no structural mass is charged for it except in the assumed penalty rows. A structural
+  case of SP7 charges its modelled structural mass instead: its case cell says so in place
+  of a 0 under "assumed", its run's caveats name the mass by stage with the model, the
+  layer and set, the file, the band's ends at the structure file's headline push (named
+  from the file's `sets.method`: silo_offload_2d's silo_cold at 41,263 kg for the gate
+  file, silo_offload_2d_readme's silo_cold at 36,006 kg for the README-loads file; each
+  printed unscaled beside its value after the plausibility rule's factor, with the rule's
+  trigger, when the rule fires on it; both sizing-only numbers, not the run's own band,
+  then how the run is sized: at its own push and offload, or on the full load at x = 0
+  for a full-load-sizing row and a structure payload case), the run's flags (beside a
+  fired release flag, the
+  pad's own MECO under the same step treatment, D-SP7-39), and call it a first-order
+  estimate, never an assumed penalty. A sweep whose offload cases are structural prints,
+  under its table, one line per such case saying what its `<case>.structure_dm_kg`
+  column is.
 
 ### The energy rows
 

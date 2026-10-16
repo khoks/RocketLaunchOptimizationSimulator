@@ -41,7 +41,10 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   carries it);
 - at the top level: the directory's identity and git record as metrics.json holds it
   (``hash``; ``dirty`` true, false, or null when git status itself failed and the state
-  is unknown, never read as clean; ``error``, git's reason), its label, the vehicle, the
+  is unknown, never read as clean; ``error``, git's reason), the package version of the
+  renderer that drew the page (``version``, launchsim.__version__, as the replay page's
+  meta carries it; KI-038, SP7 step S3a: the renderer's git state is not recorded, since
+  it would change every committed gallery page at every commit), its label, the vehicle, the
   display geometry (the matching display file, else the generic shape with the reason),
   R_E and omega_p from constants, the camera and tolerance constants, the page's drawing
   constant that the display-only text quotes (PLUME_OF_STACK), the display-only list
@@ -101,7 +104,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from launchsim import display, replay, run_data
+from launchsim import __version__, display, replay, run_data, summary
 from launchsim.config import OFFLOAD_GROSS_MODES, TrackConfig, VehicleConfig
 from launchsim.constants import R_EARTH_M
 from launchsim.metrics import TRACK_COLUMNS
@@ -895,7 +898,9 @@ def scene_run_label(
     ('(offload, solved, stage 2: a property of the vehicle model)', criterion 7), and a
     solve with a stage-2 pre-offload adds it ('(offload, solved, plus 2.00 t imposed on
     stage 2)'), so the selector and the header never show such a run as the stage-1
-    headline. A scene-side label: the replay page's labels are unchanged."""
+    headline. A structure payload case's run keeps replay's '(structure payload case)'
+    (run_data.OFFLOAD_STRUCTURE_PAYLOAD; SP7 step S3a fix round 1). A scene-side label:
+    the replay page's labels are unchanged."""
     label = replay.run_label(name, role, baseline, kind)
     if baseline or kind != run_data.OFFLOAD_CASE or record is None:
         return label
@@ -923,10 +928,11 @@ def offload_flags(offload: Mapping[str, Any], name: str) -> list[str]:
     ('verification failed (+15.36 kg against 2.6 kg): the gross removal is a flagged lower
     bound', replay.verification_reading), then, for a stage-2 or both-stage solve quoted
     net of a pad control that carries flags, that the net figure subtracts a flagged pad
-    control, then the case record's own ``flags``; for a pad control its record's
-    ``flags``; [] for a paired pad (the case's verdicts belong to the case's run) and for
-    every run outside the block. The note (replay.replay_offload_note) says the same in
-    one sentence; this list names each flag."""
+    control, then the case record's own ``flags``; for a pad control or a structure
+    payload case's run its record's ``flags``; [] for a paired pad (the case's verdicts
+    belong to the case's run) and for every run outside the block. The note
+    (replay.replay_offload_note) says the same in one sentence; this list names each
+    flag."""
     role = run_data.offload_role(offload, name)
     if role is None or role[0] == run_data.OFFLOAD_PAIRED_PAD:
         return []
@@ -1132,7 +1138,12 @@ def run_payload(
         "offload_note": offload_note,
         "flags": flags,
         "structure_note": structure_note(
-            case_record if kind == run_data.OFFLOAD_CASE else None, assisted
+            case_record if kind == run_data.OFFLOAD_CASE else None,
+            assisted,
+            summary.structure_run_record(m, run_data.as_mapping(metrics.get("offload")), name),
+            run_data.as_mapping(
+                run_data.as_mapping(metrics.get("offload")).get("structure_inputs")
+            ),
         ),
         "yardstick": replay.is_yardstick(dict(m)),
         "compared_to": source["compared_to"],
@@ -1215,15 +1226,20 @@ def run_payload(
 
 
 def git_record(git: Mapping[str, Any]) -> dict[str, Any]:
-    """The git record of metrics.json as recorded (results_io.git_info): ``hash`` (the
-    commit, 'unborn' or 'no-git'; 'unknown' when absent), ``dirty`` (True or False as
-    written, None when it is not a boolean: git status failed or timed out, so the state
-    is unknown and must never read as clean) and ``error`` (git's reason, or None)."""
+    """The git record of metrics.json (results_io.git_info): ``hash`` (the commit,
+    'unborn' or 'no-git'; 'unknown' when absent), ``dirty`` (True or False as written;
+    None when summary.tree_state reads the state as unknown: a flag that is not a boolean,
+    git status failed or timed out, or a hash of summary.EXPLORATORY_NO_GIT_HASHES, whose
+    False means nothing; SP7 step S3a fix round 2, N2-04: the page then prints "state
+    unknown", as the replay page's git string does, never "clean") and ``error`` (git's
+    reason, or None)."""
     dirty = git.get("dirty")
     error = git.get("error")
+    hash_ = git.get("hash", "unknown")
+    known = isinstance(dirty, bool) and summary.tree_state(dirty, hash_) != "unknown"
     return {
-        "hash": str(git.get("hash", "unknown")),
-        "dirty": dirty if isinstance(dirty, bool) else None,
+        "hash": str(hash_),
+        "dirty": dirty if known else None,
         "error": None if error is None else str(error),
     }
 
@@ -1293,18 +1309,36 @@ def frame_caveat(vehicles: Sequence[str]) -> str:
     return " ".join([FRAME_MODEL_TEXT, *calibration, FRAME_MORE_TEXT])
 
 
-def structure_note(case_record: Mapping[str, Any] | None, assisted: bool) -> str | None:
+def structure_note(
+    case_record: Mapping[str, Any] | None,
+    assisted: bool,
+    run_metrics: Mapping[str, Any] | None = None,
+    structure_inputs: Mapping[str, Any] | None = None,
+) -> str | None:
     """What structural mass a run's record charges for the push, for a captured frame's
-    footer: None for a run with no push (``assisted`` false); for a penalty row (an
-    offload case whose ``offload.cases`` record, ``case_record`` as run_data.offload_role
-    finds it for the run, charges an assumed stage-1 dry mass: replay.penalty_added_kg)
-    that assumed mass, 'an assumption, not a sized structure'; else (``case_record`` None,
-    or a case without a penalty) that none is charged (replay.structure_caveat's wording,
-    per run). Pure. Fix round 1 of A6v: the record is the one ``run_payload`` found, not
-    looked up again from a run_source without ``offload_kind`` (which named every penalty
-    row as uncharged)."""
+    footer, three ways (D-SP7-22): None for a run with no push (``assisted`` false); for a
+    run whose own metrics record (``run_metrics``, the run's ``offload.runs`` record)
+    charges a modelled structural mass (summary.structure_charged: a solved structural
+    case's recorded run or a structure payload case's run, SP7 step S3a; the caller
+    passes it through summary.structure_run_record, so a payload case's run is worded
+    as that payload case, final clean-up, N3a-03) that mass by
+    stage, the model, the layer and set, the file, the band's ends where
+    ``structure_inputs`` (the block's record) has them, the run's fired flags and that it
+    is a first-order estimate (summary.modelled_structure_text, the same core sentence
+    the replay caveat quotes); for a penalty row (an offload case whose ``offload.cases``
+    record, ``case_record`` as run_data.offload_role finds it for the run, charges an
+    assumed stage-1 dry mass: replay.penalty_added_kg) that assumed mass, 'an assumption,
+    not a sized structure'; else (``case_record`` None, or a case without a penalty) that
+    none is charged (replay.structure_caveat's wording, per run). Pure. Fix round 1 of
+    A6v: the record is the one ``run_payload`` found, not looked up again from a
+    run_source without ``offload_kind`` (which named every penalty row as uncharged)."""
     if not assisted:
         return None
+    if run_metrics is not None and summary.structure_charged(run_metrics):
+        return (
+            "the modelled structural mass of the push load is charged for the push: "
+            f"{summary.modelled_structure_text(run_metrics, structure_inputs)}"
+        )
     added = None if case_record is None else replay.penalty_added_kg(case_record)
     if added is None:
         return "no structural mass is charged for the push"
@@ -1400,6 +1434,7 @@ def scene_payload(
         "timestamp": timestamp,
         "source": replay.source_text(run_dir),
         "git": git_record(git),
+        "version": __version__,
         "label": None if label is None else str(label),
         "exploratory": replay.is_exploratory(metrics),
         "exploratory_caveat": (

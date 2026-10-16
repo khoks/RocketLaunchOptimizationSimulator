@@ -3768,7 +3768,10 @@ beyond the drive). kWh beside J; MJ in the summary.
 
 **Record and summary.** metrics.json gains the key `offload` (`offload_record`): the
 basis (`compare.OFFLOAD_COMPARISON_BASIS`: different vehicles, the same payload and
-orbit), the reference and P_ref, the caveats, the energy inputs with their provenance,
+orbit; since SP7 step S3a "measured at P_ref" covers the solved cases only, an imposed
+case flies its own P* in its own sub-section, and the dry-mass clause names the penalty
+row and the structural case as the rows that change one), the reference and P_ref, the
+caveats, the energy inputs with their provenance,
 the pad controls (with their consistency verdict), one record per case (the quoted
 offload and its basis; the fixed key and, for a fraction key, `fixed_fraction` (a mass
 key's value is `offload_kg`, in kg); what was taken from each stage, gross, and its
@@ -3797,9 +3800,18 @@ shaft drag, max-Q against the pad's, partly filled tanks with the mixture ratio 
 and no ullage or centre-of-gravity effect, stage 1 as the only headline with stage 2 and
 both quoted net of the pad control, the marginal value of stage-2 propellant placed on
 the gate vehicle and, since SP1 step 8a, a stage-1-only offload not assumed to maximise
-the total tonnes), the cases table (`summary.OFFLOAD_CASE_ROWS`: the quoted offload and
-its basis first, then the gross tonnes, % of each load and every item above; the energy
-rows when the block has energy inputs), the energy note with its exclusions, the
+the total tonnes; since SP7 step S3a the structure, drive and tanks items are worded from
+the block's own records, "Wording the structure (SP7 step S3a)": word for word as above
+for a block with no structural record and only constant_accel drives), the cases table
+of the solved cases (`summary.OFFLOAD_CASE_ROWS`: the quoted offload and its basis first,
+then the gross tonnes, % of each load and every item above; the energy rows when the
+block has energy inputs; the "assumed stage-1 dry mass added" cell of a structural case
+`summary.STRUCTURE_INSTEAD_OF_PENALTY_CELL`), then (KI-039, D-SP7-23, SP7 step S3a) the
+imposed (fixed) cases under `summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE` with their own
+basis line `summary.OFFLOAD_IMPOSED_BASIS` (each flies its own payload capacity P*, read
+as P* - P_ref, never propellant saved at P_ref) and the same rows, a block of imposed
+cases alone printing `summary.OFFLOAD_NO_SOLVED_CASE` in place of the solved table
+(summaries recorded before S3a keep their layout), the energy note with its exclusions, the
 decomposition table (m/s and kg of every term, the D_id change, the residual and the
 status), the pad controls (the table and one line each: x_pad, for stage 1 the bound of
 an `ok` control and the consistency verdict) and the sensitivity arms. The offload runs
@@ -3829,8 +3841,22 @@ pad is not a compare_planar comparison at all; its explanation is the decomposit
 **Replay.** `replay.run_source` gives a run of `offload.runs` the role `offload`
 (`ROLE_OFFLOAD`, label "(offload)"): its metrics from the record, its config from
 `offload_runs`, a note saying how much propellant it carries less and the payload it
-flies against P_ref, and a caveat that its saving is propellant at the same payload, not
-a payload change, so an offloaded run can be replayed beside the full-load pad.
+flies against P_ref (with a penalty row's assumed dry mass, `replay.penalty_clause`, or a
+structural case's modelled mass, `replay.structure_clause`, SP7 step S3a), and a caveat
+that its saving is propellant at the same payload, not a payload change, so an offloaded
+run can be replayed beside the full-load pad. The structure caveat of the selection
+(`replay.structure_caveat`) is worded from each pushed run's own record, three ways
+("Wording the structure (SP7 step S3a)"). A structure payload case's run is the
+block's fourth kind (`run_data.OFFLOAD_STRUCTURE_PAYLOAD`, found by `offload_role` in
+`structure_payload_cases`; SP7 step S3a fix round 1, H-S3a-01): its label is
+"(structure payload case)", its note says it flies its own payload capacity P_2* on
+the full load carrying its modelled structural mass, a payload change against P_ref
+and never propellant saved (`replay.structure_payload_note`; run_data.offload_note
+says the same in the animation's words), and the comparison caveat gives it its own
+sentence (the Structure subsection's payload cases), never the at-P_ref one; the
+scene page (its label, note and selector group), the animation's legend
+(`plots.offload_tag`: its P_2* against P_ref, on the full load) and the app's results
+panel (`HEADLINE_STRUCTURE_PAYLOAD`, the note as its headline) read the same kind.
 
 **Sweeps.** A planar sweep that names offload cases (`SweepConfig.offload`) solves each
 at every point with the point's run in place of the case's `of`, against the point's
@@ -5548,8 +5574,9 @@ when none did; for an app launch, that a run or case under a committed name is a
 reproduction, not new evidence, at the commit the experiment files were read from (or,
 read from no commit, that every name is neutral), and that the M5 anchor check reads
 n/a with one variant per launch; without a server-start record it says the run was
-labelled exploratory but not launched from the app; with an imposed offload it says the
-offload is not propellant saved).
+labelled exploratory but not launched from the app; with an imposed stage-2 or
+both-stage offload it says the offload is not netted; the imposed-not-saved sentence
+went with KI-039 in SP7 step S3a, the imposed cases having their own sub-section).
 
 **Bounds (amendment 6).** `bounds:` is a list of `{name, of, overrides,
 paired_baseline: true}`. Each run in `of` (never the baseline) is re-run with the
@@ -6696,7 +6723,8 @@ the case table's row "assumed stage-1 dry mass added" at 0 beside the same recor
 own assumptions list no longer contradicts itself: S3's second review round replaced, on a
 structural run only, the offload sentence "every dry mass (tank structure included) ...
 unchanged" by `sim.OFFLOAD_STRUCTURE_ASSUMPTIONS`, whose dry-mass clause excepts the
-modelled increment, "Assumptions" below); no
+modelled increment, "Assumptions" below). S3a reworded those lines at every source
+("Wording the structure (SP7 step S3a)" below); no
 experiment under experiments/ has a structure block, and none is written before S3a has
 reworded those lines (the first structural experiment is S6a's).
 
@@ -7391,6 +7419,354 @@ the record's keys.
 (status, P*, P* - P_ref, dm_1, c, the flag's name when it fired, and that the flight check
 is not applicable to it).
 
+### Wording the structure (SP7 step S3a)
+
+Modules: `src/launchsim/summary.py` (`structure_charged`, `structure_band_ends`,
+`modelled_mass_split_text`, `modelled_mass_text`, `modelled_structure_text`,
+`STRUCTURE_MODEL_NAME`, `STRUCTURE_ESTIMATE_TEXT`, `STRUCTURE_NO_SIZING_TEXT`,
+`STRUCTURE_NO_FLAG_TEXT`, `offload_caveats` with `offload_structure_caveat`,
+`offload_drive_caveat`, `OFFLOAD_TANKS_STRUCTURE_CAVEAT`,
+`OFFLOAD_PRESCRIBED_DRIVE` and the three item indices, `STRUCTURE_INSTEAD_OF_PENALTY_CELL`
+with the `penalty_t` cell, `exploratory_push_caveat`, `tree_state`,
+`OFFLOAD_IMPOSED_SUBSECTION_TITLE`, `OFFLOAD_IMPOSED_BASIS`, `OFFLOAD_NO_SOLVED_CASE`,
+`OFFLOAD_FIXED_KIND`), `src/launchsim/compare.py` (`OFFLOAD_COMPARISON_BASIS`),
+`src/launchsim/results_io.py` (`planar_offload`'s `structural` and `drives`),
+`src/launchsim/replay.py` (`structure_clause`, `modelled_structure_sentence`,
+`structure_caveat`'s third branch, `replay_data`'s git string), `src/launchsim/scene.py`
+(`structure_note`'s `run_metrics` and `structure_inputs`, the payload's `version`),
+`src/launchsim/templates/scene.html` (the Data line), `src/launchsim/plots.py`
+(`AnimationRun.modelled` and `structure_dm_kg`, `animation_caveats`'s structural line,
+`STRUCTURE_FOOTNOTE_HEAD`, `FOOTNOTE_MEASURE_WIDTH_PX`, `FOOTNOTE_WRAP_MARGIN`,
+`FOOTNOTE_UNIT_PATTERN`, `footnote_tokens`, `footnote_right_px`, `footnote_wrap`,
+`FOOTNOTE_BASE_LINES`, `FOOTNOTE_LINE_SPACING`, `_AscentFigure`'s grid shift,
+`offload_tag`'s fourth kind), `src/launchsim/app.py` (the headlines'
+`structure_clause`, `HEADLINE_STRUCTURE_PAYLOAD`, `tree_state` on summary's rule),
+`src/launchsim/run_data.py` (`OFFLOAD_STRUCTURE_PAYLOAD`, `offload_role`'s scan of
+`structure_payload_cases`, `offload_note`), `src/launchsim/templates/app.html` and
+`scene.html` (the run selector's group "Structure payload cases"),
+`src/launchsim/structure.py` (`SEARCH_HEADLINE`, `SEARCH_STEP`); fix round 1 added
+summary's `OFFLOAD_NO_ASSIST_MODEL`, `OFFLOAD_STRUCTURE_CASES_POINTER` and
+`OFFLOAD_STRUCTURE_ARMS_POINTER`, replay's `structure_payload_note`,
+`OFFLOAD_LABELS`' fourth entry, `offload_comparison_caveat`'s fourth kind and
+`penalty_structure_sentence`'s `program_clause`; fix round 2 added summary's
+`structure_band_factors`, `structure_band_text`, `STRUCTURE_BAND_SCOPE_TEXT`,
+`release_flag_pressures`, `release_flag_comparison_text`, `release_flag_comparison_short`,
+`STRUCTURE_FLAGS_NOT_RECORDED_TEXT`, `offload_charges_modelled`, `_structure_caveat_entry`,
+`OFFLOAD_STRUCTURE_UNCHARGED_TEXT`, `OFFLOAD_STRUCTURE_PENALTY_TEXT` and
+`OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT`,
+`sweep_structure_lines` and `SWEEP_STRUCTURE_HEAD`, `exploratory_push_caveat`'s `pushed`,
+results_io's `offload_block_drives`, plots' `AnimationRun.structure_set`,
+`structure_scale_factor`, `structure_flags_fired` and `structure_release_note`,
+`_footnote_qualifier`, `STRUCTURE_FOOTNOTE_TAIL` and `animation_caveats`' `width_px`, and
+scene's `git_record` on summary's rule; fix round 3 added summary's
+`STRUCTURE_BAND_PUSH_TEXT` (replaced in the final clean-up), `plausibility_scale_text`,
+`OFFLOAD_NOT_RUN_LEAD` and `OFFLOAD_ENERGY_BOTH_TABLES`, results_io's
+`offload_uncharged_cases`, plots' `AnimationRun.structure_departures` and
+`animation_caveats`' `width_px` None, app's `panel_video_footer` (the results panel's
+`video_footer`) and app.html's `panelFooter`; the final clean-up added summary's
+`STRUCTURE_SETS_PUSH_PATTERN`, `STRUCTURE_BAND_PUSH_FALLBACK`, `structure_band_push`,
+`structure_band_push_text` (in place of `STRUCTURE_BAND_PUSH_TEXT`),
+`STRUCTURE_BAND_SIZED_FLOWN`, `STRUCTURE_BAND_SIZED_FULL_LOAD`,
+`structure_band_sized_text` and `structure_band_text`'s `sizing` (N3a-01, N3a-02),
+`structure_run_record` (N3a-03), `OFFLOAD_ENERGY_IMPOSED_TABLE` and
+`_energy_tables_text` (N3a-04); the gate fix added plots'
+`AnimationRun.structure_dm_stage2_kg`, `_footnote_stage_split` and
+`STRUCTURE_FOOTNOTE_POINTER` (G1: the `animate` footnote's mass by stage and its pointer
+to the summary).
+Tests: `tests/test_caveat_wording.py`, `tests/test_scene.py`,
+`tests/test_animate.py`, `tests/test_video.py`, `tests/test_app_server.py`,
+`tests/test_app.py`, `tests/test_app_page.py`, `tests/test_offload_pipeline.py`,
+`tests/test_structure_reporting.py`
+(synthetic directories and records; nothing solved on a pre-registered case, D-SP7-31).
+Design 4.5, D-SP7-22, D-SP7-23; KI-036, KI-038, KI-039.
+
+**Three ways, from the record.** Every sentence that says what structural mass a run
+charges for the push branches on the run's own record (the run-level keys of D-SP7-22,
+"Coupling the structure to the offload solve", Records; on a recorded run its
+`offload.runs` metrics record carries them, on a case, a structure payload case and a
+sensitivity arm its record does; a sweep point writes no case record and no run
+directory, so its structural solve is worded by the sweep summary's lines under its
+table, `sweep_structure_lines` (fix round 2, H-S3a-P2-07), beside the sweep index's
+structure columns, `offload_structure_index_values`, and the Checks section, and the
+block caveat's sweep-point arm is reachable only by a synthetic record), never on the
+experiment or on a global flag. The test is `summary.structure_charged` (`structure_charged` is True); a
+penalty row is told by `replay.penalty_added_kg` as before; everything else is
+uncharged. The uncharged branch keeps SP1's text word for word at every source, and the
+penalty branch SP2's at every source but the exploratory banner, so every page and frame
+of a directory without a structural record is unchanged (the gallery's five replay pages
+regenerate byte for byte; the scene page differs only where the template changed: the CSP
+script hash line, the data block's `version` key and the Data line of KI-038, and since
+fix round 1 the run selector's group for structure payload cases; the phase file's
+section 12 records the four regions). A new summary of
+such a directory does change in four places: the comparison basis line (KI-039 and the
+two dry-mass exceptions), the imposed cases' sub-section (KI-039, with the not-run list's
+lead line and the energy note's both-tables sentence before it), the exploratory banner
+of a directory with an imposed stage-1 case, which no longer prints the imposed-not-saved
+sentence (D-SP2-27; the not-netted sentence of D-SP2-07 kept; "KI-039" below) and, for a
+penalty row, the exploratory banner's push caveat, which names the row's assumed stage-1
+dry mass (fix round 1, H-S3a-05; a deviation from step item 1's "keeps today's text",
+logged in the phase file's section 12, since the bare "no structural mass for the push"
+was false beside a penalty row); a directory
+written outside a repository now reads "state unknown" on the scene page (fix round 2,
+N2-04). The modelled branch's core sentence is one function,
+`summary.modelled_structure_text(record, structure_inputs)`:
+
+- the mass by stage: `<dm1 + dm2> kg (stage 1 <dm1> kg, stage 2 <dm2> kg)` from
+  `structure_dm_kg` and `structure_dm_stage2_kg` (`modelled_mass_split_text`; a solve
+  that found no x* has no dm and reads `no sizing at x* (the solve found no x*)`);
+- the model, `STRUCTURE_MODEL_NAME` ("a first-order station sizing of the push load"),
+  with the layer and set (`structure_layer_label`, "Reporting the structure") and the
+  file (`structure_file`);
+- the physics band's ends where the block's `structure_inputs` record them
+  (`structure_band_text` on `structure_band_ends`: the frozen physics sets' polish of the
+  headline search, `structure.SEARCH_HEADLINE`, its `dm_after_kg`, at the structure
+  file's headline push, the one the sets' `method` names, named in the clause from the
+  record's own `structure_inputs.sets.method` (`structure_band_push`, the pattern
+  `STRUCTURE_SETS_PUSH_PATTERN` on the sentence `sim.structure_search_method` writes;
+  `structure_band_push_text`: the gate file's "silo_offload_2d's silo_cold at a stage-1
+  offload of 41,263 kg, per its sets.method", the README-loads file's
+  "silo_offload_2d_readme's silo_cold at a stage-1 offload of 36,006 kg, per its
+  sets.method"; `STRUCTURE_BAND_PUSH_FALLBACK`, "the push its sets.method names", when
+  the method names none; final clean-up, N3a-02: fix round 3's constant "SP1's silo_cold
+  at its stage-1 offload" held for the gate file alone); then, in a clause of its own,
+  `STRUCTURE_BAND_SCOPE_TEXT`, "both ends are sizing-only numbers from the frozen sets,
+  not this run's band", and how the record itself is sized (`structure_band_sized_text`
+  on its `structure_sizing`): `STRUCTURE_BAND_SIZED_FLOWN`, "the run is sized at its own
+  push and offload", or, for a full-load sizing (a full-load-sizing row, every structure
+  payload case, which config sizes at x = 0), `STRUCTURE_BAND_SIZED_FULL_LOAD`, "the run
+  is sized at its own push on the full load (x = 0)" (final clean-up, N3a-01; fix round
+  3, H-S3a-P3-05: the earlier "this run's band only if its push is that one" named a
+  condition no reader could check and no coupled run meets); a file without frozen sets,
+  or sets without a headline polish, gets no band clause, never a made-up end). D-SP7-41:
+  when the block's `structure_inputs.plausibility` records a factor other than 1 on an
+  end (`structure_band_factors`), that end is printed unscaled beside its value after the
+  factor, with the rule's trigger (M_model / R and the element carrying the largest share
+  of M_model in the pad envelope) inside that end's parenthesis ("dm 3,677 kg unscaled
+  (2,717 kg after the plausibility rule's factor 0.739; the rule fires at M_model / R =
+  1.76, ...) and 18,604 kg"; fix round 3, S3A-NUM-05: never after the other end), or
+  after both ends "on both ends" when the rule scales both, on every record, scaled or
+  not (fix round 2, H-S3a-P2-02); a scaled record of a block without that record says
+  both ends are before the rule's factor (fix round 1, H-S3a-03). The factors are the
+  rule's on the experiment's own pad envelope at the central coefficients;
+- when the plausibility rule scaled the dm (`structure_plausibility_scaled`), its factor
+  (`structure_plausibility_factor`, D-SP7-33);
+- the run's own fired flags by name (`structure_flags_text`; `STRUCTURE_NO_FLAG_TEXT`
+  when none fired; `STRUCTURE_FLAGS_NOT_SIZED` without a sizing at x*;
+  `STRUCTURE_FLAGS_NOT_RECORDED_TEXT` for a record without a flag list, never read as
+  clean: fix round 2, N2-06); beside a fired `structure_release_unload` whose stage-1
+  column separates at the push (`release_flag_pressures`: a stage-1 bottom pressure below
+  0 absolute), D-SP7-39's comparison from the flag's own numbers
+  (`release_flag_comparison_text`, fix round 2, H-S3a-P2-01): the separation comes from
+  the single-mode step treatment, which the pad's own MECO shutdown is put through too,
+  with the full stage-2 LOX column's bottom gauge pressure there against the push's, and
+  "so it separates on the pad as well and the separation is not specific to the push"
+  when MECO's value is below 0, else "so on the pad it does not separate"; a flag fired
+  for the dome or the upper stack alone adds nothing (its numbers and MECO's are in its
+  flag line);
+- `STRUCTURE_ESTIMATE_TEXT`: a first-order estimate with its stated ranges, not a
+  detailed structural design.
+
+It never calls the mass assumed and never calls the band "bounds". The sources:
+
+- the summary's offload block caveats (`summary.offload_caveats`, written into the
+  record's `caveats` by `results_io.planar_offload` from the block's structural records,
+  cases, payload cases and arms alike, and from each case's and payload case's drive,
+  `offload_block_drives`, fix round 2, S3A-C2-01 and N2-05): the structure item
+  names every structural case's and payload case's run with `modelled_mass_text` and
+  its layer and set (`_structure_caveat_entry`: `structure_layer_label`, so design-axis
+  rows on one set never read alike, "(plausibility-scaled, x<factor>)" when the rule
+  scaled the dm, "(at x = 0: the solve found no offload)" for a no_offload end; fix round
+  2, H-S3a-P2-05), counts the structural arms by case (their dm is the arms table's,
+  beside deviation 17's caveat there), says what the model is and where the rest of each
+  one's sizing is, by record kind (fix round 1, H-S3a-04: `OFFLOAD_STRUCTURE_CASES_POINTER`,
+  the Structure subsection, for the cases and payload cases;
+  `OFFLOAD_STRUCTURE_ARMS_POINTER`, the arms table with its structural columns and
+  caveat, for the arms, which the Structure subsection does not table; an arm's record is
+  told by its `param` and `case` keys; only the kinds present are named), then names the
+  block's cases that ride the push and charge nothing (`OFFLOAD_STRUCTURE_UNCHARGED_TEXT`;
+  `results_io.offload_uncharged_cases`, which leaves out a case of a variant without a
+  push, since the drive item says it flies without one: fix round 3, S3A-NUM-03) and its
+  penalty rows (`OFFLOAD_STRUCTURE_PENALTY_TEXT`, SP1's words), each only when there are
+  any (fix round 2, H-S3a-P2-06); the tanks item becomes `OFFLOAD_TANKS_STRUCTURE_CAVEAT`
+  (dry masses unchanged except for the modelled increment) or, with a penalty row,
+  `OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT` (except for the penalty rows' assumed stage-1
+  dry mass and the modelled increment, as the basis line names both); the drive item
+  names any drive other than `constant_accel` with its cases, says that the cases of a
+  variant without a push fly without one
+  (`OFFLOAD_NO_ASSIST_MODEL`; never a "none" drive with force and power limits:
+  S3A-R1-02) and keeps the prescribed sentence for the constant_accel cases
+  (`offload_drive_caveat`, by drive);
+- the case tables' row "assumed stage-1 dry mass added": a structural case's cell is
+  `STRUCTURE_INSTEAD_OF_PENALTY_CELL`, since its record's 0 under "assumed" would read as
+  a penalty of nothing;
+- the exploratory banner's push caveat (`exploratory_push_caveat`): a modelled mass on
+  the named runs, a structural case or payload case whose solve wrote no run named by its
+  case name as one that "found no sized result (no run written, so no structural mass
+  flown; ...)" (fix round 3, S3A-NUM-04: the block caveat lists it as structural, so the
+  banner never says "no structural mass for the push" or "every other case charges none"
+  of it), then the penalty rows' assumed stage-1 dry mass by name, that every
+  other case of the block charges none (fix round 1, H-S3a-05: the modelled branch no
+  longer drops what the rest of the block charges) and that the experiment's own pushed
+  runs, which are no record's run, charge none (fix round 2, N2-02); else, with a penalty
+  row, `EXPLORATORY_PUSH_CAVEAT` then "except the assumed stage-1 dry mass of the penalty
+  row ..." (an app launch whose form adds a stage-1 dry mass reads so; fix round 1,
+  H-S3a-05, a deviation from step item 1's "keeps today's text", logged in the phase
+  file's section 12); else
+  `EXPLORATORY_PUSH_CAVEAT` word for word (every other app launch: the form has no
+  structural switch, D-SP7-08);
+- the sweep summary (`planar_sweep_summary`): under a sweep table whose offload cases
+  are structural at some point, `SWEEP_STRUCTURE_HEAD` and one line per such case
+  (`sweep_structure_lines`: how many points, that `<case>.structure_dm_kg` is the
+  modelled structural mass at each point's x*, never an assumed penalty, the model, the
+  layers and sets and files met, `STRUCTURE_ESTIMATE_TEXT`, the plausibility factor where
+  `<case>.structure_plausibility_scaled` is True, and that the fired flags are in
+  `<case>.structure_flags` and the Checks section; fix round 2, H-S3a-P2-07); an SP1-type
+  sweep's summary is unchanged;
+- the replay page's structure caveat (`replay.structure_caveat`: the uncharged sentence,
+  the penalty sentence, then `modelled_structure_sentence`, each run with its flown load
+  and peak felt g; a structure payload case's run has no `offload.cases` record, so its
+  own metrics are read; beside a modelled run the penalty sentence drops its closing
+  "; no structural model exists", `program_clause` False, since the next sentence
+  would contradict it (fix round 1, H-S3a-02), and so it does for any directory whose
+  offload record charges a modelled mass anywhere (`summary.offload_charges_modelled`:
+  a `structure_inputs` record or a structural case, payload case or arm; fix round 2,
+  H-S3a-P2-03), since the scene page and the app's panel print the block caveat that
+  names the model beside it; a penalty-only selection of a directory without a
+  structural record keeps SP2's text word for word) and the case note and the app's headlines
+  (`structure_clause`: the mass by stage, "scaled x<factor> by the plausibility rule" when
+  the dm carries the rule's factor, `summary.plausibility_scale_text`, fix round 3,
+  H-S3a-P3-03, and "a first-order station sizing, not an assumed penalty"); the scene
+  page and the app's results panel take these lines unchanged (D-SP2-23);
+- the scene frame's footer (`scene.structure_note`, from the run's metrics record and the
+  block's `structure_inputs`): the modelled sentence's core after "the modelled structural
+  mass of the push load is charged for the push: ";
+- a structure payload case's run carries the run-level keys (`structure_sizing`
+  full_load) but no `kind`, so every per-run reader (the replay caveat, the scene frame's
+  footer, the animation's and the video's footnote) reads its record through
+  `summary.structure_run_record`, which adds `kind` "structure payload case" when the
+  block's `structure_payload_cases` names the run: the run's layer and set are then its
+  payload case's, as the block caveat words them from the case record (a band end on a
+  physics set), never "a row, not a band end (sizing full_load)", the wording of a
+  full-load-sizing row of the offload cases (final clean-up, N3a-03);
+- the animation's footnote and the video's frame footer (`plots.animation_caveats`): the
+  three lines as before when no shown run is modelled; with one, the structural clauses
+  move to a line of their own, `STRUCTURE_FOOTNOTE_HEAD` ("Structure, per run: "), the
+  modelled runs first ("<run> carries <dm> kg of modelled structural mass (<qualifier>)",
+  the dm being the modelled increment, never "a structure" of that mass; an unrecorded
+  dm "a modelled structural mass of unrecorded size"; fix round 1, H-S3a-06; the
+  qualifier, `_footnote_qualifier`, read from the run's record as the mass is: its set
+  with what its sizing moves off the headline settings, "set central at margin 0.05"
+  (`AnimationRun.structure_departures`: `structure_axis_departures`, then
+  `structure_row_departures`; fix round 3, H-S3a-P3-04, so a design-axis row never shares
+  the headline case's clause; the record read through `summary.structure_run_record`, so
+  a structure payload case's run is not taken for a full-load-sizing row, N3a-03),
+  "scaled x<factor> by the plausibility rule" when the dm
+  carries the factor, its fired flags by name with the release flag's short D-SP7-39
+  comparison (`release_flag_comparison_short`), and `STRUCTURE_FOOTNOTE_TAIL`,
+  "first-order sizing, not an assumed penalty" (fix round 3, H-S3a-P3-01: the earlier
+  "not assumed" claimed more than a model output on assumed coefficients warrants); fix
+  round 2, H-S3a-P2-04, since this footnote is the only caveat of an `animate` frame;
+  a run whose record's stage-2 share `structure_dm_stage2_kg` is above zero gives its
+  mass by stage, "<dm1> kg (stage 1) and <dm2> kg (stage 2) of modelled structural mass",
+  dm1 = dm - dm2 as the replay caveat reads it and to 0.1 kg as it prints them
+  (`_footnote_stage_split`, `AnimationRun.structure_dm_stage2_kg`; S3a gate fix; its
+  review, R-G1-05: whole kg printed a share under 0.5 kg as "0 kg (stage 2)" beside the
+  replay caveat's "0.3 kg"), a zero, absent or non-finite share keeping the total; runs
+  with one qualifier and no stage split share a clause, runs whose qualifiers differ or
+  whose mass is given by stage get one each),
+  then the penalty rows named with "charges an assumed stage-1 dry mass" (which then
+  leaves the limits line), then the "no sized structural mass" clause naming the
+  uncharged pushed runs it is read of, never a penalty row (fix round 3, H-S3a-P3-02),
+  and last, once per line, `STRUCTURE_FOOTNOTE_POINTER` ("modelled mass by stage: the
+  caveats of summary.md's offload section; structure file and x* at the physics band's
+  ends: its Structure subsection"; S3a gate fix and its review, R-G1-02 and R-G1-03):
+  the frame states each modelled run's mass (by stage when stage 2 carries any), set,
+  scaling and fired flags and points to summary.md for the rest (its offload section's
+  caveats give every structural case's and structure payload case's mass by stage,
+  where the Structure subsection's tables give a case's dm1 and dm2 but a payload
+  case's dm_0 and dm_1 totals only; its Structure subsection names the structure file
+  and gives x*, the tonnes of offload of the experiment's cases at the physics band's
+  ends, "not flown" at an end no case ran: a different quantity from the band's
+  sizing-only dm ends at the structure file's headline push, the frozen sets' numbers,
+  which the replay caveat and the scene frame's per-run structure note quote with their
+  scope sentence and which no summary.md prints); the frame quotes neither the structure
+  file's path nor those dm ends, by a choice about vertical space, not width (the path
+  alone ends 427.5 px into the 1,260.8 px of a 1280 px footnote line, 162.7 into 472.8
+  at 480 px; the path and the dm ends with a shortened scope sentence in place of the
+  pointer take one or two footnote lines more on the tests' selections at 480 and
+  1280 px, two or three with the pointer kept, so at least that with the full sentence,
+  and each line past `FOOTNOTE_BASE_LINES` moves the panels' bottom up one line; phase
+  file SP7, section 12, deviation 38); the app's video footer (`app.video_footer`) is
+  these lines, unwrapped and pointer included, not the full sentence: an app video frame
+  carries the full sentence (the stages, layer, file, the dm ends with their scope
+  sentence and the flags' numbers) in the scene page's per-run structure note, which
+  scene.html's `frameFooterLines` draws under the video footer (R-G1-04); the structural
+  line is wrapped by measured width (`footnote_wrap`: greedy over
+  `footnote_tokens`, which keep a bare unit with the number before it so "3.0 g" is never
+  split, each candidate line measured with the Agg renderer at the frame's geometry,
+  `footnote_right_px`, and stopped `FOOTNOTE_WRAP_MARGIN` of the width short of the
+  footnote's right limit; `_AscentFigure` wraps at the width it draws, `animation_caveats`'
+  `width_px`, since font hinting differs by dpi and a line wrapped at 1280 px overran by
+  up to 9 px at 480 and 960 px (fix round 2, N2-03); the app's video footer takes the
+  structural line unwrapped, `width_px` None, and the scene canvas wraps it at the
+  frame's own width (fix round 3, S3A-NUM-01: a line pre-wrapped at
+  `FOOTNOTE_MEASURE_WIDTH_PX` = 1280 px cost the canvas an extra line at each break); a
+  character budget on a proportional font let digit- and wide-glyph names run past the
+  frame, N-S3a-R1-01); the app's results panel carries the same video footer for the pair
+  it describes (`app.panel_video_footer`, its `video_footer`), and the page's fit check
+  (app.html's `videoFit`, through `panelFooter` when the panel describes exactly the
+  scene's runs) draws its test frame under those lines, so a size whose frame the footer
+  does not leave room for is refused before Save is offered rather than on the first
+  frame (fix round 3, S3A-NUM-01; measured on a scratch copy of the gallery directory
+  with two runs given SP7 headline-like records: two modelled runs' full frame notes do
+  not fit 1280 x 720 and fit 1920 x 1080, a pad beside one modelled run fits 1280 x 720);
+  the panel grid's bottom moves up one footnote line per
+  line beyond `FOOTNOTE_BASE_LINES`, so the block stays clear of the panels' axis labels
+  (both tested; the fit at 320, 480, 640, 960, 1280 and 1920 px);
+- the run's assumptions (S3: `sim.OFFLOAD_STRUCTURE_ASSUMPTIONS` and the structure line)
+  and the restated dry masses' source and note (`config.offload_overrides`) were already
+  per record.
+
+**KI-039.** The section "Propellant saved at fixed payload" keeps its heading and its
+basis line for the solved cases, which fly P_ref; the imposed (fixed) cases move to the
+sub-section `OFFLOAD_IMPOSED_SUBSECTION_TITLE` under `OFFLOAD_IMPOSED_BASIS` ("Reporting
+definitions (planar)", Record and summary); the cases that did not run (after
+`OFFLOAD_NOT_RUN_LEAD`, "Cases that did not run (solved or imposed):", since a skipped
+case's record names no kind) and the energy note (with `OFFLOAD_ENERGY_BOTH_TABLES`
+beside a solved table) come before the sub-section's heading, so neither reads as the
+imposed cases' alone in Markdown (fix round 3, H-S3a-P3-06, S3A-CMP3-01, S3A-NUM-02); a
+block whose cases that ran are all imposed prints `OFFLOAD_NO_SOLVED_CASE` in place of
+the solved table and the note's `OFFLOAD_ENERGY_IMPOSED_TABLE` ("The note covers the
+energy rows of the imposed cases' table below.") in place of the both-tables sentence,
+which would name a solved table the summary does not have (final clean-up, N3a-04); a
+block without imposed cases prints neither addition; `compare.OFFLOAD_COMPARISON_BASIS` says so;
+the exploratory banner's imposed-not-saved sentence (D-SP2-27) is dropped, the not-netted
+one (D-SP2-07) kept. The replay page's pointer at the section ("summary.md, 'Propellant
+saved at fixed payload', with its caveats") is said of the runs that fly P_ref, so it
+stays, as do the site build's keys on it. Recorded summaries keep their text.
+
+**KI-036.** The replay page's meta: `replay_data` puts ", state unknown" into the git
+string when the directory's dirty flag is not a boolean (None, a string or a number:
+`summary.tree_state` never reads a non-boolean by its truth value since fix round 1,
+H-S3a-08) or its hash is a no-git value (`summary.tree_state`, the banner's rule, which
+`app.tree_state` applies after its own hash checks and the scene's `git_record` agrees
+with by writing such a state's dirty as None, the no-git hash included since fix round 2,
+N2-04, so the scene page prints "state unknown" for it too) and keeps `dirty` a bool for
+the frozen template,
+which renders only "(git <string>[, dirty])"; a clean or dirty boolean record renders
+as before.
+
+**KI-038.** The scene payload carries `version`, the package version of the renderer
+(`launchsim.__version__`, as the replay page's meta does), and the page's Data line ends
+"drawn by launch-assist-sim <version>"; the renderer's git state is not recorded, since
+it would change every committed gallery page at every commit (closed as not taken). The
+package version has been 0.1.0 since Phase 0 and no bump policy exists, so the line
+identifies the renderer only once the version is bumped.
+
+Program-level sentences ("no structural model exists" in `replay.penalty_structure_sentence`
+and in app.py's `SP1_HEADLINE` "Structure." caveat, site/build.py's gallery addition, the
+README, site and deck prose) are S7c's and S8's, once the findings note exists.
+
 ## Assumptions
 
 Every assumption string the code emits, in one place, with the code that emits it.
@@ -7620,7 +7996,8 @@ with offload lines):
   aerodynamics are unchanged and each stage keeps its mixture ratio; no ullage,
   centre-of-gravity or tank-mass effect is modelled.
 
-and then `sim.structure_assumption` (neutral: S3a words the caveats):
+and then `sim.structure_assumption` (the caveats that name the mass are worded from the
+run's record, "Wording the structure (SP7 step S3a)"):
 
 - structure: the dry masses carry the modelled structural mass of the push load
   (first-order station sizing, <file>, set <set>, <flown or full_load>, <dynamic mode>,
@@ -7646,8 +8023,10 @@ the structure line above:
   need too), not the push; the check is made on the offload cases, which fly P_ref.
 
 The summary block of the offload carries its own caveat list (`summary.offload_caveats`:
-the vehicle's calibration caveat, then `summary.OFFLOAD_CAVEATS`; "Reporting
-definitions (planar)"); the energy comparison's exclusions are
+the vehicle's calibration caveat, then `summary.OFFLOAD_CAVEATS`, whose structure, drive
+and tanks items are worded from the block's records since SP7 step S3a; "Reporting
+definitions (planar)" and "Wording the structure (SP7 step S3a)"); the energy comparison's
+exclusions are
 `compare.OFFLOAD_ENERGY_EXCLUSIONS`, and it keeps each stage's mixture ratio at the
 experiment vehicle's fuel fraction on every load (assumed: the removed propellant
 leaves fuel and oxidiser in the full load's proportion).
@@ -8444,5 +8823,22 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_structure_reporting.py::test_flight_check_on_a_synthetic_recorded_run` | the synthetic pad flight relabelled as a push (HOLD rows ASSIST): the flight adapter's cases equal the pad adapter's FLIGHT cases field by field, no hold-down support; `flight_load_set` refusing a HOLD case and a flight without stage 1, no hold cases, MECO a stage-1 row; the flight inside its own envelope 0.0 kg on all six elements with no flag, the threshold 1 kg, margin 0 and a NaN cap in the flag's values; at 20% more felt n with stage 2 checked twelve elements, every kg >= 0 summing to the total above 1 kg, the flag fired with its numbers (the largest element's kg and case label); against the envelope capped at 4.5 g0 (the pad's MECO n above it) the pad's own flight 0.0 kg with no flag and the 20% flight still fired, the flag line naming the cap; a flight at +5% n fired at margin 0 and 0.0 kg at margin 0.1, the line naming the margin; under the synthetic physics_high_mass set (its RP-1 row plate_limited) and the central set, each barrel's exceedance of the +5% flight equal to the push path's (`_barrel_push` and `_barrel_increment` on the flight's features against the envelope element) within 1e-9 kg, the plate-limited RP-1 barrel's above 100 kg and above what the reduction's own anchoring gives; through `structure_flight_check` on a RunResult whose dict restates dm: the check, `with_flight_check` filling the key and appending the flag last without mutating its input, `with_structure_items` promoting the line ("sized, not charged or iterated", the element scope `STRUCTURE_FLIGHT_CHECK_SCOPE` with "the aft skirt and the load ring are not checked", "stage 2 not checked (not sized by the push)" and never "stage 2 0 kg" when stage 2 was not checked, the stage-2 mass when it was, no "unscaled sizing" on an unscaled case whose flag carries `FLIGHT_DM_FACTOR_KEY` 1.0); a plausibility-scaled case's check carrying its sizing's factor under that key with the mass equal to the bare `flight_exceedance` (unscaled) and its line saying so; None on a run without a time series; the adapter refusing a flight without a lit stage-1 row and a vehicle that is not the one flown (The post-hoc flight check) | exact; 1e-12 relative; 1e-9 kg |
 | `test_structure_reporting.py::test_flight_check_is_not_applicable_on_a_payload_case` | the synthetic pad flight with 1,500 kg more payload (its masses shifted alike) against its own P_ref envelope exceeds by more than the 1 kg threshold with the flag fired, the same flight at P_ref 0.0 kg: the payload gain the check would charge to a payload case; the pass calls `sim.structure_flight_check` (spied) for the offload case's run only; the payload record's `flight_check` is `STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA` (before the structure keys), its `structure_flight_exceedance_kg` None, no flight flag in its `structure_flags`, the run's metrics None and its flags without one, the run's assumption line ending with the same words, the payload table's row printing them, the one object in `sim` and `summary`, ASCII (The post-hoc flight check) | exact |
 | `test_structure_reporting.py::test_structure_figure_writes_two_panels`, `::test_write_run_writes_the_figure_for_each_structural_run` | `structure_figure` on the headline sizing's Increment and record: two axes, one bar per `structure_elements` entry with its kg as width, a dashed envelope line, the mode markers in colours apart from the stage colours with at least three shapes and `STRUCTURE_MODE_MARKERS` keyed by every mode name of the model with distinct styles, the legend anchored under the panel with the envelope handle dashed and labelled `STRUCTURE_LEGEND_ENVELOPE` ("at the case's margin and cap"), the push handle a solid line whatever element was drawn first, the self-contained `STRUCTURE_LEGEND_POINT_ENVELOPE` entry and never "its pad envelope", the title naming the layer label and fitting inside the figure for every `STRUCTURE_LAYER_LABELS` entry, the caption saying "not a measurement", naming the envelope line's margin and cap ("the dashed envelope is at margin 0, no cap"; "margin 0.1, no cap" on a margin row; "margin 0, cap 1.5 g0" on the capped case) and the governing element with its mode, dm, station and height, never the sets' search label, "sized at an offload the record does not state" on a bare record and that stage 2 was not sized (the axis label too); every drawn station and envelope point of the top panel and of the inset, at its page offset, inside its axes' box (the inset's lower z limit below the stage-2 pair's station, the lowest stage-2 station, which is a point element's and sets `dataLim.x0`) and every element label's padded box (`_assert_labels_clear`, on the figure's own renderer after a draw, the top panel and the inset) covering no station, envelope point or drop-line sample of any element of its axes at their page offsets, overlapping no other label, inside its axes and off the inset; the caption's box inside the figure and below the dm panel's tight box, that box inside the figure too, on the base, outer-set, no_offload, payload, failed-P_2*, scaled, capped and thrust-structure-entry records (`_assert_caption_fits`, measured as tight_layout measures), every caption line at most `STRUCTURE_CAPTION_WRAP_CHARS`, the sizing clause on a line of its own (asserted with its newlines through `_caption_text`, which joins a wrapped continuation back); the dm panel's axis label by the entry (under aft_ring "the thrust structure not in the load path on entry aft_ring" with the hatched ring and never "by their relations"; under thrust_structure the relations and "no ring frame on entry thrust_structure", never "not in the load path"; the generic text on a record without an entry); the governing annotation's padded text box covering no station or envelope point, no element label and (stage 2 sized) not the inset, for the central, the scaled and the stage-2-sized records; on a case record "sized at x* = 41.263 t", on a no_offload record "at x = 0", on a payload record "sized at the full load with payload P_1* 25,990.5 kg (dm_1; the run then flew P_2* 26,000.0 kg; structure payload case)" and never "of the P_2* run", on one whose P_2* is NaN "P_1* ... (dm_1; structure payload case; its P_2* search failed)"; a plausibility-scaled record's bottom title carrying "(x <factor>, plausibility-scaled)", its caption the unscaled-profile sentence, its bars the scaled elements; a stage-2-sized push (the central set under envelope_cap_g 1.5): still two axes, the inset a child axes of the top panel titled `STRUCTURE_STAGE2_INSET_TITLE` holding the stage-2 labels and none in the top panel, the panel's z range extended past stage 1's, "stage 2 in the inset" in the axis label, "push: stage2" in the legend, its labels clear as above; a thrust-structure entry whose governing element is the relation: the caption's "a relation element: no station profile" and no annotation; `write_structure_figure` writing `<prefix>_structure.png`; `write_run` with plots writing the figure for the structural case's and the payload case's runs only, each from its case record (`structure_figure_record`: the status and x*, the payload case's kind; None for an unknown run), none without plots (The figure) | exact |
+| `test_caveat_wording.py::test_structure_caveat_words_a_modelled_run_from_its_own_record`, `::test_structure_caveat_words_a_payload_case_run_and_two_modelled_runs`, `::test_modelled_sentence_says_when_scaled_which_flags_fired_and_without_band_ends` | the replay page's structure caveat on a synthetic directory with a structural solved case and a structure payload case (their `offload.runs` records carrying the run-level structure keys, the block a `structure_inputs` record with the physics sets' headline polish): the modelled sentence word for word from `summary.modelled_structure_text` (the mass by stage dm - dm2 and dm2, the model, the layer and set, the file, the band's ends dm 3,677 and 18,604 kg, no flag fired, the estimate text), the uncharged sentence unchanged beside it, the order uncharged, penalty, modelled, the case note's `structure_clause`; the payload case's run read from its own metrics (no case record), two modelled runs joined, and (fix round 1) the run's kind `OFFLOAD_STRUCTURE_PAYLOAD` with the label "(structure payload case)", the note "flies its own payload capacity P_2* on the full load (no propellant removed) with ... kg of modelled structural mass ..., 1,010.0 kg (10.0 kg above P_ref = 1,000.0 kg): a payload change against P_ref, not propellant saved" and its own comparison sentence alone and beside two at-P_ref runs; beside a modelled run the penalty sentence ends at "not a sized structure." with no "no structural model exists" (one and two penalty rows); a scaled record's factor and the fired flags by name, with the band clause "before the plausibility rule's factor" when the sets are recorded without a plausibility record, no band clause without a headline polish, `structure_band_ends` on the sets record, a solve without an x*; the band clause names the structure file's headline push from the record's sets.method ("toy_offload's silo_cold at a stage-1 offload of 36,006 kg, per its sets.method" on the synthetic method; final clean-up, N3a-02) and says both ends are sizing-only numbers, not this run's band, then "the run is sized at its own push and offload" (fix round 3, H-S3a-P3-05; final clean-up, N3a-01) ("Wording the structure (SP7 step S3a)") | exact text |
+| `test_caveat_wording.py::test_a_full_load_sizing_says_the_run_is_sized_on_the_full_load`, `::test_the_band_names_the_push_its_structure_file_records`, `::test_a_payload_case_run_is_worded_as_its_payload_case_at_every_reader`; `test_scene.py::test_a_payload_case_run_is_worded_as_its_payload_case_on_the_scene` | the final clean-up: (N3a-01) the band clause's sizing by the record, "at its own push and offload" for a flown record and "at its own push on the full load (x = 0)" on a full-load-sizing row's record and on a payload case's run (keys as results_io writes them: sizing full_load), never "its own offload" there; (N3a-02) `structure_band_push` on both committed structure files' `sets.method` (silo_offload_2d's silo_cold at 41,262.90803733282 kg, silo_offload_2d_readme's silo_cold at 36,006.44430169878 kg) and on the sentence `sim.structure_search_method` writes, its text, and `STRUCTURE_BAND_PUSH_FALLBACK` for a record without a method; (N3a-03) with real payload-case keys (physics_low_mass, full_load), `structure_run_record` adds the payload case's kind (the solved case's record unchanged), the run's layer and set equal the case record's and the block caveat's ("physics band, low-mass end: physics_low_mass", a band end) in the replay caveat, the scene frame's note and caveat and the animation's footnote qualifier (no departure), while a full-load-sizing offload case's run keeps "sizing full_load" ("Wording the structure (SP7 step S3a)") | exact text |
+| `test_caveat_wording.py::test_case_note_and_app_headline_say_when_the_plausibility_rule_scaled_the_mass` | fix round 3, H-S3a-P3-03: `replay.structure_clause` of a scaled record word for word with "scaled x0.845549 by the plausibility rule" between the stages and "a first-order station sizing, not an assumed penalty", `summary.plausibility_scale_text`, nothing for an unscaled record or one whose flag is False, "xn/a" for an unrecorded factor; the replay case notes of the solved structural case and the payload case's run and `app.case_headline` ending with the same clause | exact text |
+| `test_caveat_wording.py::test_band_ends_are_printed_unscaled_and_scaled_side_by_side_with_the_trigger`, `::test_a_fired_release_flag_carries_the_meco_comparison`, `::test_a_penalty_row_of_a_structural_directory_drops_the_program_clause` | fix round 2: with a plausibility record whose low-mass factor is 0.739 (the gate's, synthetic) the band clause word for word, "dm 3,677 kg unscaled (2,717 kg after the plausibility rule's factor 0.739; the rule fires at M_model / R = 1.76, stage1.lox_barrel carrying 71 % ...) and 18,604 kg; both ends are sizing-only numbers from the frozen sets, not this run's band: ..." (fix round 3: the trigger inside the scaled end's parenthesis, S3A-NUM-05; the push named and the scope in a clause of its own, H-S3a-P3-05), on an unscaled central record and a scaled low-mass one, the high-mass end alone scaled with the trigger in its parenthesis, both scaled with the trigger "on both ends", the ends alone when neither factor fires, "both ends are before the plausibility rule's factor" without the record (H-S3a-P2-02), never "bounds"; a fired release flag with a stage-1 column separating: D-SP7-39's comparison word for word (-199.9 kPa at MECO against -132.5 kPa at the push, "separates on the pad as well"), the MECO-positive form, nothing for a flag fired without a separation or not fired, the short footnote form, the replay caveat and the scene note quoting it; a record without a flag list "structure flags not recorded" (H-S3a-P2-01, N2-06); a penalty row alone in a directory that also holds structural runs has no "no structural model exists", the same row before they were added keeps it; `offload_charges_modelled` on each record kind (H-S3a-P2-03) | exact text |
+| `test_caveat_wording.py::test_replay_meta_says_when_the_git_state_is_unknown` | KI-036: `replay_data`'s meta git string ", state unknown" for dirty None, "yes", 0, "false" and 1 (never read by truth value) and for a no-git hash, `dirty` False, `scene.git_record` None for each and (fix round 2, N2-04) for a no-git hash, False for a real one; a boolean record unchanged; `summary.tree_state` | exact |
+| `test_scene.py::test_structure_note_words_a_modelled_run_from_its_own_record`, `::test_scene_payload_names_the_renderers_version` | the scene payload of a derived directory whose solved case's run carries the structure keys: its `structure_note` the modelled core after "the modelled structural mass of the push load is charged for the push: ", the penalty row's note and the pad's None unchanged, the label "(offload, solved)", the note's modelled clause, the same core in the payload's replay caveats; the structure payload case's run light_pstar (fix round 1) with the same modelled note, the label "(structure payload case)", the kind `OFFLOAD_STRUCTURE_PAYLOAD`, the P_2* note and its own comparison sentence beside the at-P_ref one, and on this mixed selection (a penalty row beside two modelled runs) no "no structural model exists" and the penalty sentence ending at "not a sized structure."; the pure function's branches (metrics before the case record, no push None, no keys the uncharged and penalty texts); KI-038: the payload's `version` is `launchsim.__version__` and the Data line prints it | exact text |
+| `test_animate.py::test_footnote_words_a_modelled_structure_from_the_runs_record` | `AnimationRun.modelled`, `structure_dm_kg` and `structure_dm_stage2_kg` from the run's record; the footnote of a selection with a modelled run: the limits line without the "no sized" clause or the penalty clause, the structural line "Structure, per run: <run> carries 8,900.1 kg (stage 1) and 200.2 kg (stage 2) of modelled structural mass (set central; first-order sizing, not an assumed penalty); silo_fix5 charges an assumed stage-1 dry mass; no sized structural mass for the 3.0 g push load of <the uncharged pushed runs, never a penalty row>; modelled mass by stage: the caveats of summary.md's offload section; structure file and x* at the physics band's ends: its Structure subsection" (fix round 3, H-S3a-P3-01 and H-S3a-P3-02; S3a gate fix; two penalty rows "charge"), the uncharged selection with a penalty row keeping its limits line word for word, `width_px` None giving the structural line in one piece (S3A-NUM-01), a central row at margin 0.05 in a clause of its own "set central at margin 0.05" and `structure_departures` read from a record's margin and dynamic mode (H-S3a-P3-04), (fix round 2) a scaled run beside it in a clause of its own with "set physics_low_mass, scaled x0.846 by the plausibility rule; flags fired: structure_release_unload (D-SP7-39: ...) and structure_payload_limit", the set, factor and fired flags read from a record (the factor only when the record says scaled), every structural line of the long-name selections fitting each of 320, 480, 640, 960, 1280 and 1920 px when wrapped at that width, the plural "carry 9,100 and 9,100 kg of modelled structural mass" for two whose stage-2 share is unrecorded, "of unrecorded size" for an unrecorded dm (alone and among two), the uncharged selection's three lines word for word; the structure payload case's run modelled from its own record with its legend "(structure payload case): P* 1,010 kg (+10 kg vs P_ref) / on the full load, carrying its modelled structure"; every wrapped line of every selection, three runs named with digits, wide glyphs and '+' beside an uncharged one included, ends left of the 1280 px frame's right edge as `plots.footnote_right_px` and the test's own Agg measurement agree, no line break between a number and its unit, `footnote_tokens` gluing "3.0 g", "9,100 kg," and "2 t."; the footnote block of a selection that wraps to five or more lines lies below every panel's axis label (the grid shift) | exact text; px |
+| `test_animate.py::test_footnote_gives_the_stage_split_and_points_to_the_summary` | S3a gate fix (G1): a modelled run whose record's `structure_dm_stage2_kg` is above zero reads "8,900.1 kg (stage 1) and 200.2 kg (stage 2) of modelled structural mass" (dm1 = dm - dm2, to 0.1 kg as the replay caveat prints it; a mass all on stage 2 "0.0 kg (stage 1) and 312.4 kg (stage 2)"; S3a gate review, R-G1-05: a 0.3 kg share "9,100.0 kg (stage 1) and 0.3 kg (stage 2)", never "0 kg (stage 2)"), a share of 0.0, None, NaN or absent keeps "9,100 kg"; two runs given by stage, on different sets or the same, take a clause each ("silo_hi_st carries 18,291.4 kg (stage 1) and 312.4 kg (stage 2) ..."); the structural line ends with `STRUCTURE_FOOTNOTE_POINTER` ("modelled mass by stage: the caveats of summary.md's offload section; structure file and x* at the physics band's ends: its Structure subsection"; R-G1-02 and R-G1-03) word for word, once, after the penalty and "no sized" clauses too; no "configs/structures", file name, band dm end (3,677, 18,604 kg, "are dm") or "headline push" on the frame (deviation 38); every line of each of the four selections fits each of 320, 480, 640, 960, 1280 and 1920 px (`footnote_right_px`) and, each selection, at 1280 px by the test's own Agg measurement (R-G1-06); `width_px` None gives the line in one piece ending with the pointer; a selection without a modelled run keeps its three lines word for word, with no pointer | exact text; px |
+| `test_video.py::test_video_footer_words_a_modelled_structure_from_the_runs_record` | `app.video_footer` of a launched directory given a structural run and a structure payload case's run: the exploratory line first, the structural line as `plots.animation_caveats` words it ("carries 8,900.1 kg (stage 1) and 200.2 kg (stage 2) of modelled structural mass (set central; first-order sizing, not an assumed penalty); ...; modelled mass by stage: the caveats of summary.md's offload section; structure file and x* at the physics band's ends: its Structure subsection", the pointer once, no file path and no band dm end; S3a gate fix and its review, R-G1-02 to R-G1-05: these lines are not the full sentence, which the scene page's per-run note adds under them), one line, unwrapped (`width_px` None; the animation's own footnote wraps the same text into more lines; fix round 3, S3A-NUM-01), the same for the payload case's run from its own record with its legend kind and P_2*, the uncharged selection unchanged | exact text |
+| `test_video.py::test_results_panel_carries_the_video_footer_of_its_pair` | fix round 3, S3A-NUM-01: `app.results_panel`'s `video_footer` for a chosen pair (pad beside the structural run, the pushed run beside it, the pad alone) equals `app.video_footer` of that pair, the modelled pair's carrying its structural line; `app.panel_video_footer` None for a pair with a run that holds no row and for an empty pair | exact |
+| `test_app_page.py::test_run_picker_groups_follow_run_data`, `::test_hash_scene_path_and_helpers_under_node` (the groups), `::test_video_control_structure_and_routes` (`videoFit`, `panelFooter`, `loadPanel`) | fix round 3, S3A-CMP3-06: the app page's `ROLE_GROUPS` against run_data's roles and offload kinds, the structure payload case's entry "Structure payload cases"; `groupRuns` under node placing a structure payload case's run in that group after the pad controls; S3A-NUM-01: `videoFit` capturing under `panelFooter()`'s lines (the panel's `video_footer` when its pair is exactly the scene's runs, every line a string), `loadPanel` clearing the fit and re-rendering the control | exact |
+| `test_app_server.py::test_panel_of_a_modelled_structural_case` | the results panel of a derived directory whose shown case carries the structure keys: the structure caveat's modelled sentence (never "No structural mass is charged" of it, never "assumed"), the headline's `structure_clause`, the recorded offload caveats word for word; a structure payload case's run in the same directory (fix round 1): grouped as `OFFLOAD_STRUCTURE_PAYLOAD`, labelled "(structure payload case)", headlined `HEADLINE_STRUCTURE_PAYLOAD` with the replay note, no verification, chosen beside the pad its modelled caveat and its own comparison sentence with no "flies P_ref"; a penalty row chosen beside the modelled case, or beside the pad alone in this directory of structural runs (fix round 2, H-S3a-P2-03), gets the penalty sentence without "no structural model exists" | exact text |
+| `test_app.py::test_an_imposed_offload_is_not_called_saved`, `::test_the_banners_push_caveat_branches_three_ways_from_the_offload_record`, `::test_the_banner_names_the_experiments_pushed_runs_beside_a_modelled_record` | KI-039 in an app launch: the imposed case under the imposed sub-section with its basis (no solved table), no imposed disclaimer in the banner, the not-netted sentence kept for a stage-2 imposed case, a solve's summary without the sub-section, the push caveat SP1's words for every launch; `exploratory_push_caveat` three ways on synthetic records (none, a penalty row, a modelled run; with a modelled run the penalty rows named with their assumed mass and "every other case of the block charges none" when a plain case is written; fix round 3, S3A-NUM-04: a structural record whose run was not written named by its case name as one that "found no sized result", alone, beside an uncharged written case, beside the experiment's pushed runs, two of them in the plural, and a payload case whose P_2* search failed beside a written one; a run-less record that is not structural counts for nothing; fix round 2, N2-02: the experiment's own pushed runs named as charging none beside a modelled record, the penalty branch unchanged by them; `exploratory_banner` passing its pushed runs, a pad-only banner "a pad launch (no push)") | exact text |
+| `test_offload_pipeline.py::test_offload_section_renders_every_row_and_caveat`, `::test_block_caveats_branch_three_ways_from_the_records`, `::test_block_drives_name_the_payload_cases_by_their_own_drive` | KI-039 on a synthetic record: the solved case's table and the imposed case's under its sub-section and basis, their order before the decomposition, a record of imposed cases alone, one without; (fix round 3) the not-run lead line, the not-run case and the energy note with its both-tables sentence after the solved table and before the imposed sub-section's heading, neither inside the sub-section, and neither addition without imposed cases; (final clean-up, N3a-04) a record of imposed cases alone prints `OFFLOAD_ENERGY_IMPOSED_TABLE` after `OFFLOAD_NO_SOLVED_CASE` and before the sub-section, never the both-tables sentence or "solved table above"; `offload_caveats` word for word without structural records, with them the structure item word for word naming each case's run with its mass by stage and layer and set (a record shaped like a sweep point's named by its case), the arms counted by case (an arm told by its `param` and `case` keys), its pointer by record kind (the Structure subsection for cases and payload cases, the arms table for arms; each alone and both), (fix round 2) the uncharged cases and the penalty rows named only when given, the tanks item with and without a penalty row, a design-axis row, a scaled end "(plausibility-scaled, x0.845549)" and a no_offload end "(at x = 0: ...)" told apart, every other item unchanged, a solve without an x*, the drive item by drive and for a case of a variant without a push ("flies without a push (assist none: no drive)", never a "none" drive); `offload_block_drives` naming a payload case of a linear_motor variant by its own drive (S3A-C2-01, N2-05) | exact text |
+| `test_structure_reporting.py::test_sweep_summary_words_its_structural_cases` | fix round 2, H-S3a-P2-07: `sweep_structure_lines` word for word for a structural case at one point of two (the dm column, never an assumed penalty, the model, the layer and set, the file, the estimate text, the flags' places), the plausibility clause when a point is scaled, none without a structural case; `planar_sweep_summary` printing them under the sweep's table only when there is one | exact text |
+| `test_structure_reporting.py::test_uncharged_cases_leave_out_structural_penalty_and_unpushed_cases` | fix round 3, S3A-NUM-03: `results_io.offload_uncharged_cases` keeps the plain and linear_motor cases and leaves out the structural case, the penalty row and the case of a variant without a push (drive `OFFLOAD_NO_ASSIST_MODEL`), which the drive item names as flying without a push; the structure item built from it never names that case | exact |
+| `test_structure_reporting.py::test_block_caveats_and_case_cells_of_a_structural_pass` | through `planar_offload` on fake runs: a pass with a structural case, a penalty row, a plain case, a payload case and structural arms writes block caveats naming the structural case's and payload case's runs with their mass and layer and set, the arms counted, the plain case as charging none and the penalty row with its assumed mass (fix round 2), the tanks item with the penalty row's exception, the basis line, the "assumed ... added" cells (`STRUCTURE_INSTEAD_OF_PENALTY_CELL`, the penalty's tonnes, 0), no imposed sub-section, the banner's push caveat; the same pass without a structure block keeps SP1's caveats word for word and names the penalty row | exact text |
 | `test_golden_dump_fields.py::test_dataclasses_dumped_field_by_field_keep_their_fields`, `::test_dataclasses_reached_by_attribute_keep_their_fields`, `::test_pinned_budget_fields_are_the_recorded_golden_keys` | D-SP7-27: the field lists of every dataclass the 1-D golden dump reaches (LossBudget and AssistEnergyBudget, converted field by field, and frozen; Result, RunResult, ResolvedRun, SweepPoint, SensitivityRow, ExperimentResult, SweepResult, read by attribute) pinned in order; the two budgets' lists equal the keys of every non-null budget in the golden objects.json files | exact |
 | `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |

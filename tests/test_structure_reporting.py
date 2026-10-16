@@ -76,7 +76,7 @@ import pandas as pd
 import pytest
 from matplotlib.text import Text
 
-from launchsim import cli, config, plots, results_io, sim, structure, summary
+from launchsim import cli, compare, config, plots, results_io, sim, structure, summary
 from launchsim.config import (
     StructureCaseConfig,
     StructurePayloadCaseConfig,
@@ -367,6 +367,123 @@ def test_payload_case_two_passes_contraction_and_flag(
     json.dumps(results_io.json_safe(rec3))
 
 
+def test_uncharged_cases_leave_out_structural_penalty_and_unpushed_cases() -> None:
+    """Fix round 3, S3A-NUM-03: the structure item's tail names as riding the push with no
+    structural mass (summary.OFFLOAD_STRUCTURE_UNCHARGED_TEXT) only the cases that ran,
+    charge neither a modelled mass nor an assumed penalty, and are built on a variant with
+    a push: a case whose drive is summary.OFFLOAD_NO_ASSIST_MODEL is left out (the drive
+    item says it flies without a push), so the two items never read against each other."""
+    cases = [
+        {"name": "s1"},
+        {"name": "s1_st", "structure_charged": True},
+        {"name": "s1_dry2", "assumed_penalty": True},
+        {"name": "pad_x"},
+        {"name": "lm_s1"},
+    ]
+    drives = {
+        "s1": "constant_accel",
+        "s1_st": "constant_accel",
+        "s1_dry2": "constant_accel",
+        "pad_x": summary.OFFLOAD_NO_ASSIST_MODEL,
+        "lm_s1": "linear_motor",
+    }
+    assert results_io.offload_uncharged_cases(cases, drives) == ["s1", "lm_s1"]
+    drive_item = summary.offload_drive_caveat(drives)
+    assert "pad_x" in drive_item and "without a push" in drive_item
+    item = summary.offload_structure_caveat(
+        [{**STRUCTURAL_KEYS_FOR_ITEM, "name": "s1_st", "run": "s1_st"}],
+        penalties=["s1_dry2"],
+        uncharged=results_io.offload_uncharged_cases(cases, drives),
+    )
+    assert "pad_x" not in item and "; s1 and lm_s1 charge none (" in item
+
+
+STRUCTURAL_KEYS_FOR_ITEM: dict[str, Any] = {
+    "structure_charged": True,
+    "structure_dm_kg": 9100.3,
+    "structure_dm_stage2_kg": 200.2,
+    "structure_set": "central",
+}
+"""The keys a case record needs for its entry in the block's structure item (synthetic)."""
+
+
+def test_block_caveats_and_case_cells_of_a_structural_pass(
+    fake_reporting_pass: SimpleNamespace,
+) -> None:
+    """SP7 step S3a through the pipeline (D-SP7-22): a pass with a structural solved
+    case, a penalty row, a plain case, a structure payload case and structural arms
+    writes block caveats worded from its records: the structure item names the solved
+    case's run and the payload case's run with their modelled masses by stage and layer
+    and set, counts the arms (their dm is the arms table's; fix round 2, H-S3a-P2-05), never
+    "assumed" of them, and names the plain case as charging none and the penalty row with
+    its assumed dry mass (fix round 2, H-S3a-P2-06: from the block's records); the tanks
+    item excepts the penalty row's assumed dry mass and the modelled increment; every other
+    item is SP1's word for word (the drive is constant_accel); the solved case's "assumed ...
+    added" cell says a modelled mass is charged instead, the penalty row's keeps its
+    tonnes and the plain case's prints 0; the imposed sub-section is absent (no fixed
+    case); the basis line names the two rows that change a dry mass. The same pass
+    without a structural record keeps SP1's caveats word for word."""
+    cases = [
+        ST_CASE,
+        {"name": "s1_dry2", "of": "silo_cold", "solve": "stage1", "stage1_dry_mass_added_t": 2.0},
+        PLAIN_CASE,
+    ]
+    _resolved, report = _pass(cases, payload_cases=[PAYLOAD_CASE], sensitivity_of=["s1_st"])
+    rec = results_io.offload_record(report)
+    by = {c["name"]: c for c in rec["cases"]}
+    arms = [a for a in rec["sensitivity"] if a.get("structure_charged")]
+    payload = next(p for p in rec["structure_payload_cases"] if p["name"] == "cold_pstar_st")
+    assert arms and payload["structure_charged"] is True
+    caveats = rec["caveats"]
+    assert caveats[0] == summary.offload_calibration_caveat(
+        "generic_f9_class_2d", plots.CALIBRATION_RECORDS["generic_f9_class_2d"]
+    )
+    structure = caveats[1 + summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX]
+    assert structure.startswith("the structural cases charge the modelled structural mass")
+    st = by["s1_st"]
+    layer = f"layer and set {summary.structure_layer_label(st)}"
+    assert f"s1_st: {summary.modelled_mass_text(st)}, {layer}" in structure
+    assert f"cold_pstar_st: {summary.modelled_mass_text(payload)}, layer and set " in structure
+    assert f"; {len(arms)} structural sensitivity arm{'s' if len(arms) > 1 else ''} of s1_st;" in (
+        structure
+    )
+    for arm in arms:
+        assert arm["run"] not in structure
+    assert structure.endswith(
+        f"; s1 charges none ({summary.OFFLOAD_STRUCTURE_UNCHARGED_TEXT}); the penalty row "
+        f"s1_dry2 adds {summary.OFFLOAD_STRUCTURE_PENALTY_TEXT}"
+    )
+    assert "assumed" not in structure.split("; s1 charges none")[0]
+    assert caveats[1 + summary.OFFLOAD_TANKS_CAVEAT_INDEX] == (
+        summary.OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT
+    )
+    for i, item in enumerate(caveats[1:]):
+        if i not in (summary.OFFLOAD_STRUCTURE_CAVEAT_INDEX, summary.OFFLOAD_TANKS_CAVEAT_INDEX):
+            assert item == summary.OFFLOAD_CAVEATS[i], i
+    assert rec["basis"] == compare.OFFLOAD_COMPARISON_BASIS
+    assert "a structural case's modelled increment" in rec["basis"]
+    text = summary.offload_section(rec)
+    label = "assumed stage-1 dry mass added [t] (an assumption, not a sized structure)"
+    row = _row(text.split(summary.STRUCTURE_SUBSECTION_TITLE)[0], label)
+    names = _row(text.split(summary.STRUCTURE_SUBSECTION_TITLE)[0], "quantity")
+    cells = dict(zip(names[1:], row[1:], strict=True))
+    assert cells["s1_st"] == summary.STRUCTURE_INSTEAD_OF_PENALTY_CELL
+    assert cells["s1_dry2"] == summary._fmt(2.0) and cells["s1"] == "0"
+    assert summary.OFFLOAD_IMPOSED_SUBSECTION_TITLE not in text
+    # the exploratory banner's push caveat from the same record
+    push = summary.exploratory_push_caveat(rec)
+    assert push.startswith("a modelled structural mass for the push on s1_st and cold_pstar_st (")
+    _resolved, plain_report = _pass([PLAIN_CASE, cases[1]], block={})
+    plain_rec = results_io.offload_record(plain_report)
+    assert plain_rec["caveats"] == summary.offload_caveats(
+        "generic_f9_class_2d", plots.CALIBRATION_RECORDS["generic_f9_class_2d"]
+    )
+    assert summary.exploratory_push_caveat(plain_rec) == (
+        "no structural mass for the push except the assumed stage-1 dry mass of the penalty "
+        "row s1_dry2 (an assumption, not a sized structure)"
+    )
+
+
 def test_payload_contraction_edge_cases() -> None:
     """``_payload_contraction``: equal sizings give c = 0 (the second pass flew the first's
     vehicle); P_1* = P_ref with a moved sizing is undefined, taken as inf."""
@@ -629,7 +746,12 @@ def test_structure_subsection_rows_trace_to_the_record(
     assert _row(section, "  dynamic load factor DLF")[1] == summary._fmt(st["structure_dlf"])
     penalty = _row(section, summary.STRUCTURE_PENALTY_ROW_LABEL)
     two_t = summary._fmt(float(kg_to_t(2000.0)))
-    assert penalty[1:] == ["0", "0", "0", two_t, "0", "0", "0", "0", "0", "0", "0", "0"]
+    # SP7 step S3a: a structural case's "assumed ... added" cell says what the run carries
+    # instead of printing 0 under "assumed" (STRUCTURE_INSTEAD_OF_PENALTY_CELL); the penalty
+    # row keeps its tonnes
+    instead = summary.STRUCTURE_INSTEAD_OF_PENALTY_CELL
+    assert penalty[1:] == [instead] * 3 + [two_t] + [instead] * 8
+    assert "assumed" not in instead and "modelled structural mass" in instead
     kind = _row(section, "kind")
     assert kind[1] == summary.STRUCTURE_KIND_MODELLED and kind[4] == summary.STRUCTURE_KIND_PENALTY
     layer_label = "layer and set (D-SP7-18)"
@@ -1168,6 +1290,59 @@ def test_sweep_structure_columns_only_for_a_structural_case(
         "structure_overrides",
         "structure_plausibility_ratio",
     )
+
+
+def test_sweep_summary_words_its_structural_cases(
+    fake_reporting_pass: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix round 2, H-S3a-P2-07: a sweep point writes no case record or run directory, so
+    the sweep summary words its structural offload cases under the table
+    (summary.sweep_structure_lines): one line per case that is structural at some point,
+    with how many points, that ``<case>.structure_dm_kg`` is the modelled structural mass
+    of the push load (never an assumed penalty), the model, the layer and set, the file,
+    the estimate text, the plausibility rule's factor where the column says it scaled, and
+    where the fired flags are; a sweep without a structural case prints none (an SP1-type
+    sweep summary is unchanged)."""
+    _resolved, report = _pass([PLAIN_CASE, ST_CASE])
+    by = {c["name"]: c for c in report.record["cases"]}
+    plain, st = by["s1"], by["s1_st"]
+    lines = summary.sweep_structure_lines([{"s1": plain, "s1_st": st}, {"s1": plain}])
+    assert lines[:2] == [summary.SWEEP_STRUCTURE_HEAD, ""]
+    (line,) = lines[2:]
+    assert line == (
+        "- s1_st (1 point of 2): s1_st.structure_dm_kg is the modelled structural mass of the "
+        "push load at each point's x* (dm1 + dm2, never an assumed penalty), a first-order "
+        "station sizing of the push load (layer and set "
+        f"{summary.structure_layer_label(st)}; {st['structure_file']}), a first-order estimate "
+        "with its stated ranges, not a detailed structural design; its fired flags are in "
+        "s1_st.structure_flags and the Checks section."
+    )
+    scaled = summary.sweep_structure_lines(
+        [{"s1_st": {**st, "structure_plausibility_scaled": True}}]
+    )
+    assert "factor where s1_st.structure_plausibility_scaled is True (D-SP7-33)" in scaled[2]
+    assert summary.sweep_structure_lines([{"s1": plain}]) == []
+    assert summary.sweep_structure_lines([]) == []
+    # planar_sweep_summary prints them under the sweep's table (the other sections stubbed)
+    for name in ("assumptions_section", "sweep_checks_section", "guidance_label"):
+        monkeypatch.setattr(summary, name, lambda *a, **k: "")
+    baseline = SimpleNamespace(name="pad", result=SimpleNamespace(status="inserted", metrics={}))
+    git = {"hash": "abc123", "dirty": False}
+    for records, printed in (([{"s1": plain, "s1_st": st}], True), ([{"s1": plain}], False)):
+        sweep = _sweep(tmp_path, records)
+        frame = results_io.planar_sweep_index_frame(sweep, tmp_path)
+        text = summary.planar_sweep_summary(
+            "x",
+            [sweep],
+            [frame],
+            baseline,
+            git,
+            "20261012T000000Z",  # type: ignore[arg-type]
+        )
+        assert (summary.SWEEP_STRUCTURE_HEAD in text) is printed
+        if printed:
+            table_end = text.index("| ", text.index("## sweep_1"))
+            assert text.index(summary.SWEEP_STRUCTURE_HEAD) > table_end
 
 
 def test_sweep_point_config_carries_the_block_file(

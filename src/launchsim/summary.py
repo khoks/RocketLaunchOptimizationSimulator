@@ -17,6 +17,7 @@ the module before SP2 (the exploratory banner of SP2 step A4 is read here only).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -66,15 +67,25 @@ from launchsim.search import OK_STATUS
 from launchsim.structure import (
     ENTRY_AFT_RING,
     ENTRY_THRUST_STRUCTURE,
+    FLAG_RELEASE_UNLOAD,
     INTERSTAGE,
     LOAD_RING,
+    SEARCH_HEADLINE,
     SET_OUTER_HIGH,
     SET_OUTER_LOW,
     SET_PHYSICS_HIGH,
     SET_PHYSICS_LOW,
     THRUST_STRUCTURE,
 )
-from launchsim.units import j_to_mj, kg_to_t, m_to_mm, n_to_mn, rad_to_deg, to_percent
+from launchsim.units import (
+    j_to_mj,
+    kg_to_t,
+    m_to_mm,
+    n_to_mn,
+    pa_to_kpa,
+    rad_to_deg,
+    to_percent,
+)
 
 if TYPE_CHECKING:
     from launchsim.results_io import ExperimentResult, SweepResult
@@ -723,15 +734,6 @@ EXPLORATORY_NOT_APP_HEAD = (
 )
 """The head of the banner instead of EXPLORATORY_BANNER_HEAD when the git record has no
 server-start state: an exploratory-labelled experiment run from the command line."""
-EXPLORATORY_IMPOSED_TEXT = (
-    "An imposed offload is not propellant saved: the section "
-    '"Propellant saved at fixed payload" and its basis line describe solved cases; an '
-    "imposed case flies its own payload capacity P*, read as P* - P_ref (positive: it "
-    "carries more than the pad, so the offload is not the largest possible; negative: a "
-    "payload loss)."
-)
-"""What the banner adds when the offload block has an imposed (fixed) case (D-SP2-27):
-SP1's section title and basis line are printed for any offload block."""
 EXPLORATORY_IMPOSED_NOT_NETTED_TEXT = (
     "An imposed stage-2 or both-stage offload is a property of the vehicle model and is not "
     "netted: it has no pad control, whatever the caveats below say of netting."
@@ -776,7 +778,14 @@ committed experiment and vehicle files from at server start (None: not read from
 commit, so no name is committed)."""
 EXPLORATORY_PUSH_CAVEAT = "no structural mass for the push"
 EXPLORATORY_NO_PUSH_CAVEAT = "a pad launch (no push)"
-"""The banner's push caveat: the first when a run has an assist, else the second."""
+"""The banner's push caveat: the first when a run has an assist and no run of the offload
+block charges a structural mass, modelled or assumed (the app's form has no structural
+switch, D-SP7-08, so an app launch without a penalty row reads so word for word), else
+the second; ``exploratory_push_caveat`` words the two other branches (SP7 step S3a,
+D-SP7-22): a penalty row's assumed mass (an app launch whose form adds a stage-1 dry mass
+too: fix round 1, H-S3a-05, a deviation from step item 1's "keeps today's text" logged in
+the SP7 phase file's section 12, item 33, since the bare sentence was false beside a
+penalty row), a modelled mass."""
 EXPLORATORY_SERVER_START_KEY = "server_start"
 """Key of the app's git record that holds the git state the app's server recorded once at
 its start (hash, dirty, error): the commit whose code the launch imported."""
@@ -788,28 +797,113 @@ EXPLORATORY_NO_GIT_HASHES = ("no-git",)
 banner reads their state as unknown."""
 
 
-def _tree_state(dirty: Any, hash_: Any = None) -> str:
-    """'clean', 'dirty' or 'unknown' for a git dirty flag (True, False, None); unknown
-    as well for a hash in EXPLORATORY_NO_GIT_HASHES."""
-    if hash_ in EXPLORATORY_NO_GIT_HASHES or dirty is None:
+def tree_state(dirty: Any, hash_: Any = None) -> str:
+    """'clean', 'dirty' or 'unknown' for a git dirty flag: 'clean' for False and 'dirty'
+    for True; 'unknown' for anything that is not a boolean (None: git status failed or
+    timed out; a string or a number: never read by its truth value, SP7 step S3a fix
+    round 1, H-S3a-08) and for a hash in EXPLORATORY_NO_GIT_HASHES. The one rule of the
+    banner, the replay page's git string (KI-036, ``replay.replay_data``), the scene's
+    ``git_record`` (which writes dirty None whenever this reads unknown, the no-git hash
+    included: fix round 2, N2-04) and the app's ``tree_state``."""
+    if hash_ in EXPLORATORY_NO_GIT_HASHES or not isinstance(dirty, bool):
         return "unknown"
     return "dirty" if dirty else "clean"
 
 
 def _imposed_lines(offload: Mapping[str, Any] | None) -> list[str]:
-    """The banner's sentences on imposed offloads: EXPLORATORY_IMPOSED_TEXT when a case of
-    the offload record is imposed (kind fixed), and EXPLORATORY_IMPOSED_NOT_NETTED_TEXT
-    when one of them takes propellant from stage 2 (a mode other than OFFLOAD_GROSS_MODES);
-    [] without an offload record or an imposed case."""
+    """The banner's sentence on imposed offloads: EXPLORATORY_IMPOSED_NOT_NETTED_TEXT when
+    an imposed (kind fixed) case of the offload record takes propellant from stage 2 (a
+    mode other than OFFLOAD_GROSS_MODES); [] otherwise. Since SP7 step S3a (KI-039,
+    D-SP7-23) the banner no longer says that an imposed offload is not propellant saved:
+    the summary files imposed cases in their own sub-section with their own basis line
+    (``offload_section``, OFFLOAD_IMPOSED_BASIS)."""
     if not offload:
         return []
     fixed = [c for c in offload.get("cases") or [] if c.get("kind") == "fixed"]
-    if not fixed:
-        return []
-    out = [EXPLORATORY_IMPOSED_TEXT]
     if any(c.get("mode") not in OFFLOAD_GROSS_MODES for c in fixed):
-        out.append(EXPLORATORY_IMPOSED_NOT_NETTED_TEXT)
-    return out
+        return [EXPLORATORY_IMPOSED_NOT_NETTED_TEXT]
+    return []
+
+
+def exploratory_push_caveat(offload: Mapping[str, Any] | None, pushed: Sequence[str] = ()) -> str:
+    """The banner's push caveat for runs with an assist, three ways from the offload
+    record's case records (SP7 step S3a, D-SP7-22; the cases and the structure payload
+    cases whose run was written): a modelled structural mass when some record charges one
+    (``structure_charged``), naming the runs and the Structure subsection, never "assumed",
+    then what the rest of the block charges (fix round 1, H-S3a-05: the penalty rows'
+    assumed stage-1 dry mass by name, and that every other case charges none) and that
+    the experiment's own pushed runs ``pushed`` (the pushed runs of the banner's ``runs``
+    that are no record's run; fix round 2, N2-02) charge none; an assumed penalty when
+    some record is a penalty row (``assumed_penalty``), EXPLORATORY_PUSH_CAVEAT then the
+    penalty rows' assumed mass by name (an app launch whose form adds a stage-1 dry mass
+    reads so: fix round 1, H-S3a-05, a deviation from "keeps today's text", SP7 phase file
+    section 12, item 33); else
+    EXPLORATORY_PUSH_CAVEAT word for word (every other app launch: the form charges none,
+    D-SP7-08). A structural record whose solve wrote no run (a search that found no x*,
+    or a payload case whose P_2* search failed) is named by its case name as one that
+    found no sized result (fix round 3, S3A-NUM-04: the block caveat lists it among the
+    structural records, so the banner never says "no structural mass" or "every other
+    case charges none" of it)."""
+    every: list[Mapping[str, Any]] = []
+    if offload:
+        every = [
+            c
+            for key in ("cases", "structure_payload_cases")
+            for c in offload.get(key) or []
+            if isinstance(c, Mapping)
+        ]
+    records = [c for c in every if c.get("run")]
+    modelled = [str(c.get("run")) for c in records if c.get("structure_charged") is True]
+    unsized = [
+        str(c.get("name")) for c in every if not c.get("run") and c.get("structure_charged") is True
+    ]
+    penalties = [str(c.get("run")) for c in records if c.get("assumed_penalty") is True]
+    rows = "penalty row" if len(penalties) == 1 else "penalty rows"
+    if modelled or unsized:
+        parts = []
+        if modelled:
+            parts.append(
+                f"a modelled structural mass for the push on {_join_names(modelled)} (a "
+                "first-order station sizing, not an assumed penalty; the offload section's "
+                "Structure subsection)"
+            )
+        if unsized:
+            one = len(unsized) == 1
+            parts.append(
+                f"the structural {'case' if one else 'cases'} {_join_names(unsized)} "
+                f"found no sized result (no run written, so no structural mass flown; the "
+                "offload section's Structure subsection)"
+            )
+        text = "; ".join(parts)
+        if penalties:
+            verb = "charges" if len(penalties) == 1 else "charge"
+            text += (
+                f"; the {rows} {_join_names(penalties)} {verb} an assumed stage-1 dry mass "
+                "(an assumption, not a sized structure)"
+            )
+        if len(modelled) + len(penalties) < len(records):
+            text += "; every other case of the block charges none"
+        own = [name for name in pushed if name not in {str(c.get("run")) for c in records}]
+        if own:
+            one = len(own) == 1
+            text += (
+                f"; the experiment's pushed {'run' if one else 'runs'} {_join_names(own)} "
+                f"{'charges' if one else 'charge'} none"
+            )
+        return text
+    if penalties:
+        return (
+            f"{EXPLORATORY_PUSH_CAVEAT} except the assumed stage-1 dry mass of the {rows} "
+            f"{_join_names(penalties)} (an assumption, not a sized structure)"
+        )
+    return EXPLORATORY_PUSH_CAVEAT
+
+
+def _join_names(names: Sequence[str]) -> str:
+    """'a', 'a and b', 'a, b and c'."""
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
 
 
 def _app_lines(git: Mapping[str, Any], runs: Mapping[str, RunResult]) -> list[str]:
@@ -842,22 +936,25 @@ def exploratory_banner(
     server-start record) and the working tree at launch
     (``git[EXPLORATORY_LAUNCH_DIRTY_KEY]``, else ``git['dirty']``), each clean, dirty or
     unknown; then where the findings are and the run's caveats: the calibration gap of
-    vehicle_name from run_data.CALIBRATION_RECORDS (or that it has none), no structural
-    mass for the push (EXPLORATORY_NO_PUSH_CAVEAT when no run of ``runs`` has an assist),
+    vehicle_name from run_data.CALIBRATION_RECORDS (or that it has none), the push caveat
+    (``exploratory_push_caveat`` from the offload record and the pushed runs of ``runs``:
+    no structural mass for the push, a penalty row's assumed mass, or a modelled mass with
+    what the block's other cases and the experiment's pushed runs charge;
+    EXPLORATORY_NO_PUSH_CAVEAT when no run of ``runs`` has an assist),
     the guidance (sweep-optimized when any of ``runs`` searched, else fixed) and
     unthrottled; EXPLORATORY_NO_SENSITIVITY_TEXT unless ``sensitivity_ran`` (a
     sensitivity case or an offload sensitivity arm ran); for an app launch (a
     server-start record) whether a committed name marks a reproduction and the M5 anchor
     check (``_app_lines``, D-SP2-36); then, when ``offload`` (the offload block's record)
-    has an imposed case, that it is not propellant saved (``_imposed_lines``,
-    D-SP2-27)."""
+    has an imposed stage-2 or both-stage case, that it is not netted (``_imposed_lines``,
+    D-SP2-07; the imposed-not-saved sentence of D-SP2-27 went with KI-039, D-SP7-23)."""
     start = git.get(EXPLORATORY_SERVER_START_KEY)
-    launch = _tree_state(git.get(EXPLORATORY_LAUNCH_DIRTY_KEY, git.get("dirty")), git.get("hash"))
+    launch = tree_state(git.get(EXPLORATORY_LAUNCH_DIRTY_KEY, git.get("dirty")), git.get("hash"))
     if isinstance(start, Mapping):
         head = EXPLORATORY_BANNER_HEAD
         code = (
             f"Code: the commit imported at server start ({start.get('hash', 'no-git')}, "
-            f"{_tree_state(start.get('dirty'), start.get('hash'))}); working tree at launch: "
+            f"{tree_state(start.get('dirty'), start.get('hash'))}); working tree at launch: "
             f"{launch}."
         )
     else:
@@ -873,8 +970,13 @@ def exploratory_banner(
         rr.result.metrics.get("figure_of_merit") in SEARCHED_FIGURES for rr in runs.values()
     )
     guidance = "sweep-optimized" if searched else "fixed guidance"
-    pushed = any(getattr(rr.resolved.run.assist, "model", "none") != "none" for rr in runs.values())
-    push = EXPLORATORY_PUSH_CAVEAT if pushed else EXPLORATORY_NO_PUSH_CAVEAT
+    pushed = [
+        name
+        for name, rr in runs.items()
+        if getattr(rr.resolved.run.assist, "model", OFFLOAD_NO_ASSIST_MODEL)
+        != OFFLOAD_NO_ASSIST_MODEL
+    ]
+    push = exploratory_push_caveat(offload, pushed) if pushed else EXPLORATORY_NO_PUSH_CAVEAT
     text = (
         f"{head} {code} Do not cite; findings are in docs/findings/. "
         f"{calibration}, {push}, {guidance}, unthrottled."
@@ -1686,6 +1788,38 @@ OFFLOAD_SECTION_NAME = "Propellant saved at fixed payload"
 note points to it: ``results_io.planar_sensitivity_note``)."""
 OFFLOAD_SECTION_TITLE = f"## {OFFLOAD_SECTION_NAME}"
 """Title of the summary section of an experiment's offload block."""
+OFFLOAD_FIXED_KIND = "fixed"
+"""The ``kind`` of an imposed (fixed) case's record (results_io's case record; the solved
+kind is run_data.OFFLOAD_SOLVED_KIND)."""
+OFFLOAD_IMPOSED_SUBSECTION_TITLE = "### Imposed offloads (fixed cases)"
+"""The sub-section of the offload section that holds the imposed (fixed) cases (KI-039,
+D-SP7-23, SP7 step S3a): the section's heading and basis line describe the solved cases,
+which fly P_ref; an imposed case flies its own payload capacity P*."""
+OFFLOAD_IMPOSED_BASIS = (
+    "Imposed basis: each imposed case flies its own payload capacity P*, read as P* - P_ref "
+    "(positive: it carries more than the pad, so the imposed offload is not the largest "
+    "possible; negative: a payload loss at that offload); an imposed offload is never "
+    "propellant saved at P_ref"
+)
+"""The one-line basis of the imposed sub-section (KI-039), printed above its table."""
+OFFLOAD_NOT_RUN_LEAD = "Cases that did not run (solved or imposed):"
+"""The line before the cases that did not run when the block also has imposed cases (fix
+round 3, H-S3a-P3-06 and S3A-CMP3-01): the list sits above the imposed sub-section, so it
+says that it covers both kinds (a skipped case's record names no kind)."""
+OFFLOAD_ENERGY_BOTH_TABLES = (
+    "The note covers the energy rows of the solved table above and of the imposed cases' "
+    "table below."
+)
+"""What the energy note adds when the block has both solved and imposed cases that ran
+(fix round 3, H-S3a-P3-06, S3A-CMP3-01 and S3A-NUM-02): the note is printed before the
+imposed sub-section, so a Markdown reader never takes it for that sub-section's alone."""
+OFFLOAD_ENERGY_IMPOSED_TABLE = "The note covers the energy rows of the imposed cases' table below."
+"""What the energy note adds in place of OFFLOAD_ENERGY_BOTH_TABLES when every case that
+ran is imposed (final clean-up, N3a-04): the section then prints OFFLOAD_NO_SOLVED_CASE,
+not a solved table, so the note names the imposed cases' table alone."""
+OFFLOAD_NO_SOLVED_CASE = "(no solved case ran; the imposed cases are in their sub-section below)"
+"""What the offload section prints in place of the solved cases table when every case
+that ran is imposed."""
 OFFLOAD_MODEL_READING = (
     "read every offload as a difference between runs of the vehicle model, not as a Falcon 9 figure"
 )
@@ -1743,10 +1877,194 @@ def offload_calibration_caveat(
     )
 
 
-def offload_caveats(vehicle_name: str, calibration: tuple[float, float, str] | None) -> list[str]:
+OFFLOAD_STRUCTURE_CAVEAT_INDEX = 1
+OFFLOAD_DRIVE_CAVEAT_INDEX = 2
+OFFLOAD_TANKS_CAVEAT_INDEX = 4
+"""Where the structure, drive and tanks items sit in OFFLOAD_CAVEATS (the items
+``offload_caveats`` words from the block's records, SP7 step S3a)."""
+OFFLOAD_STRUCTURE_UNCHARGED_TEXT = (
+    "each stack rides the push at the net acceleration plus g with no structural mass for it"
+)
+"""What the structure item of a block with structural runs says of the cases that charge
+none (named; fix round 2, H-S3a-P2-06: only when there are any)."""
+OFFLOAD_STRUCTURE_PENALTY_TEXT = (
+    "an assumed stage-1 dry mass, a parametric assumption, not a sized structure"
+)
+"""What the structure item of a block with structural runs says the penalty rows add
+(named; only when there are any), in SP1's words."""
+OFFLOAD_TANKS_STRUCTURE_CAVEAT = (
+    "the tanks are partly filled: dry masses and tank structure unchanged except for the "
+    "modelled structural increment of the push load the structural cases carry (the "
+    "Structure subsection), the mixture ratio kept, no ullage, centre-of-gravity or "
+    "tank-mass effect"
+)
+OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT = (
+    "the tanks are partly filled: dry masses and tank structure unchanged except for the "
+    "penalty rows' assumed stage-1 dry mass and the modelled structural increment of the "
+    "push load the structural cases carry (the Structure subsection), the mixture ratio "
+    "kept, no ullage, centre-of-gravity or tank-mass effect"
+)
+"""The tanks item of a block with structural runs (in place of OFFLOAD_CAVEATS' tanks
+item, whose "dry masses and tank structure unchanged" would be false of them): the first
+without a penalty row, the second with one (fix round 2, H-S3a-P2-06: both exceptions,
+as compare.OFFLOAD_COMPARISON_BASIS names them)."""
+OFFLOAD_PRESCRIBED_DRIVE = "constant_accel"
+"""The assist model OFFLOAD_CAVEATS' drive item describes (a prescribed constant
+acceleration); ``offload_drive_caveat`` words any other drive from its model name."""
+OFFLOAD_NO_ASSIST_MODEL = "none"
+"""The assist model of a variant without a push (config.NoAssistConfig): an offload case
+of such a variant rides no drive, and the drive item says so (SP7 step S3a fix round 1,
+S3A-R1-02) instead of calling "none" a drive."""
+OFFLOAD_STRUCTURE_CASES_POINTER = (
+    "the Structure subsection gives each case's and payload case's layer and set, file, "
+    "band and flags"
+)
+OFFLOAD_STRUCTURE_ARMS_POINTER = (
+    "the arms table, its structural columns and its caveat give each arm's dm, set and envelope pad"
+)
+"""Where the rest of a structural record's sizing is reported, by record kind (fix round
+1, H-S3a-04): a case or payload case in the Structure subsection, a sensitivity arm in
+the arms table (which has no layer label, file, band or flags per arm)."""
+
+
+def _is_arm_record(record: Mapping[str, Any]) -> bool:
+    """Whether a structural record is a sensitivity arm's (results_io's
+    ``_offload_arm_record``: it names its ``case`` and its perturbed ``param``)."""
+    return "param" in record and "case" in record
+
+
+def _structure_caveat_entry(record: Mapping[str, Any]) -> str:
+    """One structural case's or payload case's entry in the block's structure item: its
+    run (or case) name, its modelled mass by stage (``modelled_mass_text``), its layer and
+    set (``structure_layer_label``: a design-axis row names its axes, so two rows on one
+    set never read alike), then '(plausibility-scaled, x<factor>)' when the rule scaled
+    its dm and '(at x = 0: the solve found no offload)' for a no_offload end (fix round 2,
+    H-S3a-P2-05)."""
+    name = record.get("run") or record.get("name")
+    text = f"{name}: {modelled_mass_text(record)}, layer and set {structure_layer_label(record)}"
+    if record.get("structure_plausibility_scaled"):
+        factor = record.get("structure_plausibility_factor")
+        shown = _fmt(factor) if _is_finite_number(factor) else "n/a"
+        text += f" (plausibility-scaled, x{shown})"
+    if record.get("status") == NO_OFFLOAD_STATUS:
+        text += " (at x = 0: the solve found no offload)"
+    return text
+
+
+def offload_structure_caveat(
+    structural: Sequence[Mapping[str, Any]],
+    *,
+    penalties: Sequence[str] = (),
+    uncharged: Sequence[str] = (),
+) -> str:
+    """The structure item of a block some of whose records charge a modelled structural
+    mass (SP7 step S3a, D-SP7-22): the model named, where the rest of each record's sizing
+    is reported by record kind (OFFLOAD_STRUCTURE_CASES_POINTER for the cases and payload
+    cases, OFFLOAD_STRUCTURE_ARMS_POINTER for the arms; only the kinds present), that it is
+    a first-order estimate with its stated ranges, not a detailed structural design; each
+    structural case's and payload case's entry (``_structure_caveat_entry``: the mass by
+    stage, the layer and set, a plausibility scaling, a no_offload end; a sweep point's
+    case record is named by its case name); the sensitivity arms by count and case only
+    (their dm and its caveat on the dry-mass arm are the arms table's, fix round 2,
+    H-S3a-P2-05); then, from the block's records (fix round 2, H-S3a-P2-06), the
+    ``uncharged`` cases by name with OFFLOAD_STRUCTURE_UNCHARGED_TEXT and the
+    ``penalties`` (penalty rows) by name with OFFLOAD_STRUCTURE_PENALTY_TEXT, each only
+    when there are any. Never "assumed" of the modelled mass."""
+    named = [c for c in structural if not _is_arm_record(c)]
+    arms = [c for c in structural if _is_arm_record(c)]
+    pointers = []
+    if named:
+        pointers.append(OFFLOAD_STRUCTURE_CASES_POINTER)
+    if arms:
+        pointers.append(OFFLOAD_STRUCTURE_ARMS_POINTER)
+    who = "the structural cases" if named else "the structural sensitivity arms"
+    text = (
+        f"{who} charge the modelled structural mass of the push load on their assisted "
+        f"runs, {STRUCTURE_MODEL_NAME} ({STRUCTURE_ESTIMATE_TEXT}; " + "; ".join(pointers) + ")"
+    )
+    parts = [_structure_caveat_entry(c) for c in named]
+    if arms:
+        of = _join_names(list(dict.fromkeys(str(a.get("case")) for a in arms)))
+        many = len(arms) > 1
+        parts.append(f"{len(arms)} structural sensitivity arm{'s' if many else ''} of {of}")
+    text += ": " + "; ".join(parts)
+    if uncharged:
+        verb = "charges" if len(uncharged) == 1 else "charge"
+        text += f"; {_join_names(uncharged)} {verb} none ({OFFLOAD_STRUCTURE_UNCHARGED_TEXT})"
+    if penalties:
+        rows = "penalty row" if len(penalties) == 1 else "penalty rows"
+        verb = "adds" if len(penalties) == 1 else "add"
+        text += f"; the {rows} {_join_names(penalties)} {verb} {OFFLOAD_STRUCTURE_PENALTY_TEXT}"
+    return text
+
+
+def offload_drive_caveat(drives: Mapping[str, str]) -> str:
+    """The drive item of a block from each case's assist model (``drives``: case name to
+    model; SP7 step S3a, "by drive"): OFFLOAD_CAVEATS' drive item word for word when every
+    case rides OFFLOAD_PRESCRIBED_DRIVE (or none is given); otherwise one clause per other
+    model naming its cases, saying that its force and power limits, carriage and shaft are
+    the variant's own settings (resolved_config.yaml records them), one for the cases of
+    a variant without a push (OFFLOAD_NO_ASSIST_MODEL: they fly without a push, no
+    drive; fix round 1), and the prescribed item for the constant_accel cases when there
+    are any."""
+    prescribed = OFFLOAD_CAVEATS[OFFLOAD_DRIVE_CAVEAT_INDEX]
+    others: dict[str, list[str]] = {}
+    unpushed: list[str] = []
+    for name, model in drives.items():
+        if model == OFFLOAD_NO_ASSIST_MODEL:
+            unpushed.append(name)
+        elif model != OFFLOAD_PRESCRIBED_DRIVE:
+            others.setdefault(str(model), []).append(name)
+    if not others and not unpushed:
+        return prescribed
+    clauses = [
+        f"the drive of {_join_names(names)} is the {model} drive of the variant (its force "
+        "and power limits, carriage and shaft are the variant's own settings, recorded in "
+        "resolved_config.yaml)"
+        for model, names in others.items()
+    ]
+    if unpushed:
+        one = len(unpushed) == 1
+        clauses.append(
+            f"{_join_names(unpushed)} {'flies' if one else 'fly'} without a push (assist "
+            f"{OFFLOAD_NO_ASSIST_MODEL}: no drive)"
+        )
+    rest = [n for n, m in drives.items() if m == OFFLOAD_PRESCRIBED_DRIVE]
+    if rest:
+        clauses.append(f"for {_join_names(rest)} {prescribed}")
+    return "; ".join(clauses)
+
+
+def offload_caveats(
+    vehicle_name: str,
+    calibration: tuple[float, float, str] | None,
+    *,
+    structural: Sequence[Mapping[str, Any]] = (),
+    drives: Mapping[str, str] | None = None,
+    penalties: Sequence[str] = (),
+    uncharged: Sequence[str] = (),
+) -> list[str]:
     """Every caveat of an offload block on vehicle_name: its calibration caveat
-    (``offload_calibration_caveat``) then OFFLOAD_CAVEATS."""
-    return [offload_calibration_caveat(vehicle_name, calibration), *OFFLOAD_CAVEATS]
+    (``offload_calibration_caveat``) then OFFLOAD_CAVEATS, word for word when
+    ``structural`` is empty and every drive is the prescribed one (every SP1-type block).
+    With ``structural`` (the block's records that charge a modelled structural mass: cases,
+    structure payload cases, sensitivity arms; SP7 step S3a, D-SP7-22) the structure item
+    is ``offload_structure_caveat`` (with the block's ``penalties``, its penalty rows'
+    names, and ``uncharged``, the names of its cases that charge nothing) and the tanks
+    item OFFLOAD_TANKS_STRUCTURE_CAVEAT, or OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT with a
+    penalty row; with ``drives`` (case name to assist model) the drive item is
+    ``offload_drive_caveat``."""
+    items = list(OFFLOAD_CAVEATS)
+    if structural:
+        items[OFFLOAD_STRUCTURE_CAVEAT_INDEX] = offload_structure_caveat(
+            structural, penalties=penalties, uncharged=uncharged
+        )
+        items[OFFLOAD_TANKS_CAVEAT_INDEX] = (
+            OFFLOAD_TANKS_STRUCTURE_PENALTY_CAVEAT if penalties else OFFLOAD_TANKS_STRUCTURE_CAVEAT
+        )
+    if drives:
+        items[OFFLOAD_DRIVE_CAVEAT_INDEX] = offload_drive_caveat(drives)
+    return [offload_calibration_caveat(vehicle_name, calibration), *items]
 
 
 OFFLOAD_ENERGY_TEXT = (
@@ -1835,7 +2153,7 @@ OFFLOAD_CASE_ROWS: tuple[OffloadRow, ...] = (
     ("  % of the total load", "pct", "total_fraction"),
     (
         "assumed stage-1 dry mass added [t] (an assumption, not a sized structure)",
-        "t",
+        "penalty_t",
         "stage1_dry_mass_added_kg",
     ),
     ("payload flown [kg] (solved: P_ref; fixed: its own P*)", "num", "payload_kg"),
@@ -1926,7 +2244,14 @@ def _offload_cell(record: Mapping[str, Any], fmt: str, path: str) -> str:
     percent, ``MJ`` joules in MJ, ``signed`` a signed number, ``sci`` a residual to 3
     significant digits (never rounded to 0), ``count`` a list's length, ``kind`` the
     case's solve mode or fixed offload (a fraction key with its fraction, a mass key
-    with its offload in tonnes), ``text`` and ``num`` as ``_fmt``."""
+    with its offload in tonnes), ``penalty_t`` the assumed penalty's kg in tonnes, or
+    STRUCTURE_INSTEAD_OF_PENALTY_CELL on a record that charges a modelled structural mass
+    (SP7 step S3a: the row's label says "assumed", which that mass is not), ``text`` and
+    ``num`` as ``_fmt``."""
+    if fmt == "penalty_t":
+        if record.get("structure_charged") is True:
+            return STRUCTURE_INSTEAD_OF_PENALTY_CELL
+        return _offload_cell(record, "t", path)
     if fmt == "kind":
         if record.get("kind") == "solve":
             return f"solved, {record.get('mode')}"
@@ -2186,6 +2511,12 @@ STRUCTURE_PENALTY_ROW_LABEL = (
 )
 """The penalty rows' mass row of the Structure case table: the same words as the offload
 cases table's row (``OFFLOAD_CASE_ROWS``), so the two tables read alike."""
+STRUCTURE_INSTEAD_OF_PENALTY_CELL = (
+    "none: a modelled structural mass is charged instead (the Structure subsection)"
+)
+"""The penalty row's cell of a structural case in both case tables (SP7 step S3a): its
+record's ``stage1_dry_mass_added_kg`` is 0 and the modelled mass is not an assumed
+penalty, so the cell says what the run carries rather than printing 0 under "assumed"."""
 STRUCTURE_AT_X_NOTE = "(a no_offload end: at x = 0)"
 """The suffix of the case table's rows "at x*": a no_offload end was sized at x = 0."""
 STRUCTURE_FLIGHT_CHECK_SCOPE = (
@@ -2263,7 +2594,7 @@ STRUCTURE_CASE_ROWS: tuple[OffloadRow, ...] = (
     (f"dm1, stage 1 with the interstage, at x* [kg] {STRUCTURE_AT_X_NOTE}", "dm1", ""),
     (f"dm2, stage 2, at x* [kg] {STRUCTURE_AT_X_NOTE}", "num", "structure_dm_stage2_kg"),
     ("dm1 + dm2 at x = 0 [kg]", "num", "structure_dm_x0_kg"),
-    (STRUCTURE_PENALTY_ROW_LABEL, "t", "stage1_dry_mass_added_kg"),
+    (STRUCTURE_PENALTY_ROW_LABEL, "penalty_t", "stage1_dry_mass_added_kg"),
     ("status (the solve)", "text", "status"),
     ("x* [t]", "xstar", "offload_kg"),
     ("  % of the stage-1 load", "xstar_pct", "stage1_fraction"),
@@ -2607,6 +2938,417 @@ def structure_flags_text(record: Mapping[str, Any]) -> str | None:
         return STRUCTURE_FLAGS_NOT_SIZED
     fired = [str(f.get("name")) for f in flags if isinstance(f, Mapping) and f.get("fired")]
     return "; ".join(fired) if fired else "none"
+
+
+STRUCTURE_MODEL_NAME = "a first-order station sizing of the push load"
+"""The model's name wherever a modelled structural mass is worded (SP7 step S3a; every
+reader says the same: the summary's block caveat, the replay and scene caveats, the scene
+frame's footer, the animation's footnote)."""
+STRUCTURE_ESTIMATE_TEXT = (
+    "a first-order estimate with its stated ranges, not a detailed structural design"
+)
+"""How every modelled-structure sentence ends (design 4.5): what the mass is and is not."""
+STRUCTURE_NO_SIZING_TEXT = "no sizing at x* (the solve found no x*)"
+"""``modelled_mass_text`` of a structural record whose solve found no x* (its dm None)."""
+STRUCTURE_NO_FLAG_TEXT = "no structure flag fired"
+STRUCTURE_FLAGS_NOT_RECORDED_TEXT = "structure flags not recorded"
+"""What ``modelled_structure_text`` says of a record that carries no flag list
+(``structure_flags_text`` None; fix round 2, N2-06): never STRUCTURE_NO_FLAG_TEXT, which
+would read an unrecorded list as clean."""
+
+
+def structure_charged(record: Mapping[str, Any]) -> bool:
+    """Whether a record (a case, arm, payload-case or sweep-point record, or a run's own
+    metrics record) charges a modelled structural mass: ``structure_charged`` is True
+    (the run-level key of D-SP7-22, written only on a structural run). The one test every
+    reader makes before wording the modelled branch (SP7 step S3a)."""
+    return record.get("structure_charged") is True
+
+
+def structure_run_record(
+    record: Mapping[str, Any], offload: Mapping[str, Any] | None, name: str
+) -> Mapping[str, Any]:
+    """A run's own metrics record as every per-run reader words its structure (final
+    clean-up, N3a-03): with ``kind`` STRUCTURE_PAYLOAD_RECORD_KIND when the offload
+    record's ``structure_payload_cases`` names the run ``name`` (a case's ``run``), else
+    the record as it is. A payload case's run carries the run-level keys
+    (``sim.STRUCTURE_RECORD_KEYS``: structure_sizing full_load) but no kind, so without
+    it ``structure_row_departures`` would word the run as a full-load-sizing row, "a
+    row, not a band end (sizing full_load)", while the block caveat, worded from the
+    case record, calls the same case by its set; the replay and scene caveats, the scene
+    frame's note and the animation's and video's footnote read it through this."""
+    for case in (offload or {}).get("structure_payload_cases") or []:
+        if isinstance(case, Mapping) and case.get("run") == name:
+            return {**record, "kind": STRUCTURE_PAYLOAD_RECORD_KIND}
+    return record
+
+
+def offload_charges_modelled(offload: Mapping[str, Any] | None) -> bool:
+    """Whether an offload record charges a modelled structural mass anywhere (fix round 2,
+    H-S3a-P2-03): a ``structure_inputs`` record (a block with a structure block), or a
+    record of ``cases``, ``structure_payload_cases`` or ``sensitivity`` that is
+    ``structure_charged``. The replay caveat drops SP1's program-level "no structural
+    model exists" of a penalty row for any such directory, so a page never carries it
+    beside the directory's block caveat that names the model."""
+    if not offload:
+        return False
+    if isinstance(offload.get("structure_inputs"), Mapping):
+        return True
+    return any(
+        isinstance(c, Mapping) and structure_charged(c)
+        for key in ("cases", "structure_payload_cases", "sensitivity")
+        for c in offload.get(key) or []
+    )
+
+
+def structure_band_ends(inputs: Mapping[str, Any] | None) -> tuple[float, float] | None:
+    """The physics band's ends in dm [kg] at the structure file's headline push from a
+    block's ``structure_inputs`` record (``sim.offload_structure_inputs``: the structure
+    file's frozen sets, each set's polish of the headline search, structure.SEARCH_HEADLINE,
+    its dm after polish; the push is the one the sets' ``method`` names,
+    ``structure_band_push``): (low-mass end, high-mass end), unscaled; None without a sets
+    record or a headline polish on either physics set (a file without frozen sets, or
+    synthetic sets without polish): the readers then say nothing of the band. Sizing-only
+    numbers at one push, never this experiment's x*."""
+    sets = None if inputs is None else inputs.get("sets")
+    if not isinstance(sets, Mapping):
+        return None
+    ends = []
+    for name in (SET_PHYSICS_LOW, SET_PHYSICS_HIGH):
+        item = sets.get(name)
+        polish = item.get("polish") if isinstance(item, Mapping) else None
+        dm = None
+        for entry in polish if isinstance(polish, list) else []:
+            if isinstance(entry, Mapping) and entry.get("search") == SEARCH_HEADLINE:
+                dm = entry.get("dm_after_kg")
+        if not _is_finite_number(dm):
+            return None
+        ends.append(float(dm))
+    return ends[0], ends[1]
+
+
+def structure_band_factors(inputs: Mapping[str, Any] | None) -> tuple[float, float] | None:
+    """The plausibility rule's factors on the physics band's (low-mass end, high-mass end)
+    from a block's ``structure_inputs`` record (``plausibility``: ``low_mass_end_factor``
+    and ``high_mass_end_factor``, the rule's table on the experiment's own pad envelope at
+    the central coefficients, D-SP7-33); None when either is not recorded."""
+    p = None if inputs is None else inputs.get("plausibility")
+    if not isinstance(p, Mapping):
+        return None
+    lo, hi = p.get("low_mass_end_factor"), p.get("high_mass_end_factor")
+    if not (_is_finite_number(lo) and _is_finite_number(hi)):
+        return None
+    return float(lo), float(hi)
+
+
+STRUCTURE_SETS_PUSH_PATTERN = re.compile(
+    r"at\s+the\s+headline\s+push\s+of\s+(?P<experiment>[^\s']+)'s\s+(?P<variant>\S+)\s+"
+    r"\(the\s+analytic\s+constant_accel\s+case\s+at\s+a\s+stage-1\s+offload\s+of\s+"
+    r"(?P<offload>[-+0-9.eE]+)\s+kg"
+)
+"""How the frozen sets' ``method`` names the push they were searched at
+(sim.structure_search_method writes it: "at the headline push of <experiment>'s <variant>
+(the analytic constant_accel case at a stage-1 offload of <x> kg ..."; a test reads both
+committed structure files and the writer's own sentence with it)."""
+STRUCTURE_BAND_PUSH_FALLBACK = "the push its sets.method names"
+"""What the band clause names as the push when the sets' ``method`` does not name one in
+the writer's form (``structure_band_push`` None: a synthetic record, a hand-written
+method): never a push the record does not state."""
+
+
+def structure_band_push(inputs: Mapping[str, Any] | None) -> tuple[str, str, float] | None:
+    """(experiment, variant, stage-1 offload [kg]) of the push the structure file's frozen
+    sets were searched at, read from a block's ``structure_inputs.sets.method``
+    (STRUCTURE_SETS_PUSH_PATTERN; final clean-up, N3a-02): the gate file's is
+    silo_offload_2d's silo_cold at SP1's headline offload, the README-loads file's
+    silo_offload_2d_readme's silo_cold at that fork's own bridge offload, so the push is
+    never one constant. None when the record holds no method or it names no push in the
+    writer's form."""
+    sets = None if inputs is None else inputs.get("sets")
+    method = sets.get("method") if isinstance(sets, Mapping) else None
+    if not isinstance(method, str):
+        return None
+    found = STRUCTURE_SETS_PUSH_PATTERN.search(method)
+    if found is None:
+        return None
+    try:
+        offload_kg = float(found["offload"])
+    except ValueError:
+        return None
+    return found["experiment"], found["variant"], offload_kg
+
+
+def structure_band_push_text(inputs: Mapping[str, Any] | None) -> str:
+    """The push the band clause names (fix round 3, H-S3a-P3-05; final clean-up, N3a-02):
+    "silo_offload_2d_readme's silo_cold at a stage-1 offload of 36,006 kg, per its
+    sets.method" from the record's own method (``structure_band_push``), so a reader can
+    check which push and which structure file it means; STRUCTURE_BAND_PUSH_FALLBACK when
+    the method names none."""
+    push = structure_band_push(inputs)
+    if push is None:
+        return STRUCTURE_BAND_PUSH_FALLBACK
+    experiment, variant, offload_kg = push
+    return (
+        f"{experiment}'s {variant} at a stage-1 offload of {offload_kg:,.0f} kg, "
+        "per its sets.method"
+    )
+
+
+STRUCTURE_BAND_SCOPE_TEXT = (
+    "both ends are sizing-only numbers from the frozen sets, not this run's band"
+)
+"""What the band clause says of the ends it quotes (fix rounds 2 and 3, H-S3a-P2-02 and
+H-S3a-P3-05): the frozen sets' numbers at the structure file's headline push
+(``structure_band_push_text``), never this run's own band; followed by how the run itself
+is sized (``structure_band_sized_text``), which the headline's is not."""
+STRUCTURE_BAND_SIZED_FLOWN = "the run is sized at its own push and offload"
+"""How a ``flown`` structural run is sized, after STRUCTURE_BAND_SCOPE_TEXT: the stack it
+flies at its own offload (a solved case's x*, an imposed case's offload)."""
+STRUCTURE_BAND_SIZED_FULL_LOAD = "the run is sized at its own push on the full load (x = 0)"
+"""How a ``full_load`` structural run is sized, after STRUCTURE_BAND_SCOPE_TEXT (final
+clean-up, N3a-01): a full-load-sizing row and every structure payload case size the
+full-load start vehicle (sim's ``full_load`` basis: x = 0, whatever offload the run flies;
+config forces it on every payload case), never at an offload of their own."""
+
+
+def structure_band_sized_text(sizing: Any) -> str:
+    """How the run is sized, from its record's ``structure_sizing`` (final clean-up,
+    N3a-01): STRUCTURE_BAND_SIZED_FULL_LOAD for ``full_load``, else
+    STRUCTURE_BAND_SIZED_FLOWN."""
+    if sizing == STRUCTURE_SIZING_FULL_LOAD:
+        return STRUCTURE_BAND_SIZED_FULL_LOAD
+    return STRUCTURE_BAND_SIZED_FLOWN
+
+
+def _band_end_text(dm_kg: float, factor: float | None, trigger: str | None = None) -> str:
+    """'3,677 kg', or with a plausibility factor other than 1 '3,677 kg unscaled (2,717 kg
+    after the plausibility rule's factor 0.739)' (D-SP7-41: the two side by side), with
+    ``trigger`` (the rule's trigger, ``_plausibility_trigger_text``) inside that
+    parenthesis when given (fix round 3, S3A-NUM-05: the trigger sits with the end the
+    rule scales)."""
+    if factor is None or factor == 1.0:
+        return f"{dm_kg:,.0f} kg"
+    note = f"{dm_kg * factor:,.0f} kg after the plausibility rule's factor {_fmt(factor)}"
+    if trigger is not None:
+        note += f"; {trigger}"
+    return f"{dm_kg:,.0f} kg unscaled ({note})"
+
+
+def _plausibility_trigger_text(inputs: Mapping[str, Any]) -> str | None:
+    """The plausibility rule's trigger in a clause (D-SP7-41: "with the trigger stated"):
+    'the rule fires at M_model / R = 1.76, stage1.lox_barrel carrying 71 % of M_model in
+    the pad envelope'; None when the ratio is not recorded."""
+    p = inputs.get("plausibility")
+    if not isinstance(p, Mapping) or not _is_finite_number(p.get("ratio")):
+        return None
+    text = f"the rule fires at M_model / R = {float(p['ratio']):.3g}"
+    d = p.get("dominant")
+    if isinstance(d, Mapping) and _is_finite_number(d.get("share")):
+        share = float(to_percent(float(d["share"])))
+        text += f", {d.get('element')} carrying {share:.0f} % of M_model in the pad envelope"
+    return text
+
+
+def structure_band_text(
+    inputs: Mapping[str, Any] | None, scaled: bool = False, sizing: Any = None
+) -> str | None:
+    """The band clause of the modelled-structure wording (SP7 step S3a; fix rounds 2 and
+    3, H-S3a-P2-02, H-S3a-P3-05 and S3A-NUM-05): the physics band's ends at the structure
+    file's headline push, named from the record's sets.method (``structure_band_push_text``;
+    ``structure_band_ends``), each
+    end beside its value after the plausibility rule's factor when that factor is not 1
+    (``structure_band_factors``, D-SP7-41: unscaled and scaled side by side), the rule's
+    trigger (``_plausibility_trigger_text``) inside the parenthesis of the one end it
+    scales, or after both ends "on both ends" when it scales both; a record the rule
+    ``scaled`` whose block records no factors says both ends are before the rule's factor
+    (fix round 1, H-S3a-03); then, as a clause of its own, STRUCTURE_BAND_SCOPE_TEXT and
+    how the run is sized by its record's ``sizing`` (``structure_band_sized_text``: at
+    its own push and offload, or on the full load at x = 0; final clean-up, N3a-01). None
+    without the ends. Never "bounds"."""
+    ends = structure_band_ends(inputs)
+    if ends is None:
+        return None
+    assert inputs is not None  # structure_band_ends found ends in it
+    factors = structure_band_factors(inputs)
+    lo_f, hi_f = (None, None) if factors is None else factors
+    trigger = _plausibility_trigger_text(inputs) if factors is not None else None
+    lo_scaled = lo_f is not None and lo_f != 1.0
+    hi_scaled = hi_f is not None and hi_f != 1.0
+    both = lo_scaled and hi_scaled
+    lo = _band_end_text(ends[0], lo_f, None if both else trigger)
+    hi = _band_end_text(ends[1], hi_f, None if both else trigger)
+    text = (
+        f"the physics band's ends at the structure file's headline push "
+        f"({structure_band_push_text(inputs)}) are dm {lo} and {hi}"
+    )
+    if both and trigger is not None:
+        text += f"; {trigger}, on both ends"
+    elif factors is None and scaled:
+        text += "; both ends are before the plausibility rule's factor"
+    return f"{text}; {STRUCTURE_BAND_SCOPE_TEXT}: {structure_band_sized_text(sizing)}"
+
+
+def release_flag_pressures(record: Mapping[str, Any]) -> tuple[float, float] | None:
+    """(the pad's MECO, the push) stage-2 LOX bottom gauge pressures [Pa] of a structural
+    record's release flag (structure.FLAG_RELEASE_UNLOAD's ``meco_stage2_lox_...`` and
+    ``stage2_lox_bottom_pressure_min_gauge_pa``) when the flag fired with a stage-1 column
+    separating at the push (its ``lox_`` or ``rp1_bottom_pressure_min_abs_pa`` below 0);
+    None otherwise (the flag not fired, fired for the dome's reverse pressure or the upper
+    stack alone, or its numbers not recorded). D-SP7-39: the same single-mode step
+    treatment is applied to the pad's own MECO shutdown, whose full stage-2 tanks it
+    takes through the same comparison."""
+    flags = record.get("structure_flags")
+    for flag in flags if isinstance(flags, list) else []:
+        if not (isinstance(flag, Mapping) and flag.get("name") == FLAG_RELEASE_UNLOAD):
+            continue
+        v = flag.get("values")
+        if not flag.get("fired") or not isinstance(v, Mapping):
+            return None
+        stage1 = [v.get(f"{t}_bottom_pressure_min_abs_pa") for t in ("lox", "rp1")]
+        if not any(_is_finite_number(x) and float(x) < 0.0 for x in stage1):
+            return None
+        meco = v.get("meco_stage2_lox_bottom_pressure_min_gauge_pa")
+        push = v.get("stage2_lox_bottom_pressure_min_gauge_pa")
+        if not (_is_finite_number(meco) and _is_finite_number(push)):
+            return None
+        return float(meco), float(push)
+    return None
+
+
+def _kpa(pressure_pa: float) -> str:
+    """'-199.9 kPa' of a pressure [Pa]."""
+    return f"{float(pa_to_kpa(pressure_pa)):.1f} kPa"
+
+
+def release_flag_comparison_text(record: Mapping[str, Any]) -> str | None:
+    """D-SP7-39's comparison beside a fired release flag (fix round 2, H-S3a-P2-01): the
+    stage-1 column separation it names comes from the single-mode step treatment, and the
+    pad's own MECO shutdown under that treatment takes the full stage-2 LOX column to the
+    pressure printed (gauge; MECO's ambient is taken as 0) against the push's on the same
+    tank; when MECO's value is below 0 that it separates there too, so the separation is
+    not specific to the push; else that it does not. None without
+    ``release_flag_pressures``."""
+    pair = release_flag_pressures(record)
+    if pair is None:
+        return None
+    meco, push = pair
+    head = (
+        "the release flag's stage-1 column separation comes from the single-mode step "
+        "treatment, which the pad's own MECO shutdown is put through too: there the full "
+        f"stage-2 LOX column's bottom is at {_kpa(meco)} gauge against {_kpa(push)} at the "
+        "push"
+    )
+    if meco < 0.0:
+        return (
+            f"{head}, so it separates on the pad as well and the separation is not "
+            "specific to the push (D-SP7-39)"
+        )
+    return f"{head}, so on the pad it does not separate (D-SP7-39)"
+
+
+def release_flag_comparison_short(record: Mapping[str, Any]) -> str | None:
+    """The animation footnote's form of ``release_flag_comparison_text`` (no comma or
+    semicolon, so it sits inside the footnote's clause): 'D-SP7-39: the pad's own MECO
+    separates stage 2's LOX column too under the same step treatment', or '... keeps
+    stage 2's LOX column under the same step treatment'; None without
+    ``release_flag_pressures``."""
+    pair = release_flag_pressures(record)
+    if pair is None:
+        return None
+    what = "separates stage 2's LOX column too" if pair[0] < 0.0 else "keeps stage 2's LOX column"
+    return f"D-SP7-39: the pad's own MECO {what} under the same step treatment"
+
+
+def plausibility_scale_text(record: Mapping[str, Any]) -> str | None:
+    """'scaled x0.845549 by the plausibility rule' for a structural record whose dm carries
+    the plausibility rule's factor (``structure_plausibility_scaled`` True; the factor
+    ``structure_plausibility_factor``, n/a when unrecorded); None otherwise. The case
+    note's and the app headline's ``replay.structure_clause`` say it beside the mass (fix
+    round 3, H-S3a-P3-03), as the caveat's ``modelled_structure_text`` does."""
+    if record.get("structure_plausibility_scaled") is not True:
+        return None
+    factor = record.get("structure_plausibility_factor")
+    shown = _fmt(factor) if _is_finite_number(factor) else "n/a"
+    return f"scaled x{shown} by the plausibility rule"
+
+
+def modelled_mass_split_text(record: Mapping[str, Any]) -> str | None:
+    """'stage 1 8,900.1 kg, stage 2 200.2 kg': the modelled mass of a structural record by
+    stage, from ``structure_dm_kg`` (dm1 + dm2) and ``structure_dm_stage2_kg`` (dm1 the
+    difference); None when either is unrecorded or not finite."""
+    dm, dm2 = record.get("structure_dm_kg"), record.get("structure_dm_stage2_kg")
+    if not (_is_finite_number(dm) and _is_finite_number(dm2)):
+        return None
+    return f"stage 1 {float(dm) - float(dm2):,.1f} kg, stage 2 {float(dm2):,.1f} kg"
+
+
+def modelled_mass_text(record: Mapping[str, Any], *, named: bool = True) -> str:
+    """The modelled mass of a structural record by stage: '9,100.3 kg of modelled
+    structural mass (stage 1 8,900.1 kg, stage 2 200.2 kg)' (``named``; without it
+    '9,100.3 kg (stage 1 ..., stage 2 ...)', for a sentence that has already said what
+    the mass is) from ``modelled_mass_split_text``; STRUCTURE_NO_SIZING_TEXT when the dm
+    is None (a solve that found no x*), with 'a modelled structural mass with' before
+    it when named; the total alone when the stage-2 share is unrecorded."""
+    dm = record.get("structure_dm_kg")
+    if not _is_finite_number(dm):
+        return (
+            f"a modelled structural mass with {STRUCTURE_NO_SIZING_TEXT}"
+            if named
+            else (STRUCTURE_NO_SIZING_TEXT)
+        )
+    text = f"{float(dm):,.1f} kg" + (" of modelled structural mass" if named else "")
+    split = modelled_mass_split_text(record)
+    return text if split is None else f"{text} ({split})"
+
+
+def modelled_structure_text(
+    record: Mapping[str, Any], inputs: Mapping[str, Any] | None = None
+) -> str:
+    """The modelled-structure wording of one structural record (SP7 step S3a, D-SP7-22;
+    design 4.5), the one sentence core every reader quotes: the mass by stage
+    (``modelled_mass_text``), the model (STRUCTURE_MODEL_NAME), the layer and set
+    (``structure_layer_label``), the file (``structure_file``), the physics band's ends
+    at the structure file's headline push, named, where the block's ``structure_inputs``
+    record them, unscaled beside scaled with the rule's trigger when the plausibility rule
+    fires on an end, and that they are sizing-only numbers, not this run's band, with how
+    the record itself is sized (``structure_band_text``; nothing otherwise; fix rounds 1
+    to 3, H-S3a-03, H-S3a-P2-02 and H-S3a-P3-05; final clean-up, N3a-01), when the
+    plausibility rule scaled the dm its factor (``structure_plausibility_scaled``,
+    ``structure_plausibility_factor``), the run's own fired flags by name
+    (``structure_flags_text``; STRUCTURE_NO_FLAG_TEXT when none fired,
+    STRUCTURE_FLAGS_NOT_SIZED for a solve without an x*, STRUCTURE_FLAGS_NOT_RECORDED_TEXT
+    for a record without a flag list), beside a fired release flag that separates a
+    stage-1 column D-SP7-39's comparison with the pad's own MECO
+    (``release_flag_comparison_text``, fix round 2, H-S3a-P2-01), and
+    STRUCTURE_ESTIMATE_TEXT. Never "assumed", never "bounds"."""
+    bits = [
+        f"{modelled_mass_text(record, named=False)}: {STRUCTURE_MODEL_NAME} (layer and set "
+        f"{structure_layer_label(record)}; {record.get('structure_file')})"
+    ]
+    scaled = bool(record.get("structure_plausibility_scaled"))
+    band = structure_band_text(inputs, scaled, record.get("structure_sizing"))
+    if band is not None:
+        bits.append(band)
+    if scaled:
+        factor = record.get("structure_plausibility_factor")
+        bits.append(
+            "the dm carries the plausibility rule's factor "
+            f"{_fmt(factor) if _is_finite_number(factor) else 'n/a'} (D-SP7-33)"
+        )
+    fired = structure_flags_text(record)
+    if fired is None:
+        bits.append(STRUCTURE_FLAGS_NOT_RECORDED_TEXT)
+    elif fired == "none":
+        bits.append(STRUCTURE_NO_FLAG_TEXT)
+    elif fired == STRUCTURE_FLAGS_NOT_SIZED:
+        bits.append(f"structure flags {fired}")
+    else:
+        bits.append(f"structure flags fired: {fired} (their numbers are in structure_flags)")
+        release = release_flag_comparison_text(record)
+        if release is not None:
+            bits.append(release)
+    bits.append(STRUCTURE_ESTIMATE_TEXT)
+    return "; ".join(bits)
 
 
 def _payload_search_failed(record: Mapping[str, Any]) -> bool:
@@ -3191,16 +3933,30 @@ def structure_section(record: Mapping[str, Any]) -> str:
     return "\n".join(lines).rstrip()
 
 
+def _energy_tables_text(solved: list[Any], imposed: list[Any]) -> str:
+    """Which tables the energy note covers when the block has imposed cases that ran:
+    OFFLOAD_ENERGY_BOTH_TABLES beside a solved table, OFFLOAD_ENERGY_IMPOSED_TABLE when no
+    solved case ran (final clean-up, N3a-04)."""
+    return OFFLOAD_ENERGY_BOTH_TABLES if solved and imposed else OFFLOAD_ENERGY_IMPOSED_TABLE
+
+
 def offload_section(record: Mapping[str, Any]) -> str:
     """The "Propellant saved at fixed payload" section of an offload record (the
     metrics.json ``offload`` value; pure text): the basis line with the reference
     payload, the sensitivity basis, the caveats (the record's: ``offload_caveats``), the
-    cases table (OFFLOAD_CASE_ROWS, plus OFFLOAD_ENERGY_ROWS with energy inputs) and the
-    cases that did not run, the energy note with its exclusions, with a structure block
-    the Structure subsection (``structure_section``, SP7 step S3b), the decomposition
-    table, the pad controls, the sensitivity arms (with STRUCTURE_ARM_CAVEAT under
-    the table when some arm is structural) and the notes. A skipped block prints only
-    why."""
+    solved cases table (OFFLOAD_CASE_ROWS, plus OFFLOAD_ENERGY_ROWS with energy inputs;
+    OFFLOAD_NO_SOLVED_CASE when every case that ran is imposed), the cases that did not
+    run (after OFFLOAD_NOT_RUN_LEAD when the block has imposed cases), the energy note
+    with its exclusions (and, with imposed cases, OFFLOAD_ENERGY_BOTH_TABLES beside a solved
+    table or OFFLOAD_ENERGY_IMPOSED_TABLE without one: ``_energy_tables_text``), then (KI-039,
+    D-SP7-23, SP7 step S3a) the imposed cases under OFFLOAD_IMPOSED_SUBSECTION_TITLE with
+    OFFLOAD_IMPOSED_BASIS and the same rows (the section's heading and basis describe
+    solved cases, which fly P_ref; an imposed case flies its own P*; fix round 3,
+    H-S3a-P3-06: the not-run list and the energy note come before the sub-section's
+    heading, so neither reads as the imposed cases' alone), with a structure block the
+    Structure subsection (``structure_section``, SP7 step S3b), the decomposition table,
+    the pad controls, the sensitivity arms (with STRUCTURE_ARM_CAVEAT under the table
+    when some arm is structural) and the notes. A skipped block prints only why."""
     if record.get("skipped"):
         return str(record["skipped"])
     lines = [
@@ -3215,19 +3971,37 @@ def offload_section(record: Mapping[str, Any]) -> str:
     lines += [f"- {c}" for c in record.get("caveats") or []]
     lines.append("")
     cases = [c for c in record.get("cases") or [] if not c.get("skipped")]
+    solved = [c for c in cases if c.get("kind") != OFFLOAD_FIXED_KIND]
+    imposed = [c for c in cases if c.get("kind") == OFFLOAD_FIXED_KIND]
     energy = record.get("energy_inputs") is not None
-    if cases:
-        rows = [*OFFLOAD_CASE_ROWS, *(OFFLOAD_ENERGY_ROWS if energy else ())]
-        lines += [_offload_table(cases, rows, "name"), ""]
-    for c in record.get("cases") or []:
-        if c.get("skipped"):
-            lines.append(f"- {c.get('name')} (of {c.get('of')}): {c['skipped']}")
+    rows = [*OFFLOAD_CASE_ROWS, *(OFFLOAD_ENERGY_ROWS if energy else ())]
+    if solved:
+        lines += [_offload_table(solved, rows, "name"), ""]
+    elif imposed:
+        lines += [OFFLOAD_NO_SOLVED_CASE, ""]
+    skipped = [c for c in record.get("cases") or [] if c.get("skipped")]
+    if skipped and imposed:
+        lines.append(OFFLOAD_NOT_RUN_LEAD)
+    for c in skipped:
+        lines.append(f"- {c.get('name')} (of {c.get('of')}): {c['skipped']}")
     if energy and cases:
         excludes = next((c["energy"]["excludes"] for c in cases if c.get("energy")), [])
         lines += [
             "",
             f"{OFFLOAD_ENERGY_TEXT}. The heat / electricity ratio is "
-            f"{OFFLOAD_ENERGY_RATIO_LABEL}; it leaves out " + "; ".join(excludes) + ".",
+            f"{OFFLOAD_ENERGY_RATIO_LABEL}; it leaves out "
+            + "; ".join(excludes)
+            + "."
+            + (f" {_energy_tables_text(solved, imposed)}" if imposed else ""),
+        ]
+    if imposed:
+        lines += [
+            "",
+            OFFLOAD_IMPOSED_SUBSECTION_TITLE,
+            "",
+            f"{OFFLOAD_IMPOSED_BASIS}.",
+            "",
+            _offload_table(imposed, rows, "name"),
         ]
     if record.get("structure_inputs") is not None:
         lines += ["", structure_section(record)]
@@ -3405,7 +4179,8 @@ def planar_sweep_summary(
     q-alpha and max-Q against the point's baseline, the screening status), the paired
     baselines of paired sweeps, the assumptions (union over the baseline and every
     point) and the Checks (``sweep_checks_section``: blocked findings, not_checked,
-    gamma*-sensitive verdicts)."""
+    gamma*-sensitive verdicts); under a table whose offload cases are structural at some
+    point, ``sweep_structure_lines`` (SP7 step S3a fix round 2, H-S3a-P2-07)."""
     all_runs = {baseline.name: baseline}
     for sweep in sweeps:
         all_runs.update({f"sweep_{sweep.sweep_index}/{rr.name}": rr for rr in sweep.results})
@@ -3436,10 +4211,59 @@ def planar_sweep_summary(
         header = [str(c) for c in frame.columns]
         rows = [[_fmt(v) for v in rec] for rec in frame.itertuples(index=False, name=None)]
         parts += [_table(header, rows), ""]
+        structure = sweep_structure_lines(sweep.offload)
+        if structure:
+            parts += [*structure, ""]
     section = assumptions_section(all_runs, baseline.name, "all sweep points")
     parts += ["## Assumptions", "", section, ""]
     parts += ["## Checks", "", sweep_checks_section(sweeps, baseline), ""]
     return "\n".join(parts)
+
+
+SWEEP_STRUCTURE_HEAD = "Structural offload cases of this sweep (SP7, D-SP7-22):"
+"""What opens the lines under a sweep table whose offload cases charge a modelled
+structural mass at some point (``sweep_structure_lines``)."""
+
+
+def sweep_structure_lines(points: Sequence[Mapping[str, Mapping[str, Any]]]) -> list[str]:
+    """The lines under a sweep's table that word its structural offload cases (fix round
+    2, H-S3a-P2-07: a sweep point writes no case record or run directory, so its structural
+    solve is otherwise worded only by the index's ``<case>.structure_*`` columns):
+    SWEEP_STRUCTURE_HEAD, then one line per case that is ``structure_charged`` at some
+    point (``points``: per point, case name to its record, SweepResult.offload): how many
+    points, that ``<case>.structure_dm_kg`` is the modelled structural mass of the push
+    load at each point's x*, the model (STRUCTURE_MODEL_NAME), the layers and sets
+    (``structure_layer_label``) and files met, never an assumed penalty,
+    STRUCTURE_ESTIMATE_TEXT, that the dm carries the plausibility rule's factor where
+    ``<case>.structure_plausibility_scaled`` is True (when some point's is), and where its
+    fired flags are (the ``<case>.structure_flags`` column and the Checks section); [] for a
+    sweep without a structural case (every SP1-type sweep: its summary is unchanged)."""
+    by_case: dict[str, list[Mapping[str, Any]]] = {}
+    for records in points:
+        for case, record in records.items():
+            if isinstance(record, Mapping) and structure_charged(record):
+                by_case.setdefault(str(case), []).append(record)
+    if not by_case:
+        return []
+    lines = [SWEEP_STRUCTURE_HEAD, ""]
+    for case, records in by_case.items():
+        labels = "; ".join(dict.fromkeys(structure_layer_label(r) for r in records))
+        files = ", ".join(dict.fromkeys(str(r.get("structure_file")) for r in records))
+        n = len(records)
+        line = (
+            f"- {case} ({n} point{'s' if n > 1 else ''} of {len(points)}): "
+            f"{case}.structure_dm_kg is the modelled structural mass of the push load at each "
+            f"point's x* (dm1 + dm2, never an assumed penalty), {STRUCTURE_MODEL_NAME} (layer "
+            f"and set {labels}; {files}), {STRUCTURE_ESTIMATE_TEXT}"
+        )
+        if any(r.get("structure_plausibility_scaled") for r in records):
+            line += (
+                "; the dm carries the plausibility rule's factor where "
+                f"{case}.structure_plausibility_scaled is True (D-SP7-33)"
+            )
+        line += f"; its fired flags are in {case}.structure_flags and the Checks section."
+        lines.append(line)
+    return lines
 
 
 def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> str:

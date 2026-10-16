@@ -57,7 +57,8 @@ import numpy as np
 import pytest
 import yaml
 
-from launchsim import display, replay, results_io, run_data, scene, sim
+import launchsim
+from launchsim import display, replay, results_io, run_data, scene, sim, summary
 from launchsim.config import resolve_experiment
 from launchsim.constants import OMEGA_EARTH_RADS, R_EARTH_M
 
@@ -1211,7 +1212,8 @@ def test_git_record_keeps_an_unknown_state_unknown(
     """The payload carries metrics.json's git record as written: a recorded dirty flag
     stays a boolean with its error; a git status that failed (dirty null, the reason in
     error) stays null with the reason, never read as clean; a record without keys reads
-    hash 'unknown' and dirty null."""
+    hash 'unknown' and dirty null; a no-git hash reads dirty null (its False means
+    nothing)."""
     assert set(real_payload["git"]) == {"hash", "dirty", "error"}
     assert isinstance(real_payload["git"]["dirty"], bool)
     reason = "git status failed: TimeoutExpired: git status timed out"
@@ -1219,7 +1221,9 @@ def test_git_record_keeps_an_unknown_state_unknown(
     assert scene.git_record(unknown) == unknown
     assert scene.git_record({}) == {"hash": "unknown", "dirty": None, "error": None}
     no_git = {"hash": "no-git", "dirty": False, "error": "FileNotFoundError: git"}
-    assert scene.git_record(no_git) == no_git
+    # SP7 step S3a fix round 2, N2-04: a no-git hash's False means nothing (summary.tree_state
+    # reads it unknown), so the page prints "state unknown", as the replay page does
+    assert scene.git_record(no_git) == {**no_git, "dirty": None}
     assert scene.git_record({"hash": "abc", "dirty": "maybe"})["dirty"] is None
     copied = tmp_path / "unknown_git"
     shutil.copytree(real_dir, copied)
@@ -1277,6 +1281,245 @@ def test_default_pair_follows_d_sp2_28(real_dir: Path, derived_dir: Path) -> Non
     assert scene.default_pair(offload, config, have[:-1]) == ["pad", "silo_cold"]
     assert scene.default_pair(metrics, config, names[1:]) == ["silo_cold"]
     assert scene.default_pair({"baseline": "pad"}, {}, ["x", "y"]) == ["x"]
+
+
+STRUCTURE_KEYS: dict[str, Any] = {
+    "structure_charged": True,
+    "structure_dm_kg": 9100.3,
+    "structure_dm_stage2_kg": 200.2,
+    "structure_dm_x0_kg": 9000.0,
+    "structure_set": "central",
+    "structure_sizing": "flown",
+    "structure_dynamic": "rise_time",
+    "structure_entry": "aft_ring",
+    "structure_margin": 0.0,
+    "structure_envelope_cap_g": None,
+    "structure_overrides": {},
+    "structure_plausibility_ratio": 1.05,
+    "structure_plausibility_factor": 1.0,
+    "structure_plausibility_scaled": False,
+    "structure_flags": [{"name": "release_unload", "fired": False, "values": {}}],
+    "structure_file": "configs/structures/toy.yaml",
+}
+"""The run-level structure keys of D-SP7-22 a structural run's metrics record carries (a
+central case at the headline settings: dm1 + dm2 = 9,100.3 kg, dm2 = 200.2 kg, no fired
+flag, not plausibility-scaled); synthetic, never read from results/."""
+SETS_METHOD = (
+    "Design 4.2.6, sizing only, at the headline push of toy_offload's silo_cold (the analytic "
+    "constant_accel case at a stage-1 offload of 36006.44430169878 kg and P_ref "
+    "24700.013061881455 kg) on the envelope of its pad baseline as flown."
+)
+"""A frozen sets' ``method`` in sim.structure_search_method's form, naming the push the
+sets were searched at (synthetic: toy_offload's silo_cold at 36,006 kg, not SP1's
+headline; final clean-up, N3a-02)."""
+STRUCTURE_INPUTS: dict[str, Any] = {
+    "file": "configs/structures/toy.yaml",
+    "sets": {
+        "method": SETS_METHOD,
+        "physics_low_mass": {
+            "polish": [
+                {"search": "A", "dm_after_kg": 3677.06},
+                {"search": "B", "dm_after_kg": 8492.47},
+            ]
+        },
+        "physics_high_mass": {"polish": [{"search": "A", "dm_after_kg": 18603.8}]},
+    },
+}
+"""A block's ``structure_inputs`` record as far as the readers go: the frozen sets'
+method (SETS_METHOD, the push they were searched at) and the physics sets' polish of the
+headline search A (the band's ends, dm 3,677 and 18,604 kg)."""
+MODELLED_CORE = (
+    "9,100.3 kg (stage 1 8,900.1 kg, stage 2 200.2 kg): a first-order station sizing of the "
+    "push load (layer and set central (every coefficient at its central value): central; "
+    "configs/structures/toy.yaml); the physics band's ends at the structure file's headline "
+    "push (toy_offload's silo_cold at a stage-1 offload of 36,006 kg, per its sets.method) "
+    "are dm 3,677 kg and 18,604 kg; both ends are sizing-only numbers from the frozen sets, "
+    "not this run's band: the run is sized at its own push and offload; no structure flag "
+    "fired; a first-order estimate with its stated ranges, not a detailed structural design"
+)
+"""summary.modelled_structure_text of STRUCTURE_KEYS with STRUCTURE_INPUTS, as every reader
+quotes it (the replay and scene caveats, the scene frame's footer)."""
+
+
+PAYLOAD_CASE_DELTA_KG = 10.0
+"""P_2* - P_ref of the structure payload case light_pstar of ``_pushed_structural_dir``."""
+
+
+def _pushed_structural_dir(
+    derived_dir: Path, dst: Path, payload_keys: dict[str, Any] | None = None
+) -> Path:
+    """``_pushed_penalty_dir`` plus the solved case light_s1 made a structural run: its
+    ``offload.runs`` record carries STRUCTURE_KEYS (the run-level keys of D-SP7-22; its
+    ``offload.cases`` record too) and the block carries STRUCTURE_INPUTS; the penalty row
+    light_s1_dry+8.1t stays a penalty row; and a structure payload case light_pstar (fix
+    round 1, H-S3a-01 and S3A-R1-06): a pushed run (silo_cold's folder, run block and
+    metrics record plus ``payload_keys``, STRUCTURE_KEYS by default) recorded under
+    ``structure_payload_cases`` and ``offload.runs``, never under ``cases``, flying P_ref +
+    PAYLOAD_CASE_DELTA_KG."""
+    payload_keys = STRUCTURE_KEYS if payload_keys is None else payload_keys
+    _pushed_penalty_dir(derived_dir, dst)
+    metrics = run_data.read_json(dst / run_data.METRICS_FILE)
+    config = run_data.read_yaml(dst / run_data.CONFIG_FILE)
+    metrics["offload"]["runs"]["light_s1"].update(STRUCTURE_KEYS)
+    for record in metrics["offload"]["cases"]:
+        if record.get("name") == "light_s1":
+            record.update(STRUCTURE_KEYS)
+    metrics["offload"]["structure_inputs"] = STRUCTURE_INPUTS
+    shutil.copytree(dst / "silo_cold", dst / "light_pstar")
+    metrics["offload"]["runs"]["light_pstar"] = {
+        **copy.deepcopy(metrics["runs"]["silo_cold"]),
+        **payload_keys,
+    }
+    metrics["offload"]["structure_payload_cases"] = [
+        {
+            "name": "light_pstar",
+            "kind": "structure payload case",
+            "of": "silo_cold",
+            "run": "light_pstar",
+            "status": "ok",
+            "reference_payload_kg": BLOCK_PAYLOAD_KG,
+            "payload_kg": BLOCK_PAYLOAD_KG + PAYLOAD_CASE_DELTA_KG,
+            "payload_delta_kg": PAYLOAD_CASE_DELTA_KG,
+            "flags": [],
+            **payload_keys,
+        }
+    ]
+    config["offload_runs"]["light_pstar"] = copy.deepcopy(config["runs"]["silo_cold"])
+    _write_json(dst / run_data.METRICS_FILE, metrics)
+    (dst / run_data.CONFIG_FILE).write_text(json.dumps(config), encoding="utf-8", newline="\n")
+    return dst
+
+
+def test_structure_note_words_a_modelled_run_from_its_own_record(
+    derived_dir: Path, tmp_path: Path
+) -> None:
+    """SP7 step S3a (D-SP7-22): a pushed run whose own ``offload.runs`` record charges a
+    modelled structural mass gets the modelled note in its payload (the captured frame's
+    footer line), the same core sentence the replay caveat quotes
+    (summary.modelled_structure_text: the mass by stage, the model, the layer and set,
+    the file, the band's ends, the flags, a first-order estimate); the penalty row beside
+    it keeps its assumed-mass note word for word and the pad none; the modelled run's
+    label stays '(offload, solved)' (no penalty). The structure payload case's run
+    light_pstar (fix round 1, H-S3a-01 and S3A-R1-06) gets the same modelled note from its
+    own record, the label '(structure payload case)' and the kind
+    run_data.OFFLOAD_STRUCTURE_PAYLOAD, a note saying it flies its own payload capacity
+    P_2* on the full load carrying its modelled structural mass (never 'a run of the
+    offload block'), and the page's comparison caveat gives it its own sentence; on this
+    mixed selection (a penalty row beside modelled runs) no caveat says 'no structural
+    model exists' (H-S3a-02). The pure function: the run's metrics decide before the case
+    record, a run with no push gets None, and a record without the keys falls back to the
+    uncharged and penalty branches unchanged."""
+    pushed = _pushed_structural_dir(derived_dir, tmp_path / "pushed_structural")
+    payload = scene.scene_payload(
+        pushed, ["pad", "light_s1", "light_s1_dry+8.1t", "light_pstar"], display_dir=DISPLAY_DIR
+    )
+    by_key = {r["key"]: r for r in payload["runs"]}
+    modelled = "the modelled structural mass of the push load is charged for the push: " + (
+        summary.modelled_structure_text(STRUCTURE_KEYS, STRUCTURE_INPUTS)
+    )
+    assert by_key["light_s1"]["structure_note"] == modelled
+    assert MODELLED_CORE in modelled and "assumed" not in modelled and "bounds" not in modelled
+    assert by_key["light_s1"]["label"] == "light_s1 (offload, solved)"
+    assert by_key["light_s1_dry+8.1t"]["structure_note"] == (
+        f"an assumed +{PENALTY_T:g} t of stage-1 dry mass is charged for the push: an "
+        "assumption, not a sized structure"
+    )
+    assert by_key["pad"]["structure_note"] is None
+    assert by_key["light_s1"]["note"].count("9,100.3 kg of modelled structural mass") == 1
+    assert "not an assumed penalty" in by_key["light_s1"]["note"]
+    pstar = by_key["light_pstar"]
+    assert pstar["structure_note"] == modelled
+    assert pstar["label"] == "light_pstar (structure payload case)"
+    assert pstar["offload_kind"] == run_data.OFFLOAD_STRUCTURE_PAYLOAD
+    assert pstar["role"] == run_data.ROLE_OFFLOAD and pstar["assisted"] is True
+    assert pstar["note"].startswith(
+        "structure payload case light_pstar of silo_cold: flies its own payload capacity P_2* "
+        "on the full load (no propellant removed) with 9,100.3 kg of modelled structural mass "
+        f"(stage 1 8,900.1 kg, stage 2 200.2 kg; a first-order station sizing, not an assumed "
+        f"penalty), {BLOCK_PAYLOAD_KG + PAYLOAD_CASE_DELTA_KG:,.1f} kg "
+        f"({PAYLOAD_CASE_DELTA_KG:,.1f} kg above P_ref = {BLOCK_PAYLOAD_KG:,.1f} kg): a payload "
+        "change against P_ref, not propellant saved"
+    )
+    assert "a run of the offload block" not in pstar["note"] and "(offload)" not in pstar["label"]
+    comparison = next(c for c in payload["caveats"] if "offload block" in c)
+    assert (
+        "light_pstar is the structure payload case of silo_cold and flies its own payload "
+        "capacity P_2* on the full load carrying its modelled structure (dm_1), a payload "
+        f"change against P_ref = {BLOCK_PAYLOAD_KG:,.1f} kg, not propellant saved (summary.md, "
+        "the Structure subsection's payload cases)."
+    ) in comparison
+    assert "light_s1 and light_s1_dry+8.1t fly P_ref" in comparison
+    assert not any("no structural model exists" in c for c in payload["caveats"])
+    # the penalty row shown without a modelled run in this directory of structural runs
+    # (fix round 2, H-S3a-P2-03): no program-level clause beside the block's caveats either
+    penalty_only = scene.scene_payload(
+        pushed, ["pad", "light_s1_dry+8.1t"], display_dir=DISPLAY_DIR
+    )
+    alone = next(c for c in penalty_only["caveats"] if c.startswith("An assumed +8.1 t of"))
+    assert alone.endswith(": a parametric assumption, not a sized structure.")
+    assert not any("no structural model exists" in c for c in penalty_only["caveats"])
+    structure = next(c for c in payload["caveats"] if c.startswith("An assumed +8.1 t of"))
+    assert ", and on light_pstar (" in structure and structure.count(MODELLED_CORE) == 2
+    assert "a parametric assumption, not a sized structure. The modelled" in structure
+    assert "No structural mass" not in structure  # no uncharged pushed run in this selection
+    # the replay caveat of the same selection carries the same core sentence (one source)
+    assert any(MODELLED_CORE in c for c in payload["caveats"])
+    offload = run_data.read_json(pushed / run_data.METRICS_FILE)["offload"]
+    case = run_data.offload_role(offload, "light_s1_dry+8.1t")
+    assert case is not None
+    assert scene.structure_note(case[1], True, STRUCTURE_KEYS, STRUCTURE_INPUTS) == modelled
+    assert scene.structure_note(None, True, STRUCTURE_KEYS) == modelled.split("; the physics")[
+        0
+    ] + "; no structure flag fired; a first-order estimate with its stated ranges, not a " + (
+        "detailed structural design"
+    )
+    assert scene.structure_note(None, False, STRUCTURE_KEYS, STRUCTURE_INPUTS) is None
+    assert scene.structure_note(None, True, {"structure_charged": False}) == (
+        "no structural mass is charged for the push"
+    )
+    assert (
+        scene.structure_note(case[1], True, {"payload_kg": 1.0})
+        == by_key["light_s1_dry+8.1t"]["structure_note"]
+    )
+
+
+def test_a_payload_case_run_is_worded_as_its_payload_case_on_the_scene(
+    derived_dir: Path, tmp_path: Path
+) -> None:
+    """Final clean-up, N3a-03 (and N3a-01): with the keys a structure payload case's run
+    really carries (structure_sizing full_load, here on the physics low-mass set), the
+    scene payload words light_pstar as its payload case (summary.structure_run_record:
+    the layer and set the block caveat gives its case record, a band end), never "a row,
+    not a band end (sizing full_load)", in the frame's note and in the page's caveat
+    alike, and the band clause says the run is sized on the full load (x = 0)."""
+    keys = {**STRUCTURE_KEYS, "structure_set": "physics_low_mass", "structure_sizing": "full_load"}
+    pushed = _pushed_structural_dir(derived_dir, tmp_path / "payload_keys", payload_keys=keys)
+    payload = scene.scene_payload(pushed, ["pad", "light_pstar"], display_dir=DISPLAY_DIR)
+    pstar = next(r for r in payload["runs"] if r["key"] == "light_pstar")
+    label = "physics band, low-mass end: physics_low_mass"
+    offload = run_data.read_json(pushed / run_data.METRICS_FILE)["offload"]
+    assert summary.structure_layer_label(offload["structure_payload_cases"][0]) == label
+    note = pstar["structure_note"]
+    assert f"(layer and set {label}; configs/structures/toy.yaml)" in note
+    assert "the run is sized at its own push on the full load (x = 0); " in note
+    assert "a row, not a band end" not in note and "push and offload" not in note
+    caveat = next(c for c in payload["caveats"] if "modelled structural mass" in c)
+    assert f"(layer and set {label}; " in caveat and "a row, not a band end" not in caveat
+
+
+def test_scene_payload_names_the_renderers_version(real_payload: dict[str, Any]) -> None:
+    """KI-038 (SP7 step S3a, design 4.5): the scene payload carries the package version of
+    the renderer that drew it (``version``, launchsim.__version__, as the replay page's
+    meta does), beside the directory's own git record, and the page's Data line prints it;
+    the renderer's git state is not recorded (it would change every committed gallery page
+    at every commit: closed as not taken)."""
+    assert real_payload["version"] == launchsim.__version__
+    assert set(real_payload["git"]) == {"hash", "dirty", "error"}
+    page = scene.render_page(real_payload)
+    assert f'"version": "{launchsim.__version__}"' in page or (
+        f'"version":"{launchsim.__version__}"' in page
+    )
+    assert '"), drawn by launch-assist-sim " + DATA.version + "."' in page
 
 
 def _pushed_penalty_dir(derived_dir: Path, dst: Path) -> Path:

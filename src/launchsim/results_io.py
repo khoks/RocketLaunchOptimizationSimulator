@@ -156,10 +156,12 @@ from launchsim.offload import (
 from launchsim.plots import CALIBRATION_RECORDS, write_plots, write_structure_figure
 from launchsim.search import OK_STATUS, as_plain
 from launchsim.summary import (
+    OFFLOAD_NO_ASSIST_MODEL,
     OFFLOAD_SECTION_NAME,
     experiment_summary,
     offload_caveats,
     planar_sweep_summary,
+    structure_charged,
     structure_flags_text,
     structure_overrides_text,
     sweep_point_header,
@@ -2186,10 +2188,34 @@ def planar_offload(
     if ro.arms and not sensitivity:
         notes.append(OFFLOAD_ARMS_SKIPPED)
     vehicle_name = resolved.baseline.vehicle.name
+    # the block caveats worded from the block's own records (SP7 step S3a, D-SP7-22): the
+    # records that charge a modelled structural mass and each case's drive; an SP1-type
+    # block (none structural, every drive prescribed) keeps SP1's caveats word for word
+    structural = [rec for rec in (*cases, *payload_cases, *arms) if structure_charged(rec)]
+    # each case's and each run payload case's drive (fix round 2, S3A-C2-01 and N2-05: a
+    # payload case of a variant on another drive is worded by its own drive); the penalty
+    # rows and the cases that charge nothing, by name, for the structure item's tail
+    drives = offload_block_drives(
+        [
+            *((c.name, c.config.of) for c in ran),
+            *((pc.name, pc.of) for pc in (block.payload_cases if block is not None else ())),
+        ],
+        variants,
+    )
+    ran_cases = [rec for rec in cases if "skipped" not in rec]
+    penalty_rows = [str(rec["name"]) for rec in ran_cases if rec.get("assumed_penalty") is True]
+    uncharged = offload_uncharged_cases(ran_cases, drives)
     record = {
         **base_record,
         "reference_payload_kg": ctx.p_ref,
-        "caveats": offload_caveats(vehicle_name, CALIBRATION_RECORDS.get(vehicle_name)),
+        "caveats": offload_caveats(
+            vehicle_name,
+            CALIBRATION_RECORDS.get(vehicle_name),
+            structural=structural,
+            drives=drives,
+            penalties=penalty_rows,
+            uncharged=uncharged,
+        ),
         "energy_inputs": _energy_inputs(energy),
     }
     if block is not None:
@@ -2211,6 +2237,40 @@ def planar_offload(
         }
     )
     return OffloadReport(record, written, checked, used, increments)
+
+
+def offload_uncharged_cases(
+    ran_cases: Sequence[Mapping[str, Any]], drives: Mapping[str, str]
+) -> list[str]:
+    """The names of an offload block's cases that ran (``ran_cases``) and ride the push
+    with no structural mass for it, for the structure item's tail
+    (summary.OFFLOAD_STRUCTURE_UNCHARGED_TEXT): neither structural
+    (summary.structure_charged) nor a penalty row (``assumed_penalty``), and built on a
+    variant with a push. A case whose drive (``drives``, ``offload_block_drives``) is
+    summary.OFFLOAD_NO_ASSIST_MODEL rides no push load, so it is left out; the drive
+    item says it flies without a push (SP7 step S3a fix round 3, S3A-NUM-03)."""
+    return [
+        str(rec["name"])
+        for rec in ran_cases
+        if not structure_charged(rec)
+        and rec.get("assumed_penalty") is not True
+        and drives.get(str(rec["name"])) != OFFLOAD_NO_ASSIST_MODEL
+    ]
+
+
+def offload_block_drives(
+    named: Sequence[tuple[str, str]], variants: Mapping[str, RunResult]
+) -> dict[str, str]:
+    """The assist model of each of an offload block's ``named`` (case or payload-case
+    name, the variant it is built on) whose variant ran (``variants``), by name: the
+    drives the block caveats' drive item is worded from (summary.offload_drive_caveat;
+    SP7 step S3a; fix round 2, S3A-C2-01 and N2-05: the structure payload cases are named
+    beside the cases, so a payload case on another drive is worded by its own)."""
+    return {
+        name: str(getattr(variants[of].resolved.run.assist, "model", "none"))
+        for name, of in named
+        if of in variants
+    }
 
 
 def offload_sweep_point(
