@@ -8,8 +8,14 @@ Phase 2 experiments must resolve, the Phase 1 run dicts must stay byte-identical
 to the 1-D golden, and every run and vehicle dict the four shipped planar experiments
 resolve keeps its pinned sha256 (SP1 step 1; tests/planar_pin_support.py). The two
 pre-registered offload experiments of SP1 step 8 (silo_offload_2d and its README-loads
-bridge) are checked for the properties their design rests on. Expected numbers are
-computed here from the YAML inputs."""
+bridge) are checked for the properties their design rests on, and so are the two
+pre-registered structural experiments of SP7 step S6a (silo_structure_2d and its
+README-loads fork): they resolve as the CLI resolves them (the structure loader and the
+preflight included), name the structure files frozen at S2's commit, fly the runs SP1
+flew and declare the cases of the design's table with the additions the pre-registration
+records (the plausibility-scaled twin, the 4.0 g0 envelope-cap row, silo_cold_200m's pair
+and the payload cases of the rows expected to end no_offload); nothing here solves an
+offload (D-SP7-31). Expected numbers are computed here from the YAML inputs."""
 
 from __future__ import annotations
 
@@ -41,6 +47,7 @@ from launchsim.config import (
     IntegratorConfig,
     KickConfig,
     LtgConfig,
+    OffloadCaseConfig,
     PenaltyConfig,
     PlanarSiteConfig,
     ResolvedExperiment,
@@ -66,6 +73,8 @@ PLANAR_EXPERIMENTS = (
     "guidance_trigger_2d",
     "silo_offload_2d",
     "silo_offload_2d_readme",
+    "silo_structure_2d",
+    "silo_structure_2d_readme",
 )
 SITE_LAT_DEG = 28.5
 KM = 1000.0
@@ -82,11 +91,23 @@ def _experiment_path(repo_root: Path, name: str) -> Path:
 
 def _resolve_file(path: Path) -> ResolvedExperiment:
     """Resolve an experiment file the way the CLI will: its vehicle and every case
-    vehicle located by cli.resolve_vehicle_path and read by cli.load_yaml."""
+    vehicle located by cli.resolve_vehicle_path and read by cli.load_yaml, and the
+    structure file a ``structure`` block names (SP7 step S6a's files) located by
+    cli.resolve_config_path and read by cli.read_structure_file under the path the
+    records quote (cli.recorded_config_path), as cli.load_experiment passes it. An
+    experiment without the block never calls the structure loader."""
     exp = cli.load_yaml(path)
     vehicle = cli.load_yaml(cli.resolve_vehicle_path(path, exp["vehicle"]))
+
+    def load_structure(name: str) -> Any:
+        found = cli.resolve_config_path(path, name, "structure")
+        return cli.read_structure_file(found, cli.recorded_config_path(path, found, name))
+
     return resolve_experiment(
-        exp, vehicle, lambda p: cli.load_yaml(cli.resolve_vehicle_path(path, p))
+        exp,
+        vehicle,
+        lambda p: cli.load_yaml(cli.resolve_vehicle_path(path, p)),
+        load_structure=load_structure,
     )
 
 
@@ -1381,3 +1402,305 @@ def test_offload_reports_name_the_arms_and_the_bridge_calibration(
         bridge, sensitivity=True, offload=True, variants=bridge.variants
     )
     assert bridge_note.startswith("(no sensitivity block declared; ")
+
+
+# --------------------------- SP7 step S6a: the pre-registered structural experiments
+
+STRUCTURE_EXPERIMENT = "silo_structure_2d"
+STRUCTURE_BRIDGE = "silo_structure_2d_readme"
+STRUCTURE_HEADLINE_CASE = "silo_cold_s1_st"
+"""The structural headline case of both structural experiments (design 4.10)."""
+STRUCTURE_FILE_OF = {
+    STRUCTURE_EXPERIMENT: "configs/structures/generic_f9_class_2d.yaml",
+    STRUCTURE_BRIDGE: "configs/structures/generic_f9_class_2d_readme_loads.yaml",
+}
+"""The structure file each structural experiment names, as the records quote it."""
+STRUCTURE_FILES_AT_S2 = {
+    "configs/structures/generic_f9_class_2d.yaml": (
+        "a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232"
+    ),
+    "configs/structures/generic_f9_class_2d_readme_loads.yaml": (
+        "a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997"
+    ),
+}
+"""The sha256 of each structure file's bytes as frozen at SP7 step S2's commit 45e39d4
+(D-SP7-31), recorded in docs/phases/inputs/2026-10-15-SP7-preregistration.md; a change is a
+logged decision before S6a or an amendment after it, never a silent edit."""
+STRUCTURE_SHARED_RUNS: dict[str, dict[str, tuple[str, ...]]] = {
+    STRUCTURE_EXPERIMENT: {
+        "silo_offload_2d": ("pad", "silo_cold", "silo_cold_200m", "silo_hot_ramp_on_track"),
+        "silo_screening_2d": ("pad", "silo_cold", "silo_hot_full", "silo_hot_ramp_on_track"),
+    },
+    STRUCTURE_BRIDGE: {"silo_offload_2d_readme": ("pad", "silo_cold")},
+}
+"""The runs each structural experiment shares with the experiments it copies them from."""
+STRUCTURE_HEADLINE_SETTINGS: dict[str, Any] = {
+    "set": "central",
+    "sizing": "flown",
+    "dynamic": "rise_time",
+    "entry": "aft_ring",
+    "margin": 0.0,
+    "envelope_cap_g": None,
+    "overrides": {},
+    "plausibility_scaled": False,
+}
+"""The headline's structure settings (design 4.10: central, flown, rise_time, aft_ring,
+margin 0, no cap, no override, not plausibility-scaled), every key written out."""
+STRUCTURE_CASES: dict[str, tuple[str, dict[str, Any] | None]] = {
+    "silo_cold_s1": ("silo_cold", None),
+    "silo_cold_s1_dry+2t": ("silo_cold", None),
+    "silo_cold_s1_dry+4t": ("silo_cold", None),
+    "silo_cold_s1_dry+8.1t": ("silo_cold", None),
+    "silo_cold_s1_st": ("silo_cold", {}),
+    "silo_cold_s1_st_phys_lo": ("silo_cold", {"set": "physics_low_mass"}),
+    "silo_cold_s1_st_phys_lo_scaled": (
+        "silo_cold",
+        {"set": "physics_low_mass", "plausibility_scaled": True},
+    ),
+    "silo_cold_s1_st_phys_hi": ("silo_cold", {"set": "physics_high_mass"}),
+    "silo_cold_s1_st_outer_lo": ("silo_cold", {"set": "outer_low_mass", "margin": 0.25}),
+    "silo_cold_s1_st_outer_hi": ("silo_cold", {"set": "outer_high_mass", "envelope_cap_g": 4.0}),
+    "silo_cold_s1_st_qs": ("silo_cold", {"dynamic": "quasi_static"}),
+    "silo_cold_s1_st_step": ("silo_cold", {"dynamic": "step"}),
+    "silo_cold_s1_st_full": ("silo_cold", {"sizing": "full_load"}),
+    "silo_cold_s1_st_ts": ("silo_cold", {"entry": "thrust_structure"}),
+    "silo_cold_s1_st_m10": ("silo_cold", {"margin": 0.10}),
+    "silo_cold_s1_st_m25": ("silo_cold", {"margin": 0.25}),
+    "silo_cold_s1_st_cap45": ("silo_cold", {"envelope_cap_g": 4.5}),
+    "silo_cold_s1_st_cap40": ("silo_cold", {"envelope_cap_g": 4.0}),
+    "silo_hot_full_s1": ("silo_hot_full", None),
+    "silo_hot_full_s1_st": ("silo_hot_full", {}),
+    "silo_hot_ramp_s1": ("silo_hot_ramp_on_track", None),
+    "silo_hot_ramp_s1_st": ("silo_hot_ramp_on_track", {}),
+    "silo_cold_200m_s1": ("silo_cold_200m", None),
+    "silo_cold_200m_s1_st": ("silo_cold_200m", {}),
+}
+"""File A's offload cases in the file's order: design 4.10's table (the uncharged headline,
+SP1's three penalty rows, the twelve structural cases on silo_cold, the two hot starts each
+uncharged then central), plus the plausibility-scaled twin of the physics band's low-mass
+end (D-SP7-41), the 4.0 g0 envelope-cap row (design 4.2.6 and appendix A's "the
+envelope-cap rows (4.5 and 4.0 g0)") and silo_cold_200m's uncharged and central pair
+(sweep 2's base, from step S6a's list): name -> (variant, the structure settings that
+differ from the headline's, or None for a case with no structure)."""
+STRUCTURE_SWEEPS: tuple[tuple[str, tuple[int, ...], tuple[str, str]], ...] = (
+    ("silo_cold", (25, 50, 100, 200, 300), ("silo_cold_s1", "silo_cold_s1_st")),
+    ("silo_cold_200m", (50, 100, 200, 300), ("silo_cold_200m_s1", "silo_cold_200m_s1_st")),
+)
+"""File A's sweeps (design 4.10): the variant, assist.stroke_m's points [m], and the
+uncharged and the central structural case solved at every point."""
+STRUCTURE_PAYLOAD_CASES: dict[str, tuple[str, dict[str, Any]]] = {
+    "silo_cold_pstar_st": ("silo_cold", {}),
+    "silo_cold_pstar_st_phys_hi": ("silo_cold", {"set": "physics_high_mass"}),
+    "silo_cold_pstar_st_outer_hi": (
+        "silo_cold",
+        {"set": "outer_high_mass", "envelope_cap_g": 4.0},
+    ),
+    "silo_cold_pstar_st_step": ("silo_cold", {"dynamic": "step"}),
+}
+"""File A's structure payload cases in order: design 4.10's two (the central structure and
+the physics band's high-mass set) and the two added at S6a's review (the outer envelope's
+high-mass end and the step row): name -> (variant, the settings that differ from the
+headline's; every payload case is a full-load sizing)."""
+STRUCTURE_NO_OFFLOAD_EXPECTED = (
+    "silo_cold_s1_st_phys_hi",
+    "silo_cold_s1_st_outer_hi",
+    "silo_cold_s1_st_step",
+)
+"""The structural cases the pre-registration's sizing-only estimates expect to end
+no_offload; each must have a payload case of the same variant and settings (the sizing
+basis aside), whose P_2* - P_ref the summary quotes as its payload deficit (D-SP7-32; exit
+criterion 4; ``summary._no_offload_line``)."""
+PENALTY_ROWS = ("silo_cold_s1_dry+2t", "silo_cold_s1_dry+4t", "silo_cold_s1_dry+8.1t")
+"""SP1's structural penalty rows, which file A copies verbatim."""
+
+
+def _case_dump(raw_exp: dict[str, Any], name: str) -> dict[str, Any]:
+    """The model dump of a raw experiment's offload case of that name."""
+    found = [c for c in raw_exp["offload"]["cases"] if c["name"] == name]
+    assert len(found) == 1, name
+    return OffloadCaseConfig.model_validate(found[0]).model_dump()
+
+
+def _settings(structure_case: Any) -> dict[str, Any]:
+    """A resolved structure case's settings under STRUCTURE_HEADLINE_SETTINGS's keys."""
+    return {
+        "set": structure_case.set_name,
+        "sizing": structure_case.sizing,
+        "dynamic": structure_case.dynamic,
+        "entry": structure_case.entry,
+        "margin": structure_case.margin,
+        "envelope_cap_g": structure_case.envelope_cap_g,
+        "overrides": structure_case.overrides,
+        "plausibility_scaled": structure_case.plausibility_scaled,
+    }
+
+
+@pytest.mark.parametrize("name", [STRUCTURE_EXPERIMENT, STRUCTURE_BRIDGE])
+def test_structure_experiments_load_as_the_cli_does_with_the_frozen_files(
+    repo_root: Path, name: str
+) -> None:
+    """Both structural experiments load through cli.load_experiment (the vehicle, the
+    structure file through ``load_structure``, the result-name check and the preflight
+    sim.check_resolved, which also refuses a structure block whose pad does not hold down
+    under thrust); the block names its vehicle's structure file, which cli.load_structure
+    loads on its own to the same model, whose ``applies_to`` names the vehicle and whose
+    bytes have the sha256 frozen at S2's commit (D-SP7-31), the file every structural case
+    and payload case resolves against. Nothing is flown."""
+    path = _experiment_path(repo_root, name)
+    resolved = cli.load_experiment(path)
+    sim.check_resolved(resolved)
+    block = resolved.structure
+    assert block is not None
+    named = STRUCTURE_FILE_OF[name]
+    assert block.file.path == named
+    loaded = cli.load_structure(repo_root / named)
+    assert loaded == block.file.config
+    assert resolved.baseline.vehicle.name in loaded.applies_to
+    digest = hashlib.sha256((repo_root / named).read_bytes()).hexdigest()
+    assert digest == block.file.sha256 == STRUCTURE_FILES_AT_S2[named]
+    assert resolved.offload is not None
+    structural = [c for c in resolved.offload.cases if c.structure is not None]
+    assert structural
+    for case in structural:
+        assert case.structure is not None and case.structure.file.sha256 == digest
+    for pc in block.payload_cases:
+        assert pc.structure.file.sha256 == digest
+
+
+@pytest.mark.parametrize("name", [STRUCTURE_EXPERIMENT, STRUCTURE_BRIDGE])
+def test_structure_experiments_fly_the_runs_sp1_flew(
+    resolved: dict[str, ResolvedExperiment], name: str
+) -> None:
+    """The structural experiments measure the runs SP1 and the screening flew: the pad and
+    every variant resolve to the very same run and vehicle dicts, key order included, as
+    in the experiments they were copied from (silo_hot_full from silo_screening_2d, where
+    it is written through the *silo anchor; the rest from SP1's files), so writing them
+    out changed nothing a run flies."""
+    for source, runs in STRUCTURE_SHARED_RUNS[name].items():
+        for run in runs:
+            new, old = resolved[name].runs[run], resolved[source].runs[run]
+            assert json.dumps(new.run_dict) == json.dumps(old.run_dict), (name, source, run)
+            assert json.dumps(new.vehicle_dict) == json.dumps(old.vehicle_dict), (name, run)
+    shared = {run for runs in STRUCTURE_SHARED_RUNS[name].values() for run in runs}
+    assert set(resolved[name].runs) == shared
+
+
+def test_structure_experiment_declares_the_design_table(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """File A's offload block is design 4.10's table, plus the plausibility-scaled twin
+    (D-SP7-41), the 4.0 g0 envelope-cap row (design 4.2.6) and silo_cold_200m's pair, in
+    the file's order (STRUCTURE_CASES): the
+    uncharged cases (SP1's silo_cold_s1 without its paired pad, which does not enter x*;
+    SP1's silo_hot_ramp_s1 and silo_cold_200m_s1 unchanged; the new silo_hot_full_s1),
+    SP1's three penalty rows unchanged, and the structural cases, each with every
+    structure key written out and resolved to the settings of its row (an outer set at its
+    own recorded margin and cap); the stage-1 pad control; CLAUDE.md's +/-10% arms on the
+    structural headline; SP1's sensitivity params and energy block; the four payload cases
+    (full-load sizings, every key written out), one at the settings of each case the
+    pre-registration expects to end no_offload; the two sweeps solving the uncharged and
+    the central structural case at every point; and every derived name a valid results
+    name."""
+    r = resolved[STRUCTURE_EXPERIMENT]
+    sp1 = raw[OFFLOAD_EXPERIMENT]
+    mine = raw[STRUCTURE_EXPERIMENT]
+    block = r.offload
+    assert block is not None and r.structure is not None
+    assert [c.name for c in block.cases] == list(STRUCTURE_CASES)
+    for case in block.cases:
+        of, spec = STRUCTURE_CASES[case.name]
+        assert (case.config.of, case.config.solve) == (of, "stage1"), case.name
+        assert not case.config.paired_pad and case.pad_start is None, case.name
+        if spec is None:
+            assert case.config.structure is None and case.structure is None, case.name
+            continue
+        expected = {**STRUCTURE_HEADLINE_SETTINGS, **spec}
+        written = next(c for c in mine["offload"]["cases"] if c["name"] == case.name)
+        assert written["structure"] == expected, case.name
+        assert case.structure is not None and _settings(case.structure) == expected, case.name
+        assert case.config.stage1_dry_mass_added_t is None, case.name
+    for name in (*PENALTY_ROWS, "silo_hot_ramp_s1", "silo_cold_200m_s1"):
+        assert _case_dump(mine, name) == _case_dump(sp1, name), name
+    headline = _case_dump(sp1, HEADLINE_CASE)
+    assert _case_dump(mine, HEADLINE_CASE) == {**headline, "paired_pad": False}
+    assert block.pad_control_modes == ("stage1",)
+    assert block.config.sensitivity_of == [STRUCTURE_HEADLINE_CASE]
+    assert r.experiment.sensitivity is not None
+    assert r.experiment.sensitivity.params == HEADLINE_SENSITIVITY_PARAMS
+    assert mine["sensitivity"] == sp1["sensitivity"] and r.sensitivity == []
+    expected_arms = {(p, s * f) for p, f in HEADLINE_SENSITIVITY_PARAMS.items() for s in (1, -1)}
+    assert {(a.param, a.fraction) for a in block.arms} == expected_arms
+    assert len(block.arms) == len(expected_arms)
+    assert {a.case for a in block.arms} == {STRUCTURE_HEADLINE_CASE}
+    assert mine["offload"]["energy"] == sp1["offload"]["energy"]
+    assert [p.name for p in r.structure.payload_cases] == list(STRUCTURE_PAYLOAD_CASES)
+    written_payload = {p["name"]: p for p in mine["structure"]["payload_cases"]}
+    payload_settings = []
+    for pc in r.structure.payload_cases:
+        of, spec = STRUCTURE_PAYLOAD_CASES[pc.name]
+        expected = {**STRUCTURE_HEADLINE_SETTINGS, **spec, "sizing": "full_load"}
+        assert pc.of == of and _settings(pc.structure) == expected, pc.name
+        keys = {k: v for k, v in expected.items() if k != "sizing"}
+        assert written_payload[pc.name] == {"name": pc.name, "of": of, **keys}, pc.name
+        payload_settings.append((pc.of, keys))
+    for name in STRUCTURE_NO_OFFLOAD_EXPECTED:
+        case = next(c for c in block.cases if c.name == name)
+        assert case.structure is not None
+        mine_keys = {k: v for k, v in _settings(case.structure).items() if k != "sizing"}
+        assert (case.config.of, mine_keys) in payload_settings, name
+    long_assist = r.variants["silo_cold_200m"].run.assist
+    assert isinstance(long_assist, ConstantAccelConfig)
+    for (of, strokes, cases), sweep, points in zip(
+        STRUCTURE_SWEEPS, r.experiment.sweeps, r.sweeps, strict=True
+    ):
+        assert sweep.of == of and sweep.offload == list(cases)
+        assert sweep.axes == {"assist.stroke_m": list(strokes)}
+        for point, stroke in zip(points, strokes, strict=True):
+            assert [c.name for c in point.offload] == list(cases)
+            uncharged, structural = point.offload
+            assert uncharged.structure is None and structural.structure is not None
+            assert _settings(structural.structure) == STRUCTURE_HEADLINE_SETTINGS
+            for c in point.offload:
+                assert c.start.name == f"{point.run.name}__{c.name}"
+            assist = point.run.run.assist
+            assert isinstance(assist, ConstantAccelConfig) and assist.stroke_m == stroke
+            if of == "silo_cold_200m":
+                assert assist.exit_speed_mps == long_assist.exit_speed_mps
+            else:
+                assert assist.net_accel_g == 3.0
+    names = offload_run_names(block.config, r.baseline.name)
+    names += [n for a in block.arms for n in (a.start.name, a.pad.name)]
+    names += [a.variant.name for a in block.arms if a.variant is not None]
+    names += [c.start.name for points in r.sweeps for p in points for c in p.offload]
+    names += [p.name for p in r.structure.payload_cases]
+    for name in names:
+        check_name(name, "derived offload run name")
+
+
+def test_structure_bridge_is_the_structural_headline_on_the_readme_loads_fork(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """File C (the README-loads fork) solves exactly the uncharged silo_cold_s1 of SP1's
+    bridge (without its paired pad) and file A's structural headline (same name, variant,
+    mode and settings, against its own fork's structure file), with the stage-1 pad
+    control, and nothing else: no sweep, no sensitivity, no arm, no payload case, no
+    energy block."""
+    bridge = resolved[STRUCTURE_BRIDGE]
+    block = bridge.offload
+    assert block is not None and bridge.structure is not None
+    mine = raw[STRUCTURE_BRIDGE]
+    assert [c.name for c in block.cases] == [HEADLINE_CASE, STRUCTURE_HEADLINE_CASE]
+    assert _case_dump(mine, HEADLINE_CASE) == {
+        **_case_dump(raw[OFFLOAD_BRIDGE], HEADLINE_CASE),
+        "paired_pad": False,
+    }
+    assert _case_dump(mine, STRUCTURE_HEADLINE_CASE) == _case_dump(
+        raw[STRUCTURE_EXPERIMENT], STRUCTURE_HEADLINE_CASE
+    )
+    headline = block.cases[1].structure
+    assert headline is not None and _settings(headline) == STRUCTURE_HEADLINE_SETTINGS
+    assert block.pad_control_modes == ("stage1",) and not block.arms
+    assert not bridge.sweeps and not bridge.sensitivity and not bridge.structure.payload_cases
+    assert block.config.energy is None and "sensitivity" not in mine
+    assert mine["vehicle"] == raw[OFFLOAD_BRIDGE]["vehicle"]
+    assert raw[STRUCTURE_EXPERIMENT]["vehicle"] == raw[OFFLOAD_EXPERIMENT]["vehicle"]

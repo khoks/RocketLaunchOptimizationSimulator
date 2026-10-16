@@ -1,0 +1,344 @@
+# RQ1 with a modelled structure (SP7, docs/phases/SP7-structural-mass-push-load.md; design
+# docs/phases/inputs/2026-10-08-SP7-design.md, sections 4.10 and 4.11): with the payload and
+# the 200 km circular orbit held fixed, how much of SP1's stage-1 propellant offload is left
+# once the assisted run carries a first-order structural mass sized for its own push load?
+# SP1 (docs/findings/RQ1-fuel-offload-2d.md) found 41,262.9 kg (10.04% of stage 1) with no
+# structural mass charged, and 32.3, 22.9 and 2.0 t with an assumed +2, +4 and +8.1 t of
+# stage-1 dry mass. Gate vehicle generic_f9_class_2d.yaml (mass set C), which calibrates
+# +14.3% high (docs/findings/CAL-f9-leo-2d.md; accepted 2026-09-30). The structure file is
+# configs/structures/generic_f9_class_2d.yaml, frozen at SP7 step S2's commit 45e39d4
+# (D-SP7-31): a first-order station sizing (D-SP7-01), not a detailed structural design.
+# The reference payload P_ref is the pad baseline's payload capacity P*; each solved case
+# removes stage-1 propellant until its assisted run carries exactly P_ref to the same orbit
+# (docs/physics.md, "Figures of merit (planar)"). A structural case adds the modelled mass
+# dm(x), re-sized at every offload x the solve evaluates, to the assisted run's dry masses
+# only; the pad keeps its vehicle (D-SP7-02, D-SP7-35; docs/physics.md, "Coupling the
+# structure to the offload solve").
+#
+# Pre-registered (SP7 step S6a): committed before any run. What each case and sweep is for,
+# the expected values (estimates; none is a target), the reading rules (D-SP7-32), the
+# checks that block a citation and the runtime estimate are in
+# docs/phases/inputs/2026-10-15-SP7-preregistration.md. Never edit after the
+# pre-registration commit: a change is an amendment (its own commit, logged).
+#
+# Shared blocks (dynamics, site, target_orbit, guidance, search, checks) and the baseline
+# with its integrator: copied verbatim from experiments/silo_offload_2d.yaml (a test pins
+# the shared blocks and the budget id across every planar experiment). Bare numbers there,
+# as in the other experiment files; the vehicle file carries the vehicle's sources, the
+# structure file the structure's, and the offload block below its own.
+name: silo_structure_2d
+vehicle: configs/vehicles/generic_f9_class_2d.yaml
+dynamics: planar_2d
+site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: true}
+target_orbit: {kind: circular, altitude_km: 200}
+guidance:
+  kick: {v_kick_mps: 50, mode: hold_to_alignment, max_duration_s: 60, deadline_s: 60}
+  stage1: gravity_turn
+  stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}
+search:
+  figure_of_merit: payload
+  gamma_grid_deg: [8, 36, 2]
+  gamma_refine_halfwidth_deg: 4
+  gamma_xatol_deg: 0.01
+  gamma_refine_maxiter: 30
+  gamma_root_tol_deg: 0.01
+  delta_bracket_deg: [0.1, 45]
+  delta_step_deg: 0.25
+  delta_xtol_rad: 1.0e-10
+  payload_half_bracket_t: 2.0
+  payload_max_expand: 6
+  payload_backoff_max: 4
+  payload_xtol_kg: 0.5
+  brentq_rtol: 8.881784197001252e-16         # 4 eps, scipy brentq's floor
+  final_payload_xtol_kg: 0.05
+  final_bracket_kg: [20, 1000]
+  search_rtol: 1.0e-8
+  search_atol_scale: 10
+  final_rtol: 1.0e-10
+  penalty: {base_kg: 1.0e6, per_deg_kg: 1.0e4}
+  ltg: {accept_r_m: 1.0, accept_vr_mps: 1.0e-3, r_scale_m: 1.0e4, vr_scale_mps: 100,
+        fd_step_search: 1.0e-4, fd_step_final: 1.0e-5, max_iters: 25, max_halvings: 6,
+        grid_max_rungs: 2, p0_offset_deg: 5, pf_deg: -1, steep_p0_deg: 35,
+        shallow_guess: [0.3, 0.3], pitch_bounds_deg: [-45, 75], tau_max_factor: 2.0,
+        mass_floor_factor: 0.5}
+checks:
+  closure_tol_mps: 1.0e-5
+  identity_tol_mps: 1.0e-5                 # 2-D loss-identity residual (plan section 11)
+  insertion_e_max: 1.0e-6                  # insertion eccentricity (plan section 11)
+  grav_ratio_bounds: [0.33, 3.0]
+  bp_ratio_bounds: [0.33, 3.0]
+  min_term_mps: 1.0
+  max_drag_steer_share: 0.5
+  anchor_margin_kg: 1.5
+  search_final_flag_rel: 1.0e-4
+  maxq_scan_points: 256
+  maxq_xatol_s: 1.0e-6
+  unconstrained_kick_mps: 120
+  vk_margin_kg: 5
+  convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
+                gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
+  gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+  m2_role: diagnostic                      # M2 reported, never bug_suspect (user decision 2026-09-30)
+baseline:                                  # pad: held down, full thrust exactly at release
+  name: pad
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: insertion
+  integrator: {method: DOP853, rtol: 1.0e-10, planar_max_step_s: 2.0, sample_dt_s: 0.05}
+# Variants. The silo is silo_screening_2d's (its *silo anchor; RQ3-2d): constant_accel, a
+# vertical 100 m stroke, exit at the mouth (z = 0), massless carriage, 5 g0 carriage brake,
+# drive efficiency 0.5 (assumed, as there), exhaust impingement 0 (the exhaust is assumed
+# to miss the carriage), vented shaft (no air column). Each variant writes its assist block
+# out in full: no YAML anchor merge, which would carry net_accel_g into the exit-speed
+# variant (SP1 step 1, deviation 6). Stage 1 takes the vehicle's 2 s linear ramp.
+# silo_cold, silo_cold_200m and silo_hot_ramp_on_track are copied verbatim from
+# experiments/silo_offload_2d.yaml, silo_hot_full from experiments/silo_screening_2d.yaml
+# (written out in full); each resolves to the same run and vehicle dicts as there (a test).
+variants:
+  # silo_screening_2d's silo_cold (same resolved run dict): 3 g0 net, exit 76.707 m/s =
+  # sqrt(2 x 3 g0 x 100 m), stage 1 lit 0.5 s after release. The headline variant.
+  silo_cold:
+    assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # Twice the stroke at silo_cold's exit speed: exit_speed_mps = sqrt(2 x 3 x g0 x 100 m)
+  # with g0 = 9.80665 m/s^2, written unrounded (Python repr of math.sqrt(2 * 3 * 9.80665 *
+  # 100), 76.70717046013364 m/s; it parses to the same double), so it releases at the same
+  # speed as silo_cold (not at the rounded 76.71 m/s of the phase file, 0.0028 m/s higher)
+  # with a net acceleration v^2 / (2 L) = 1.5 g0 over 200 m (felt about 2.5 g0 instead of
+  # 4.0), a 5.21 s push and a 260 m facility (200 m + 60 m braking at 5 g0). Same ignition
+  # as silo_cold.
+  silo_cold_200m:
+    assist: {model: constant_accel, exit_speed_mps: 76.70717046013364, stroke_m: 200,
+             carriage_mass_t: 0, brake_decel_g: 5, drive_efficiency: 0.5,
+             exhaust_impingement_fraction: 0.0, shaft: vented,
+             track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # silo_screening_2d's silo_hot_full (same resolved run dict; there `{assist: *silo,
+  # ignition: {stage1: {t_ign_s: -2.0, reference: push_start}}}`, "full thrust for the
+  # whole push"): the same silo, stage 1's 2 s ramp started 2 s before push start, so full
+  # thrust from push start to release. RQ3-2d: +1,488.6 kg of payload against silo_cold's
+  # +1,498.8 kg. Its own offload was never solved in SP1.
+  silo_hot_full:
+    assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: -2.0, reference: push_start}}
+  # silo_screening_2d's silo_hot_ramp_on_track (same resolved run dict): the same silo, the
+  # ramp started 2 s before release on the carriage (94.6 m below the mouth at 17.9 m/s;
+  # docs/physics.md, "Silo model"), so full thrust exactly at release.
+  silo_hot_ramp_on_track:
+    assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: -2.0, reference: release}}
+# Sweeps (design 4.10). Each solves two stage-1 cases at every point (sweeps[].offload): the
+# uncharged case, which reproduces SP1's point, and the central structural case. Each case
+# is rebuilt on the point's own run (its `of` is replaced by the point), solved at the
+# experiment pad's P_ref and verified by an independent payload search; a sweep point gets
+# no paired pad, no pad control and no sensitivity arms (docs/physics.md, "Experiment
+# schema (planar)" and "Reporting definitions (planar)"). The structural case at a push
+# other than the headline's is a central solve; its band ends are sizing-only estimates of
+# the pre-registration, labelled "the headline's sets" (design 4.2.6).
+sweeps:
+  # 1. The exit-speed axis, the direct test of "every m/s of assist helps" with the
+  #    structure charged: the lowest exit speed that still offloads (no decision of its
+  #    own; design 4.10, the structure's settings those of the headline). SP1's sweep 1 (silo
+  #    depth at 3 g0 net, results/silo_offload_2d/20261003T112949Z/sweep_1): exit speed
+  #    sqrt(2 x 3 g0 x L) = 38.35, 54.24, 76.71, 108.48 and 132.86 m/s. 100 m repeats
+  #    silo_cold. SP1's notes hold: at 25 and 50 m the drag-free coast has slowed to
+  #    v_e - 0.5 s x g_eff = 33.5 and 49.4 m/s by the ignition, below v_k = 50 m/s, so those
+  #    points rise vertically under thrust to v_k before the kick; 100-300 m kick at
+  #    ignition. At 300 m the kick comes above checks.unconstrained_kick_mps (120 m/s): the
+  #    model has no angle-of-attack aerodynamics, so read that point as an upper bound. The
+  #    felt load is about 4.0 g0 at every point (the push's duration changes with L, and so
+  #    does its ramped plateau; the dynamic factor, from t_r and f alone, is 1.1273 at every
+  #    point).
+  - {of: silo_cold, axes: {assist.stroke_m: [25, 50, 100, 200, 300]},
+     offload: [silo_cold_s1, silo_cold_s1_st]}
+  # 2. The depth axis at a fixed exit speed (silo_cold_200m's unrounded 76.70717046013364
+  #    m/s), SP1's sweep 2: net v^2 / (2 L) = 6, 3, 1.5 and 1 g0 (felt about 7.0, 4.0, 2.5
+  #    and 2.0 g0), push 1.30, 2.61, 5.21 and 7.82 s, facility L + 60 m. The flight after
+  #    release is the same at every point, so the uncharged offload is the same at every
+  #    point (SP1: a spread of 0.066 kg); the structural mass falls with the felt load. At
+  #    50 m the felt load is above the pad's MECO (5.195 g0), so the push also sizes stage
+  #    2 and the interstage (D-SP7-11, D-SP7-36). 100 m equals silo_cold up to the last bit
+  #    of the acceleration.
+  - {of: silo_cold_200m, axes: {assist.stroke_m: [50, 100, 200, 300]},
+     offload: [silo_cold_200m_s1, silo_cold_200m_s1_st]}
+# The +/-10% headline sensitivity of CLAUDE.md (stage-1 dry mass, stage-1 Isp, C_D and drive
+# efficiency), used by the offload block's sensitivity_of only (the arms of the central
+# structural case). `of` is empty (the schema allows it when only the offload arms are
+# wanted): silo_cold's payload sensitivity on these parameters is already in
+# silo_screening_2d.
+sensitivity:
+  of: []
+  params: {vehicle.stages.stage1.dry_mass_t: 0.10, vehicle.stages.stage1.engine.isp_vac_s: 0.10,
+           vehicle.aero.cd_scale: 0.10, assist.drive_efficiency: 0.10}
+# The structure block (SP7 step S3; design 4.3 and 4.4, D-SP7-21): the structure file,
+# frozen at S2's commit 45e39d4 (D-SP7-31; its sha256 is in the pre-registration), and the
+# payload cases. A payload case flies silo_cold at its own payload capacity P* with the
+# structure sized for its full-load push, in two passes (dm_0 at P_ref, P_1*, dm_1 at P_1*,
+# P_2*; design 4.4, "Payload form"): a full-load sizing, read beside silo_cold_s1_st_full and
+# never under the offload heading. The central structure and the physics band's high-mass
+# set (design 4.10; review E14). A structural offload case that ends no_offload quotes as
+# its payload deficit the payload case of the same variant and settings (the sizing basis
+# aside), so the payload cases also cover every row the pre-registration expects to end
+# no_offload (D-SP7-32's "a no_offload end is reported with its delta-v shortfall and its
+# payload deficit"; exit criterion 4): physics_high_mass, the outer envelope's high-mass
+# end and the step row. The last two are beyond design 4.10's list (S6a review, H1-01).
+structure:
+  file: configs/structures/generic_f9_class_2d.yaml
+  payload_cases:
+    - {name: silo_cold_pstar_st, of: silo_cold, set: central, dynamic: rise_time,
+       entry: aft_ring, margin: 0.0, envelope_cap_g: null, overrides: {},
+       plausibility_scaled: false}
+    - {name: silo_cold_pstar_st_phys_hi, of: silo_cold, set: physics_high_mass,
+       dynamic: rise_time, entry: aft_ring, margin: 0.0, envelope_cap_g: null, overrides: {},
+       plausibility_scaled: false}
+    # The payload deficit of silo_cold_s1_st_outer_hi (its set's recorded margin 0 and cap
+    # 4.0 g0, as that case) and of silo_cold_s1_st_step (the central set at the dynamic
+    # factor 2, Q7, D-SP7-07).
+    - {name: silo_cold_pstar_st_outer_hi, of: silo_cold, set: outer_high_mass,
+       dynamic: rise_time, entry: aft_ring, margin: 0.0, envelope_cap_g: 4.0, overrides: {},
+       plausibility_scaled: false}
+    - {name: silo_cold_pstar_st_step, of: silo_cold, set: central, dynamic: step,
+       entry: aft_ring, margin: 0.0, envelope_cap_g: null, overrides: {},
+       plausibility_scaled: false}
+offload:
+  reference: pad                           # P_ref = the full-load pad's payload capacity P*
+  pad_control: true                        # the stage-1 solve also on the pad (the solver's consistency test)
+  sensitivity_of: [silo_cold_s1_st]        # the structural headline, re-solved at each +/-10% arm
+  cases:
+    # SP1's headline, uncharged: reproduces SP1's 41,262.908 kg within 0.002 kg (design
+    # 4.10; exit criterion 3), and is the row every structural case is read against. SP1's
+    # paired pad is left out: its attribution is SP1's, and it does not enter x*.
+    - {name: silo_cold_s1, of: silo_cold, solve: stage1}
+    # SP1's structural penalty rows (D-SP1-04), copied verbatim: 2, 4 and 8.1 t of stage-1
+    # dry mass added to the assisted run only, each an ASSUMED penalty, not a sized
+    # structure (the restated dry mass is written assumed: true). They reproduce SP1's
+    # 32,285.203, 22,875.961 and 1,980.477 kg within 0.002 kg and are the bracket beside the
+    # model: the penalty curve the pre-registration's estimates are placed on.
+    - {name: silo_cold_s1_dry+2t, of: silo_cold, solve: stage1, stage1_dry_mass_added_t: 2}
+    - {name: silo_cold_s1_dry+4t, of: silo_cold, solve: stage1, stage1_dry_mass_added_t: 4}
+    - {name: silo_cold_s1_dry+8.1t, of: silo_cold, solve: stage1, stage1_dry_mass_added_t: 8.1}
+    # THE HEADLINE (design 4.10, 4.11): the central structure (the physics coefficients at
+    # their central values; the non-optimum factors nof_barrel 1.80, nof_stiffened 1.61,
+    # nof_dome 1.90 and nof_entry_ratio 1.47; t_r 0.5 s; f 5 Hz; 8 carriage pads; D-SP7-37),
+    # sized for the offloaded stack actually flown (Q2, D-SP7-02), the dynamic factor from
+    # the assumed real-drive rise time (Q7, D-SP7-07, D-SP7-09, D-SP7-16), the load entering
+    # through an aft ring at the stage base (Q5, D-SP7-05, D-SP7-17), zero margin over the
+    # pad's own envelope (Q3, D-SP7-03), the envelope unthrottled (no cap). Its +/-10% arms
+    # are CLAUDE.md's headline sensitivity.
+    - {name: silo_cold_s1_st, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # Layer 1, the physics band (D-SP7-18): the frozen sets of S2's screened search over the
+    # sourced and physical coefficients, the design assumptions at central; "the extremes
+    # found by the screened search over the stated ranges", never bounds. The low-mass end
+    # twice: unscaled, and plausibility-scaled (the rule of D-SP7-33 applied as approved,
+    # D-SP7-41: the model's envelope tank mass is 1.76 times Heineman's relation, so the
+    # band's low-mass end is cut by the rule's factor, about 0.739, computed at run time from
+    # the pad's envelope; both are printed side by side). The trigger (D-SP7-40, D-SP7-41):
+    # mostly the stage-1 LOX barrel's MECO-buckling envelope carrying nof_barrel, a double
+    # count of buckling material the source note (section 4) flags; the push barely loads
+    # that barrel (its own push increment 0.7 kg at SP1's 41.26 t, 0 in this set's sizing),
+    # while the factor multiplies the case's whole dm, the aft skirt and the load ring
+    # included (half of it), which the relation does not cover. The scaled twin is beyond
+    # design 4.10's table (the pre-registration, section 6). The high-mass end's factor is 1.
+    - {name: silo_cold_s1_st_phys_lo, of: silo_cold, solve: stage1,
+       structure: {set: physics_low_mass, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: silo_cold_s1_st_phys_lo_scaled, of: silo_cold, solve: stage1,
+       structure: {set: physics_low_mass, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: true}}
+    - {name: silo_cold_s1_st_phys_hi, of: silo_cold, solve: stage1,
+       structure: {set: physics_high_mass, sizing: flown, dynamic: rise_time,
+                   entry: aft_ring, margin: 0.0, envelope_cap_g: null, overrides: {},
+                   plausibility_scaled: false}}
+    # Layer 3, the outer envelope (D-SP7-18): the same search over the physics coefficients
+    # and the design axes at once; each outer set carries its own margin and cap (written
+    # here as the file records them: the low-mass corner margin 0.25 and no cap, the
+    # high-mass corner margin 0 and the pad's stage-1 felt n capped at 4.0 g0).
+    - {name: silo_cold_s1_st_outer_lo, of: silo_cold, solve: stage1,
+       structure: {set: outer_low_mass, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.25, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: silo_cold_s1_st_outer_hi, of: silo_cold, solve: stage1,
+       structure: {set: outer_high_mass, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: 4.0, overrides: {}, plausibility_scaled: false}}
+    # Q7's rows (D-SP7-07): the central structure with the dynamic factor 1 (quasi-static,
+    # the plain 3 g0 plateau) and 2 (a step push, the single-mode bound).
+    - {name: silo_cold_s1_st_qs, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: quasi_static, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: silo_cold_s1_st_step, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: step, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # Q2's row (D-SP7-02): the structure sized once for the full-load push (x = 0) and that
+    # mass carried at every offload, as a stage built for the full load would be.
+    - {name: silo_cold_s1_st_full, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: full_load, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # Q5's row (D-SP7-05, D-SP7-17): the push entering through the thrust structure instead
+    # of an aft ring, sized by its mass-estimating relation (k_ts central 0.2805 kg/kN);
+    # reported with the headline's prominence.
+    - {name: silo_cold_s1_st_ts, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: thrust_structure,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # Q3's rows (D-SP7-03): the existing structure with 10% and 25% margin over the pad's
+    # envelope (on its loads and pressures), against the headline's zero.
+    - {name: silo_cold_s1_st_m10, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.10, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: silo_cold_s1_st_m25, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.25, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # The unthrottled-envelope direction (design 4.2.6, the envelope-cap axis with its rows
+    # 4.5 and 4.0 g0, a design-assumption axis of D-SP7-18 on the envelope of D-SP7-15;
+    # design appendix A, review H6 and E20: "the envelope-cap rows (4.5 and 4.0 g0)", so
+    # that the envelope's sensitivity runs both ways, beside the two margin rows, which
+    # lower dm): the pad's stage-1 felt n capped at 4.5 and at 4.0 g0 when the envelope is
+    # built (the trajectory stays unthrottled), as if the pad's MECO were throttled; a cap
+    # lowers the envelope and so raises dm. Design 4.10's table lists the 4.5 g0 row only;
+    # the 4.0 g0 row is beyond it (the pre-registration, section 6).
+    - {name: silo_cold_s1_st_cap45, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: 4.5, overrides: {}, plausibility_scaled: false}}
+    - {name: silo_cold_s1_st_cap40, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: 4.0, overrides: {}, plausibility_scaled: false}}
+    # Design 4.10's push-time RP-1 pressure at its range's high end (pressure stabilisation)
+    # is not flown: sized only at the headline push it moves dm by -93.3 kg with the stage-1
+    # RP-1 MEOP at 4.00 bar, and by -148.7 kg with its minimum pressure also at the range's
+    # high end (p_min_fraction 0.93), both below the 0.5 t that would add the row (the
+    # pre-registration, section 6).
+    # The constant_accel hot starts, uncharged and central (no decision of their own; design
+    # 4.10; review E8): stage 1's thrust on the track lowers the interface force the
+    # structure is sized for, against the propellant burned on the track. silo_hot_full_s1
+    # was never solved in SP1; silo_hot_ramp_s1 reproduces SP1's 46,013.437 kg within 0.002
+    # kg. SP1's caveat holds: nothing models the exhaust in the shaft (back-pressure,
+    # heating, the carriage in the plume), which favours the hot starts; their rows and the
+    # hot-against-cold comparison are quoted with it.
+    - {name: silo_hot_full_s1, of: silo_hot_full, solve: stage1}
+    - {name: silo_hot_full_s1_st, of: silo_hot_full, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: silo_hot_ramp_s1, of: silo_hot_ramp_on_track, solve: stage1}
+    - {name: silo_hot_ramp_s1_st, of: silo_hot_ramp_on_track, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # The twice-as-long, half-the-g silo, uncharged and central: sweep 2's base (no decision
+    # of its own; design 4.10's sweep 2 and step S6a's case list, beyond design 4.10's
+    # table). The uncharged case reproduces SP1's 41,262.971 kg within 0.002 kg; the central
+    # case lowers the felt load the structure is sized for (about 2.5 g0 against 4.0) at the
+    # same exit speed (review N8, D12, E17).
+    - {name: silo_cold_200m_s1, of: silo_cold_200m, solve: stage1}
+    - {name: silo_cold_200m_s1_st, of: silo_cold_200m, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+  energy:
+    fuel_mass_t:                           # RP-1 of each full load; the LOX is the rest of the stage's propellant
+      stage1: {value: 123.5, source: "Espace & Exploration No.39 via Wikipedia Falcon 9 Full Thrust (en.wikipedia.org/wiki/Falcon_9_Full_Thrust, first-stage propellant 287.4 LOX + 123.5 RP-1); the gate vehicle file's own propellant source"}
+      stage2: {value: 32.3, source: "Espace & Exploration No.39 via Wikipedia Falcon 9 Full Thrust (en.wikipedia.org/wiki/Falcon_9_Full_Thrust, second-stage propellant 75.2 LOX + 32.3 RP-1); the gate vehicle file's own propellant source"}
+    heating_value_MJ_per_kg: {value: 43.03, source: "MIL-DTL-25576E (14 April 2006), Propellant, Rocket Grade Kerosene: RP-1 net heat of combustion 18,500 Btu/lb minimum by ASTM D240, x 2.326 kJ/kg per Btu/lb (International Table Btu, exact) = 43,031 kJ/kg; a specification minimum (delivered lots run slightly higher), which slightly lowers the heat-to-electricity ratio; docs/phases/inputs/2026-10-02-source-rp1-heating-value.md"}
