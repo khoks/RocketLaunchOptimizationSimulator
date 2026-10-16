@@ -843,8 +843,8 @@ use `--results-root <scratch>` (D-SP2-37).
 | S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [x] | 889f6ea |
 | S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [x] | 216a79c |
 | S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line (read as: the scene page differs only in the four regions of section 12, deviation 32; the five replay pages byte for byte); honesty review | [x] | 0a16a89 |
-| (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | | | | |
-| S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [ ] | |
+| (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | preflight of every run of A and C; one synthetic-file timing case (185.2 s) | [x] | cbbd7bc |
+| S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [x] | cbbd7bc |
 | S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [ ] | |
 | S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [ ] | |
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [ ] | |
@@ -889,7 +889,9 @@ the changes are listed after them.
    within 0.002 kg; SP1's headline with the structure off within 0.002 kg of 41,262.908 kg (slow
    pin and S7a's case); SP1's three penalty rows within 0.002 kg (S7a); the constant-2 t
    cross-check within 0.002 kg of 32,285.203 kg; templates/replay.html's sha256; the gallery's
-   six pages regenerated with only the recorded KI-038 line; the app's basis unchanged
+   six pages regenerated with only the recorded KI-038 line (read per D-SP7-47: the five
+   replay pages byte-identical, the scene page differing only in deviation 32's four
+   regions); the app's basis unchanged
    (`sp1_files_same` true) and the app's slow launch reproducing 41,262.908 kg within 0.002 kg
    after KI-030.
 4. **The structural headline** from file A at a clean commit: the central case, the physics band,
@@ -1263,6 +1265,30 @@ option fairly with its cost)
   accepted by the session (reasons in section 12); 32 changes the literal reading of exit
   criterion 3's gallery clause and goes to the user at C2. Deviations 32-38. KI-036, KI-038
   and KI-039 closed; KI-040 opened (deviation 37's video fit). Next: checkpoint 1.
+- Checkpoint 1 and step S6a (2026-10-15 to 2026-10-16; commit cbbd7bc, the pre-registration
+  commit): files A and C, their listing and resolve tests, the pre-registration part 1
+  (docs/phases/inputs/2026-10-15-SP7-preregistration.md). Checkpoint 1: every run of A (70)
+  and C (4) resolves and passes `sim.check_resolved`; one structural case on the synthetic
+  structure file took 185.2 s (92.6 s for the structural case; its x* 15,195.4 kg is a
+  synthetic number, used only to measure the placement's error, -297 kg). Workflow:
+  implementer; honesty, compliance and numerics reviewers, three passes (4, 3 and 2 majors);
+  three fix rounds; a verification review (one major, fixed) and a clean-up; an independent
+  gate. The freeze held: no agent ran or solved a case of A or C (the gate searched
+  results/ and 611 scratch metrics.json files); only pad baselines were flown, every P*
+  equal to SP1's record to 0.0 kg. Gate: G1-G6 pass (shared blocks byte-identical; every
+  case's resolved settings listed; the frozen sets reproduce, 317.9 s and 298.7 s; the
+  expected readings recomputed by the gate's own placement; the RP-1 pressure extra moves dm
+  by -93.3 kg, not flown); G7 failed on its own list, which omitted docs/physics.md, the
+  file holding the step's test-map rows (the orchestrator's error in the gate's wording;
+  accepted, deviation 39). Fast suite 1881 passed, 47 deselected; ruff clean; the golden
+  tier, pins and field lists pass; replay.html's sha256 unchanged. Put to the user at the
+  gate and decided: both fork tests registered and quoted (D-SP7-45), the headline form's
+  four amendments (D-SP7-46), exit criterion 3's gallery clause read as deviation 32's four
+  regions (D-SP7-47). Estimates registered (none is a target): the headline about 11.1 t
+  (26.9% of 41.26 t, "cancels most"), the physics band no offload to 28.5 t ("undecided"),
+  sweep 1 no offload at 25 and 50 m. Runtime estimate: about 59 min at this machine's rate,
+  56-80 min pessimistic, under D-SP1-17's 90 min. Deviations 39-41. Next: the in-progress
+  handoff, then S7a from a clean commit.
 
 ## 12. Deviations from the plan
 
@@ -1647,6 +1673,28 @@ Step S3a (2026-10-12), from its review rounds (session-made; to report at S3a's 
     only through the scene page's per-run structure note, which scene.html's
     `frameFooterLines` draws under the video footer (R-G1-04). physics.md's footnote
     paragraph ("Wording the structure (SP7 step S3a)") and the docstrings say the same.
+
+Checkpoint 1 and step S6a (2026-10-16):
+
+39. **docs/physics.md in the pre-registration commit** (S6a gate G7): the step's file list
+    (design 5: experiments/, docs/phases/inputs/, tests/test_config_planar.py) and the gate's
+    G7 wording left out docs/physics.md, which the standing gate requires to hold the step's
+    test-map rows; the commit carries its shipped-experiments table rows and two test-map
+    rows, documentation only (checked by the gate against the tests and files). Accepted by
+    the session at the gate.
+40. **Cases beyond design 4.10's lists** (pre-registration section 6, items 2, 4, 5 and 11):
+    the plausibility-scaled twin of the low-mass end (silo_cold_s1_st_phys_lo_scaled,
+    D-SP7-33 and D-SP7-41 make it the band's low end); silo_cold_200m's pair (sweep 2's base);
+    two payload cases for the rows expected to end no_offload (outer high-mass, step), so a
+    no_offload end carries its payload deficit as D-SP7-32 asks; the 4.0 g0 envelope-cap row
+    (design 4.2.6 names both caps); and the uncharged case solved at every sweep point beside
+    the central one. Each was added at a review, its estimate known and disclosed; the
+    runtime stays under D-SP1-17's 90 min.
+41. **The timing case measures the placement's error** (pre-registration section 2(d);
+    beyond step S6a's item 4, which asked for its wall time only): the synthetic-file case's
+    solved x* (15,195.4 kg) against the coupled placement's 14,898.0 kg (-297 kg, 2.0%) is
+    quoted as the method's measured error on a synthetic file, labelled as such; S3's slow
+    pin computes the same case on every slow run. Kept by the gate.
 
 ## 13. Prompt to start this phase
 
