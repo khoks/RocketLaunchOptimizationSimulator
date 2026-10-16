@@ -842,7 +842,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S2 | Station model of both stages, `LoadCase`, the envelope from a pad Result, the flags, the plausibility rule, `StructureConfig`, the loader and the two structure files, the screened search and tornado frozen into the files | structure.py, config.py, cli.py, sim.py, configs/structures/, physics.md | the pad's own cases give 0.000 kg; stations converge (< 0.1 kg); provenance; shared sections identical; the frozen sets reproduce (slow, under 10 min); the sizing-only table in the session log | [x] | 45e39d4 |
 | S3 | Coupling: the transform, its builder, dm in the verified dict with its provenance, memo keys, the offload case field and the experiment block, refusals, run-level keys, the pins | offload.py, sim.py, results_io.py, config.py, cli.py, physics.md | constant-2 t cross-check = SP1's +2 t row (<= 0.002 kg, slow); structure-off headline (<= 0.002 kg, slow); dm' bound and smoothness; vehicle_at bit-identical across call orders; xv_dry_mass_delta_kg = dm1 + dm2; with no structure block, `launchsim run experiments/silo_offload_2d_readme.yaml --results-root <scratch> --no-plots` at the start commit and at S3 give metrics.json and summary.md identical apart from timestamp and git; full suite | [x] | 889f6ea |
 | S3b | Reporting: the payload cases, `structure_inputs`, the Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight check | results_io.py, summary.py, plots.py, sim.py, physics.md | listed tests; full suite; visual and honesty review | [x] | 216a79c |
-| S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line; honesty review | [ ] | |
+| S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line (read as: the scene page differs only in the four regions of section 12, deviation 32; the five replay pages byte for byte); honesty review | [x] | 0a16a89 |
 | (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | | | | |
 | S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [ ] | |
 | S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [ ] | |
@@ -1245,6 +1245,24 @@ option fairly with its cost)
   tier, the pins and the golden-dump field lists pass; replay.html's sha256 unchanged. One doc
   defect the gate found (physics.md's band fraction of the synthetic file) fixed by the
   orchestrator before the commit. Deviations 23-31. Next: S3a.
+- Step S3a (2026-10-15; commit 0a16a89): the three-way structural wording at every source and
+  run kind, a structure payload case as the offload block's fourth run kind, KI-039, KI-036,
+  KI-038 (version). Workflow: implementer; honesty, compliance and numerics reviewers, three
+  passes (3, 4 and 2 majors; 47 findings in all); three fix rounds (the third under
+  deviation 31's rule) and a verification review whose four minors were fixed. Two
+  interruptions: a usage limit stopped pass 2 and the gate, a network error the gate's
+  retry; both resumed from the workflow journal. The gate failed G1 (the animate footnote
+  gave no stage split, file or band and no deviation said so) and read G5 against the
+  design's one-line expectation; a footnote fix (deviation 38), a review (one major, five
+  minors, fixed) and an independent re-gate followed. Re-gate: G1' and G5' pass (84 no-model
+  caveat lists and 56 rendered frames equal 77eb006's; every line inside the limit at four
+  widths; the five replay pages byte-identical; the scene page in deviation 32's four
+  regions); fast suite 1875 passed, 47 deselected; the readers' slow tests 7 passed; the
+  first gate's slow tier 47 passed (3,424.9 s; suite 1,921); ruff clean; the golden tier,
+  pins and golden-dump field lists pass; replay.html's sha256 unchanged. Deviations 32-34
+  accepted by the session (reasons in section 12); 32 changes the literal reading of exit
+  criterion 3's gallery clause and goes to the user at C2. Deviations 32-38. KI-036, KI-038
+  and KI-039 closed; KI-040 opened (deviation 37's video fit). Next: checkpoint 1.
 
 ## 12. Deviations from the plan
 
@@ -1529,6 +1547,106 @@ Step S3b (2026-10-11), from its third review round (session-made; to report at S
     foreground in chunks under ten minutes. For later steps: a gate must never end its turn
     on a running command, and a step whose third pass still has majors gets this extra round
     before its gate. No number of the model changed in the round.
+
+Step S3a (2026-10-12), from its review rounds (session-made; to report at S3a's gate):
+
+32. **The gallery's scene page differs from HEAD in four regions, not one line** (honesty
+    H-S3a-P3-07, compliance S3A-CMP3-02; the S3a row's gate and design 4.5 expect the
+    KI-038 version line alone): `pad-vs-silo-offload-scene.html`, regenerated with its
+    recorded command, differs from 77eb006 in (1) the CSP script hash (the template's
+    script changed), (2) the data block's `"version":"0.1.0"` (KI-038; no other data key
+    changes), (3) the run selector's `ROLE_GROUPS` gaining `["offload", "structure payload
+    case", "Structure payload cases"]` (fix round 1, H-S3a-01: a structure payload case's
+    run is the offload block's fourth kind, so it needs a group of its own rather than
+    "Other run folders") and (4) the Data line ending ", drawn by launch-assist-sim " +
+    DATA.version (KI-038). The five replay pages regenerate byte for byte, every fresh
+    render equals the working-tree file, and the site build is clean (1,313 links, none
+    broken, no fix-table warning). `site/examples/index.html` records the re-render and
+    points here. The gate is read as: the scene page differs only in these four regions.
+33. **The exploratory banner's penalty branch is reworded** (fix round 1, H-S3a-05; step
+    item 1 says the assumed-penalty branch keeps today's text): the bare "no structural
+    mass for the push" was false beside a penalty row, so a banner whose offload record
+    holds one reads "no structural mass for the push except the assumed stage-1 dry mass
+    of the penalty row ... (an assumption, not a sized structure)", an app launch whose
+    form adds a stage-1 dry mass included (`summary.exploratory_push_caveat`).
+34. **The penalty sentence's program-level clause is dropped where a modelled mass is
+    charged** (fix rounds 1 and 2, H-S3a-02 and H-S3a-P2-03; the step's scope leaves the
+    program-level claims to S7c): `replay.penalty_structure_sentence`'s closing "; no
+    structural model exists" is dropped beside a modelled run and in any directory whose
+    offload record charges one anywhere (`summary.offload_charges_modelled`), since the
+    next sentence, or the block caveat printed beside it on the scene page and in the
+    app's panel, names the model. A directory without a structural record keeps SP2's
+    text word for word, and the clause itself stays S7c's to reword.
+35. **KI-036 reaches beyond replay.py's git string** (fix rounds 1 and 2, H-S3a-08 and
+    N2-04; the step names replay.py 1819-1820): `summary.tree_state` reads any
+    non-boolean dirty flag as unknown, never by its truth value, and `scene.git_record`
+    writes dirty None for a no-git hash, which changes SP2's pinned assert at
+    tests/test_scene.py 1222: a directory written outside a repository now reads "state
+    unknown" on the scene page.
+36. **Files outside the step's file list** (compliance S3A-CMP3-03): `run_data.py` (the
+    fourth offload role `OFFLOAD_STRUCTURE_PAYLOAD` and its note; fix round 1),
+    `results_io.py` (`offload_block_drives`, fix round 2; `offload_uncharged_cases`, fix
+    round 3, S3A-NUM-03), `structure.py` (`SEARCH_HEADLINE` and `SEARCH_STEP`, the names
+    the readers quote the headline polish by), `templates/app.html` (the selector group,
+    fix round 1; the fit check under the server's footer, fix round 3),
+    `summary.py`'s `sweep_structure_lines` (fix round 2, H-S3a-P2-07: a sweep point writes
+    no case record, so the sweep summary words its structural cases) and
+    `tests/test_app_page.py` (fix round 3, S3A-CMP3-06).
+37. **The video footer's structural line goes unwrapped and the fit check draws under the
+    server's footer** (numerics S3A-NUM-01, fix round 3): `app.video_footer` hands
+    plots.animation_caveats' structural line over in one piece (the scene canvas wraps
+    every footer line at the frame's width, so a line pre-wrapped at 1280 px cost a
+    canvas line at each break); the results panel carries the same lines for the pair it
+    describes (`video_footer`, `app.panel_video_footer`, a new panel key), and the app
+    page's fit check (`videoFit`, `panelFooter`) draws its test frame under them, where it
+    used the payload's shorter frame caveat. Measured in the browser pane on a scratch
+    copy of the gallery directory whose two cases were given SP7 headline-like records
+    (physics_low_mass, scaled x0.739, the release flag fired with D-SP7-39's pressures,
+    payload_limit fired, the band record): a pad beside one modelled run fits 1280 x 720;
+    two modelled runs, each with its full frame note (1,276 characters), do not (the
+    footer took 250 px at fix round 3, 264 px with the pre-wrapped line) and fit
+    1920 x 1080. Re-measured after the S3a gate fix and its review (R-G1-06), in headless
+    Edge on the same probe copy and the current tree: the pair's footer takes 264 px at
+    1280 x 720 with the current footer and with fix round 3's alike (the 14 px come from
+    the scene page's changes after fix round 3, not from the footer), 292 px when one
+    run's record gives a 312.4 kg stage-2 share; the pad pair still fits 1280 x 720 and
+    the two-run pair 1920 x 1080 (at 960 x 540 both pairs are refused, as with fix round
+    3's footer; the pad pair's footer takes 236 px there, 222 px with fix round 3's). The
+    app now refuses 1280 x 720 for that pair before Save is offered ("choose a wider frame")
+    instead of on the first frame. Shortening a frame's per-run note (its band clause is
+    the block's, repeated per run) would change the scene payload's keys and the gallery
+    page again; it is not done in S3a and is an open item for the tracker.
+38. **The `animate` footnote points to the summary for the structure file and the band**
+    (S3a gate, G1; the step's three-way wording names the stages, file and band for every
+    per-run reader; reworded after the gate fix's review, R-G1-01 to R-G1-05):
+    `plots.animation_caveats`, the only caveat on a `launchsim animate` frame, states each
+    modelled run's mass, by stage when its record's stage-2 share is above zero
+    ("8,900.1 kg (stage 1) and 200.2 kg (stage 2) of modelled structural mass" on the
+    tests' synthetic record, to 0.1 kg as the replay caveat prints it, so a share under
+    0.5 kg never reads "0 kg (stage 2)": R-G1-05; the total alone otherwise), its set,
+    the plausibility scaling and the fired flags, and ends its structural line, once,
+    with "modelled mass by stage: the caveats of summary.md's offload section; structure
+    file and x* at the physics band's ends: its Structure subsection"
+    (`STRUCTURE_FOOTNOTE_POINTER`). The offload section's caveats give every structural
+    case's and structure payload case's mass by stage; the Structure subsection's
+    payload-cases table gives only a payload case's dm_0 and dm_1 totals (R-G1-03). The
+    Structure subsection names the structure file and gives x*, the tonnes of offload of
+    the experiment's cases at the physics band's ends ("not flown" at an end no case
+    ran): a different quantity from the band's sizing-only dm ends at the structure
+    file's headline push (3,677 and 18,604 kg for the gate structure file), which no
+    summary.md prints and which the replay caveat and the scene frame's per-run structure
+    note quote with their scope sentence (R-G1-02). The frame leaves the file's path and
+    those dm ends off by a choice about vertical space, not width (R-G1-01): the path
+    fits a footnote line (it ends 427.5 px into the 1,260.8 px of a 1280 px frame's line,
+    162.7 into 472.8 at 480 px), but the path and the dm ends with a shortened scope
+    sentence take one or two footnote lines more than the pointer on the tests'
+    selections at 480 and 1280 px (two or three with the pointer kept), and each line
+    past `FOOTNOTE_BASE_LINES` moves the panels' bottom up one line. The app's video
+    footer (`app.video_footer`, deviation 37) is these lines, unwrapped, with the pointer
+    and without the file or the dm ends; an app video frame carries the full sentence
+    only through the scene page's per-run structure note, which scene.html's
+    `frameFooterLines` draws under the video footer (R-G1-04). physics.md's footnote
+    paragraph ("Wording the structure (SP7 step S3a)") and the docstrings say the same.
 
 ## 13. Prompt to start this phase
 
