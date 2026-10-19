@@ -4242,7 +4242,8 @@ def sweep_structure_lines(points: Sequence[Mapping[str, Mapping[str, Any]]]) -> 
     STRUCTURE_ESTIMATE_TEXT, that the dm carries the plausibility rule's factor where
     ``<case>.structure_plausibility_scaled`` is True (when some point's is), and where its
     fired flags are (the ``<case>.structure_flags`` column and the Checks section); [] for a
-    sweep without a structural case (every SP1-type sweep: its summary is unchanged)."""
+    sweep without a structural case (every SP1-type sweep: these lines add nothing to its
+    summary; since SP7 step S3c its table does carry ``<case>.dv_shortfall_mps``)."""
     by_case: dict[str, list[Mapping[str, Any]]] = {}
     for records in points:
         for case, record in records.items():

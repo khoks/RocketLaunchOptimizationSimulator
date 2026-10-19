@@ -2829,6 +2829,7 @@ def test_sweep_offload_columns_match_the_experiment_solve(
         nominal["solve"]["gamma_star_rad"], rel=0.5 * 10.0 ** (1 - CSV_SIGNIFICANT_DIGITS)
     )
     assert row["s1.n_flags"] == len(record["flags"])
+    assert pd.isna(row["s1.dv_shortfall_mps"])  # an ok solve: empty on disk (SP7 S3c)
     text = (out / "summary.md").read_text(encoding="utf-8")
     assert "sweep_1/run_0001 s1 offload decomposition: explained" in text
     lines = text.splitlines()

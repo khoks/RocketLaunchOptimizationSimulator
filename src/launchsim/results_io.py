@@ -2329,7 +2329,7 @@ that less P_ref [kg] (a solved case flies P_ref, so 0; a fixed case its own payl
 capacity P*, so P* - P_ref is its figure), the verification's P* - P_ref [kg] (a solved
 case's; a fixed case has none), the decomposition status, the offload-to-screening
 ratio, the offloaded run's max-Q [Pa] and electrical energy [J], and (SP1 step 8a,
-KI-028; appended so every earlier column keeps its name and place) the solve's own
+KI-028; appended so every earlier column keeps its name and order) the solve's own
 gamma*_ref [rad] (Earth-relative flight-path angle at MECO, refined in search mode at
 X1, the root of the first search in x, and held for X2 and the final search at x*: the
 case record's ``solve.gamma_star_rad``, not the point's payload-search ``gamma_star_rad``
@@ -2340,8 +2340,10 @@ flags themselves are listed in the sweep summary's Checks section,
 without a flag list, such as a reference_failed point), and (SP7 step S3c; the
 pre-registration's section 9 requires a sweep point that ends no_offload to be reported
 with its shortfall; appended last, the KI-028 pattern again, so every earlier column
-keeps its name and place) the solve's delta-v shortfall at x = 0 [m/s]: the case record's
-``solve.dv_shortfall_mps``, -dv_margin(0) for a solve that ended no_offload and NaN
+keeps its name and order) the solve's delta-v shortfall at x = 0 [m/s]: the case record's
+``solve.dv_shortfall_mps`` (the offload solve's, at x = 0; not the point's run's
+payload-search ``dv_shortfall_mps`` metric, a no_orbit search's shortfall at P = 0, which
+is not an index column), -dv_margin(0) for a solve that ended no_offload and NaN
 otherwise (``offload.OffloadResult``), so the cell is empty for an ok solve, for a fixed
 case, which has no solve, for a reference_failed point and for a solve that ended
 search_failed (NaN), and carries the shortfall only where ``<case>.status`` is
@@ -2400,8 +2402,10 @@ OFFLOAD_STRUCTURE_SWEEP_COLUMNS: tuple[str, ...] = (
 design 4.4, "Sweeps"), written ``<case>.<column>`` (``offload_structure_index_values``)
 after every ``<case>.<OFFLOAD_SWEEP_COLUMNS>`` group and only for a case that was
 structural at some point of the sweep (the KI-028 pattern: appended, so every earlier
-column keeps its name and place, and an SP1-type sweep's index is unchanged byte for
-byte): the set, sizing, dynamic mode, entry path, margin and envelope cap of the case;
+column keeps its name and order, and these columns add nothing to an SP1-type sweep's
+index; since SP7 step S3c that index gains ``<case>.dv_shortfall_mps``,
+OFFLOAD_SWEEP_COLUMNS): the set, sizing, dynamic mode, entry path, margin and envelope
+cap of the case;
 dm1 + dm2 at x* [kg], dm2 [kg] and dm at x = 0 [kg]; the DLF, the peak felt load factor
 [g0] and the peak interface force [N]; the constant_accel plateau's ramp cost (a' - a)/a;
 the plausibility rule's factor for the case's band end on the two physics sets, whether
@@ -2591,8 +2595,8 @@ def planar_sweep_index_frame(sweep: SweepResult, root: Path) -> pd.DataFrame:
     OFFLOAD_SWEEP_COLUMNS of every offload case the sweep solved (``<case>.<column>``,
     only when it solved some: ``SweepResult.offload``), then (SP7 step S3b) the
     OFFLOAD_STRUCTURE_SWEEP_COLUMNS of every case that was structural at some point
-    (``offload_structure_index_values``; none for an SP1-type sweep, whose columns are
-    unchanged) and status. ValueError when an axis path collides with a column."""
+    (``offload_structure_index_values``; none for an SP1-type sweep, which gains no
+    structure column) and status. ValueError when an axis path collides with a column."""
     fixed = {*SWEEP_INDEX_FIXED_COLUMNS, PLANAR_SWEEP_PAIRED_COLUMN}
     names = list(dict.fromkeys(n for records in sweep.offload for n in records))
     structural = [

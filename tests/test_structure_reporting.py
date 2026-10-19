@@ -1301,8 +1301,8 @@ def test_sweep_summary_words_its_structural_cases(
     with how many points, that ``<case>.structure_dm_kg`` is the modelled structural mass
     of the push load (never an assumed penalty), the model, the layer and set, the file,
     the estimate text, the plausibility rule's factor where the column says it scaled, and
-    where the fired flags are; a sweep without a structural case prints none (an SP1-type
-    sweep summary is unchanged)."""
+    where the fired flags are; a sweep without a structural case prints none (these lines
+    add nothing to an SP1-type sweep summary)."""
     _resolved, report = _pass([PLAIN_CASE, ST_CASE])
     by = {c["name"]: c for c in report.record["cases"]}
     plain, st = by["s1"], by["s1_st"]
