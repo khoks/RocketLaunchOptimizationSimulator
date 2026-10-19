@@ -846,7 +846,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S3a | Wording at every source (three-way, every run kind); KI-039, KI-036, KI-038 (version); the pinned wording tests; the gallery regenerated | summary.py, compare.py, sim.py, config.py, replay.py, scene.py, plots.py, app.py, docs/manual | the eight pinned files updated; the gallery diff is the one recorded line (read as: the scene page differs only in the four regions of section 12, deviation 32; the five replay pages byte for byte); honesty review | [x] | 0a16a89 |
 | (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | | preflight of every run of A and C; one synthetic-file timing case (185.2 s) | [x] | cbbd7bc |
 | S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [x] | cbbd7bc |
-| S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [~] | |
+| S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [x] | 6fa2ff0 |
 | S3c | The sweep's no-offload record, added at S7a (D-SP7-48): `<case>.dv_shortfall_mps` appended to the sweep index, the no-offload lines under the sweep table; Amendment 1 of the pre-registration (74eb3c8); then `sweep` A re-run | results_io.py, summary.py, tests/test_offload_pipeline.py, physics.md | the column and lines on synthetic sweeps (fast tests); the standing gates; honesty review of the wording | [x] | 1e4c732 (pass-3 minors 77e1691) |
 | S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [ ] | |
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [ ] | |
@@ -1360,6 +1360,27 @@ option fairly with its cost)
 - Next: `sweep` A re-run from the clean tracker commit after 74eb3c8, alone, on a quiet
   machine; then the reproduction check of every pre-existing column, the note's update,
   the honesty review and S7a's gate.
+- Step S7a closed (2026-10-19; commit 6fa2ff0, the findings note with the run summaries).
+  After the re-run (17:23:21Z to 17:55:41Z, 32.3 min, exit 0; reproduction 657 cells, 0
+  differ; shortfalls 60.2, 18.3 and 190.0 m/s; deviation 45 for its dirty flag), the scripts
+  were fixed for review pass 1 (b82417b) and the section 9 checks script added (9b91473; all
+  ten checks PASS). Workflow: four read-only reviewers (honesty, number tracer, pre-registration
+  compliance, figures) in four passes (pass 1: 54 findings, 12 major; pass 2: 27, 1; pass 3:
+  19, 2; verification pass 4: 16, 1), each pass's findings fixed by a note fixer (none
+  rejected); the figures redrawn with the review's caveats (a5b21b8); an independent gate in
+  the foreground: no bug_suspect; every pad at P_ref to 0.0 kg; every registered reproduction
+  0.0 kg off and the nine uncharged sweep points equal to SP1's index at 12 digits; every
+  structural verification within 1e-4 P_ref (at most +0.488 kg); xv_dry_mass_delta_kg = dm1 +
+  dm2 to 7.3e-12 kg; the structure files' sha256 at every commit and in 74 records; Amendment
+  1's reproduction by its own comparison; the frozen sets reproduce at HEAD (301.9 s and the
+  fork's; the code differs from the run's only in reporting); the convergence numbers match
+  report.json; no major open; the code paths equal 2b343d7's: PASS. The structural headline:
+  11.42 t of stage-1 propellant (2.78% of stage 1, 27.7% of SP1's uncharged 41.26 t) with the
+  central structure; "cancels most" fired as registered; the physics band no offload to
+  28.57 t ("undecided"); the outer envelope no offload to 31.12 t; the lowest exit speed of
+  sweep 1 that still offloads 76.71 m/s (100 m), the 25 and 50 m points 60.2 and 18.3 m/s
+  short (the extra speed helped but did not pay for the structure). Deviations 45 and 46;
+  KI-043 and KI-044 opened. Next: S4 (in progress in the worktree sp7-s4).
 
 ## 12. Deviations from the plan
 
@@ -1791,6 +1812,33 @@ Checkpoint 1 and step S6a (2026-10-16):
     77e1691 (docstrings, physics.md, two test files; no output changes), checked by ruff, the
     touched fast tests (98 passed) and that slow test (passed, 505.5 s). The eleventh
     (H3-02) corrected the amendment's draft before its commit. Accepted by the session.
+
+45. **The sweep re-run recorded a dirty tree, and its quiet machine rests on this session's
+    records only** (protocol section 4: a run starts from a clean committed tree "so the results
+    directory records ... no dirty flag"; pre-registration section 11 and Amendment 1: a quiet
+    machine): the re-run of `sweep` A started 2026-10-19T17:23:21Z from 2b343d7 and recorded
+    `2b343d7f25eb`, dirty true. `results_io.git_info` counts untracked files outside results/;
+    by the session's account the only ones at the start were the 13 draft files of the findings
+    note under docs/findings/ (the note, its tables .md/.json and ten PNGs), and `git status
+    --porcelain -- src configs experiments tests pyproject.toml uv.lock` was empty four seconds
+    before the start, with no tracked file modified. The re-run reproduces all 657 pre-existing
+    cells of the first sweep's two indexes, so the dirt reached no number. Beside the re-run
+    this session ran only read-only review agents (stdlib reads of results files, 17:24 to
+    17:39Z) and a git worktree checkout outside the repository; its records do not cover
+    other Claude Code sessions on the machine, and sessions of two other projects wrote
+    transcript files in the re-run's window (file times only), as another did during the
+    convergence check's re-run (06:38Z). Results are deterministic, so load moves wall times
+    only. Not re-run a third time (a third sweep directory for a flag that measures untracked
+    documents); accepted by the session, not a user decision, and disclosed in the note's
+    Provenance and Reproduction. The lesson is in the protocol's section 11.
+46. **Step S7a's findings scripts grew beyond the registration's two** (pre-registration
+    section 5 and design 4.11 name a committed tables script and a figures script): a third,
+    docs/findings/scripts/sp7_s7a_checks.py (9b91473), evaluates section 9's checks and
+    Amendment 1's reproduction read-only, so their conclusions trace to a kept file (review
+    finding H-14); its output is docs/findings/RQ1-structural-2d-checks.txt. The tables and
+    figures came first from the uncommitted working tree (2026-10-16) and were regenerated from
+    the committed scripts after review (tables b82417b; figures, after review passes 2-4,
+    a5b21b8). Accepted by the session.
 
 ## 13. Prompt to start this phase
 

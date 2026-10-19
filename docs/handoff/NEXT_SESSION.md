@@ -39,7 +39,11 @@ per SESSION_PROTOCOL.md section 10 from the step table.
   on the three no-offload sweep points), the user decided D-SP7-48: step S3c (1e4c732,
   77e1691), pre-registration Amendment 1 (74eb3c8), and `sweep` A re-run alone from the
   clean commit after S3c's tracker commit.
-- Resume point: the phase file's section 11, entry "2026-10-19 (session 2)". If a sweep
+- Later on 2026-10-19: the sweep re-run (results/silo_structure_2d/20261019T172327Z) reproduced
+  the first sweep cell for cell; step S7a closed at 6fa2ff0 (the note, docs/findings/RQ1-structural-2d.md).
+  S4 runs in a git worktree on branch `sp7-s4` (outside the repository, in the session's scratch
+  folder); if this session ended before it was merged, the branch holds its work (`git log main..sp7-s4`).
+- Resume point: the phase file's section 11, entry "2026-10-19 (session 2)" and its S7a close line. If a sweep
   directory newer than 20261016T171522Z exists under results/silo_structure_2d/, check it
   as item 1 of section 6 says (finished, interrupted or raised); the reproduction check of
   Amendment 1 (every pre-existing column of both sweeps' sweep_index.csv equal by name at

@@ -13,9 +13,8 @@ split, order and designs of SP1-SP6 come from the plan the user approved on 2026
 (the structural mass of the push load and a force-limited drive) was added at SP1's
 close-out on 2026-10-04 and ordered after SP2 and before SP3 (decision D-SP1-18).
 
-Last updated: 2026-10-19 (SP7 in progress at step S7a: the pre-registered runs finished, step
-S3c and pre-registration Amendment 1 under D-SP7-48, sweep A to be re-run; decisions D-SP7-01
-to D-SP7-48; SP2 closed 2026-10-07, commit 3a1b243).
+Last updated: 2026-10-19 (SP7 in progress: step S7a closed (6fa2ff0, the structural findings
+note), S4 in hand; decisions D-SP7-01 to D-SP7-48; SP2 closed 2026-10-07, commit 3a1b243).
 
 ## Phases
 

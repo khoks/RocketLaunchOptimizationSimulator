@@ -430,6 +430,10 @@ Results and timing:
   node, python, ffmpeg) with exit 0xC0000142 (DLL initialisation failed). Re-run those
   tests alone before reading them as real (SP2 close: 28 such failures, all passing on
   re-run; the full suite took 51 min under that load).
+- `results_io.git_info` marks a run dirty for any untracked file outside results/, a draft
+  findings note included (SP7 S7a, 2026-10-19: a sweep re-run recorded `-dirty` for 13 draft
+  documents; phase file SP7, deviation 45). Before a registered run, commit the drafts or move
+  them out of the tree, and check that `git status --porcelain` is empty apart from results/.
 - `run_data.CALIBRATION_RECORDS` (re-exported by `plots`) feeds the calibration caveat in `animate` and `replay`;
   update it whenever the calibration is re-run.
 
