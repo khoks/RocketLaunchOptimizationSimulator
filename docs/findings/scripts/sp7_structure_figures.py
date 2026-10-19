@@ -1165,9 +1165,8 @@ def figure_felt(a: Mapping[str, Any], tables: Mapping[str, Any]) -> Path:
     title(
         fig,
         "Sizing only: the central structure's dm against the push's felt load",
-        "constant_accel to the fixed exit speed 76.71 m/s (stroke L = v^2 / 2a), at SP1's "
-        "headline offload 41.26 t (stacked) and at x = 0 (line); no assisted flight (file "
-        "A's pad re-flown for the envelope)",
+        "constant_accel to the fixed exit speed 76.71 m/s (L = v^2 / 2a); at x = 41.26 t "
+        "(stacked) and x = 0 (line); no assisted flight (file A's pad re-flown)",
     )
     be = head["break_even"]
     foot = footer(
