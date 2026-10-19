@@ -847,6 +847,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | (checkpoint 1) | resolve and preflight of file A and one non-headline short structural case; an in-progress handoff point | | preflight of every run of A and C; one synthetic-file timing case (185.2 s) | [x] | cbbd7bc |
 | S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [x] | cbbd7bc |
 | S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [~] | |
+| S3c | The sweep's no-offload record, added at S7a (D-SP7-48): `<case>.dv_shortfall_mps` appended to the sweep index, the no-offload lines under the sweep table; Amendment 1 of the pre-registration (74eb3c8); then `sweep` A re-run | results_io.py, summary.py, tests/test_offload_pipeline.py, physics.md | the column and lines on synthetic sweeps (fast tests); the standing gates; honesty review of the wording | [x] | 1e4c732 (pass-3 minors 77e1691) |
 | S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [ ] | |
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [ ] | |
 | S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [ ] | |
@@ -1323,6 +1324,43 @@ option fairly with its cost)
   command for a new session: the process check of the handoff's section 6, item 1, before
   any suite. Next: S7a's checks and write-up, then S4.
 
+**2026-10-19 (session 2, resuming SP7 at S7a).**
+
+- Resume (protocol section 10, then section 3 without the status change): no launchsim or
+  pytest process alive; HEAD ac5c6bd ("SP7 in progress: handoff at step S7a"); every [x]
+  row's commit in `git log`; the tree clean apart from S7a work products that session 1
+  left untracked after the handoff (results/silo_structure_2d/,
+  results/silo_structure_2d_readme/, docs/findings/RQ1-structural-2d.md with its tables,
+  ten figures and three scripts under docs/findings/scripts/). The three commands had
+  finished on 2026-10-16 (summary.md written, no FAILED.txt): run A at 18:19:59Z (64.8
+  min), sweep A at 17:48:15Z (32.9 min), run C at 17:21:03Z (5.6 min). After the handoff,
+  session 1 had run the frozen-sets test at the run's code (both files pass, 317.5 s and
+  290.0 s), run the convergence check from the then uncommitted script, and drafted the
+  note, which reports one blocking check of pre-registration section 9 failing (the three
+  no-offload sweep points carry no shortfall) and holds the S1 sentence and S2's 50 m
+  clause.
+- The three scripts committed (0a12c36, documents only; `git diff --quiet 1b5f9d4 HEAD --
+  src configs experiments pyproject.toml uv.lock tests` exit 0), then the convergence check
+  re-run from the committed script in the foreground, part by part (2026-10-19 06:34:53Z
+  to 06:39:58Z, 277.5 s of parts; nothing else running): the same bits as the first run
+  (shipped x* 11,420.246638573297 kg = run A's to 0.0 kg; tightened +0.0378 kg, 3.3e-6
+  relative; dm with 400 stations +6.2e-6 kg): passes (deviation 42).
+- The failing check put to the user; decided: fix the reporting, amend, re-run the sweep
+  (D-SP7-48). Step S3c added (deviation 43). Workflow: implementer; numerics, compliance and
+  honesty reviewers, three passes (15, 9 and 11 findings; 0, 2 and 0 majors); two fix rounds
+  (19 fixed, 5 rejected with reasons: three are the manual row (KI-041), one the design's
+  fixed wording, one pre-existing (KI-042)); an independent gate, every command in the
+  foreground: step criterion, fast suite 1882 passed, 47 deselected (three chunks), ruff,
+  the exact golden tier (121 passed), the planar digest pin and output capture, the
+  golden-dump field lists, the frozen files and replay.html's sha256, physics.md's rows,
+  the file list: all pass. Commit 1e4c732. The third pass's eleven minors, ten of them
+  sentences that S3c made false or wraps, fixed after the gate in 77e1691 (deviation 44;
+  98 fast tests of the touched files and the slow end-to-end sweep test, 505.5 s, pass);
+  the eleventh (H3-02) went into the amendment. Amendment 1 committed (74eb3c8).
+- Next: `sweep` A re-run from the clean tracker commit after 74eb3c8, alone, on a quiet
+  machine; then the reproduction check of every pre-existing column, the note's update,
+  the honesty review and S7a's gate.
+
 ## 12. Deviations from the plan
 
 Step 0 (2026-10-08): what the approved design changes against this brief. The user approved
@@ -1730,6 +1768,29 @@ Checkpoint 1 and step S6a (2026-10-16):
     solved x* (15,195.4 kg) against the coupled placement's 14,898.0 kg (-297 kg, 2.0%) is
     quoted as the method's measured error on a synthetic file, labelled as such; S3's slow
     pin computes the same case on every slow run. Kept by the gate.
+
+42. **The convergence check first ran before its script was committed** (pre-registration
+    section 1: "a committed script"): session 1 wrote docs/findings/scripts/sp7_convergence.py
+    at S7a and ran it from the working tree at ac5c6bd (2026-10-16, 18:32:41Z to 18:40:13Z)
+    before committing it. Session 2 committed the three scripts (0a12c36, documents only;
+    the code paths equal 1b5f9d4's) and re-ran the check from the committed script
+    (2026-10-19, 06:34:53Z to 06:39:58Z): every number the same to the bit. The note quotes
+    the committed run. Accepted by the session.
+43. **Step S3c added, and sweep A re-run on code that differs from run A's** (pre-registration
+    section 9, last bullet; section 12's "a later clean commit that changes no code"): the
+    three no-offload sweep points carried no shortfall, a reporting defect section 9 says to
+    fix first. The fix (one appended column, the no-offload lines) is code, so the sweep's
+    re-run starts from a commit whose src/ differs from 1b5f9d4's in results_io.py and
+    summary.py (reporting) only. The user decided it (D-SP7-48) and Amendment 1 (74eb3c8)
+    registers it; the reproduction of every pre-existing sweep column against the first
+    sweep is the check that the physics did not move. Run A and run C are not re-run.
+44. **The third review pass's minors fixed after the gate** (protocol: the loop leaves the
+    third pass's minors unfixed): ten of S3c's eleven pass-3 minors were sentences that the
+    step itself made false ("an SP1-type sweep's index is unchanged"; "keeps its name and
+    place"), physics.md wraps, and one assertion of the slow end-to-end sweep test; fixed in
+    77e1691 (docstrings, physics.md, two test files; no output changes), checked by ruff, the
+    touched fast tests (98 passed) and that slow test (passed, 505.5 s). The eleventh
+    (H3-02) corrected the amendment's draft before its commit. Accepted by the session.
 
 ## 13. Prompt to start this phase
 

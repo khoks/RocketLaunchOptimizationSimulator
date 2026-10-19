@@ -29,6 +29,22 @@ per SESSION_PROTOCOL.md section 10 from the step table.
   file section 7), then the session log (section 11). Section 4 below is a dated snapshot
   and loses against all three.
 
+## 0. Update of 2026-10-19 (session 2; read first: sections 4 and 6 below are the 2026-10-16 snapshot)
+
+- The three S7a commands finished on 2026-10-16 (run A 18:19:59Z, sweep A 17:48:15Z, run C
+  17:21:03Z; no FAILED.txt). The note docs/findings/RQ1-structural-2d.md was drafted by
+  session 1 (untracked until S7a's commit), with its tables, figures and three scripts.
+- Session 2 committed the scripts (0a12c36), re-ran the convergence check from the committed
+  script (the same bits; deviation 42), and, for the failing section 9 check (no shortfall
+  on the three no-offload sweep points), the user decided D-SP7-48: step S3c (1e4c732,
+  77e1691), pre-registration Amendment 1 (74eb3c8), and `sweep` A re-run alone from the
+  clean commit after S3c's tracker commit.
+- Resume point: the phase file's section 11, entry "2026-10-19 (session 2)". If a sweep
+  directory newer than 20261016T171522Z exists under results/silo_structure_2d/, check it
+  as item 1 of section 6 says (finished, interrupted or raised); the reproduction check of
+  Amendment 1 (every pre-existing column of both sweeps' sweep_index.csv equal by name at
+  %.12g) comes before any use of it.
+
 ## 2. Read these first, in this order
 
 1. This file.
