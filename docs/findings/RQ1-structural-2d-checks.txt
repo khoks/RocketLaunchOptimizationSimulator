@@ -1,0 +1,194 @@
+docs/findings/scripts/sp7_s7a_checks.py: SP7 step S7a, the pre-registration's section 9 checks and Amendment 1's reproduction check (read-only)
+HEAD a5b21b83d76c
+  run A           results/silo_structure_2d/20261016T171513Z (git 1b5f9d46d31c, dirty False)
+  sweep A first   results/silo_structure_2d/20261016T171522Z (git 1b5f9d46d31c, dirty False)
+  sweep A re-run  results/silo_structure_2d/20261019T172327Z (git 2b343d7f25eb, dirty True)
+  run C           results/silo_structure_2d_readme/20261016T171529Z (git 1b5f9d46d31c, dirty False)
+  SP1 sweeps      results/silo_offload_2d/20261003T112949Z
+  SP1 arms        results/silo_offload_2d/20261003T112934Z/metrics.json
+
+[1] no bug_suspect anywhere
+    run A: 1 of 1 summary.md carry 'No run and no comparison is bug_suspect.' and no blocked-findings line
+    sweep A first: 11 of 11 summary.md carry 'No run and no comparison is bug_suspect.' and no blocked-findings line
+    sweep A re-run: 11 of 11 summary.md carry 'No run and no comparison is bug_suspect.' and no blocked-findings line
+    run C: 1 of 1 summary.md carry 'No run and no comparison is bug_suspect.' and no blocked-findings line
+    run A: 1 metrics.json, 3362 string values read, none 'bug_suspect' unless listed below; screening_status x4 (ok 4); decomposition_status x32 (explained 32); xv_status x24 (explained 24)
+    sweep A first: 10 metrics.json, 1243 string values read, none 'bug_suspect' unless listed below; screening_status x9 (ok 9)
+    sweep A re-run: 10 metrics.json, 1243 string values read, none 'bug_suspect' unless listed below; screening_status x9 (ok 9)
+    run C: 1 metrics.json, 535 string values read, none 'bug_suspect' unless listed below; screening_status x1 (ok 1); decomposition_status x2 (explained 2); xv_status x2 (explained 2)
+    sweep A first sweep_1/sweep_index.csv: 5 rows x 73 columns scanned; its 7 status columns (search_status, screening_status, silo_cold_s1.status, silo_cold_s1.decomposition_status, silo_cold_s1_st.status, silo_cold_s1_st.decomposition_status, status) hold explained 10, inserted 5, no_offload 2, ok 18
+    sweep A first sweep_2/sweep_index.csv: 4 rows x 73 columns scanned; its 7 status columns (search_status, screening_status, silo_cold_200m_s1.status, silo_cold_200m_s1.decomposition_status, silo_cold_200m_s1_st.status, silo_cold_200m_s1_st.decomposition_status, status) hold explained 8, inserted 4, no_offload 1, ok 15
+    sweep A re-run sweep_1/sweep_index.csv: 5 rows x 75 columns scanned; its 7 status columns (search_status, screening_status, silo_cold_s1.status, silo_cold_s1.decomposition_status, silo_cold_s1_st.status, silo_cold_s1_st.decomposition_status, status) hold explained 10, inserted 5, no_offload 2, ok 18
+    sweep A re-run sweep_2/sweep_index.csv: 4 rows x 75 columns scanned; its 7 status columns (search_status, screening_status, silo_cold_200m_s1.status, silo_cold_200m_s1.decomposition_status, silo_cold_200m_s1_st.status, silo_cold_200m_s1_st.decomposition_status, status) hold explained 8, inserted 4, no_offload 1, ok 15
+    -> PASS
+
+[2] every pad P* equal to its P_ref within 0.002 kg
+    run A pad: P* 26054.396243494975 kg against P_ref 26054.396243494975 kg, diff +0.000e+00 kg (status inserted, search ok)
+    run A offload.reference_payload_kg 26054.396243494975 kg, diff +0.000e+00 kg against the registered P_ref
+    run C pad: P* 24700.013061881455 kg against P_ref 24700.013061881455 kg, diff +0.000e+00 kg (status inserted, search ok)
+    run C offload.reference_payload_kg 24700.013061881455 kg, diff +0.000e+00 kg against the registered P_ref
+    sweep A first baseline pad: P* 26054.396243494975 kg against P_ref 26054.396243494975 kg, diff +0.000e+00 kg (status inserted, search ok)
+    sweep A first sweep indexes: 18 <case>.reference_payload_kg cells (each point's P_ref), equal to P_ref at 12 digits (26054.3962435): all
+    sweep A re-run baseline pad: P* 26054.396243494975 kg against P_ref 26054.396243494975 kg, diff +0.000e+00 kg (status inserted, search ok)
+    sweep A re-run sweep indexes: 18 <case>.reference_payload_kg cells (each point's P_ref), equal to P_ref at 12 digits (26054.3962435): all
+    arm pads: run A's offload.sensitivity (8 arms) against SP1's arm P_ref (results/silo_offload_2d/20261003T112934Z/metrics.json)
+      vehicle.stages.stage1.dry_mass_t +10% (perturbed pad): P_ref 25661.00058497694 kg against SP1's 25661.00058497694 kg, diff +0.000e+00 kg (arm status ok)
+      vehicle.stages.stage1.dry_mass_t -10% (perturbed pad): P_ref 26456.25543231461 kg against SP1's 26456.25543231461 kg, diff +0.000e+00 kg (arm status ok)
+      vehicle.stages.stage1.engine.isp_vac_s +10% (perturbed pad): P_ref 29927.373659937362 kg against SP1's 29927.373659937362 kg, diff +0.000e+00 kg (arm status ok)
+      vehicle.stages.stage1.engine.isp_vac_s -10% (perturbed pad): P_ref 22478.30024828295 kg against SP1's 22478.30024828295 kg, diff +0.000e+00 kg (arm status ok)
+      vehicle.aero.cd_scale +10% (perturbed pad): P_ref 26015.453232183943 kg against SP1's 26015.453232183943 kg, diff +0.000e+00 kg (arm status ok)
+      vehicle.aero.cd_scale -10% (perturbed pad): P_ref 26093.467953404186 kg against SP1's 26093.467953404186 kg, diff +0.000e+00 kg (arm status ok)
+      assist.drive_efficiency +10% (drive arm: pad not perturbed): P_ref 26054.396243494975 kg against SP1's 26054.396243494975 kg, diff +0.000e+00 kg (arm status ok)
+      assist.drive_efficiency -10% (drive arm: pad not perturbed): P_ref 26054.396243494975 kg against SP1's 26054.396243494975 kg, diff +0.000e+00 kg (arm status ok)
+    -> PASS
+
+[3] the stage-1 pad controls pass their consistency test
+    run A pad__offload_stage1: status no_offload, x_pad 0.0 kg, m_res(0) -0.00163769 kg, dv_margin -0.000185962 m/s, bound 1.6178 kg, within_bound None, resolution effect True, flags 0: consistency pass
+    run A summary.md: no pad-control blocked-findings line
+    run C pad__offload_stage1: status no_offload, x_pad 0.0 kg, m_res(0) -0.00158773 kg, dv_margin -0.000189457 m/s, bound 1.27992 kg, within_bound None, resolution effect True, flags 0: consistency pass
+    run C summary.md: no pad-control blocked-findings line
+    sweep points: no pad control by design (section 3)
+    -> PASS
+
+[4] the reproductions (0.002 kg; sweep points at 12 significant digits)
+    run A silo_cold_s1: x* 41262.90803733282 kg against 41262.90803733282 kg, diff +0.000e+00 kg (status ok)
+    run A silo_cold_s1_dry+2t: x* 32285.203295407457 kg against 32285.203295407457 kg, diff +0.000e+00 kg (status ok)
+    run A silo_cold_s1_dry+4t: x* 22875.96053288855 kg against 22875.96053288855 kg, diff +0.000e+00 kg (status ok)
+    run A silo_cold_s1_dry+8.1t: x* 1980.4767886165673 kg against 1980.4767886165673 kg, diff +0.000e+00 kg (status ok)
+    run A silo_hot_ramp_s1: x* 46013.43730748323 kg against 46013.43730748323 kg, diff +0.000e+00 kg (status ok)
+    run A silo_cold_200m_s1: x* 41262.97057414868 kg against 41262.97057414868 kg, diff +0.000e+00 kg (status ok)
+    run C silo_cold_s1: x* 36006.44430169878 kg against 36006.44430169878 kg, diff +0.000e+00 kg (status ok)
+    file A's sweep 1 = SP1's sweep_1 (results/silo_offload_2d/20261003T112949Z/sweep_1/sweep_index.csv): silo_cold over assist.stroke_m = 25, 50, 100, 200, 300
+      sweep A first sweep_1 sweep_1/run_0001 assist.stroke_m 25: silo_cold_s1 18765.1262419 kg; SP1 18765.1262419 kg (equal at 12 digits, diff +0.0e+00 kg); registered 18765.1262419 kg (equal); status ok
+      sweep A first sweep_1 sweep_1/run_0002 assist.stroke_m 50: silo_cold_s1 28653.558053 kg; SP1 28653.558053 kg (equal at 12 digits, diff +0.0e+00 kg); registered 28653.558053 kg (equal); status ok
+      sweep A first sweep_1 sweep_1/run_0003 assist.stroke_m 100: silo_cold_s1 41262.9080373 kg; SP1 41262.9080373 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9080373 kg (equal); status ok
+      sweep A first sweep_1 sweep_1/run_0004 assist.stroke_m 200: silo_cold_s1 56827.1590629 kg; SP1 56827.1590629 kg (equal at 12 digits, diff +0.0e+00 kg); registered 56827.1590629 kg (equal); status ok
+      sweep A first sweep_1 sweep_1/run_0005 assist.stroke_m 300: silo_cold_s1 67285.8026498 kg; SP1 67285.8026498 kg (equal at 12 digits, diff +0.0e+00 kg); registered 67285.8026498 kg (equal); status ok
+      sweep A re-run sweep_1 sweep_1/run_0001 assist.stroke_m 25: silo_cold_s1 18765.1262419 kg; SP1 18765.1262419 kg (equal at 12 digits, diff +0.0e+00 kg); registered 18765.1262419 kg (equal); status ok
+      sweep A re-run sweep_1 sweep_1/run_0002 assist.stroke_m 50: silo_cold_s1 28653.558053 kg; SP1 28653.558053 kg (equal at 12 digits, diff +0.0e+00 kg); registered 28653.558053 kg (equal); status ok
+      sweep A re-run sweep_1 sweep_1/run_0003 assist.stroke_m 100: silo_cold_s1 41262.9080373 kg; SP1 41262.9080373 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9080373 kg (equal); status ok
+      sweep A re-run sweep_1 sweep_1/run_0004 assist.stroke_m 200: silo_cold_s1 56827.1590629 kg; SP1 56827.1590629 kg (equal at 12 digits, diff +0.0e+00 kg); registered 56827.1590629 kg (equal); status ok
+      sweep A re-run sweep_1 sweep_1/run_0005 assist.stroke_m 300: silo_cold_s1 67285.8026498 kg; SP1 67285.8026498 kg (equal at 12 digits, diff +0.0e+00 kg); registered 67285.8026498 kg (equal); status ok
+    file A's sweep 2 = SP1's sweep_2 (results/silo_offload_2d/20261003T112949Z/sweep_2/sweep_index.csv): silo_cold_200m over assist.stroke_m = 50, 100, 200, 300
+      sweep A first sweep_2 sweep_2/run_0001 assist.stroke_m 50: silo_cold_200m_s1 41262.9734368 kg; SP1 41262.9734368 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9734368 kg (equal); status ok
+      sweep A first sweep_2 sweep_2/run_0002 assist.stroke_m 100: silo_cold_200m_s1 41262.971734 kg; SP1 41262.971734 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.971734 kg (equal); status ok
+      sweep A first sweep_2 sweep_2/run_0003 assist.stroke_m 200: silo_cold_200m_s1 41262.9705741 kg; SP1 41262.9705741 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9705741 kg (equal); status ok
+      sweep A first sweep_2 sweep_2/run_0004 assist.stroke_m 300: silo_cold_200m_s1 41262.9072618 kg; SP1 41262.9072618 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9072618 kg (equal); status ok
+      sweep A re-run sweep_2 sweep_2/run_0001 assist.stroke_m 50: silo_cold_200m_s1 41262.9734368 kg; SP1 41262.9734368 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9734368 kg (equal); status ok
+      sweep A re-run sweep_2 sweep_2/run_0002 assist.stroke_m 100: silo_cold_200m_s1 41262.971734 kg; SP1 41262.971734 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.971734 kg (equal); status ok
+      sweep A re-run sweep_2 sweep_2/run_0003 assist.stroke_m 200: silo_cold_200m_s1 41262.9705741 kg; SP1 41262.9705741 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9705741 kg (equal); status ok
+      sweep A re-run sweep_2 sweep_2/run_0004 assist.stroke_m 300: silo_cold_200m_s1 41262.9072618 kg; SP1 41262.9072618 kg (equal at 12 digits, diff +0.0e+00 kg); registered 41262.9072618 kg (equal); status ok
+    -> PASS
+
+[5] structural verification within 1e-4 P_ref or flagged
+    run A silo_cold_s1_st (ok): verified P - P_ref +0.001441 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_phys_lo (ok): verified P - P_ref +0.003092 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_phys_lo_scaled (ok): verified P - P_ref +0.003429 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_phys_hi (no_offload): no verification (no offload to verify)
+    run A silo_cold_s1_st_outer_lo (ok): verified P - P_ref +0.003470 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_outer_hi (no_offload): no verification (no offload to verify)
+    run A silo_cold_s1_st_qs (ok): verified P - P_ref +0.001816 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_step (no_offload): no verification (no offload to verify)
+    run A silo_cold_s1_st_full (ok): verified P - P_ref +0.001238 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_ts (ok): verified P - P_ref +0.000935 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_m10 (ok): verified P - P_ref +0.001600 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_m25 (ok): verified P - P_ref +0.001863 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_cap45 (ok): verified P - P_ref +0.001245 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_s1_st_cap40 (ok): verified P - P_ref +0.001368 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_hot_full_s1_st (ok): verified P - P_ref +0.002199 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_hot_ramp_s1_st (ok): verified P - P_ref +0.001667 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run A silo_cold_200m_s1_st (ok): verified P - P_ref +0.003454 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    run C silo_cold_s1_st (ok): verified P - P_ref +0.001204 kg, |.| <= 2.4700 kg: yes (recorded passed True, status ok)
+    sweep A first sweep_1/run_0001 silo_cold_s1_st (no_offload): no verification (no offload to verify)
+    sweep A first sweep_1/run_0002 silo_cold_s1_st (no_offload): no verification (no offload to verify)
+    sweep A first sweep_1/run_0003 silo_cold_s1_st (ok): verified P - P_ref +0.001441 kg, |.| <= 2.6054 kg: yes
+    sweep A first sweep_1/run_0004 silo_cold_s1_st (ok): verified P - P_ref +0.001899 kg, |.| <= 2.6054 kg: yes
+    sweep A first sweep_1/run_0005 silo_cold_s1_st (ok): verified P - P_ref +0.488054 kg, |.| <= 2.6054 kg: yes
+    sweep A first sweep_2/run_0001 silo_cold_200m_s1_st (no_offload): no verification (no offload to verify)
+    sweep A first sweep_2/run_0002 silo_cold_200m_s1_st (ok): verified P - P_ref +0.001435 kg, |.| <= 2.6054 kg: yes
+    sweep A first sweep_2/run_0003 silo_cold_200m_s1_st (ok): verified P - P_ref +0.003454 kg, |.| <= 2.6054 kg: yes
+    sweep A first sweep_2/run_0004 silo_cold_200m_s1_st (ok): verified P - P_ref +0.005258 kg, |.| <= 2.6054 kg: yes
+    sweep A re-run sweep_1/run_0001 silo_cold_s1_st (no_offload): no verification (no offload to verify)
+    sweep A re-run sweep_1/run_0002 silo_cold_s1_st (no_offload): no verification (no offload to verify)
+    sweep A re-run sweep_1/run_0003 silo_cold_s1_st (ok): verified P - P_ref +0.001441 kg, |.| <= 2.6054 kg: yes
+    sweep A re-run sweep_1/run_0004 silo_cold_s1_st (ok): verified P - P_ref +0.001899 kg, |.| <= 2.6054 kg: yes
+    sweep A re-run sweep_1/run_0005 silo_cold_s1_st (ok): verified P - P_ref +0.488054 kg, |.| <= 2.6054 kg: yes
+    sweep A re-run sweep_2/run_0001 silo_cold_200m_s1_st (no_offload): no verification (no offload to verify)
+    sweep A re-run sweep_2/run_0002 silo_cold_200m_s1_st (ok): verified P - P_ref +0.001435 kg, |.| <= 2.6054 kg: yes
+    sweep A re-run sweep_2/run_0003 silo_cold_200m_s1_st (ok): verified P - P_ref +0.003454 kg, |.| <= 2.6054 kg: yes
+    sweep A re-run sweep_2/run_0004 silo_cold_200m_s1_st (ok): verified P - P_ref +0.005258 kg, |.| <= 2.6054 kg: yes
+    arms: no verification search by design (section 3, OFFLOAD_SENSITIVITY_BASIS); payload cases are not offload solves
+    -> PASS
+
+[6] xv_dry_mass_delta_kg = dm1 + dm2 within 1e-6 kg
+    run A silo_cold_s1_st (ok): xv_dry_mass_delta 6305.185585283194 kg; dm1 + dm2 = 6305.185585 + 0.000000 = 6305.185585283194 kg; diff +0.0e+00 kg
+    run A silo_cold_s1_st_phys_lo (ok): xv_dry_mass_delta 3833.5871245499548 kg; dm1 + dm2 = 3833.587125 + 0.000000 = 3833.5871245499557 kg; diff -9.1e-13 kg
+    run A silo_cold_s1_st_phys_lo_scaled (ok): xv_dry_mass_delta 2801.158570286527 kg; dm1 + dm2 = 2801.158570 + 0.000000 = 2801.158570286527 kg; diff +0.0e+00 kg
+    run A silo_cold_s1_st_phys_hi (no_offload): xv_dry_mass_delta 21551.830338061474 kg; dm1 + dm2 = 21551.830338 + 0.000000 = 21551.830338061474 kg; diff +0.0e+00 kg
+    run A silo_cold_s1_st_outer_lo (ok): xv_dry_mass_delta 2253.3499015274683 kg; dm1 + dm2 = 2253.349902 + 0.000000 = 2253.3499015274697 kg; diff -1.4e-12 kg
+    run A silo_cold_s1_st_outer_hi (no_offload): xv_dry_mass_delta 59898.94247181514 kg; dm1 + dm2 = 58536.842888 + 1362.099584 = 59898.94247181515 kg; diff -7.3e-12 kg
+    run A silo_cold_s1_st_qs (ok): xv_dry_mass_delta 5595.278188724969 kg; dm1 + dm2 = 5595.278189 + 0.000000 = 5595.278188724969 kg; diff +0.0e+00 kg
+    run A silo_cold_s1_st_step (no_offload): xv_dry_mass_delta 13497.955042873466 kg; dm1 + dm2 = 13178.132666 + 319.822377 = 13497.955042873462 kg; diff +3.6e-12 kg
+    run A silo_cold_s1_st_full (ok): xv_dry_mass_delta 6467.024236705587 kg; dm1 + dm2 = 6467.024237 + 0.000000 = 6467.024236705587 kg; diff +0.0e+00 kg
+    run A silo_cold_s1_st_ts (ok): xv_dry_mass_delta 7352.24790895488 kg; dm1 + dm2 = 7352.247909 + 0.000000 = 7352.247908954879 kg; diff +9.1e-13 kg
+    run A silo_cold_s1_st_m10 (ok): xv_dry_mass_delta 5943.266399754881 kg; dm1 + dm2 = 5943.266400 + 0.000000 = 5943.26639975488 kg; diff +9.1e-13 kg
+    run A silo_cold_s1_st_m25 (ok): xv_dry_mass_delta 5459.604697567036 kg; dm1 + dm2 = 5459.604698 + 0.000000 = 5459.604697567037 kg; diff -9.1e-13 kg
+    run A silo_cold_s1_st_cap45 (ok): xv_dry_mass_delta 6487.512034727748 kg; dm1 + dm2 = 6487.512035 + 0.000000 = 6487.512034727747 kg; diff +9.1e-13 kg
+    run A silo_cold_s1_st_cap40 (ok): xv_dry_mass_delta 7242.6667519864495 kg; dm1 + dm2 = 7174.796152 + 67.870600 = 7242.666751986447 kg; diff +2.7e-12 kg
+    run A silo_hot_full_s1_st (ok): xv_dry_mass_delta 5134.178644191405 kg; dm1 + dm2 = 5134.178644 + 0.000000 = 5134.1786441914055 kg; diff -9.1e-13 kg
+    run A silo_hot_ramp_s1_st (ok): xv_dry_mass_delta 6210.049384174134 kg; dm1 + dm2 = 6210.049384 + 0.000000 = 6210.049384174132 kg; diff +1.8e-12 kg
+    run A silo_cold_200m_s1_st (ok): xv_dry_mass_delta 3201.774091166735 kg; dm1 + dm2 = 3201.774091 + 0.000000 = 3201.774091166734 kg; diff +1.4e-12 kg
+    run C silo_cold_s1_st (ok): xv_dry_mass_delta 5967.275323329988 kg; dm1 + dm2 = 5967.275323 + 0.000000 = 5967.275323329989 kg; diff -9.1e-13 kg
+    beside (not a gate): the element sums (stage1.* and stage2.*) equal dm and dm2 to 4.5e-13 kg at most
+    not on disk: sweep points (no case record or decomposition is written, section 3) and the arms (decomposition status and residual only)
+    -> PASS
+
+[7] structure files' sha256 equal section 12's
+    configs/structures/generic_f9_class_2d.yaml: registered a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232
+      working tree a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232: equal
+      HEAD a5b21b83d76c: a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232: equal
+      run A, sweep A first, run C's commit 1b5f9d46d31c: a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232: equal
+      sweep A re-run's commit 2b343d7f25eb: a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232: equal
+    configs/structures/generic_f9_class_2d_readme_loads.yaml: registered a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997
+      working tree a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997: equal
+      HEAD a5b21b83d76c: a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997: equal
+      run A, sweep A first, run C's commit 1b5f9d46d31c: a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997: equal
+      sweep A re-run's commit 2b343d7f25eb: a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997: equal
+    run A (git 1b5f9d46d31c): structure digest records in its 1 metrics.json: 51 x configs/structures/generic_f9_class_2d.yaml equal; in its 1 resolved_config.yaml: 1 x configs/structures/generic_f9_class_2d.yaml equal
+    sweep A first (git 1b5f9d46d31c): structure digest records in its 10 metrics.json: none; in its 10 resolved_config.yaml: 9 x configs/structures/generic_f9_class_2d.yaml equal
+    sweep A re-run (git 2b343d7f25eb): structure digest records in its 10 metrics.json: none; in its 10 resolved_config.yaml: 9 x configs/structures/generic_f9_class_2d.yaml equal
+    run C (git 1b5f9d46d31c): structure digest records in its 1 metrics.json: 3 x configs/structures/generic_f9_class_2d_readme_loads.yaml equal; in its 1 resolved_config.yaml: 1 x configs/structures/generic_f9_class_2d_readme_loads.yaml equal
+    -> PASS
+
+[8] no offload_nonmonotone, refine_capped or fired fixed-point cap
+    sweep A first: summary.md's offload-flag lines: 18, the parsed flag count equal to the index's <case>.n_flags on 18
+    sweep A re-run: summary.md's offload-flag lines: 18, the parsed flag count equal to the index's <case>.n_flags on 18
+    flag names found (fired), by directory:
+      offload: grid (1 case records): run A: silo_cold_s1_st_outer_hi
+      structure_flight_exceedance (1 case records): run A: silo_cold_s1_st_cap40
+      structure_payload_limit (46 case records): run A: 27 cases; sweep A first: 9 cases; sweep A re-run: 9 cases; run C: silo_cold_s1_st
+      structure_payload_unconverged (3 case records): run A: silo_cold_pstar_st_outer_hi, silo_cold_pstar_st_phys_hi, silo_cold_pstar_st_step
+      structure_release_unload (48 case records): run A: 29 cases; sweep A first: 9 cases; sweep A re-run: 9 cases; run C: silo_cold_s1_st
+      structure_upper_stack_exceeded (7 case records): run A: silo_cold_pstar_st_outer_hi, silo_cold_pstar_st_step, silo_cold_s1_st_cap40, silo_cold_s1_st_outer_hi, silo_cold_s1_st_step; sweep A first: sweep_2/run_0001 silo_cold_200m_s1_st; sweep A re-run: sweep_2/run_0001 silo_cold_200m_s1_st
+    structure_fixed_point_cap records (fired or not) in the metrics.json files: 52, fired 0 (iterations at most 10, last step at most 9.53e-07 kg); a sweep point's index lists only its fired structure flags (<case>.structure_flags, read above)
+    blocking flags (offload_nonmonotone, refine_capped, structure_fixed_point_cap): none
+    -> PASS
+
+[9] every no_offload structural case carries its shortfall
+    run A silo_cold_s1_st_phys_hi (structural): solve.dv_shortfall_mps 243.71423271570515 m/s; payload case silo_cold_pstar_st_phys_hi: deficit P_2* - P_ref -2080.409767293444 kg (status ok; its structure_payload_unconverged True, not blocking)
+    run A silo_cold_s1_st_outer_hi (structural): solve.dv_shortfall_mps 1021.5419039313219 m/s; payload case silo_cold_pstar_st_outer_hi: deficit P_2* - P_ref -7804.349004774274 kg (status ok; its structure_payload_unconverged True, not blocking)
+    run A silo_cold_s1_st_step (structural): solve.dv_shortfall_mps 125.17674878421496 m/s; payload case silo_cold_pstar_st_step: deficit P_2* - P_ref -1086.8819258958356 kg (status ok; its structure_payload_unconverged True, not blocking)
+    run C: no case ended no_offload
+    sweep A first sweep_1: 2 no_offload point(s), shortfall columns: none (the reporting defect Amendment 1 fixed; superseded by the re-run, not gated here)
+    sweep A first sweep_2: 1 no_offload point(s), shortfall columns: none (the reporting defect Amendment 1 fixed; superseded by the re-run, not gated here)
+    sweep A re-run sweep_1/run_0001 25 m silo_cold_s1_st: silo_cold_s1_st.dv_shortfall_mps = 60.2312596722 m/s
+    sweep A re-run sweep_1/run_0002 50 m silo_cold_s1_st: silo_cold_s1_st.dv_shortfall_mps = 18.2653911991 m/s
+    sweep A re-run sweep_2/run_0001 50 m silo_cold_200m_s1_st: silo_cold_200m_s1_st.dv_shortfall_mps = 189.990230062 m/s
+    -> PASS
+
+[10] Amendment 1: the re-run reproduces every pre-existing index column
+    sweep_1: first 5 rows x 73 columns, re-run 5 rows x 75 columns; 73 pre-existing columns compared by name over 5 rows (365 cells): 0 differ; missing in the re-run: none; added: silo_cold_s1.dv_shortfall_mps, silo_cold_s1_st.dv_shortfall_mps
+    sweep_2: first 4 rows x 73 columns, re-run 4 rows x 75 columns; 73 pre-existing columns compared by name over 4 rows (292 cells): 0 differ; missing in the re-run: none; added: silo_cold_200m_s1.dv_shortfall_mps, silo_cold_200m_s1_st.dv_shortfall_mps
+    -> PASS
+
+SUMMARY: PASS: all 10 checks pass
