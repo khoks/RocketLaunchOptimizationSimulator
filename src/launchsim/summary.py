@@ -4180,7 +4180,9 @@ def planar_sweep_summary(
     baselines of paired sweeps, the assumptions (union over the baseline and every
     point) and the Checks (``sweep_checks_section``: blocked findings, not_checked,
     gamma*-sensitive verdicts); under a table whose offload cases are structural at some
-    point, ``sweep_structure_lines`` (SP7 step S3a fix round 2, H-S3a-P2-07)."""
+    point, ``sweep_structure_lines`` (SP7 step S3a fix round 2, H-S3a-P2-07), and under one
+    at which some point's case ended no_offload, ``sweep_no_offload_lines`` (SP7 step
+    S3c), each only when it has a line."""
     all_runs = {baseline.name: baseline}
     for sweep in sweeps:
         all_runs.update({f"sweep_{sweep.sweep_index}/{rr.name}": rr for rr in sweep.results})
@@ -4214,6 +4216,9 @@ def planar_sweep_summary(
         structure = sweep_structure_lines(sweep.offload)
         if structure:
             parts += [*structure, ""]
+        no_offload = sweep_no_offload_lines(sweep)
+        if no_offload:
+            parts += [*no_offload, ""]
     section = assumptions_section(all_runs, baseline.name, "all sweep points")
     parts += ["## Assumptions", "", section, ""]
     parts += ["## Checks", "", sweep_checks_section(sweeps, baseline), ""]
@@ -4264,6 +4269,62 @@ def sweep_structure_lines(points: Sequence[Mapping[str, Mapping[str, Any]]]) -> 
         line += f"; its fired flags are in {case}.structure_flags and the Checks section."
         lines.append(line)
     return lines
+
+
+SWEEP_NO_OFFLOAD_HEAD = (
+    "Sweep points at which an offload case ended no_offload (SP7 step S3c; pre-registration "
+    "section 9):"
+)
+"""What opens the lines under a sweep table at which an offload case ended no_offload at
+some point (``sweep_no_offload_lines``; a sweep may name several cases per point
+(``SweepConfig.offload``: the registered SP7 sweeps two, SP1's recorded sweeps one), so
+the lines are per (point, case) and a point's other cases may have ended ok)."""
+SWEEP_NO_OFFLOAD_DEFICIT = (
+    f"payload deficit at the full load {STRUCTURE_NOT_FLOWN} (a payload case flies a "
+    "variant, not a sweep point)"
+)
+"""The payload-deficit clause of every sweep no_offload line: a sweep point has no
+payload case, so its deficit is never quoted (pre-registration section 6, item 5)."""
+
+
+def sweep_no_offload_lines(sweep: SweepResult) -> list[str]:
+    """The lines under a sweep's table that report each (point, case) at which an offload
+    case ended no_offload (SP7 step S3c; the pre-registration's section 9 requires the
+    report, its section 6, item 5 the deficit's words: a sweep point writes no case
+    record, so its shortfall is otherwise only the index's ``<case>.dv_shortfall_mps``
+    cell): SWEEP_NO_OFFLOAD_HEAD, then one line per (point, case) whose record status is
+    NO_OFFLOAD_STATUS, in the sweep's point order, mirroring the run summary's
+    ``_no_offload_line``: the point's run and the case, the dm the full-load push carried
+    (``structure_dm_kg``: at a no_offload end the sizing at x = 0, the run summary's
+    STRUCTURE_AT_X_NOTE; for a ``structure_charged`` record only, an uncharged end drops
+    the clause), the solver's ``dv_shortfall_mps`` at x = 0 and the column that holds it,
+    and SWEEP_NO_OFFLOAD_DEFICIT. The end is worded as no offload, never as an offload of
+    "0 t" (D-SP7-32). Every figure is a record field; nothing is computed. [] when no
+    point ended no_offload, whatever the sweep's type (SP1's recorded sweeps among them:
+    every point of theirs ended ok, so their summaries change only by the column, its
+    header and ``n/a`` cells in the sweep table, and gain no line)."""
+    tag = f"sweep_{sweep.sweep_index}"
+    offloads = sweep.offload or [{}] * len(sweep.results)
+    lines: list[str] = []
+    for rr, records in zip(sweep.results, offloads, strict=True):
+        for case, record in records.items():
+            if not isinstance(record, Mapping) or record.get("status") != NO_OFFLOAD_STATUS:
+                continue
+            solve = record.get("solve") or {}
+            carrying = (
+                f" carrying dm {_fmt(record.get('structure_dm_kg'))} kg"
+                if structure_charged(record)
+                else ""
+            )
+            lines.append(
+                f"- {tag}/{rr.name} {case}: no offload at P_ref: the full-load push{carrying} "
+                f"falls short of P_ref by {_fmt(solve.get('dv_shortfall_mps'))} m/s of delta-v "
+                f"(the solver's dv_shortfall_mps at x = 0; column {case}.dv_shortfall_mps); "
+                f"{SWEEP_NO_OFFLOAD_DEFICIT}"
+            )
+    if not lines:
+        return []
+    return [SWEEP_NO_OFFLOAD_HEAD, "", *lines]
 
 
 def sweep_checks_section(sweeps: Sequence[SweepResult], baseline: RunResult) -> str:

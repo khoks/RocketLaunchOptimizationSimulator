@@ -2319,6 +2319,7 @@ OFFLOAD_SWEEP_COLUMNS: tuple[str, ...] = (
     "electrical_energy_J",
     "solve_gamma_star_rad",
     "n_flags",
+    "dv_shortfall_mps",
 )
 """The sweep_index.csv columns of each offload case a sweep names, written
 ``<case>.<column>`` (``offload_index_values``): the solve's (or fixed run's) status,
@@ -2336,8 +2337,17 @@ column; a fixed case has no solve, so none, and a solve that ended search_failed
 and the number of the case record's flags (the solve's and its recorded run's; the
 flags themselves are listed in the sweep summary's Checks section,
 ``summary.sweep_checks_section``, with a failed solve's status; none for a record
-without a flag list, such as a reference_failed point). A sweep point writes no offload run
-directory, so these columns are its solve's only record on disk."""
+without a flag list, such as a reference_failed point), and (SP7 step S3c; the
+pre-registration's section 9 requires a sweep point that ends no_offload to be reported
+with its shortfall; appended last, the KI-028 pattern again, so every earlier column
+keeps its name and place) the solve's delta-v shortfall at x = 0 [m/s]: the case record's
+``solve.dv_shortfall_mps``, -dv_margin(0) for a solve that ended no_offload and NaN
+otherwise (``offload.OffloadResult``), so the cell is empty for an ok solve, for a fixed
+case, which has no solve, for a reference_failed point and for a solve that ended
+search_failed (NaN), and carries the shortfall only where ``<case>.status`` is
+no_offload; the sweep summary words each such (point, case) under the sweep's table
+(``summary.sweep_no_offload_lines``). A sweep point writes no offload run directory, so
+these columns are its solve's only record on disk."""
 
 
 def offload_index_values(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -2361,6 +2371,7 @@ def offload_index_values(record: Mapping[str, Any]) -> dict[str, Any]:
         "electrical_energy_J": vs_pad.get("electrical_energy_J"),
         "solve_gamma_star_rad": solve.get("gamma_star_rad"),
         "n_flags": None if flags is None else len(flags),
+        "dv_shortfall_mps": solve.get("dv_shortfall_mps"),
     }
     return {key: values[key] for key in OFFLOAD_SWEEP_COLUMNS}
 

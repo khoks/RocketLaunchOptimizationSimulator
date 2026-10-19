@@ -37,7 +37,11 @@ Fast:
   without offload arms, and with --no-offload); each sweep point's solve gamma*_ref and
   flag count in sweep_index.csv, with the flag lines in the sweep's Checks section (a
   failed solve's status said); the README-loads fork's calibration caveat; the stage-2
-  caveat that no longer assumes a stage-1-only offload maximises the total tonnes.
+  caveat that no longer assumes a stage-1-only offload maximises the total tonnes;
+- SP7 step S3c: each sweep point's delta-v shortfall in sweep_index.csv
+  (``dv_shortfall_mps``, appended last; empty unless the solve ended no_offload) and the
+  sweep summary's no_offload lines under the table (the dm clause for a structural end
+  only, the deficit "not flown", never "0 t"; none without a no_offload end).
 
 Slow (a small searched grid on the gate fork, gamma* 18-28 deg): the experiment run in
 memory writes nothing; the solved case, its verification, recorded run, decomposition
@@ -85,6 +89,7 @@ from launchsim.metrics_planar import (
 )
 from launchsim.offload import (
     FINAL_LOG,
+    NO_OFFLOAD_STATUS,
     VERIFY_MISMATCH_FLAG,
     X2_LOG,
     OffloadEval,
@@ -1263,15 +1268,21 @@ def test_sweep_index_records_each_point_solves_gamma_star_and_flags(tmp_path: Pa
     """KI-028 (SP1 step 8a): every offload case of a sweep point records its solve's own
     gamma*_ref [rad] (the record's ``solve.gamma_star_rad``, here 23.4 deg, not the
     point's payload-search ``gamma_star_rad``, here 22.0 deg) and its flag count as two
-    columns appended after step 7's twelve, which keep their names and order; a fixed
-    case (no solve) leaves gamma*_ref empty and counts its flags (0 here); a
+    columns appended after step 7's twelve, which keep their names and order (SP7 step
+    S3c appended ``dv_shortfall_mps`` after those two, the same way: the next test); a
+    fixed case (no solve) leaves gamma*_ref empty and counts its flags (0 here); a
     reference_failed point (no flag list) leaves both empty. The CSV keeps gamma*_ref to
     12 significant digits. The sweep's Checks section lists each
     point's flags (joined by "; ", ``none`` for an empty list, OFFLOAD_SWEEP_NO_FLAG_LIST
     without a list) under OFFLOAD_SWEEP_FLAGS_TEXT, apart from the decomposition lines; a
     solve that ended search_failed (an empty flag list, no gamma*_ref, as
     ``_case_record`` builds it) says so with its failure kind, never a bare "none"."""
-    assert OFFLOAD_SWEEP_COLUMNS == (*SWEEP_COLUMNS_BEFORE_8A, "solve_gamma_star_rad", "n_flags")
+    assert OFFLOAD_SWEEP_COLUMNS == (
+        *SWEEP_COLUMNS_BEFORE_8A,
+        "solve_gamma_star_rad",
+        "n_flags",
+        "dv_shortfall_mps",
+    )
     gamma_solve, gamma_point = math.radians(23.4), math.radians(22.0)
     flags = ["offload: a flag", "offload_verify_mismatch: a second"]
     record, fixed = _synthetic_record()["cases"][:2]
@@ -1344,6 +1355,194 @@ def test_sweep_index_records_each_point_solves_gamma_star_and_flags(tmp_path: Pa
     assert "pad control" not in text
     plain = summary.sweep_checks_section([_sweep(tmp_path, [])], _fake_run("pad"))  # type: ignore[arg-type]
     assert summary.OFFLOAD_SWEEP_FLAGS_TEXT not in plain
+
+
+SHORTFALL_MPS = 37.1234567891
+"""A synthetic delta-v shortfall at x = 0 [m/s] with 12 significant digits, so the CSV's
+%.12g must carry every one of them."""
+SWEEP_DM_KG = 6526.53
+"""A synthetic modelled structural mass of a sweep point's push load [kg]."""
+
+
+def test_sweep_index_and_summary_report_each_no_offload_point(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SP7 step S3c (pre-registration section 9, last bullet; section 6, item 5): a sweep
+    point whose offload case ended no_offload is recorded with its delta-v shortfall. The
+    index: ``dv_shortfall_mps`` is OFFLOAD_SWEEP_COLUMNS' last column (the KI-028 pattern:
+    the fourteen before keep their names and order; the structure columns of a structural
+    case follow the last case's plain group, as ``planar_sweep_index_frame`` lays them out,
+    whichever case is named last) and holds the record's ``solve.dv_shortfall_mps``: an
+    empty cell for an ok solve (NaN), for a fixed case (no solve), for a reference_failed
+    point and for a solve that ended search_failed (NaN, as ``_case_record`` builds it), the
+    shortfall for a no_offload solve, structural or not, kept to 12 significant digits
+    through write_csv. The summary: under the sweep's table, after the structural lines,
+    SWEEP_NO_OFFLOAD_HEAD and one line per such (point, case) in point order (none for the
+    search_failed solve), worded like the run summary's ``_no_offload_line`` with the
+    column that holds the shortfall, the "carrying dm ... kg" clause for a
+    structure_charged record only and the deficit "not flown (a payload case flies a
+    variant, not a sweep point)", never "0 t"; a sweep without a no_offload end prints no
+    heading, whatever its type (SP1's recorded sweeps among them: every point of theirs
+    ended ok, so their summaries change only by the column, its header over an ``n/a``
+    cell in the sweep table, which prints every index column)."""
+    assert OFFLOAD_SWEEP_COLUMNS[-1] == "dv_shortfall_mps"
+    gamma = math.radians(23.4)
+    record, fixed = _synthetic_record()["cases"][:2]
+    ok_solve = {"status": "ok", "gamma_star_rad": gamma, "dv_shortfall_mps": math.nan}
+    ok = {**record, "solve": ok_solve}
+    fixed = {**fixed, "flags": []}
+    no_offload = {
+        **record,
+        "status": NO_OFFLOAD_STATUS,
+        "offload_kg": 0.0,
+        "stage1_fraction": 0.0,
+        "total_fraction": 0.0,
+        "verification": None,
+    }
+    st = {
+        **no_offload,
+        "name": "s1_st",
+        "run": "s1_st",
+        "solve": {**ok_solve, "status": NO_OFFLOAD_STATUS, "dv_shortfall_mps": SHORTFALL_MPS},
+        "structure_charged": True,
+        "structure_set": "central",
+        "structure_file": "configs/structures/generic_f9_class_2d.yaml",
+        "structure_dm_kg": SWEEP_DM_KG,
+    }
+    uncharged = {
+        **no_offload,
+        "solve": {**ok_solve, "status": NO_OFFLOAD_STATUS, "dv_shortfall_mps": 2.5 * SHORTFALL_MPS},
+    }
+    failed = {"name": "s1", "status": results_io.REFERENCE_FAILED_STATUS}
+    search_failed = {
+        **record,
+        "status": SEARCH_FAILED_STATUS,
+        "solve": {
+            "status": SEARCH_FAILED_STATUS,
+            "gamma_star_rad": math.nan,
+            "dv_shortfall_mps": math.nan,
+            "failure_kind": "bracket",
+            "flags": [],
+        },
+        "decomposition_status": None,
+        "flags": [],
+    }
+    points = [
+        {"s1": ok, "f10": fixed, "s1_st": st},
+        {"s1": failed, "s1_st": {**failed, "name": "s1_st"}},
+        {"s1": uncharged},
+        {"s1": search_failed},
+    ]
+    assert results_io.offload_index_values(st)["dv_shortfall_mps"] == SHORTFALL_MPS
+    assert results_io.offload_index_values(fixed)["dv_shortfall_mps"] is None
+    assert results_io.offload_index_values(failed)["dv_shortfall_mps"] is None
+    assert math.isnan(results_io.offload_index_values(search_failed)["dv_shortfall_mps"])
+    point = SimpleNamespace(point_index=1, overrides={"assist.stroke_m": 100})
+    result = SimpleNamespace(metrics={"run_checks": "ok"}, status="inserted")
+    names = ("run_0001", "run_0002", "run_0003", "run_0004")
+    sweep = results_io.SweepResult(
+        1,
+        "silo_cold",
+        ["assist.stroke_m"],
+        [point] * len(names),
+        [SimpleNamespace(name=n, result=result) for n in names],
+        [{} for _ in names],  # type: ignore[list-item]
+        [tmp_path / "sweep_1" / n for n in names],
+        [None for _ in names],
+        points,
+        [{} for _ in names],
+    )
+    frame = results_io.planar_sweep_index_frame(sweep, tmp_path)  # type: ignore[arg-type]
+    cols = list(frame.columns)
+    for case in ("s1", "f10", "s1_st"):
+        assert cols[cols.index(f"{case}.n_flags") + 1] == f"{case}.dv_shortfall_mps"
+    # the structure columns follow the last case's plain group, whichever case that is
+    assert cols.index("s1_st.structure_set") == 1 + max(
+        cols.index(f"{case}.dv_shortfall_mps") for case in ("s1", "f10", "s1_st")
+    )
+    first, second, third, fourth = (frame.iloc[i] for i in range(len(names)))
+    assert pd.isna(first["s1.dv_shortfall_mps"]) and first["s1.status"] == "ok"
+    assert pd.isna(first["f10.dv_shortfall_mps"]) and first["f10.status"] == "ok"
+    assert first["s1_st.dv_shortfall_mps"] == SHORTFALL_MPS
+    assert first["s1_st.status"] == NO_OFFLOAD_STATUS and first["s1_st.offload_kg"] == 0.0
+    assert pd.isna(second["s1.dv_shortfall_mps"]) and pd.isna(second["s1_st.dv_shortfall_mps"])
+    assert second["s1.status"] == results_io.REFERENCE_FAILED_STATUS
+    assert third["s1.dv_shortfall_mps"] == 2.5 * SHORTFALL_MPS
+    assert pd.isna(third["s1_st.dv_shortfall_mps"])  # no s1_st record at this point
+    assert fourth["s1.status"] == SEARCH_FAILED_STATUS and pd.isna(fourth["s1.dv_shortfall_mps"])
+    path = results_io.write_csv(tmp_path / "sweep_index.csv", frame)
+    assert "37.1234567891" in path.read_text(encoding="utf-8")
+    written = pd.read_csv(path)
+    assert list(written.columns) == cols
+    assert written["s1_st.dv_shortfall_mps"][0] == pytest.approx(
+        SHORTFALL_MPS, rel=0.5 * 10.0 ** (1 - CSV_SIGNIFICANT_DIGITS)
+    )
+    for empty in ("s1.dv_shortfall_mps", "f10.dv_shortfall_mps", "s1_st.dv_shortfall_mps"):
+        assert pd.isna(written[empty][1])  # the reference_failed point (no s1_st, no f10)
+    assert pd.isna(written["s1.dv_shortfall_mps"][0])  # an ok solve: NaN in memory
+    assert pd.isna(written["f10.dv_shortfall_mps"][0])  # a fixed case: no solve
+    assert written["s1.dv_shortfall_mps"][2] == pytest.approx(
+        2.5 * SHORTFALL_MPS, rel=0.5 * 10.0 ** (1 - CSV_SIGNIFICANT_DIGITS)
+    )
+    assert pd.isna(written["s1.dv_shortfall_mps"][3])  # a search_failed solve: NaN
+    # the summary lines: the structural end with its dm, the uncharged end without; the
+    # search_failed solve (run_0004) gets none
+    lines = summary.sweep_no_offload_lines(sweep)  # type: ignore[arg-type]
+    assert lines[:2] == [summary.SWEEP_NO_OFFLOAD_HEAD, ""]
+    assert len(lines) == 4 and "run_0004" not in "\n".join(lines)
+    assert lines[2:] == [
+        "- sweep_1/run_0001 s1_st: no offload at P_ref: the full-load push carrying dm 6526.53 kg "
+        "falls short of P_ref by 37.1235 m/s of delta-v (the solver's dv_shortfall_mps at x = 0; "
+        "column s1_st.dv_shortfall_mps); payload deficit at the full load not flown (a payload "
+        "case flies a variant, not a sweep point)",
+        "- sweep_1/run_0003 s1: no offload at P_ref: the full-load push falls short of P_ref by "
+        "92.8086 m/s of delta-v (the solver's dv_shortfall_mps at x = 0; column "
+        "s1.dv_shortfall_mps); payload deficit at the full load not flown (a payload case flies "
+        "a variant, not a sweep point)",
+    ]
+    assert "0 t" not in "\n".join(lines) and summary.STRUCTURE_NOT_FLOWN in lines[2]
+    # planar_sweep_summary prints them under the table, after the structural lines and
+    # before the Assumptions (the other sections stubbed)
+    for name in ("assumptions_section", "sweep_checks_section", "guidance_label"):
+        monkeypatch.setattr(summary, name, lambda *a, **k: "")
+    baseline = SimpleNamespace(name="pad", result=SimpleNamespace(status="inserted", metrics={}))
+    git = {"hash": "abc123", "dirty": False}
+    text = summary.planar_sweep_summary(
+        "x",
+        [sweep],
+        [frame],
+        baseline,
+        git,
+        "20261018T000000Z",  # type: ignore[arg-type]
+    )
+    out = text.splitlines()
+    head = out.index(summary.SWEEP_NO_OFFLOAD_HEAD)
+    assert out.index(summary.SWEEP_STRUCTURE_HEAD) < head < out.index("## Assumptions")
+    assert out[head + 1 : head + 4] == ["", *lines[2:]]
+    # a sweep without a no_offload end: no lines, no heading
+    plain = _sweep(tmp_path, [{"s1": ok, "f10": fixed}])
+    assert summary.sweep_no_offload_lines(plain) == []
+    assert summary.sweep_no_offload_lines(_sweep(tmp_path, [])) == []
+    plain_frame = results_io.planar_sweep_index_frame(plain, tmp_path)
+    assert plain_frame.columns[-2] == "f10.dv_shortfall_mps" and pd.isna(
+        plain_frame.iloc[0]["s1.dv_shortfall_mps"]
+    )
+    text = summary.planar_sweep_summary(
+        "x",
+        [plain],
+        [plain_frame],
+        baseline,
+        git,
+        "20261018T000000Z",  # type: ignore[arg-type]
+    )
+    assert summary.SWEEP_NO_OFFLOAD_HEAD not in text and "no offload at P_ref" not in text
+    # ... and its summary table changes only by the column: its header over an n/a cell
+    out = text.splitlines()
+    header = next(line for line in out if line.startswith("| point"))
+    cells = [c.strip() for c in header.strip("|").split("|")]
+    row = [c.strip() for c in out[out.index(header) + 2].strip("|").split("|")]
+    assert row[cells.index("s1.dv_shortfall_mps")] == "n/a"
+    assert row[cells.index("f10.dv_shortfall_mps")] == "n/a"
 
 
 def test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms(
