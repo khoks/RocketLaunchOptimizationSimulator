@@ -118,11 +118,14 @@ GATE_CAVEAT = (
 )
 GATE_CAVEAT_NO_X = GATE_VEHICLE + GATE_DRIVE
 """The gate caveat without its x* definition, for a figure that plots no x*."""
+GATE_CAVEAT_HOT = GATE_CAVEAT.removesuffix(".") + ", which favours the hot starts."
+"""The gate caveat with the exhaust remark's direction, for a figure with hot starts."""
 STRUCTURE_CAVEAT = (
     "Modelled rows: a first-order station sizing of the push load for the offloaded "
     "stack (D-SP7-01), not a detailed structural design: central coefficients, an assumed "
     "real-drive rise time of 0.5 s that the constant_accel trajectory does not fly (its "
-    "plateau cost charged), the pad's own unthrottled flight as the envelope, zero margin; "
+    "plateau cost charged), the pad's own unthrottled flight as the envelope, zero "
+    "existing margin (adverse for the assist); "
     "the instant release (flagged, not sized) is not charged: the model says the instant "
     "release would separate the stage-1 LOX column, as its treatment does stage 2's at the "
     "pad's MECO."
@@ -132,6 +135,20 @@ PUBLISHED_LEO_KG = 22_800.0
 docs/findings/CAL-f9-leo-2d.md; never a target)."""
 NO_OFFLOAD_LEGEND = "no offload (drawn at 0;\nshort of P_ref even at x = 0)"
 """The legend entry of a no-offload point (no x >= 0 reaches P_ref; drawn at 0)."""
+# The thrust-structure row's sizing-only break-even and S0's move of k_ts's central,
+# quoted (not computed here) from docs/phases/inputs/2026-10-15-SP7-preregistration.md:
+# section 2(b) (the coefficient table's k_ts row: the note's 0.306, the move's x* values)
+# and section 8 ("Beside the thrust-structure row": the 0.3476 break-even, S2's first pass).
+K_TS_BREAK_EVEN = 0.3476
+"""k_ts at or above which the _ts row gives no offload [kg/kN] (sizing only)."""
+K_TS_CENTRAL = 0.2805
+"""k_ts's central [kg/kN] (D-SP7-37)."""
+K_TS_NOTE = 0.306
+"""k_ts's central before S0's gate, the source note's nine-reading median [kg/kN]."""
+K_TS_XSTAR_CENTRAL_KG = 5769.7
+"""The _ts row's expected x* at the central k_ts [kg] (coupled estimate, sizing only)."""
+K_TS_XSTAR_NOTE_KG = 3325.2
+"""The _ts row's expected x* at the note's k_ts [kg] (coupled estimate, sizing only)."""
 
 
 # ----------------------------------------------------------------------------- reading
@@ -226,16 +243,33 @@ def style_axes(ax: Any) -> None:
     ax.tick_params(colors=INK2, labelsize=FONT, length=3)
 
 
-UNIT_TOKEN = re.compile(r"(kg|t|m|g0|m/s|MN|%|s)[,;:.)]*")
+UNIT_TOKEN = re.compile(r"(kg|t|m|g0|m/s|MN|%|s|kg/kN)[,;:.)]*")
 """A bare unit word that stays on the line of the number before it."""
+LEAD_TOKEN = re.compile(r"\(?dm")
+"""A bare label word that stays on the line of the number after it ('dm 5.13 t')."""
+
+
+def glued(previous: str, word: str) -> bool:
+    """Whether ``word`` stays on the line of the token before it: a unit after a number,
+    a number after 'dm', and a sum of numbers ('13.18 + 0.32 t') kept whole."""
+    last = previous.rsplit(" ", 1)[-1]
+    number_ends = re.search(r"\d\)?$", last) is not None
+    number_starts = re.match(r"\d", word) is not None
+    return (
+        (UNIT_TOKEN.fullmatch(word) is not None and number_ends)
+        or (LEAD_TOKEN.fullmatch(last) is not None and number_starts)
+        or (word == "+" and number_ends)
+        or (last == "+" and number_starts)
+    )
 
 
 def wrap_glued(text: str, width: int) -> list[str]:
     """Greedy word wrap of ``text`` at ``width`` characters that never splits a number
-    from its unit ('-7,804 kg' stays on one line)."""
+    from its unit ('-7,804 kg' stays on one line), 'dm' from its number, or a sum of
+    numbers ('dm 13.18 + 0.32 t' stays whole)."""
     tokens: list[str] = []
     for word in text.split():
-        if tokens and UNIT_TOKEN.fullmatch(word) and re.search(r"\d\)?$", tokens[-1]):
+        if tokens and glued(tokens[-1], word):
             tokens[-1] = f"{tokens[-1]} {word}"
         else:
             tokens.append(word)
@@ -523,11 +557,46 @@ def headline_notes(a: Mapping[str, Any], c: Mapping[str, Any]) -> str:
     )
 
 
+def headline_kick_clause(a: Mapping[str, Any]) -> str:
+    """The free kick's q-alpha on the chart's modelled rows: every ok structural case's
+    run (run A's offload.runs, keyed by the case's run) peaks in q-alpha at its kick; the
+    lowest and highest ratio to the pad's (the stage-1 pad control's run), derived."""
+    off = a["offload"]
+    runs = off["runs"]
+    pad_run = next(p["run"] for p in off["pad_controls"] if p["mode"] == "stage1")
+    pad = float(runs[pad_run]["peak_q_alpha"])
+    recs = [runs[c["run"]] for c in off["cases"] if "structure_dm_kg" in c and c["status"] == "ok"]
+    if not recs or any(r["peak_q_alpha_phase"] != "KICK" for r in recs):
+        raise SystemExit("an ok structural case of run A no longer peaks in q-alpha at its kick")
+    ratios = [float(r["peak_q_alpha"]) / pad for r in recs]
+    return (
+        f"Every ok structural case's run peaks in q-alpha at its kick, {min(ratios):.1f} to "
+        f"{max(ratios):.1f} times the pad's {pad:.1f} Pa rad (offload.runs: peak_q_alpha, "
+        "peak_q_alpha_phase; derived ratios): a free kick, unconstrained, with no "
+        "angle-of-attack aerodynamics and no structure charged for it."
+    )
+
+
+def ts_break_even_clause() -> str:
+    """The thrust-structure row's sizing-only break-even and S0's move of k_ts's central
+    (constants quoted from the pre-registration, sections 2(b) and 8)."""
+    above = 100.0 * (K_TS_BREAK_EVEN / K_TS_CENTRAL - 1.0)
+    move_t = kg_to_t(K_TS_XSTAR_CENTRAL_KG - K_TS_XSTAR_NOTE_KG)
+    return (
+        f"The thrust-structure row (_ts) gives no offload at k_ts {K_TS_BREAK_EVEN:.4f} "
+        f"kg/kN or above, {above:.0f}% above the central {K_TS_CENTRAL:.4f} (its sizing-only "
+        f"break-even, S2's first pass); S0 moved the central from {K_TS_NOTE:.3f} with the "
+        f"planning probe known, about +{move_t:.1f} t on the row's expected x* "
+        f"({K_TS_XSTAR_CENTRAL_KG:,.1f} against {K_TS_XSTAR_NOTE_KG:,.1f} kg, sizing only; "
+        "docs/phases/inputs/2026-10-15-SP7-preregistration.md, sections 2(b) and 8)."
+    )
+
+
 def figure_headline(a: Mapping[str, Any], c: Mapping[str, Any]) -> Path:
     """The headline table as a chart (see the module docstring): row labels on the left,
     the marks in the middle, each row's numbers in a text column on the right."""
     rows = headline_rows(a, c)
-    fig = new_figure(11.8)
+    fig = new_figure(12.4)
     title(
         fig,
         "Stage-1 offload with the push load's structure charged (run A; file C last)",
@@ -550,8 +619,12 @@ def figure_headline(a: Mapping[str, Any], c: Mapping[str, Any]) -> Path:
             "solve's delta-v shortfall of P_ref at x = 0, and its payload deficit, the "
             "payload case's P_2* - P_ref after two passes at the same settings (full-load "
             "sizing), with that case's residual estimate where its unconverged flag fired. "
-            + headline_notes(a, c),
-            GATE_CAVEAT,
+            + headline_notes(a, c)
+            + " "
+            + headline_kick_clause(a)
+            + " "
+            + ts_break_even_clause(),
+            GATE_CAVEAT_HOT,
             STRUCTURE_CAVEAT,
         ],
     )
@@ -615,7 +688,7 @@ def figure_headline(a: Mapping[str, Any], c: Mapping[str, Any]) -> Path:
     ax.set_xlabel("stage-1 propellant offload x* at P_ref [t]", fontsize=FONT, color=INK)
     items: tuple[tuple[str, str | tuple[str, ...], str], ...] = (
         ("square", GREY, "SP1's uncharged and assumed penalty rows"),
-        ("dot", BLUE, "modelled structure: solved x*"),
+        ("dot", (BLUE, ORANGE), "modelled structure: solved x*"),
         ("hollow", (BLUE, ORANGE), NO_OFFLOAD_LEGEND),
         ("patch", BLUE, "physics band"),
         ("patch", ORANGE, "outer envelope"),
@@ -644,6 +717,64 @@ def sweep_source(k: int, columns: str) -> str:
     sweep that it reproduced."""
     path = (SWEEP_A / f"sweep_{k}" / "sweep_index.csv").relative_to(REPO).as_posix()
     return f"{path} ({columns}; the first sweep, {SWEEP_FIRST}, reproduced column by column)"
+
+
+SWEEP_BASELINE = SWEEP_A / "baseline" / "metrics.json"
+"""The sweep's pad baseline (its metrics.peak_q_alpha is the pad's q-alpha)."""
+SWEEP1_KICK_STROKES = (200.0, 300.0)
+"""Sweep 1's strokes [m] whose full-load runs' kick the footer quotes (the faster exits)."""
+REGIME_WORDS = {
+    "at_first_lit_instant": "at the first lit instant",
+    "after_vertical_rise": "after a vertical rise",
+}
+"""A sweep index's kick_regime in words."""
+
+
+def and_join(items: Sequence[str]) -> str:
+    """'a', 'a and b' or 'a, b and c'."""
+    return " and ".join(items) if len(items) <= 2 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def one_or_all(values: Sequence[str]) -> str:
+    """One value when every one reads the same, else all of them joined with 'and'."""
+    return values[0] if len(set(values)) == 1 else and_join(values)
+
+
+def kick_clause(k: int, strokes: Sequence[float] | None) -> str:
+    """Sweep k's free-kick q-alpha clause: the full-load point runs at ``strokes`` (None:
+    every point) kick (the re-run's index: kick_regime, speed_at_kick_mps, peak_q_alpha)
+    against the pad's (the sweep's baseline metrics.json, peak_q_alpha); derived ratios.
+    A sweep point's structural (offloaded) runs are not written, so their q-alpha is not
+    either."""
+    pad = float(read_json(SWEEP_BASELINE)["metrics"]["peak_q_alpha"])
+    rows = read_index(SWEEP_A / f"sweep_{k}" / "sweep_index.csv")
+    if strokes is not None:
+        rows = [r for r in rows if float(r["assist.stroke_m"]) in strokes]
+        if len(rows) != len(strokes):
+            raise SystemExit(f"sweep {k} lacks a point at one of the strokes {strokes}")
+    regimes = {r["kick_regime"] for r in rows}
+    if len(regimes) != 1 or not regimes <= REGIME_WORDS.keys():
+        raise SystemExit(f"sweep {k}'s quoted points kick in regimes {regimes}")
+    regime = REGIME_WORDS[next(iter(regimes))]
+    speeds = one_or_all([f"{float(r['speed_at_kick_mps']):.1f}" for r in rows])
+    q_alpha = one_or_all([f"{float(r['peak_q_alpha']):,.1f}" for r in rows])
+    ratios = one_or_all([f"{float(r['peak_q_alpha']) / pad:.1f}" for r in rows])
+    if strokes is None:
+        who = "Every point's full-load run kicks"
+    else:
+        named = and_join([f"{float(r['assist.stroke_m']):g}" for r in rows])
+        who = f"The {named} m points' full-load runs kick"
+    return (
+        f"{who} {regime} at {speeds} m/s into a "
+        f"peak q-alpha of {q_alpha} Pa rad, {ratios} times the pad's {pad:.1f} (derived), "
+        "unconstrained (a free kick: no angle-of-attack aerodynamics, no structure charged "
+        "for it); the structural runs' own q-alpha is not written at a sweep point."
+    )
+
+
+def sweep_baseline_source() -> str:
+    """The sweep's baseline metrics.json as a footer names it, with the field read."""
+    return f"{SWEEP_BASELINE.relative_to(REPO).as_posix()} (peak_q_alpha, the pad's)"
 
 
 def optional_float(cell: str) -> float | None:
@@ -738,7 +869,7 @@ def draw_pair(ax: Any, xs: Sequence[float], pts: Sequence[Mapping[str, Any]]) ->
 def figure_sweep1() -> Path:
     """Sweep 1: x* against the exit speed, uncharged and with the central structure."""
     pts = sweep_points(1, "silo_cold_s1", "silo_cold_s1_st")
-    fig = new_figure(6.2)
+    fig = new_figure(6.8)
     title(
         fig,
         "Sweep 1: stage-1 offload against exit speed, with and without the structure",
@@ -748,16 +879,20 @@ def figure_sweep1() -> Path:
     foot = footer(
         fig,
         [
-            "Source: "
+            "Sources: "
             + sweep_source(
                 1,
                 "silo_cold_s1.offload_kg, silo_cold_s1_st.offload_kg, .status, "
-                ".structure_dm_kg, .dv_shortfall_mps",
+                ".structure_dm_kg, .structure_dm_stage2_kg, .dv_shortfall_mps, "
+                "unconstrained_kick, kick_regime, speed_at_kick_mps, peak_q_alpha",
             )
+            + " and "
+            + sweep_baseline_source()
             + ". "
             + NO_OFFLOAD_FOOTER
             + " At 25 and 50 m the coast slows below the kick speed before ignition (a "
-            "vertical rise first); the 300 m point's kick comes above 120 m/s, an upper bound.",
+            "vertical rise first); the 300 m point's kick comes above 120 m/s, an upper "
+            "bound. " + kick_clause(1, SWEEP1_KICK_STROKES),
             GATE_CAVEAT,
             STRUCTURE_CAVEAT,
         ],
@@ -867,7 +1002,7 @@ def figure_sweep1() -> Path:
 def figure_sweep2() -> Path:
     """Sweep 2: x* against the stroke and the felt load at the fixed exit speed."""
     pts = sweep_points(2, "silo_cold_200m_s1", "silo_cold_200m_s1_st")
-    fig = new_figure(5.8)
+    fig = new_figure(6.2)
     title(
         fig,
         "Sweep 2: stage-1 offload against silo depth at a fixed exit speed (76.71 m/s)",
@@ -881,13 +1016,17 @@ def figure_sweep2() -> Path:
             + sweep_source(
                 2,
                 "silo_cold_200m_s1.offload_kg, silo_cold_200m_s1_st.offload_kg, .status, "
-                ".structure_dm_kg, .structure_dm_stage2_kg, .dv_shortfall_mps",
+                ".structure_dm_kg, .structure_dm_stage2_kg, .dv_shortfall_mps, "
+                "unconstrained_kick, kick_regime, speed_at_kick_mps, peak_q_alpha",
             )
-            + " and each point's metrics.json "
-            "(felt_g_track_peak, the push's felt load). The uncharged offload is the same at "
+            + ", each point's metrics.json "
+            "(felt_g_track_peak, the push's felt load) and "
+            + sweep_baseline_source()
+            + ". The uncharged offload is the same at "
             "every point (the flight after release does not see the stroke). "
             + NO_OFFLOAD_FOOTER
-            + " At 50 m the push also sizes stage 2 and the interstage.",
+            + " At 50 m the push also sizes stage 2 and the interstage. "
+            + kick_clause(2, None),
             GATE_CAVEAT,
             STRUCTURE_CAVEAT,
         ],
@@ -918,19 +1057,29 @@ def figure_sweep2() -> Path:
             else:
                 st = kg_to_t(p["st_kg"])
                 last = p is pts[-1]
+                if ax is ax_r:
+                    # Mirrored: on the felt-load axis the 2.5 and 2.0 g0 points sit close,
+                    # so the last label goes right of its point and the others left-above.
+                    offset, ha, va = (
+                        ((6, 6), "left", "bottom") if last else ((-8, 4), "right", "bottom")
+                    )
+                else:
+                    offset, ha, va = (
+                        ((-6, 6), "right", "bottom") if last else ((8, -4), "left", "top")
+                    )
                 ax.annotate(
                     solved_label(st, p),
                     (x, st),
-                    xytext=(-6, 6) if last else (8, -4),
+                    xytext=offset,
                     textcoords="offset points",
-                    ha="right" if last else "left",
-                    va="bottom" if last else "top",
+                    ha=ha,
+                    va=va,
                     fontsize=FONT_SMALL,
                     color=INK,
                 )
         ax.set_xlabel(xlabel, fontsize=FONT, color=INK)
     ax_l.set_xlim(25, 325)
-    ax_r.set_xlim(7.6, 1.4)
+    ax_r.set_xlim(7.6, 1.2)
     ax_r.tick_params(labelleft=False)
     ax_l.set_ylim(-22, 50)
     ax_l.set_yticks([0, 10, 20, 30, 40, 50])
@@ -1146,6 +1295,58 @@ def step_comparison(a: Mapping[str, Any], full_rows: Sequence[Mapping[str, Any]]
     )
 
 
+SAME_EXIT_MPS = 0.01
+"""Two exit speeds closer than this [m/s] count as the same."""
+FELT_XLIM_G = (1.2, 7.0)
+"""The felt-load figure's plotted range [g0]."""
+BREAK_EVEN_NAMES = (
+    ("stage1.aft_skirt", "aft skirt"),
+    ("stage1.common_dome", "common dome"),
+    ("stage1.rp1_aft_dome", "RP-1 aft dome"),
+    ("stage1.rp1_barrel", "RP-1 barrel"),
+    ("stage1.lox_barrel", "LOX barrel"),
+    ("stage1.transfer_tube", "transfer tube"),
+    ("stage2_sized", "the upper stack"),
+)
+"""The break-even felt loads the felt-load footer lists (tables.json's break_even keys)."""
+
+
+def highest_structural_x(a: Mapping[str, Any]) -> str:
+    """'32.03 t at sweep 2's 300 m': the highest solved structural x* at the felt-load
+    figure's exit speed (run A's central release speed), over run A's ok structural cases
+    (release_speed_mps) and both sweeps' ok structural points (exit_speed_mps)."""
+    v = float(cases_by_name(a)["silo_cold_s1_st"]["release_speed_mps"])
+    found: list[tuple[float, str]] = [
+        (float(c["offload_kg"]), f"run A's {c['name']}")
+        for c in a["offload"]["cases"]
+        if "structure_dm_kg" in c
+        and c["status"] == "ok"
+        and abs(float(c["release_speed_mps"]) - v) < SAME_EXIT_MPS
+    ]
+    for k, un, st in (
+        (1, "silo_cold_s1", "silo_cold_s1_st"),
+        (2, "silo_cold_200m_s1", "silo_cold_200m_s1_st"),
+    ):
+        found += [
+            (p["st_kg"], f"sweep {k}'s {p['stroke_m']:g} m")
+            for p in sweep_points(k, un, st)
+            if p["st_status"] == "ok" and abs(p["exit_mps"] - v) < SAME_EXIT_MPS
+        ]
+    kg, where = max(found)
+    return f"{kg_to_t(kg):.2f} t at {where}"
+
+
+def break_even_list(be: Mapping[str, Any]) -> str:
+    """'aft skirt 1.065 (below the plotted range), common dome 1.438, ... the upper stack
+    4.704 g0' in rising order (tables.json's break_even n_be_g)."""
+    items = sorted((float(be[k]["n_be_g"]), name) for k, name in BREAK_EVEN_NAMES)
+    parts = [
+        f"{name} {n:.3f}" + (" (below the plotted range)" if n < FELT_XLIM_G[0] else "")
+        for n, name in items
+    ]
+    return f"{', '.join(parts)} g0"
+
+
 def figure_felt(a: Mapping[str, Any], tables: Mapping[str, Any]) -> Path:
     """Sizing only: dm by element group against the felt load at the fixed exit speed."""
     felt = tables["felt"]
@@ -1161,7 +1362,7 @@ def figure_felt(a: Mapping[str, Any], tables: Mapping[str, Any]) -> Path:
     ]
     if stray:
         raise SystemExit(f"elements outside the figure's groups: {sorted(set(stray))}")
-    fig = new_figure(6.8)
+    fig = new_figure(7.1)
     title(
         fig,
         "Sizing only: the central structure's dm against the push's felt load",
@@ -1172,16 +1373,18 @@ def figure_felt(a: Mapping[str, Any], tables: Mapping[str, Any]) -> Path:
     foot = footer(
         fig,
         [
-            "Source: docs/findings/RQ1-structural-2d-tables.json (sp7_structure_tables.py: "
+            "Sources: docs/findings/RQ1-structural-2d-tables.json (sp7_structure_tables.py: "
             "the central case's transform on file A's pad flown afresh, re-pushed at each "
             "felt load n = (a + g_eff)/g0 from 1.2 to 7.0 g0; tables in "
-            "RQ1-structural-2d-tables.md) and results/silo_structure_2d/20261016T171513Z/"
-            "metrics.json (offload.cases: silo_cold_s1_st, silo_cold_s1_st_step). Break-even "
-            "felt load at 41.26 t (the smallest n with a positive increment): RP-1 barrel "
-            f"{be['stage1.rp1_barrel']['n_be_g']:.3f}, LOX barrel "
-            f"{be['stage1.lox_barrel']['n_be_g']:.3f}, the upper stack "
-            f"{be['stage2_sized']['n_be_g']:.3f} g0; the load ring is charged at every push. "
-            "At 41.26 t the stack is lighter than at any structural x*, so dm is understated "
+            "RQ1-structural-2d-tables.md), results/silo_structure_2d/20261016T171513Z/"
+            "metrics.json (offload.cases: silo_cold_s1_st, silo_cold_s1_st_step; every ok "
+            "structural case's offload_kg and release_speed_mps) and "
+            f"{SWEEP_A.relative_to(REPO).as_posix()}/sweep_1/ and sweep_2/sweep_index.csv "
+            "(the sweep's re-run; the structural .offload_kg, .status, "
+            "exit_speed_mps). Break-even felt load at 41.26 t (the smallest n with a "
+            f"positive increment): {break_even_list(be)}; the load ring is charged at every "
+            "push. At 41.26 t the stack is lighter than at any structural x* solved at this "
+            f"exit speed (the highest, {highest_structural_x(a)}), so dm is understated "
             "there (for the assist); x = 0 is the adverse bound. A first-order station "
             "sizing (D-SP7-01), not a measurement. " + step_comparison(a, full["rows"]),
             GATE_CAVEAT_NO_X,
@@ -1228,7 +1431,7 @@ def figure_felt(a: Mapping[str, Any], tables: Mapping[str, Any]) -> Path:
             fontsize=FONT_SMALL,
             color=INK2,
         )
-    ax.set_xlim(1.2, 7.0)
+    ax.set_xlim(*FELT_XLIM_G)
     ax.set_ylim(0, 17.5)
     ax.set_xlabel(
         "felt load of the push n [g0] (sweep 2's strokes marked)", fontsize=FONT, color=INK
