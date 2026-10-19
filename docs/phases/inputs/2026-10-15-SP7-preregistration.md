@@ -9,6 +9,8 @@ B, experiments/silo_drive_2d.yaml, the linear-motor cases) is an addendum writte
 change to either file after the pre-registration commit is an amendment: its own commit,
 logged as a decision, this note kept and extended, never rewritten. The sections follow
 SP1's pre-registration (docs/phases/inputs/2026-10-03-sp1-preregistration.md).
+Amendment 1 (2026-10-19, D-SP7-48; the sweep's no-offload record and the sweep's re-run) is
+at the end of this note.
 
 Every expected value below is an estimate, and none is a target: a different result is
 reported as it is. Every structural number is a first-order station sizing (D-SP7-01), not
@@ -1417,3 +1419,78 @@ or the choice moves dm both ways.
 (section 10). The stage-2 tank order (assumed) has no known direction; it is in section 11. The
 stage the interstage increment is charged to (stage 1 proposed, section 5.5) moves the offload
 cost of that increment, not dm; it goes to the user (section 13, item 14).
+
+## Amendment 1 (2026-10-19, after the three commands of section 1 had finished; before the sweep's re-run)
+
+Made at SP7 step S7a under the user's decision D-SP7-48 of 2026-10-19 (TODO.md), after the
+three registered commands of section 1 had ended (run A
+results/silo_structure_2d/20261016T171513Z, sweep A
+results/silo_structure_2d/20261016T171522Z, run C
+results/silo_structure_2d_readme/20261016T171529Z, all from 1b5f9d4) and before any re-run.
+The fix is the reporting step S3c (commits 1e4c732 and 77e1691), added to the phase file's
+step table. Sections 1 to 12 stay as written; this section says what changed and what did
+not.
+
+**Why.** Section 9's last bullet fired: sweep 1's 25 m and 50 m points and sweep 2's 50 m
+point ended `no_offload` on the central structural case, as section 7 expected, and no
+delta-v shortfall was written for them anywhere on disk. `OFFLOAD_SWEEP_COLUMNS`
+(src/launchsim/results_io.py) carried no shortfall column, a sweep point writes no case
+record or offload run directory, and the sweep summary printed no no-offload line. Section 6
+item 5 asks that such a point be reported "with its shortfall and 'payload deficit not
+flown'", and section 9 calls the omission "a reporting defect to fix first". The solve
+computed the number (the case record's `solve.dv_shortfall_mps`, -dv_margin(0) at x = 0, the
+field a run's case record writes) and the sweep writer dropped it.
+
+**What changes (reporting only).**
+
+1. `<case>.dv_shortfall_mps` is appended to `OFFLOAD_SWEEP_COLUMNS`, last, so every earlier
+   column keeps its name and order (the KI-028 pattern of SP1's Amendment 1, item 3; the
+   second case's group and the structure columns move one place right, so the CSV is read
+   by column name): the solve's `dv_shortfall_mps` [m/s] at x = 0 for a `no_offload` end,
+   and an empty cell for an `ok` solve (NaN), a fixed case (no solve), a reference_failed
+   point and a search_failed solve (NaN). It is not the point run's own payload-search
+   `dv_shortfall_mps` metric, which is not an index column.
+2. The sweep summary prints, under each sweep's table, `summary.SWEEP_NO_OFFLOAD_HEAD` and
+   one line per point and case that ended `no_offload` (`summary.sweep_no_offload_lines`):
+   "no offload at P_ref: the full-load push carrying dm <dm> kg falls short of P_ref by
+   <shortfall> m/s of delta-v (the solver's dv_shortfall_mps at x = 0; column
+   <case>.dv_shortfall_mps); payload deficit at the full load not flown (a payload case flies
+   a variant, not a sweep point)", the dm clause (its sizing at x = 0) for a structural case
+   only. A sweep without a no-offload end prints no such heading and no line, so an
+   SP1-type sweep's outputs change only by the new column: an empty cell in
+   sweep_index.csv and the column's header over n/a cells in the summary's table.
+
+**What does not change.** The two experiment files (byte for byte as in cbbd7bc), both
+structure files (section 12's digests), every case, sweep, budget and solve, every criterion
+and reading of sections 3 to 9, and the convergence check of section 1. `git diff --stat
+1b5f9d4 77e1691 -- src configs experiments pyproject.toml uv.lock` lists
+src/launchsim/results_io.py and src/launchsim/summary.py only, and the change in each is the
+column, the lines above and their docstrings; tests/ gains the step's tests. No physics
+module changes and no x* depends on the shortfall. The convergence check was re-run on
+2026-10-19 (06:34:53Z to 06:39:58Z, 277.5 s of parts, nothing else running) from the
+committed script at 0a12c36, whose code equals 1b5f9d4's: the same bits as its first run of
+2026-10-16 (shipped x* 11,420.246638573297 kg, equal to run A's to 0.0 kg; tightened x*
++0.0378 kg, 3.3e-6 relative; dm with 400 stations +6.2e-6 kg).
+
+**Which command re-runs.** `uv run python -m launchsim sweep experiments/silo_structure_2d.yaml`
+alone, with plots, from the clean commit that follows this amendment's tracker commit
+(named in the findings note's Reproduction section), on a quiet machine (section 11). Its
+code differs from 1b5f9d4's by the reporting change above only, a departure from section 12's
+"a later clean commit that changes no code" that this amendment registers. Run A and run C
+are not re-run: their case records already carry their shortfalls (the three no-offload
+cases of file A print them), and nothing in their outputs depends on the change. The first
+sweep directory stays on record, never deleted or overwritten; the findings note names both
+and takes the sweep numbers from the re-run.
+
+**Expected, and how it is read.** The re-run's nine points reproduce the first sweep's
+sweep_index.csv in every pre-existing column, compared by column name (floats at %.12g, the
+index's own precision; the physics code is unchanged and the pads fly from the same code):
+a reproduction check the note reports, beside section 9's reproduction of the uncharged
+points against SP1's index. A difference in any pre-existing column blocks every number of
+the sweep until explained. The three no-offload points then carry
+`silo_cold_s1_st.dv_shortfall_mps` (sweep 1) and `silo_cold_200m_s1_st.dv_shortfall_mps`
+(sweep 2). Section 7's estimates for them (about 66, 24 and 215 m/s; 62, 19 and 180 m/s on
+the quadratic) stay estimates, never targets, and a departure is reported as it is. With the
+shortfalls on disk, the S1 sentence and S2's 50 m clause of section 8 are no longer held and
+are read as written, each no-offload point with its shortfall and "payload deficit not
+flown" (section 6, item 5).
