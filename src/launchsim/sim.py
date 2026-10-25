@@ -204,6 +204,7 @@ from launchsim.metrics import (  # re-exported
     failed_ignition_flags,
     failed_ignition_metrics,
     ignition_timing_metrics,
+    impact_in_shaft,
     last_burn_end_s,
     metrics_record,
     run_metrics,
@@ -246,6 +247,7 @@ from launchsim.phases import (
     RunTrace,
     VerticalPlanner,
 )
+from launchsim.phases.engine import TARGET_SPEED_EVENT
 from launchsim.phases.planar import (
     FAIRING_EVENT,
     LIT_KINDS,
@@ -253,7 +255,7 @@ from launchsim.phases.planar import (
     PlanarEnvironment,
     PlanarPlanner,
 )
-from launchsim.phases.prelude import DRIVE_STALL, resolve_stage_ignitions
+from launchsim.phases.prelude import DRIVE_STALL, SHAFT_FALLBACK, resolve_stage_ignitions
 from launchsim.plots import (  # re-exported
     PLANAR_PLOT_PANELS,
     PLOT_ABSCISSA,
@@ -453,6 +455,8 @@ __all__ = [
     "EVENT_TEXT_COLUMNS",
     "EXCESS_NOISE_MPS",
     "FAILED_IGNITION_ASSUMPTIONS",
+    "FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS",
+    "FAILED_IGNITION_SHAFT_ASSUMPTIONS",
     "FAILED_IGNITION_TRACK_ASSUMPTIONS",
     "FAILED_MARKER",
     "FAILED_ROWS",
@@ -484,6 +488,8 @@ __all__ = [
     "PLANAR_EVENT_COLUMNS",
     "PLANAR_EXACT_AZIMUTH_RAD",
     "PLANAR_FAILED_IGNITION_ASSUMPTIONS",
+    "PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS",
+    "PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS",
     "PLANAR_FIXED_COMPARISON_BASIS",
     "PLANAR_MODEL",
     "PLANAR_PLOT_PANELS",
@@ -613,6 +619,7 @@ __all__ = [
     "ignition_rows",
     "ignition_specs",
     "ignition_timing_metrics",
+    "impact_in_shaft",
     "is_planar",
     "json_safe",
     "last_burn_end_s",
@@ -830,6 +837,45 @@ FAILED_IGNITION_TRACK_ASSUMPTIONS: tuple[str, ...] = (
     "the ground and the fall from there to the track start (v^2 = v_impact^2 + 2 g_eff "
     "(z_impact - z_track_start)), not integrated",
 )
+# In place of FAILED_IGNITION_TRACK_ASSUMPTIONS for a push released at its release speed
+# before the track end whose impact is not inside the shaft (its carriage parks at or
+# above the ground): the carriage parks beyond the release point, not the track exit; a
+# soft brake can park it above the apex (no crossing on the way down); after a release
+# below the ground the fall ends at the ground, above the release altitude, so
+# failed_t_return_s is None (SP7 step S4a fix round 5, P5-m1, m1, C5-m1).
+FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS: tuple[str, ...] = (
+    "failed ignition: the braked carriage parks its braking distance beyond the release "
+    "point (a push released at its release speed before the track end; "
+    "failed_carriage_alt_m), at or above the ground here, in the fall-back path; where it "
+    "parks below the vehicle's apex the vehicle would meet it there first, on the way down "
+    "(failed_t_carriage_s, failed_speed_at_carriage_mps, from the drag-free coast; None "
+    "when it parks above the apex), unless the carriage is withdrawn in time, and no "
+    "impact with it is modelled: the impact at the ground and the shaft-bottom speed are "
+    "the obstacle-free values, and failed_t_return_s is None after a release below the "
+    "ground (the fall ends at the ground, above the release altitude)",
+    FAILED_IGNITION_TRACK_ASSUMPTIONS[1],
+)
+# In place of FAILED_IGNITION_TRACK_ASSUMPTIONS when the impact lies inside the shaft.
+FAILED_IGNITION_SHAFT_ASSUMPTIONS: tuple[str, ...] = (
+    "failed ignition: the vehicle fell back inside the shaft after a release below the "
+    "ground, where the floor of the flight model is the braked carriage, parked its "
+    "braking distance beyond the release point (failed_carriage_alt_m): the impact is on "
+    "it (failed_t_carriage_s, failed_speed_at_carriage_mps, from the drag-free coast), "
+    "from an apex inside the shaft or through the open mouth from one above it, or at the "
+    "apex when the carriage parks above it; a carriage withdrawn in time is not modelled "
+    "in the shaft, any touchdown on the carriage ends the run (no catch and re-hold), and "
+    "the fall ends below the ground, above the release altitude (failed_impact_speed_mps "
+    "and failed_t_return_s are None)",
+    "failed ignition: the speed at the shaft bottom is derived from the impact speed (on "
+    "the carriage, or 0 at the apex) and the fall from the impact altitude to the track "
+    "start (v^2 = v_impact^2 + 2 g_eff (z_impact - z_track_start)), not integrated: the "
+    "obstacle-free value, as if the carriage were withdrawn",
+)
+"""The failed-ignition track lines of a run whose impact lies inside the shaft
+(``metrics.impact_in_shaft``: a fall back after a release below the ground; SP7 step S4a
+fix rounds 3 and 4, P3-M2, P4-M1), in place of FAILED_IGNITION_TRACK_ASSUMPTIONS (or
+FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS), which state the obstacle-free coast of every
+other track run."""
 
 
 def gravity_assumption(gravity: Gravity) -> str:
@@ -877,7 +923,10 @@ def simulate(
     (``failed_ignition_metrics``), the ``failed_ignition_flags`` (a track mouth not at
     the ground) and, when its fall-back coast actually ran (``t_fail_s`` set: not a
     pad ``no_liftoff``), FAILED_IGNITION_ASSUMPTIONS plus the carriage lines of
-    FAILED_IGNITION_TRACK_ASSUMPTIONS when it had a track. Every run also carries the
+    FAILED_IGNITION_TRACK_ASSUMPTIONS when it had a track (FAILED_IGNITION_SHAFT_ASSUMPTIONS
+    in their place when its impact lies inside the shaft, ``impact_in_shaft``: SP7 step
+    S4a fix round 3; FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS for a push released at its
+    release speed whose impact is not, fix round 4). Every run also carries the
     constant-g ignition-timing yardsticks of ``ignition_timing_metrics``
     (``ignition_loss_formula_mps``, ``preflight_burn_cost_mps``). The assumptions
     name the gravity model and the g_eff actually used, not the run model's (``run``
@@ -926,11 +975,17 @@ def simulate(
             f"{track.start_altitude_m + track.z(track.length_m):.6g} m)",
         ]
     if trace.failed_stage is not None:
-        metrics.update(failed_ignition_metrics(trace, g_eff_mps2, assist, track))
+        metrics.update(
+            failed_ignition_metrics(trace, g_eff_mps2, assist, track, planner.z_ground_m)
+        )
         flags += failed_ignition_flags(trace, track, planner.z_ground_m)
         if trace.t_fail_s is not None:  # the coast ran (not a pad no_liftoff)
             assumptions += FAILED_IGNITION_ASSUMPTIONS
-            if track is not None:
+            if track is not None and impact_in_shaft(trace, planner.z_ground_m):
+                assumptions += FAILED_IGNITION_SHAFT_ASSUMPTIONS
+            elif track is not None and trace.first_event(TARGET_SPEED_EVENT) is not None:
+                assumptions += FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS
+            elif track is not None:
                 assumptions += FAILED_IGNITION_TRACK_ASSUMPTIONS
     assumptions += [*trace.assumptions, *assist.assumptions()]
     return Result(
@@ -1194,6 +1249,26 @@ PLANAR_FAILED_IGNITION_ASSUMPTIONS: tuple[str, ...] = (
 )
 """Added to a planar run whose failed-ignition coast ran (the 1-D texts assume no
 atmosphere, so they are not reused)."""
+PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS: tuple[str, ...] = (
+    "failed ignition: no abort is modelled; the unpowered coast to the apex and the ground "
+    "is flown with drag, rotation and mu/r^2, from the release point of a push released "
+    "at its release speed before the track end",
+)
+"""In place of PLANAR_FAILED_IGNITION_ASSUMPTIONS for a planar run released at its release
+speed before the track end whose failed-ignition coast did not fall back inside the shaft
+(its carriage parks at or above the ground; SP7 step S4a fix round 4)."""
+PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS: tuple[str, ...] = (
+    "failed ignition: no abort is modelled; the unpowered coast to the apex and back down "
+    "is flown with drag, rotation and mu/r^2 from the release point inside the shaft, and "
+    "ends on the parked carriage, the floor of the flight model in the shaft, from an apex "
+    "inside the shaft or through the open mouth from one above it (the coast never kicks, "
+    "so it stays over the shaft), or at the apex when the carriage parks above it (a "
+    "carriage withdrawn in time is not modelled; any touchdown on the carriage ends the "
+    "run): the impact time and speed are there, not at the ground",
+)
+"""In place of PLANAR_FAILED_IGNITION_ASSUMPTIONS for a planar run whose failed-ignition
+coast fell back inside the shaft (a ``prelude.SHAFT_FALLBACK`` flag; SP7 step S4a fix
+round 3, P3-M2)."""
 FIXED_GUIDANCE_STATUS = "none (fixed guidance)"
 """search_status of a run flown at the shared fixed guidance (figure_of_merit none)."""
 SKIPPED_STATUS_PREFIX = "skipped"
@@ -1467,8 +1542,11 @@ def planar_assumption_list(
     """The assumptions of a planar run, in order: PLANAR_ASSUMPTIONS, the run's own
     lines (``planar_run_assumptions``), ATMOSPHERE_ASSUMPTIONS, for a push the
     TRACK_ASSUMPTIONS and the track geometry, for a failed ignition whose coast ran
-    PLANAR_FAILED_IGNITION_ASSUMPTIONS, the trace's own and the assist model's (with
-    the track's actual g_eff and omega_p)."""
+    PLANAR_FAILED_IGNITION_ASSUMPTIONS (PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS when it
+    fell back inside the shaft: a ``prelude.SHAFT_FALLBACK`` flag;
+    PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS otherwise after a release at the release
+    speed, a ``target_speed`` event), the trace's own and the assist model's (with the
+    track's actual g_eff and omega_p)."""
     lines = [*PLANAR_ASSUMPTIONS, *run_assumptions, *ATMOSPHERE_ASSUMPTIONS]
     track = setup.track
     if track is not None and trace.assist_phases():
@@ -1479,7 +1557,12 @@ def planar_assumption_list(
             f"{track.start_altitude_m + track.z(track.length_m):.6g} m)",
         ]
     if trace.failed_stage is not None and trace.t_fail_s is not None:
-        lines += PLANAR_FAILED_IGNITION_ASSUMPTIONS
+        if any(SHAFT_FALLBACK in f for f in trace.flags):
+            lines += PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS
+        elif trace.first_event(TARGET_SPEED_EVENT) is not None:
+            lines += PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS
+        else:
+            lines += PLANAR_FAILED_IGNITION_ASSUMPTIONS
     return [*lines, *trace.assumptions, *setup.assist.assumptions()]
 
 

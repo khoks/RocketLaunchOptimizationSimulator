@@ -82,8 +82,10 @@ survey 07 sections 3 to 6; review 04):
   /api/videos fixes one session (the directory and 1 to PANEL_RUNS of its runs, fps and
   width from fixed lists, 1 to 1,800 frames, the scene times the page computed, and the
   caveat footer the server computes: ``video_footer``, plots.animation_caveats of the
-  shown runs; the display-only caveat is the scene page's own footer line on every
-  captured frame) and answers its unguessable id; POST /api/videos/<id>/frames/<n> takes
+  shown runs and, for a run released below the mouth, the scene's early-release frame
+  lines (with the fall-back line of a run that fell back inside the shaft), SP7 step S4a;
+  the display-only caveat is the scene page's own footer line on
+  every captured frame) and answers its unguessable id; POST /api/videos/<id>/frames/<n> takes
   one image/png body (``AppHandler._png_body``: the one exception to the JSON body rule;
   Host, Origin and Sec-Fetch-Site checks unchanged), checked as a PNG of the session's
   size before it is piped to ffmpeg; a refusal of a declared body within the frame cap is
@@ -2824,14 +2826,21 @@ def panel_caveats(
     metrics: Mapping[str, Any],
     runs: Sequence[dict[str, Any]],
     pair: Sequence[str],
+    config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The caveats of the runs a panel shows (design 4.7, D-SP2-36), from the directory:
     every item replay.caveats gives those runs (replay.replay_data of the runs of
     ``pair`` that hold a row: the structure caveat names each run's own load, the
-    exploratory line comes first for an app run), and, when one of them is an offload
-    run, the directory's own offload.caveats word for word. When no run of the pair holds
-    a row, or the replay builder refuses, the list keeps the exploratory line only and
-    ``error`` says why."""
+    exploratory line comes first for an app run), then, with the directory's
+    resolved_config.yaml ``config``, the scene's early-release caveat of each of them
+    released at its release speed below the mouth (scene.early_release_lines_of: the
+    embedded scene hides its own caveat list, and its drawn carriage brakes from the mouth;
+    SP7 step S4a fix round 2) and the fall-back caveat of each whose flight ended inside
+    the shaft (scene.fall_back_caveat, fix round 5; nothing for every other run), and,
+    when one of them is an
+    offload run, the directory's own offload.caveats word for word. When no run of the
+    pair holds a row, or the replay builder refuses, the list keeps the exploratory line
+    only and ``error`` says why."""
     by_name = {r["name"]: r for r in runs}
     shown = [n for n in pair if by_name.get(n, {}).get("has_rows")]
     caveats: list[str] = []
@@ -2841,6 +2850,11 @@ def panel_caveats(
             caveats = [str(c) for c in replay.replay_data(run_dir, shown)["meta"]["caveats"]]
         except Exception as exc:  # a directory the replay builder refuses still lists
             error = f"the caveat list could not be built: {type(exc).__name__}"
+        if caveats and config is not None:
+            try:
+                caveats += scene.early_release_lines_of(metrics, config, shown)[0]
+            except Exception as exc:  # the replay's list stands; the gap is said
+                error = f"the early-release caveat could not be built: {type(exc).__name__}"
     else:
         error = "no run shown holds a time series"
     if not caveats and replay.is_exploratory(metrics):
@@ -2902,7 +2916,9 @@ def results_panel(
     basis commit are SP1's, ``sp1_files_same``, ``AppServer.sp1_same_at``), the push,
     flight, flags and verification, the outcome (``classify``), the caveats of the pair
     (``panel_caveats``), what the scene draws that the model does not compute
-    (scene.DISPLAY_ONLY, design 4.9) and the caveat footer a video of the pair would
+    (scene.DISPLAY_ONLY, design 4.9; ``scene.display_only_for`` the pair's flags, whose
+    carriage item says so when a run of the pair fell back inside the shaft, SP7 step S4a
+    fix round 4) and the caveat footer a video of the pair would
     carry (``panel_video_footer``, for the page's fit check). Raises ValueError for a
     ``chosen`` that is not 1 to PANEL_RUNS distinct run folders."""
     rows = run_folders(run_dir, metrics)
@@ -2938,8 +2954,10 @@ def results_panel(
         "flags": [] if view is None else view.get("flags", []),
         "verification": None if view is None else view.get("verification"),
         "outcome": {"kind": kind, "message": message, "notes": list(notes)},
-        **panel_caveats(run_dir, metrics, runs, pair),
-        "display_only": list(scene.DISPLAY_ONLY),
+        **panel_caveats(run_dir, metrics, runs, pair, config),
+        "display_only": scene.display_only_for(
+            next((r.get("flags") or [] for r in runs if r["name"] == n), []) for n in pair
+        ),
         "video_footer": panel_video_footer(run_dir, metrics, config, runs, pair),
     }
     return {
@@ -3753,16 +3771,27 @@ def video_footer(
     display-only caveat of design 4.8 is the scene page's own footer line
     (scene.FOOTER_TEXT), which the page puts on every captured frame before these lines
     (frameFooterLines), so it is not repeated here (D-SP2-23: one source per caveat; fix
-    round 1); the page also adds each shown pushed run's own structural line. The vehicle
-    is the directory's own
+    round 1); the page also adds each shown pushed run's own structural line. Last, for
+    the shown runs released at their release speed below the mouth, one line saying the
+    carriage drawn at and above the mouth after release is a drawing limit, and for those
+    whose flight ended inside the shaft (a shaft_fallback flag, whatever the release
+    trigger) one line per kind (scene.fall_back_frame_text): fell back onto the parked
+    carriage, the model's floor there, so the drawn impact note's 'no contact with the
+    carriage' and 'altitude 0' do not hold; or stopped rising below a carriage parked above
+    the apex, the impact logged at once there, not at altitude 0
+    (scene.early_release_lines_of's frame lines, the same words a frame the scene page
+    captures with its own lines carries: the page draws every
+    carriage braking from the mouth; SP7 step S4a fix rounds 2 to 5); no line for any
+    other run, so every other footer is unchanged. The vehicle is the directory's own
     (resolved_config.yaml's top vehicle block, as the scene names it). Raises
     plots.AnimationError for a run without a planar time series."""
     runs = [plots.read_animation_run(run_dir, n, dict(metrics)) for n in names]
     vehicle = str(run_data.as_mapping(config.get("vehicle")).get("name", "unknown vehicle"))
     label = metrics.get("label")
-    return list(
+    lines = list(
         plots.animation_caveats(runs, vehicle, None if label is None else str(label), width_px=None)
     )
+    return lines + scene.early_release_lines_of(metrics, config, names)[1]
 
 
 def _refused_from(exc: video.VideoError) -> Refused:

@@ -65,6 +65,7 @@ from launchsim.metrics import (
     _phase_samples,
     _rel_release,
     _track_rows,
+    linear_motor_facility_m,
     linear_motor_metrics,
     stall_unavailable_metrics,
 )
@@ -985,8 +986,9 @@ def planar_track_metrics(
     the config states the push by its exit speed). The TRACK_METRIC_ALIASES are written
     beside their canonical keys, and peak_track_normal_g = max(vehicle, carriage). A
     linear-motor push adds ``metrics.LINEAR_MOTOR_METRICS`` after the push settings
-    (``metrics.linear_motor_metrics``; its net_accel_* stay None); no other drive gains
-    a key. A ``drive_stall`` run writes ``metrics.STALL_UNAVAILABLE_TRACK_METRICS`` as
+    (``metrics.linear_motor_metrics``; its net_accel_* stay None; its facility length
+    from its release position, ``metrics.linear_motor_facility_m``); no other drive
+    gains a key. A ``drive_stall`` run writes ``metrics.STALL_UNAVAILABLE_TRACK_METRICS`` as
     None. Frame: the flat track frame with constant g_eff."""
     rows = frame[frame["phase"] == ASSIST_KIND]
     phases = trace.assist_phases()
@@ -1039,6 +1041,7 @@ def planar_track_metrics(
     out.update(push_setting_metrics(assist, track))
     if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
         out.update(linear_motor_metrics(trace, assist, track, v_exit, max(0.0, p_max)))
+        out["facility_length_m"] = linear_motor_facility_m(trace, assist, track, v_exit)
     return out
 
 

@@ -56,12 +56,14 @@ class ConstantAccelAssist:
 
     (drive_normal = 0, dissipated = 0). The SP7 protocol members leave the push as it
     was: ``at_push_start`` returns the model itself, ``kink_times`` and
-    ``push_watches`` are empty and ``stall_reason`` is None.
+    ``push_watches`` are empty, ``stall_reason`` is None and ``release_speed_mps`` (a
+    class constant, SP7 step S4a) is None: the push releases at the track end.
     """
 
     name: ClassVar[str] = "constant_accel"
     extra_state_names: ClassVar[tuple[str, ...]] = ()
     push_time_exact: ClassVar[bool] = True
+    release_speed_mps: ClassVar[float | None] = None
 
     net_accel_mps2: float
     carriage_mass_kg: float

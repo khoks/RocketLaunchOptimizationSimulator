@@ -21,11 +21,13 @@ class NoAssist:
     for this model (calling it raises). name, extra_state_names and push_time_exact
     (True: no push, exactly) are class constants (the registry key and the track state
     layout cannot change per instance); the SP7 protocol members bind nothing
-    (``at_push_start`` returns the model), list nothing and never stall."""
+    (``at_push_start`` returns the model), list nothing and never stall, and the
+    release speed (``release_speed_mps``, a class constant) is None."""
 
     name: ClassVar[str] = "none"
     extra_state_names: ClassVar[tuple[str, ...]] = ()
     push_time_exact: ClassVar[bool] = True
+    release_speed_mps: ClassVar[float | None] = None
     f_imp: float = 0.0
     efficiency: float = 1.0
     carriage_mass_kg: float = 0.0

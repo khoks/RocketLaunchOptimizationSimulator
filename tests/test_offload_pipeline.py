@@ -1384,7 +1384,13 @@ def test_sweep_index_and_summary_report_each_no_offload_point(
     variant, not a sweep point)", never "0 t"; a sweep without a no_offload end prints no
     heading, whatever its type (SP1's recorded sweeps among them: every point of theirs
     ended ok, so their summaries change only by the column, its header over an ``n/a``
-    cell in the sweep table, which prints every index column)."""
+    cell in the sweep table, which prints every index column). KI-042 (closed in SP7 step
+    S4a): the sweep table prints a no_offload point's ``<case>.offload_kg``,
+    ``<case>.stage1_fraction`` and ``<case>.total_fraction`` cells as
+    ``summary.SWEEP_NO_OFFLOAD_CELL`` ("n/a: no offload"), never as a bare 0 beside the
+    status no_offload, while the index (sweep_index.csv, data) keeps the solver's 0; an
+    ok point's cells keep their numbers, and a reference_failed point (no status
+    no_offload) its n/a."""
     assert OFFLOAD_SWEEP_COLUMNS[-1] == "dv_shortfall_mps"
     gamma = math.radians(23.4)
     record, fixed = _synthetic_record()["cases"][:2]
@@ -1519,6 +1525,23 @@ def test_sweep_index_and_summary_report_each_no_offload_point(
     head = out.index(summary.SWEEP_NO_OFFLOAD_HEAD)
     assert out.index(summary.SWEEP_STRUCTURE_HEAD) < head < out.index("## Assumptions")
     assert out[head + 1 : head + 4] == ["", *lines[2:]]
+    # KI-042: the table's no_offload cells say so; the index keeps the solver's 0
+    header = next(line for line in out if line.startswith("| point"))
+    cells = [c.strip() for c in header.strip("|").split("|")]
+    table = [
+        [c.strip() for c in out[out.index(header) + 2 + i].strip("|").split("|")]
+        for i in range(len(names))
+    ]
+    shares = ("offload_kg", "stage1_fraction", "total_fraction")
+    for field in shares:
+        assert table[0][cells.index(f"s1_st.{field}")] == summary.SWEEP_NO_OFFLOAD_CELL
+        assert table[2][cells.index(f"s1.{field}")] == summary.SWEEP_NO_OFFLOAD_CELL
+        assert table[0][cells.index(f"s1.{field}")] == summary._fmt(first[f"s1.{field}"])
+        assert table[1][cells.index(f"s1.{field}")] == "n/a"  # reference_failed: no value
+        assert first[f"s1_st.{field}"] == 0.0 and third[f"s1.{field}"] == 0.0
+    assert table[0][cells.index("s1_st.status")] == NO_OFFLOAD_STATUS
+    assert summary.SWEEP_NO_OFFLOAD_CELL == "n/a: no offload"
+    assert summary.sweep_table_rows(frame) == table
     # a sweep without a no_offload end: no lines, no heading
     plain = _sweep(tmp_path, [{"s1": ok, "f10": fixed}])
     assert summary.sweep_no_offload_lines(plain) == []

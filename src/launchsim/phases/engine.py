@@ -721,6 +721,31 @@ def ev_track_end(length_m: float, layout: StateLayout, zero_tol: float = ATOL_M)
     return EventSpec("track_end", fn, terminal=True, direction=+1, zero_tol=zero_tol)
 
 
+TARGET_SPEED_EVENT = "target_speed"
+"""Name of the release-speed event (``ev_release_speed``, SP7 step S4a) and of the
+release trigger it sets (``assist.linear_motor.RELEASE_TRIGGER_TARGET_SPEED``)."""
+
+
+def ev_release_speed(v_release_mps: float, layout: StateLayout) -> EventSpec:
+    """Release at a target speed (SP7 step S4a; design 4.7): sdot - v_release crosses
+    zero upward (terminal); the vehicle releases there, before the track end.
+
+    Inputs: the release speed v_release [m/s] along the track (> 0); the track state
+    layout (needs ``sdot_mps``). zero_tol = ATOL_MPS: a push whose sub-phase ends with
+    sdot within ATOL_MPS of v_release (or past it) releases there (``prelude.fly_track``),
+    so no sub-phase starts with the event at zero. ValueError for v_release not finite
+    and > 0. Frame: along the track tangent.
+    """
+    if not (math.isfinite(v_release_mps) and v_release_mps > 0.0):
+        raise ValueError(f"the release speed must be finite and > 0, got {v_release_mps!r}")
+    i_v = layout.index("sdot_mps")
+
+    def fn(t: float, y: np.ndarray) -> float:
+        return y[i_v] - v_release_mps
+
+    return EventSpec(TARGET_SPEED_EVENT, fn, terminal=True, direction=+1, zero_tol=ATOL_MPS)
+
+
 def ev_drive_limit(params: TrackParams) -> EventSpec:
     """Drive limit: the drive force F_drive(t, y) [N] crosses zero downward (terminal).
 
@@ -824,16 +849,24 @@ def ev_altitude_up(model: DynamicsModel, z_m: float, name: str) -> EventSpec:
     z [m]; ``PlanarDynamics2D``: h = r - r_datum [m], geometric) and whose ``layout``
     holds the rate; z_m, the altitude [m] above the datum (finite); name, the event's
     label (``prelude.IGNITION_HEIGHT_EVENT`` for the ramp start of ``height_method:
-    event``: the track exit's altitude plus the requested height). Listed only in rising
-    unpowered sub-phases, which end at the apex (w = 0), so inside the phase g is the
-    altitude minus z_m exactly and its root is the altitude crossing. The fold term
+    event``: the track exit's altitude plus the requested height; ``planar.SHAFT_EXIT_EVENT``
+    for the mouth, SP7 step S4a). Listed only in rising sub-phases that end at their apex
+    (w = 0): the rising unpowered coasts, and since S4a the planar burn sub-phases that
+    start in the shaft, rising, beside the radial apex as ``planar.SHAFT_APEX_EVENT``; so
+    inside the phase g is the altitude minus z_m exactly and its root is the altitude
+    crossing. The fold term
     (zero while w >= 0, continuous at the apex) is for the step that overshoots the
     apex before the phase is cut there: scipy tests a sign change only at step ends,
     and a crossing just below the apex has the altitude back below z_m at the end of
     such a step. With the fold, g keeps rising past the apex (dg/dt = w (1 - 2 k |a|) >
     0 for a downward acceleration |a| > 1 / (2 k), and g(t_end) >= apex - z_m), so the
     crossing is found; with the apex below z_m any root lies after the apex root, which
-    ends the phase first (scipy drops events later than a terminal one). A state already
+    ends the phase first (scipy drops events later than a terminal one). On a powered
+    sub-phase the downward acceleration at the apex can be below 1 / (2 k)
+    (APEX_FOLD_ACCEL_MPS2) when the thrust nearly holds the weight; a crossing just below
+    such an apex can then go unlogged in the overshooting step, and the apex ends the
+    sub-phase above z_m, where the next one lists the ground as usual: the flight is the
+    same, only the crossing's record is missing. A state already
     within zero_tol below z_m or above it is the planner's to decide (it lights at once)
     and is never handed to a phase listing the event (the engine would end the phase at
     t0 by its already-past rule). zero_tol = ATOL_M; as for ``ev_ground``, a planar root

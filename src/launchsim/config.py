@@ -121,7 +121,7 @@ command a(t) = a_cmd min(1, t / t_r) capped by F_max and P_max / sdot. The model
 ``assist.linear_motor.ControlLaw`` is the same set (a test keeps them equal)."""
 CONTROL_FORCE: ControlLaw = "force"
 CONTROL_ACCELERATION: ControlLaw = "acceleration"
-LINEAR_MOTOR_OPTIONAL_KEYS = ("accel_command_g", "stop_taper_m")
+LINEAR_MOTOR_OPTIONAL_KEYS = ("accel_command_g", "stop_taper_m", "release_speed_mps")
 """The optional keys of a ``linear_motor`` block: a key given must hold a number (a null
 does not unset it), and ``model_dump`` leaves out the one holding None."""
 SWITCH_KEYS = ("model", "kind")
@@ -789,8 +789,12 @@ class LinearMotorConfig(_Model):
     (>= 0); ``brake_decel_g`` the carriage's constant total braking deceleration after
     release [g0] (> 0); ``drive_efficiency`` in (0, 1]; ``exhaust_impingement_fraction``
     in [0, 1]; ``shaft`` vented only (the sealed shaft is S5); ``track`` the straight
-    track. No key of the assist family (ASSIST_KEY_FAMILIES): the push is stated by its
-    limits, not by an acceleration or an exit speed.
+    track; ``release_speed_mps`` the release speed v_release [m/s] along the track (> 0;
+    optional, SP7 step S4a): the push releases where sdot reaches it before the track end
+    (at the track end, with the flag release_speed_not_reached, when it does not), and
+    it is refused together with ``stop_taper_m`` (the taper is a release-at-L device,
+    design 4.6). No key of the assist family (ASSIST_KEY_FAMILIES): the push is stated by
+    its limits (and a release speed), not by an acceleration or an exit speed.
 
     Every number is strict and finite (KI-030's rule): a bool, a numeric string, NaN or
     inf is refused, a YAML integer accepted. An optional key given must hold a number (a
@@ -815,11 +819,13 @@ class LinearMotorConfig(_Model):
     )
     shaft: Literal["vented"] = "vented"
     track: TrackConfig = TrackConfig()
+    release_speed_mps: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _control_keys(self) -> LinearMotorConfig:
         """An optional key given holds a number; ``accel_command_g`` given exactly when
-        the law is ``acceleration``; the stop taper shorter than the stroke."""
+        the law is ``acceleration``; the stop taper shorter than the stroke; a release
+        speed never together with a stop taper."""
         for key in LINEAR_MOTOR_OPTIONAL_KEYS:
             if key in self.model_fields_set and getattr(self, key) is None:
                 raise ValueError(
@@ -837,6 +843,12 @@ class LinearMotorConfig(_Model):
             raise ValueError(
                 f"linear_motor stop_taper_m {self.stop_taper_m:g} m must be shorter than the "
                 f"stroke ({self.stroke_m:g} m)"
+            )
+        if self.release_speed_mps is not None and self.stop_taper_m is not None:
+            raise ValueError(
+                "linear_motor release_speed_mps is refused together with stop_taper_m: the "
+                "stop taper brings the push to its holding force at the track end, a "
+                "release-at-L device (design 4.6); leave one of them out"
             )
         return self
 

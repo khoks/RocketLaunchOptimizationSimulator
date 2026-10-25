@@ -60,6 +60,7 @@ from launchsim.phases.planar import (
     LTG_BURN,
     VERTICAL_RISE,
 )
+from launchsim.phases.prelude import RELEASE_SPEED_NOT_REACHED
 from launchsim.replay import EXPLORATORY_CAVEAT, EXPLORATORY_LABEL, penalty_added_kg
 from launchsim.structure import (
     ENTRY_AFT_RING,
@@ -77,7 +78,16 @@ from launchsim.summary import (
     structure_row_departures,
     structure_run_record,
 )
-from launchsim.units import kg_to_t, m_to_km, m_to_mm, n_to_mn, pa_to_kpa, rad_to_deg, to_percent
+from launchsim.units import (
+    kg_to_t,
+    m_to_km,
+    m_to_mm,
+    n_to_mn,
+    pa_to_kpa,
+    rad_to_deg,
+    to_percent,
+    w_to_mw,
+)
 
 if TYPE_CHECKING:
     from launchsim.sim import Result
@@ -139,7 +149,9 @@ def plot_panels(result: Result) -> list[PlotPanel]:
 def write_plots(result: Result, plots_dir: Path, prefix: str) -> list[Path]:
     """Write plots/<plot_stem(prefix, quantity)>.png for every panel of ``plot_panels``
     (altitude, speed, mass_thrust, felt_g and, on a track, track_forces and
-    drive_power), each against the time since release (PLOT_ABSCISSA). A panel with
+    drive_power), each against the time since release (PLOT_ABSCISSA), and for a
+    linear-motor run its force-against-speed figure (``write_drive_curve``, SP7 step
+    S4a; no other run gains a file). A panel with
     two columns and one y label draws both on that axis, labelled (same unit); with
     one y label per column each column gets its own axis, the second a twin y axis on
     the right (mass and thrust: different units, never one scale). Nothing is written
@@ -196,7 +208,241 @@ def write_plots(result: Result, plots_dir: Path, prefix: str) -> list[Path]:
         path = plots_dir / f"{plot_stem(prefix, quantity)}.png"
         fig.savefig(path, format="png")
         written.append(path)
+    curve = write_drive_curve(result, plots_dir, prefix, "v_mps")
+    if curve is not None:
+        written.append(curve)
     return written
+
+
+# ------------------------------------------------- linear-motor drive curve (SP7 S4a)
+
+DRIVE_CURVE_QUANTITY = "drive_curve"
+"""The quantity suffix of a linear-motor run's force-against-speed figure:
+plots/<run>_drive_curve.png (``write_drive_curve``; SP7 step S4a). Written for a
+linear-motor run only (its metrics carry ``push_force_max_N``), never for constant_accel
+or a pad, so no existing run's plot list changes."""
+DRIVE_CURVE_FIGSIZE_IN = (6.4, 5.0)
+DRIVE_CURVE_FORCE_COLOR = PLOT_SERIES_COLOR
+DRIVE_CURVE_POWER_COLOR = "#d6742a"
+DRIVE_CURVE_LIMIT_COLOR = "#555555"
+DRIVE_CURVE_ENVELOPE_COLOR = "#9a9a9a"
+DRIVE_CURVE_LIMIT_STYLE = "--"
+DRIVE_CURVE_SPEED_STYLE = ":"
+DRIVE_CURVE_ENVELOPE_STYLE = "-."
+DRIVE_CURVE_LIMIT_WIDTH = 1.2
+DRIVE_CURVE_MARKER_SIZE = 3.0
+DRIVE_CURVE_LEGEND_FONT = 7.5
+DRIVE_CURVE_LEGEND_COLUMNS = 2
+DRIVE_CURVE_TITLE_FONT = 10.0
+"""The drive-curve figure's style (``drive_curve_figure``; display only, none of them a
+model number): DRIVE_CURVE_FIGSIZE_IN its (width, height) [in]; the colours (matplotlib
+colour strings) of the force curve (the panels' series colour), the power curve, the
+F_max and P_max limit lines and the power-cap envelope P_max / sdot; the matplotlib line
+styles of the limit lines, the corner and release speed lines and the envelope;
+DRIVE_CURVE_LIMIT_WIDTH the limit lines' width [pt]; DRIVE_CURVE_MARKER_SIZE the sampled
+rows' marker size [pt]; DRIVE_CURVE_LEGEND_FONT and DRIVE_CURVE_TITLE_FONT the legend and
+title font sizes [pt]; DRIVE_CURVE_LEGEND_COLUMNS the legend's columns (fix round 2,
+C2-m4)."""
+DRIVE_CURVE_LEGEND_BAND = 0.2
+"""Share of the figure's height below the axes kept for the legend (fix round 1, V4: the
+legend sits under the axes, so no curve or vertical line runs through it)."""
+DRIVE_CURVE_FORCE_HEADROOM = 1.25
+"""Top of the force axis as a multiple of F_max (``DRIVE_CURVE_POWER_HEADROOM`` says
+why it differs from the power axis's)."""
+DRIVE_CURVE_POWER_HEADROOM = 1.6
+"""Tops of the force and power axes as multiples of F_max and P_max: distinct, so the two
+dashed limit lines never sit at one height on the independently scaled twin axes (fix
+round 1, V5); every flown force is <= F_max and every flown power <= P_max (D-SP7-50)."""
+DRIVE_CURVE_X_MARGIN = 1.05
+"""The speed axis runs to this multiple of the largest speed drawn (the push's, a set
+release speed, the corner speed)."""
+DRIVE_CURVE_ENVELOPE_POINTS = 200
+"""Points of the drawn power-cap curve P_max / sdot above the corner speed."""
+
+
+def drive_curve_rows(result: Result, speed_column: str) -> tuple[Any, Any, Any] | None:
+    """(speed [m/s], drive force [N], drive power [W]) of a linear-motor run's sampled
+    ASSIST rows (every sample_dt_s plus every sub-phase end: the rise's end, each watch
+    crossing and the release), or None for any other run (no ``push_force_max_N`` in its
+    metrics, no ASSIST row, or no ``speed_column``). The speed is the time series' own
+    column (``v_mps`` 1-D, ``speed_rel_mps`` planar), which equals the speed along the
+    track sdot on the vertical track both release maps require; the force and power are
+    the recorded ``drive_force_N`` and ``drive_power_W`` (P = F sdot)."""
+    if _finite_number(result.metrics.get("push_force_max_N")) is None:
+        return None
+    frame = result.timeseries
+    if frame.empty or "phase" not in frame.columns or speed_column not in frame.columns:
+        return None
+    rows = frame[frame["phase"] == ASSIST_KIND]
+    if rows.empty:
+        return None
+    return (
+        np.abs(rows[speed_column].to_numpy(dtype=float)),
+        rows["drive_force_N"].to_numpy(dtype=float),
+        rows["drive_power_W"].to_numpy(dtype=float),
+    )
+
+
+def _finite_number(value: Any) -> float | None:
+    """value as a float when it is a finite real number (not a bool), else None."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    x = float(value)
+    return x if math.isfinite(x) else None
+
+
+def drive_curve_figure(result: Result, prefix: str, speed_column: str) -> Figure | None:
+    """The force-against-speed figure of a linear-motor run (SP7 step S4a; design 6.1's
+    force-against-speed figure): the recorded drive force [MN] (left axis) and drive
+    power [MW] (right axis) against the speed along the track [m/s] over the push
+    (``drive_curve_rows``), with F_max and P_max as dashed lines on their axes (axis tops
+    at DRIVE_CURVE_FORCE_HEADROOM F_max and DRIVE_CURVE_POWER_HEADROOM P_max, so the two
+    lines never coincide), the power cap on the force P_max / sdot above the corner
+    speed (dash-dot), the corner speed P_max/F_max as a dotted vertical line (where the
+    cap meets F_max; the acceleration law's command meets it at P_max / F_cmd), and a
+    set release speed as a dashed one, labelled '(not reached)' when the push released at
+    the track end below it (the run's ``prelude.RELEASE_SPEED_NOT_REACHED`` flag), 'set
+    ... (no release: status <status>)' when the push never released (no
+    ``release_trigger``: a stall or a stop on the track; fix round 4, V4-3). The
+    title (two lines: the run and its law, then what is drawn) and the legend (under the
+    axes) stay inside the figure. Settings from the run's metrics (push_force_max_N,
+    push_power_max_W, push_corner_speed_mps, push_control_law, push_release_speed_mps)
+    and flags. None for any other run."""
+    rows = drive_curve_rows(result, speed_column)
+    if rows is None:
+        return None
+    speed, force, power = rows
+    m = result.metrics
+    f_max = float(m["push_force_max_N"])
+    p_max = _finite_number(m.get("push_power_max_W"))
+    corner = _finite_number(m.get("push_corner_speed_mps"))
+    v_release = _finite_number(m.get("push_release_speed_mps"))
+    law = m.get("push_control_law")
+    fig = Figure(figsize=DRIVE_CURVE_FIGSIZE_IN, dpi=PLOT_DPI)
+    ax = fig.subplots()
+    twin = ax.twinx()
+    handles: list[Any] = []
+    (h,) = ax.plot(
+        speed,
+        n_to_mn(force),
+        color=DRIVE_CURVE_FORCE_COLOR,
+        linewidth=PLOT_LINE_WIDTH,
+        marker="o",
+        markersize=DRIVE_CURVE_MARKER_SIZE,
+        label="drive force F (sampled rows)",
+    )
+    handles.append(h)
+    (h,) = twin.plot(
+        speed,
+        w_to_mw(power),
+        color=DRIVE_CURVE_POWER_COLOR,
+        linewidth=PLOT_LINE_WIDTH,
+        marker="o",
+        markersize=DRIVE_CURVE_MARKER_SIZE,
+        label="drive power P = F sdot (sampled rows)",
+    )
+    handles.append(h)
+    handles.append(
+        ax.axhline(
+            float(n_to_mn(f_max)),
+            color=DRIVE_CURVE_FORCE_COLOR,
+            linestyle=DRIVE_CURVE_LIMIT_STYLE,
+            linewidth=DRIVE_CURVE_LIMIT_WIDTH,
+            label=f"F_max = {float(n_to_mn(f_max)):.4g} MN",
+        )
+    )
+    if p_max is not None:
+        handles.append(
+            twin.axhline(
+                float(w_to_mw(p_max)),
+                color=DRIVE_CURVE_POWER_COLOR,
+                linestyle=DRIVE_CURVE_LIMIT_STYLE,
+                linewidth=DRIVE_CURVE_LIMIT_WIDTH,
+                label=f"P_max = {float(w_to_mw(p_max)):.5g} MW",
+            )
+        )
+    x_top = max([float(np.max(speed)), *(v for v in (v_release, corner) if v is not None)])
+    x_top *= DRIVE_CURVE_X_MARGIN
+    if p_max is not None and corner is not None and corner < x_top:
+        v_cap = np.linspace(corner, x_top, DRIVE_CURVE_ENVELOPE_POINTS)
+        (h,) = ax.plot(
+            v_cap,
+            n_to_mn(p_max / v_cap),
+            color=DRIVE_CURVE_ENVELOPE_COLOR,
+            linestyle=DRIVE_CURVE_ENVELOPE_STYLE,
+            linewidth=DRIVE_CURVE_LIMIT_WIDTH,
+            label="power cap on the force P_max / sdot",
+        )
+        handles.append(h)
+    if corner is not None:
+        handles.append(
+            ax.axvline(
+                corner,
+                color=DRIVE_CURVE_LIMIT_COLOR,
+                linestyle=DRIVE_CURVE_SPEED_STYLE,
+                linewidth=DRIVE_CURVE_LIMIT_WIDTH,
+                label=f"corner speed P_max/F_max = {corner:.4g} m/s (cap meets F_max)",
+            )
+        )
+    if v_release is not None:
+        missed = any(str(f).startswith(RELEASE_SPEED_NOT_REACHED) for f in result.flags)
+        if m.get("release_trigger") is None:  # never released (fix round 4, V4-3)
+            label = f"release speed set {v_release:g} m/s (no release: status {result.status})"
+        elif missed:
+            label = f"release speed {v_release:g} m/s (not reached)"
+        else:
+            label = f"release speed {v_release:g} m/s"
+        handles.append(
+            ax.axvline(
+                v_release,
+                color=DRIVE_CURVE_LIMIT_COLOR,
+                linestyle=DRIVE_CURVE_LIMIT_STYLE,
+                linewidth=DRIVE_CURVE_LIMIT_WIDTH,
+                label=label,
+            )
+        )
+    ax.set_xlabel("speed along the track sdot [m/s]")
+    ax.set_ylabel("drive force F [MN]", color=DRIVE_CURVE_FORCE_COLOR)
+    twin.set_ylabel("drive power P [MW]", color=DRIVE_CURVE_POWER_COLOR)
+    ax.set_xlim(0.0, x_top)
+    ax.set_ylim(0.0, float(n_to_mn(f_max)) * DRIVE_CURVE_FORCE_HEADROOM)
+    if p_max is not None:
+        twin.set_ylim(0.0, float(w_to_mw(p_max)) * DRIVE_CURVE_POWER_HEADROOM)
+    else:
+        twin.set_ylim(bottom=0.0)
+    ax.grid(True, color=PLOT_GRID_COLOR, linewidth=PLOT_GRID_LINE_WIDTH)
+    ax.spines["top"].set_visible(False)
+    twin.spines["top"].set_visible(False)
+    what = f"{law} law" if isinstance(law, str) else "law unknown"
+    ax.set_title(
+        _plot_text(f"{prefix} ({what})\nlinear-motor drive force and power against speed"),
+        fontsize=DRIVE_CURVE_TITLE_FONT,
+    )
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        ncol=DRIVE_CURVE_LEGEND_COLUMNS,
+        frameon=False,
+        fontsize=DRIVE_CURVE_LEGEND_FONT,
+    )
+    fig.tight_layout(rect=(0.0, DRIVE_CURVE_LEGEND_BAND, 1.0, 1.0))
+    return fig
+
+
+def write_drive_curve(
+    result: Result, plots_dir: Path, prefix: str, speed_column: str
+) -> Path | None:
+    """Write plots/<plot_stem(prefix, DRIVE_CURVE_QUANTITY)>.png, the
+    ``drive_curve_figure`` of a linear-motor run, and return its path; None (nothing
+    written) for any other run. speed_column: the time series' speed column (``v_mps``
+    1-D, ``speed_rel_mps`` planar)."""
+    fig = drive_curve_figure(result, prefix, speed_column)
+    if fig is None:
+        return None
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    path = plots_dir / f"{plot_stem(prefix, DRIVE_CURVE_QUANTITY)}.png"
+    fig.savefig(path, format="png")
+    return path
 
 
 # ---------------------------------------------------------------------- planar plots
@@ -282,8 +528,9 @@ def write_planar_plots(result: Result, plots_dir: Path, prefix: str) -> list[Pat
     (``planar_plot_panels``): altitude [km] against downrange [km], and the other
     quantities against the time since release; angles in degrees, lengths in km, SI
     otherwise (the unit in each label). Each column group shares an axis; a second
-    group gets a twin y axis. Nothing is written for an empty time series (a failed
-    search)."""
+    group gets a twin y axis; a linear-motor run adds its force-against-speed figure
+    (``write_drive_curve``, SP7 step S4a; no other run gains a file). Nothing is written
+    for an empty time series (a failed search)."""
     frame = result.timeseries
     if frame.empty:
         return []
@@ -319,6 +566,9 @@ def write_planar_plots(result: Result, plots_dir: Path, prefix: str) -> list[Pat
         path = plots_dir / f"{plot_stem(prefix, quantity)}.png"
         fig.savefig(path, format="png")
         written.append(path)
+    curve = write_drive_curve(result, plots_dir, prefix, "speed_rel_mps")
+    if curve is not None:
+        written.append(curve)
     return written
 
 
@@ -1740,9 +1990,14 @@ class AnimationRun:
         return float(self.t_s[-1])
 
     def push_peak_g(self) -> float | None:
-        """Peak felt axial acceleration [g0] during the assist push, or None without one."""
+        """Peak felt axial acceleration [g0] during the assist push, or None without one,
+        or for a push that never moved: one ASSIST row only, its start (a stalled push, or
+        one stopped on the track at t = 0, whose felt g is that of a stack at rest; SP7
+        step S4a fix round 4, V4-3)."""
         push = self.phase == ASSIST_KIND
-        return float(np.nanmax(self.felt_axial_g[push])) if bool(np.any(push)) else None
+        if int(np.count_nonzero(push)) < 2:
+            return None
+        return float(np.nanmax(self.felt_axial_g[push]))
 
 
 ANIMATION_COLUMNS = run_data.PLANAR_BASE_COLUMNS

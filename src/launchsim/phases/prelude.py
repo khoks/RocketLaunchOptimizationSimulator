@@ -50,6 +50,8 @@ from launchsim.dynamics import (
 from launchsim.phases.engine import (
     ATOL_KG,
     ATOL_M,
+    ATOL_MPS,
+    TARGET_SPEED_EVENT,
     ZERO_SPAN_S,
     EventSpec,
     IntegratorSettings,
@@ -61,6 +63,7 @@ from launchsim.phases.engine import (
     ev_liftoff,
     ev_propellant,
     ev_push_watch,
+    ev_release_speed,
     ev_track_end,
     event_state,
     first_step_value,
@@ -92,6 +95,111 @@ DRIVE_STALL = "drive_stall"
 """Run status of a push whose drive cannot start it (``AssistModel.stall_reason``: the
 linear motor at its force limit and the thrust cannot lift the stack at push start); the
 run stops on the track, like ``drive_limit``."""
+RELEASE_SPEED_NOT_REACHED = "release_speed_not_reached"
+"""Run flag (the prefix of its text) of a push with a release speed
+(``AssistModel.release_speed_mps``, SP7 step S4a) that reaches the track end below it,
+sdot < v_release - ATOL_MPS at L: the push releases at the track end (``fly_track``)."""
+TRACK_END_EVENT = "track_end"
+"""Name of the track-end event (``engine.ev_track_end``) and of the release trigger it
+sets (``assist.linear_motor.RELEASE_TRIGGER_TRACK_END``)."""
+SHAFT_FALLBACK = "shaft_fallback"
+"""The prefix of the note (a run flag) of a flight that falls back inside the shaft
+(``shaft_fallback_note``; SP7 step S4a, fix rounds 1, 3 and 4): after a release below the
+ground (a push released at its release speed below the mouth, or a constant_accel or
+linear-motor push to a buried track exit) the vehicle's apex can lie inside the shaft,
+where the ground's impact event is already past, or above the open mouth, through which
+it falls back. A falling sub-phase that starts in the shaft, or one over the shaft (the
+1-D flight; the planar flight before its kick) when the floor lies below the ground,
+lists, in place of the ground, the impact event at the shaft floor (``shaft_floor_m``:
+where the braked carriage parks) and, in a burn, the turnaround, so the thrust can turn
+the vehicle around above the carriage as it does above the ground; any touchdown on the
+carriage, however slow, ends the run in an impact there (no catch and re-hold is
+modelled), flagged with this note and the touchdown speed. A flight that turns around
+above the carriage carries no flag."""
+
+
+def shaft_floor_m(z_release_m: float, phi_release_rad: float, braking_distance_m: float) -> float:
+    """The floor of the shaft in the flight model after a release below the ground (SP7
+    step S4a fix round 3, P3-M1): the altitude [m] (+z-up datum frame) where the braked
+    carriage parks, z_release + d_brake sin phi_release.
+
+    Inputs: z_release_m [m] and phi_release_rad [rad], the release point's altitude and
+    track angle (``TrackExit.z_exit_m`` and ``phi_rad``); braking_distance_m [m], the
+    carriage's braking distance from the release speed (``AssistModel.braking_distance_m``).
+    It is ``metrics.carriage_park_altitude_m`` of the same run. A carriage that brakes at
+    a total deceleration a_b no smaller than the vehicle's (g_eff, plus the drag, less any
+    thrust) stays below the vehicle and is parked by v/a_b, before the vehicle, past its
+    apex at v/g or later, can come back down to it, so the parked carriage is the first
+    obstacle of a fall back inside the shaft. The model has no contact with the carriage
+    on its braking path or with the shaft walls."""
+    return z_release_m + braking_distance_m * math.sin(phi_release_rad)
+
+
+def shaft_fallback_note(
+    z_m: float,
+    z_ground_m: float,
+    z_floor_m: float | None,
+    *,
+    logged: bool = True,
+    speed_mps: float | None = None,
+) -> str:
+    """The note (``SHAFT_FALLBACK``) of a fall back inside the shaft after a release below
+    the ground (SP7 step S4a, fix rounds 1, 3 and 4). Inputs (+z-up datum frame): z_m [m],
+    the altitude of the impact; z_ground_m [m], the ground's; z_floor_m [m], the shaft
+    floor (``shaft_floor_m``: the parked carriage), None when no floor is known (a flight
+    started below the ground without a track release, which only a test builds);
+    speed_mps [m/s], the touchdown speed on the floor (|v| in 1-D, the Earth-relative
+    |v_rel| in planar; fix round 4, P4-m2), None to leave it out.
+
+    An impact on the floor (z within ATOL_M of it): 'the vehicle fell back inside the
+    shaft, after a release below the ground, onto the parked carriage at z = <z> m (<d> m
+    below the ground) at <v> m/s: the impact is logged there (...; any touchdown on the
+    carriage ends the run: no catch and re-hold is modelled)'. Otherwise the falling sub-phase
+    started at or below the floor, or with none known, and the run ends at once at that
+    apex: 'the vehicle stopped rising <d> m below the ground (z = <z> m), inside the shaft
+    after a release below the ground, at or below the parked carriage's altitude <z_f>
+    m (braking at less than the vehicle's deceleration, the carriage met it on its braking
+    path, where the model has no contact) | with no shaft floor known (no track release):
+    the impact is logged at once at that apex'. With ``logged`` False (a planar
+    GuidanceFailure, whose trace is discarded: fix round 3, H3-m2) the impact clause
+    reads 'the run ends in an impact there (the failed trace is not kept, so no event is
+    recorded)'."""
+    depth = z_ground_m - z_m
+    if z_floor_m is not None and abs(z_m - z_floor_m) <= ATOL_M:
+        ends = (
+            "the impact is logged there"
+            if logged
+            else "the run ends in an impact there (the failed trace is not kept, so no "
+            "event is recorded)"
+        )
+        at = "" if speed_mps is None else f" at {speed_mps:.6g} m/s"
+        return (
+            f"{SHAFT_FALLBACK}: the vehicle fell back inside the shaft, after a release "
+            f"below the ground, onto the parked carriage at z = {z_m:.6g} m ({depth:.6g} m "
+            f"below the ground){at}: {ends} (the model's floor in the shaft is the "
+            "carriage, parked after braking from the release; any touchdown on it ends the "
+            "run, no catch and re-hold being modelled; no contact with the shaft walls)"
+        )
+    if z_floor_m is None:
+        why = "with no shaft floor known (no track release)"
+    else:
+        why = (
+            f"at or below the parked carriage's altitude z = {z_floor_m:.6g} m (braking at "
+            "less than the vehicle's deceleration, the carriage met it on its braking path, "
+            "where the model has no contact)"
+        )
+    ends = (
+        "the impact is logged at once at that apex"
+        if logged
+        else "the run ends in an impact at that apex (the failed trace is not kept, so no "
+        "event is recorded)"
+    )
+    return (
+        f"{SHAFT_FALLBACK}: the vehicle stopped rising {depth:.6g} m below the ground (z = "
+        f"{z_m:.6g} m), inside the shaft after a release below the ground, {why}: {ends}"
+    )
+
+
 RELEASE_TIE_M = 1e-9
 """A push on a drive whose push time is not exact (the linear motor) that stops within
 this distance [m] of the track end, at a sub-phase boundary or a watch crossing, is
@@ -741,12 +849,16 @@ class PreludeLayout:
     the track events are logged in it); hold_state(z_m, m_kg): the state of a vehicle
     clamped at rest at altitude z_m [m] (datum frame) with mass m_kg [kg];
     from_track(y_track, params): the model-layout view of a track state (TrackParams
-    of the sub-phase) for event logging.
+    of the sub-phase) for event logging; aerodynamic: True when the flight model after
+    the release evaluates the atmosphere (the planar model: drag, q and Mach), False for
+    the 1-D model's drag-free flight at a constant ambient pressure (it words
+    ``early_release_assumption``'s line, SP7 step S4a fix round 1).
     """
 
     layout: StateLayout
     hold_state: Callable[[float, float], np.ndarray]
     from_track: Callable[[np.ndarray, TrackParams], np.ndarray]
+    aerodynamic: bool = False
 
 
 VERTICAL_PRELUDE = PreludeLayout(VERTICAL_LAYOUT, _vertical_hold_state, track_to_vertical)
@@ -756,16 +868,23 @@ VERTICAL_PRELUDE = PreludeLayout(VERTICAL_LAYOUT, _vertical_hold_state, track_to
 
 @dataclass(frozen=True, eq=False)
 class TrackExit:
-    """The vehicle at the track exit (the release), in the track frame.
+    """The vehicle at the release, in the track frame: at the track end, or (SP7 step
+    S4a) where sdot reached the drive's release speed before it.
 
-    t_release_s: the track-end root [s] (absolute); y_track: the track state there (the
+    t_release_s: the release root [s] (absolute); y_track: the track state there (the
     assist model's layout); sdot_mps: speed along the track [m/s]; m_kg: vehicle mass
-    [kg] (the carriage stays); phi_rad: track angle above horizontal at the exit [rad];
-    x_exit_m: downrange offset of the exit from the track start [m] for a
-    ``StraightTrack`` (0 for a vertical one, L cos phi for a tilted one), None for any
+    [kg] (the carriage stays); phi_rad: track angle above horizontal at the release
+    [rad]; x_exit_m: downrange offset of the release point from the track start [m] for
+    a ``StraightTrack`` (0 for a vertical one, s cos phi for a tilted one), None for any
     other geometry (the TrackGeometry protocol has no x(s) until Phase 3; the 1-D
     release map does not use it, and a map that needs it must refuse None); z_exit_m:
-    exit altitude in the +z-up datum frame [m] (start altitude + z(L)).
+    release altitude in the +z-up datum frame [m] (start altitude + z(s)). For a
+    ``track_end`` release s = L exactly (phi, x and z of SP1, bit for bit); for a
+    ``target_speed`` release s is the flown release position. release_position_m: that
+    s [m] (None: the track end, for an exit built without it); release_trigger: how the
+    push released, ``track_end`` or ``target_speed`` (``linear_motor.RELEASE_TRIGGERS``).
+    The two optional fields carry S4a's release out of ``fly_track``; TrackExit is not
+    reached by the 1-D golden dump (D-SP7-27 allows them).
     """
 
     t_release_s: float
@@ -775,6 +894,8 @@ class TrackExit:
     phi_rad: float
     x_exit_m: float | None
     z_exit_m: float
+    release_position_m: float | None = None
+    release_trigger: str = TRACK_END_EVENT
 
 
 def track_params(
@@ -800,18 +921,122 @@ def track_params(
     )
 
 
-def _exit_x_m(track: TrackGeometry) -> float | None:
-    """Downrange offset [m] of the track exit, track frame: for a ``StraightTrack`` 0
-    for a vertical exit (within VERTICAL_TRACK_TOL_RAD), else L cos phi; None for any
-    other geometry, because the TrackGeometry protocol has no x(s) and L cos phi(L)
-    would be silently wrong for a curved track (Phase 3 adds x(s)). Only a release map
-    that needs the offset refuses None; the 1-D map reads phi(L) and z(L) alone."""
+def _exit_x_m(track: TrackGeometry, s_m: float | None = None) -> float | None:
+    """Downrange offset [m] of the release point at s_m [m] along the track (None: the
+    track exit, s = L), track frame: for a ``StraightTrack`` 0 for a vertical track
+    (within VERTICAL_TRACK_TOL_RAD), else s cos phi; None for any other geometry,
+    because the TrackGeometry protocol has no x(s) and s cos phi(s) would be silently
+    wrong for a curved track (Phase 3 adds x(s)). Only a release map that needs the
+    offset refuses None; the 1-D map reads phi and z alone."""
     if not isinstance(track, StraightTrack):
         return None
-    phi = track.phi(track.length_m)
+    s = track.length_m if s_m is None else s_m
+    phi = track.phi(s)
     if abs(phi - 0.5 * math.pi) <= VERTICAL_TRACK_TOL_RAD:
         return 0.0
-    return track.length_m * math.cos(phi)
+    return s * math.cos(phi)
+
+
+def early_release_assumption(
+    v_release_mps: float,
+    s_release_m: float,
+    length_m: float,
+    z_release_m: float,
+    z_exit_m: float,
+    aerodynamic: bool,
+    p_amb_pa: float = 0.0,
+    floor_m: float | None = None,
+) -> str:
+    """The run-specific assumption line of a push released at its release speed before
+    the track end (SP7 step S4a; design 4.7), added by ``fly_track`` for such a run only.
+
+    Inputs: v_release_mps [m/s]; the release position s_release_m [m] along the track
+    and the track length length_m [m] (L - s of track are left above the vehicle); the
+    release altitude z_release_m and the track exit's altitude z_exit_m [m] (+z-up datum
+    frame, the ground at 0); aerodynamic, the flight model's (``PreludeLayout``): the
+    planar model flies in the vented shaft after the release (whether it leaves the shaft
+    or falls back in it; fix round 5, m2) as in the open atmosphere at its altitude
+    (no shaft flow model, no walls; drag, q and Mach computed as in open air; stage 1
+    may light and its kick begin there, with no clearance check), the 1-D model as it
+    flies everywhere: drag-free, with no atmosphere, its thrust at its constant ambient
+    pressure p_amb_pa [Pa] (vacuum thrust at 0, the value of every run ``sim.simulate``
+    builds; fix round 2), and no kick. Below the ground (z_release < 0) the rest of the
+    track is the vented shaft; the track exit is called the silo mouth only when it is at
+    the ground (within ATOL_M). The carriage brakes from the release point (facility
+    max(L, s + d_brake), not L + d_brake: within the stroke left when s + d_brake <= L,
+    else past the track end; fix round 4, H4-m4), and the ideal screening estimate is
+    taken at the release speed, not at the speed the vehicle has at the track exit, which
+    gravity (and drag, planar) over the rest of the track change, booked in the flight's
+    losses, and the thrust, booked in its delta-v (fix round 2: thrust is not a loss).
+    floor_m [m]: the shaft floor (``shaft_floor_m``: the parked carriage) of a release
+    below the ground; when it lies below the ground the line names it as the floor of the
+    flight model in the shaft, where any touchdown is an impact (fix round 4, V4-2), and
+    says that a carriage braking at less than the vehicle's deceleration can park above an
+    apex inside the shaft, where the run then ends at once (fix round 5, M1); None or a
+    floor at or above the ground adds nothing."""
+    left = length_m - s_release_m
+    at_ground = abs(z_exit_m) <= ATOL_M
+    exit_text = (
+        "the track exit at the ground, the silo mouth"
+        if at_ground
+        else f"the track exit at altitude {z_exit_m:g} m"
+    )
+    in_shaft = z_release_m < -ATOL_M
+    if in_shaft and z_exit_m > ATOL_M:
+        rest = "in the vented shaft and on the track above the ground after the release"
+    elif in_shaft:
+        rest = "in the vented shaft after the release"
+    else:
+        rest = "over the rest of the track's length"
+    if aerodynamic:
+        offset = (
+            ": the offset at the ground is the downrange of the shaft_exit event, logged "
+            "when the kick began in the shaft"
+            if in_shaft
+            else ""
+        )
+        flight = (
+            f"{rest} as in the open atmosphere at its altitude (no shaft flow model and no "
+            "walls: drag, dynamic pressure and Mach number are computed as in open air, and "
+            f"stage 1 may light and its pitch kick begin there, with no clearance check{offset})"
+        )
+        changes = (
+            "gravity, drag and any thrust over the rest of the track change (the gravity "
+            "and drag over it are in the flight's losses, the thrust in its delta-v)"
+        )
+    else:
+        thrust = (
+            "vacuum thrust"
+            if p_amb_pa == 0.0
+            else f"the thrust at the constant ambient pressure {p_amb_pa:g} Pa"
+        )
+        flight = (
+            f"{rest} as the 1-D flight flies everywhere: drag-free, with {thrust} (no "
+            "atmosphere; no shaft flow model, no walls)"
+        )
+        changes = (
+            "gravity and any thrust over the rest of the track change (the gravity over it "
+            "is in the flight's losses, the thrust in its delta-v)"
+        )
+    floor = ""
+    if in_shaft and floor_m is not None and floor_m < -ATOL_M:
+        floor = (
+            f"; the floor of the flight model in the shaft is the parked carriage at z = "
+            f"{floor_m:.6g} m: a fall back onto it, from inside the shaft or through the "
+            "open mouth, is an impact (no catch and re-hold); a carriage braking at less than "
+            "the vehicle's deceleration can park above an apex inside the shaft, and the run "
+            "then ends at once at that apex (the model has no contact with the carriage on "
+            "its braking path)"
+        )
+    return (
+        f"linear_motor: released at the release speed {v_release_mps:g} m/s at s = "
+        f"{s_release_m:.6g} m, {left:.6g} m before the track end (L = {length_m:g} m; "
+        f"{exit_text}), at altitude {z_release_m:.6g} m: the vehicle flies {flight}{floor}; "
+        "the carriage brakes from the release point (facility max(L, s + braking "
+        "distance): within the stroke left when s + braking distance <= L, else past the "
+        "track end; in place of L + braking distance); the ideal screening estimate is "
+        f"taken at this release speed, not at the speed at the track exit, which {changes}"
+    )
 
 
 def pending_until_release(spec: IgnitionSpec, assist: AssistModel | None) -> bool:
@@ -894,8 +1119,9 @@ def fly_track(
     p_amb_pa: float,
     prelude: PreludeLayout = VERTICAL_PRELUDE,
 ) -> TrackExit | None:
-    """The track prelude: t = 0 at push start, up to the release at the track end
-    (docs/physics.md, "Silo model").
+    """The track prelude: t = 0 at push start, up to the release at the track end or,
+    on a drive with a release speed, where the push reaches it (docs/physics.md, "Silo
+    model" and "Linear motor").
 
     Inputs: the builder (t_ign_abs_s and flags are written here); the assist model and
     its track; spec, the first stage's IgnitionSpec; the vehicle and settings; g_eff
@@ -967,10 +1193,25 @@ def fly_track(
     ``track_end`` has zero_tol 0 (never disarmed), and a sub-phase that ends short of L
     by more than RELEASE_TIE_M (at a watch crossing just before L, or a flight a hair
     short of the track end) flies on to it (ATOL_M for constant_accel, as in SP1).
+    The exception (SP7 step S4a, design 4.7) is a drive with a release speed
+    (``AssistModel.release_speed_mps``, the linear motor's v_release): the terminal
+    ``target_speed`` event (``engine.ev_release_speed``: sdot - v_release crossing upward,
+    zero_tol ATOL_MPS) is listed in every sub-phase and flown to as a fixed end like any
+    crossing, and a sub-phase that ends at it, or with sdot within ATOL_MPS of v_release
+    or past it (a crossing at a watch, a second flight a hair short), releases there,
+    unless it ended at ``track_end``: the TrackExit then holds z, phi and x at the
+    release position s (``release_position_m``, ``release_trigger`` ``target_speed``), the
+    ``target_speed`` event is logged there and the run gains
+    ``early_release_assumption``'s line (worded for the flight model by
+    ``prelude.aerodynamic``). A push that reaches the track end below
+    v_release - ATOL_MPS releases there with the flag RELEASE_SPEED_NOT_REACHED. A
+    ``track_end`` release keeps z(L), phi(L) and x of SP1 bit for bit
+    (``release_position_m`` L, ``release_trigger`` ``track_end``).
     Events logged on the track: push_start, ignition (when inside the push), ramp_end
     (at a thrust kink of a lit schedule only), the drive's kink events (drive_ramp_end),
     its watches (power_limit, power_limit_end, drive_cap, drive_cap_end, taper_start),
-    drive_limit. An event that ends a sub-phase takes its
+    drive_limit and, at an early release, target_speed. An event that ends a sub-phase
+    takes its
     state from ``event_state`` (the step's interpolant at the root, after the flight to
     it that of a step that passes the kink by at most the root's error); the kink events
     and a watch logged at a sub-phase start take the sub-phase's boundary state, a step
@@ -1072,8 +1313,14 @@ def fly_track(
     flight = settings if exact else replace(settings, dense_output=True)
     end_event = ev_track_end(length, layout, zero_tol=ATOL_M if exact else 0.0)
     release_tie_m = ATOL_M if exact else RELEASE_TIE_M
-    crossings = {"track_end"} | {w.name for w in watches}
+    # A release at a target speed (SP7 step S4a): sdot crossing v_release upward ends the
+    # push before the track end; a drive without one (constant_accel) lists no event.
+    v_release = drive.release_speed_mps
+    speed_event = None if v_release is None else ev_release_speed(v_release, layout)
+    crossings = {TRACK_END_EVENT} | {w.name for w in watches}
     crossings |= {w.end_name for w in watches if w.end_name is not None}
+    if speed_event is not None:
+        crossings.add(TARGET_SPEED_EVENT)
     book = _WatchBook()  # which watches bind, which were just set, their changes
     lookahead_s = WATCH_LOOKAHEAD_REL * t_push_scale
     short_of: str | None = None  # the crossing a second flight just fell short of
@@ -1085,6 +1332,8 @@ def fly_track(
             events: list[EventSpec] = [end_event, ev_propellant(m_dry, layout)]
             if not drive.allow_negative_drive:
                 events.append(ev_drive_limit(params))
+            if speed_event is not None:
+                events.append(speed_event)
             step = min(push_cap, max_step_cap(schedule, t, settings)) if params.lit else push_cap
             phase = PhaseSpec(ASSIST_KIND, 0, t, t_b, rhs_track, params, tuple(events), atol, step)
             if watches:
@@ -1108,8 +1357,10 @@ def fly_track(
             else:
                 short_of = None
             res = tr.add_phase(res)
+            # The release's own events are not logged here: target_speed is logged at the
+            # exit below, track_end never (the planner logs the release).
             for name, te in res.event_times:
-                if name != "track_end":
+                if name not in (TRACK_END_EVENT, TARGET_SPEED_EVENT):
                     y_e = event_state(res, name, te)
                     tr.add_event(name, te, ASSIST_KIND, 0, prelude.from_track(y_e, params))
             t, y = res.t_end, res.y_end
@@ -1149,15 +1400,58 @@ def fly_track(
                     if abs(t_b - t_k) <= ZERO_SPAN_S:
                         tr.add_event(name, t, ASSIST_KIND, 0, prelude.from_track(y, params))
             s_end = float(layout.get(y, "s_m"))
-            if res.ended_by == "track_end" or s_end >= length - release_tie_m:
+            sdot_end = float(layout.get(y, "sdot_mps"))
+            if (
+                v_release is not None
+                and res.ended_by != TRACK_END_EVENT
+                and (res.ended_by == TARGET_SPEED_EVENT or sdot_end >= v_release - ATOL_MPS)
+            ):
+                # Released at the target speed before the track end: z, phi and x at the
+                # release position (S4a); logged as the target_speed event there.
+                tr.add_event(TARGET_SPEED_EVENT, t, ASSIST_KIND, 0, prelude.from_track(y, params))
+                z_release = track.start_altitude_m + track.z(s_end)
+                tr.assumptions.append(
+                    early_release_assumption(
+                        v_release,
+                        s_end,
+                        length,
+                        z_release,
+                        track.start_altitude_m + track.z(length),
+                        prelude.aerodynamic,
+                        p_amb_pa,
+                        shaft_floor_m(
+                            z_release, track.phi(s_end), assist.braking_distance_m(sdot_end)
+                        ),
+                    )
+                )
                 return TrackExit(
                     t_release_s=t,
                     y_track=y,
-                    sdot_mps=float(layout.get(y, "sdot_mps")),
+                    sdot_mps=sdot_end,
+                    m_kg=float(layout.get(y, "m_kg")),
+                    phi_rad=track.phi(s_end),
+                    x_exit_m=_exit_x_m(track, s_end),
+                    z_exit_m=z_release,
+                    release_position_m=s_end,
+                    release_trigger=TARGET_SPEED_EVENT,
+                )
+            if res.ended_by == TRACK_END_EVENT or s_end >= length - release_tie_m:
+                if v_release is not None and sdot_end < v_release - ATOL_MPS:
+                    tr.flags.append(
+                        f"{RELEASE_SPEED_NOT_REACHED}: the push reached {sdot_end:.6g} m/s at "
+                        f"the track end (s = L = {length:g} m), below the release speed "
+                        f"{v_release:g} m/s; it released at the track end"
+                    )
+                return TrackExit(
+                    t_release_s=t,
+                    y_track=y,
+                    sdot_mps=sdot_end,
                     m_kg=float(layout.get(y, "m_kg")),
                     phi_rad=track.phi(length),
                     x_exit_m=_exit_x_m(track),
                     z_exit_m=track.start_altitude_m + track.z(length),
+                    release_position_m=length,
+                    release_trigger=TRACK_END_EVENT,
                 )
             if reached or not (crossed or short):
                 break
@@ -1171,7 +1465,8 @@ def _fly_to_crossing(
     settings: IntegratorSettings,
 ) -> tuple[PhaseResult, str]:
     """The track sub-phase ``phase`` flown again from y0 (its track state at phase.t0)
-    to the crossing (a drive watch or ``track_end``) that ended its first flight
+    to the crossing (a drive watch, ``track_end`` or, on a drive with a release speed,
+    ``target_speed``, SP7 step S4a) that ended its first flight
     ``first``, with that crossing's time as the fixed end; output: the flight to keep
     and the name of the crossing it was last flown to. A crossing's time is its root on
     the dense interpolant of a step whose stages straddle the kink it marks (at a watch

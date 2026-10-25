@@ -1534,7 +1534,13 @@ def test_linear_motor_config_si_properties_and_build() -> None:
         ({"shaft": "sealed"}, "literal_error"),
         ({"control": "speed"}, "literal_error"),
         ({"net_accel_g": 3.0}, "extra_forbidden"),
-        ({"release_speed_mps": 76.7}, "extra_forbidden"),
+        ({"release_speed_mps": 76.7, "stop_taper_m": 10.0}, "refused together with stop_taper_m"),
+        ({"release_speed_mps": 76.7, "stop_taper_m": 0.0}, "refused together with stop_taper_m"),
+        ({"release_speed_mps": None}, "release_speed_mps is null"),
+        ({"release_speed_mps": True}, "float_type"),
+        ({"release_speed_mps": "76.7"}, "float_type"),
+        ({"release_speed_mps": 0}, "greater_than"),
+        ({"release_speed_mps": math.inf}, "finite_number"),
         ({"control": "acceleration", "accel_command_g": True}, "float_type"),
         ({"control": "acceleration", "accel_command_g": "3"}, "float_type"),
         ({"control": "acceleration", "accel_command_g": 0}, "greater_than"),
@@ -1559,9 +1565,10 @@ def test_linear_motor_config_si_properties_and_build() -> None:
 )
 def test_linear_motor_config_refusals(edit: dict[str, Any], match: str) -> None:
     """Each refused block: the control-law keys, the taper, a null optional key, strict
-    finite numbers (KI-030's rule: a bool and a numeric string for each of the ten
-    numbers, NaN, inf), the bounds, the vented shaft only, no assist-family key and no
-    release_speed_mps (S4a's)."""
+    finite numbers (KI-030's rule: a bool and a numeric string for each of the eleven
+    numbers, NaN, inf), the bounds, the vented shaft only, no assist-family key, and
+    (SP7 step S4a) a release speed together with a stop taper (any stop_taper_m given,
+    0 included: the taper is a release-at-L device, design 4.6)."""
     block = {**LM_BLOCK, **edit}
     with pytest.raises(ValidationError) as info:
         LinearMotorConfig.model_validate(block)

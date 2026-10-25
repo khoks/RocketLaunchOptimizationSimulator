@@ -447,8 +447,10 @@ def test_two_prescribed_accelerations_are_named_first_and_not_called_this_drive(
     """silo_step pushed at 1.5 g beside silo at 3 g (as silo_cold_200m beside silo_cold in
     the offload directory's default selection): the two drive parts open the sentence
     together, each with its runs, before the carriage, shaft and kick parts; the closing
-    says 'these prescribed drives', never 'this drive'. Beside a force-limited run the
-    prescribed drives are named."""
+    says 'these prescribed drives', never 'this drive'. Beside a run under another drive
+    the prescribed drives are named (``cable_winch`` stands for a drive the replay has no
+    clause of its own for; the linear motor's clause, SP7 step S4a, is pinned in
+    tests/test_linear_motor_readers.py)."""
     run_dir = _make_dir(tmp_path)
     _amend_metrics(run_dir, lambda m: m["runs"]["silo_step"].update(net_accel_g=1.5))
     text = _drive(run_dir, ["pad", "silo", "silo_step"])
@@ -477,7 +479,7 @@ def test_two_prescribed_accelerations_are_named_first_and_not_called_this_drive(
 
     def sled_config(config: dict[str, Any]) -> None:
         config["runs"]["sled"] = _run_config(True)
-        config["runs"]["sled"]["run"]["assist"].update(model="linear_motor", carriage_mass_t=22)
+        config["runs"]["sled"]["run"]["assist"].update(model="cable_winch", carriage_mass_t=22)
 
     _amend_config(run_dir, sled_config)
     mixed = _drive(run_dir, ["pad", "silo", "silo_step", "sled"])
@@ -487,7 +489,7 @@ def test_two_prescribed_accelerations_are_named_first_and_not_called_this_drive(
         "the shaft has no air drag and the pitch kick has no aerodynamic penalty. Under the "
         "prescribed drives of silo and silo_step the release speed and the payload do not depend "
     )
-    assert "For sled (linear_motor drive) the missing shaft drag changes" in mixed
+    assert "For sled (cable_winch drive) the missing shaft drag changes" in mixed
 
 
 def test_offload_run_shown_adds_the_offload_to_the_invariants(tmp_path: Path) -> None:
@@ -684,15 +686,15 @@ def test_a_force_limited_drive_gets_no_invariant_and_no_bias_clause(tmp_path: Pa
     are written: the omissions are said to change the release speed and the payload by a
     size not established here. Beside a prescribed push the invariant and the biases are
     scoped to that run; the massless-carriage bias names no run, since the only
-    prescribed run is the one it holds for."""
+    prescribed run is the one it holds for. The other drive is ``cable_winch`` here, a
+    drive the replay has no clause of its own for (the linear motor has one since SP7
+    step S4a: tests/test_linear_motor_readers.py pins it)."""
     run_dir = _make_dir(tmp_path)
-    _amend_config(
-        run_dir, lambda c: c["runs"]["silo"]["run"]["assist"].update(model="linear_motor")
-    )
+    _amend_config(run_dir, lambda c: c["runs"]["silo"]["run"]["assist"].update(model="cable_winch"))
     text = _drive(run_dir, ["pad", "silo"])
     assert text.startswith(
         "The carriage is massless, the shaft has no air drag and the pitch kick has no "
-        "aerodynamic penalty. For silo (linear_motor drive) the massless carriage and the "
+        "aerodynamic penalty. For silo (cable_winch drive) the massless carriage and the "
         "missing shaft drag change the release speed and the payload; their size is not "
         "established here. The free kick favours silo"
     )
@@ -701,7 +703,7 @@ def test_a_force_limited_drive_gets_no_invariant_and_no_bias_clause(tmp_path: Pa
     assert (
         "Under the prescribed drive of silo_step the release speed and the payload do not "
         "depend on the carriage mass or the shaft drag: the missing shaft drag biases the drive "
-        "energy, peak power and interface force low. For silo (linear_motor drive) the massless "
+        "energy, peak power and interface force low. For silo (cable_winch drive) the massless "
         "carriage and the missing shaft drag change the release speed and the payload; their "
         "size is not established here."
     ) in mixed
@@ -710,7 +712,7 @@ def test_a_force_limited_drive_gets_no_invariant_and_no_bias_clause(tmp_path: Pa
     _amend_metrics(run_dir, lambda m: m["runs"]["silo"].update(carriage_mass_kg=SLED_CARRIAGE_KG))
     text = _drive(run_dir, ["pad", "silo"])
     assert (
-        "For silo (linear_motor drive) the missing shaft drag changes the release speed and "
+        "For silo (cable_winch drive) the missing shaft drag changes the release speed and "
         "the payload; its size is not established here."
     ) in text
     assert "massless" not in text

@@ -62,6 +62,8 @@ from launchsim.phases.prelude import (
     hold_until_liftoff,
     log_liftoff,
     max_step_cap,
+    shaft_fallback_note,
+    shaft_floor_m,
     track_params,
 )
 from launchsim.phases.trace import (
@@ -175,8 +177,11 @@ class VerticalPlanner:
     Gravity model (mu/r^2 in runs; ConstantGravity only through tests); g_eff_mps2, the
     effective gravity at the pad or track [m/s^2] (also the reference g_ref that splits
     the gravity loss into duration and altitude parts unless g_ref_mps2 is given); end,
-    one of END_KINDS; settings, the IntegratorSettings; z_ground_m, the impact altitude
-    [m] in the datum frame; r_datum_m, the radius of z = 0 [m]; p_amb_pa, the one
+    one of END_KINDS; settings, the IntegratorSettings; z_ground_m, the ground altitude
+    [m] in the datum frame, the impact altitude (or, after a release below the ground
+    whose shaft floor lies below it, ``prelude.shaft_floor_m``: the parked carriage, the
+    impact surface of every fall back over the shaft; SP7 step S4a fix rounds 3 and 4);
+    r_datum_m, the radius of z = 0 [m]; p_amb_pa, the one
     ambient pressure [Pa] the hold-down balance, the sigma rule at v = 0 and the burn
     right-hand side all use for the delivered thrust (0: the Phase 1 assumption of
     vacuum thrust from sea level; Phase 2 hands in the pad pressure). The settings must
@@ -294,8 +299,9 @@ class VerticalPlanner:
         return tr.finish()
 
     def run_track(self, assist: AssistModel, track: TrackGeometry) -> RunTrace:
-        """A track run: t = 0 at push start, release at the track end (docs/physics.md,
-        "Silo model").
+        """A track run: t = 0 at push start, release at the track end or, on a drive with
+        a release speed (SP7 step S4a), where the push reaches it (docs/physics.md, "Silo
+        model" and "Linear motor").
 
         The push up to the track exit is the shared prelude ``prelude.fly_track`` run
         with the 1-D layout (VERTICAL_PRELUDE), this planner's g_eff and pad pressure:
@@ -303,17 +309,21 @@ class VerticalPlanner:
         the ASSIST phase split at the thrust kinks with the ``track_end``,
         ``drive_limit`` (status ``drive_limit``: the run stops on the track) and
         ``propellant`` (ValueError) events. At release the state maps into the ascent
-        frame (``map_release``), t_release is the track-end root, and ``ascend`` runs
-        the flight. Events logged on the track: push_start, ignition (when inside the
-        push), ramp_end, the drive's kink and watch events (the linear motor's
-        drive_ramp_end, power_limit, power_limit_end, drive_cap, drive_cap_end,
-        taper_start), drive_limit, release; a
+        frame (``map_release``, at the release position's altitude), t_release is the
+        release root, and ``ascend`` runs the flight. Events logged on the track:
+        push_start, ignition (when inside the push), ramp_end, the drive's kink and
+        watch events (the linear motor's drive_ramp_end, power_limit, power_limit_end,
+        drive_cap, drive_cap_end, taper_start), drive_limit, target_speed (a release at
+        the drive's release speed, SP7 step S4a), release; a
         drive that cannot start the push ends the run at once (status drive_stall). A
         first stage stated by ``height_method: event`` flies the push unlit and is lit by
-        ``ascend`` at the altitude event z_exit + h after the release (a pending
+        ``ascend`` at the altitude event z_exit + h after the release, z_exit the track
+        exit's altitude (the mouth, z(L), also after a release below it; a pending
         ignition); one referenced to the release on a drive whose push time is not
         exact (the linear motor) flies it unlit and is lit by ``ascend`` at t_release +
-        t_ign_s.
+        t_ign_s. The flight's shaft floor (``prelude.shaft_floor_m``: where the braked
+        carriage parks, from the release point and the release speed) is handed to
+        ``ascend`` for a fall back inside the shaft (SP7 step S4a fix round 3).
         """
         stage0 = self.vehicle.stages[0]
         spec = self.ignition[stage0.name]
@@ -338,8 +348,12 @@ class VerticalPlanner:
         tr.add_event("release", t, ASSIST_KIND, 0, y_rel)
         ign_alt = None
         if spec.lights_at_height and not spec.fails and spec.trigger_value is not None:
-            ign_alt = exit_.z_exit_m + spec.trigger_value
-        self.ascend(tr, t, y_rel, ign_alt_m=ign_alt)
+            # Above the track exit (the mouth, z(L)), also after a release below it (S4a).
+            ign_alt = track.start_altitude_m + track.z(track.length_m) + spec.trigger_value
+        floor = shaft_floor_m(
+            exit_.z_exit_m, exit_.phi_rad, assist.braking_distance_m(exit_.sdot_mps)
+        )
+        self.ascend(tr, t, y_rel, ign_alt_m=ign_alt, floor_m=floor)
         return tr.finish()
 
     def _track_params(
@@ -357,6 +371,7 @@ class VerticalPlanner:
         *,
         sigma_hint: int | None = None,
         ign_alt_m: float | None = None,
+        floor_m: float | None = None,
     ) -> None:
         """Run the ascent from the released state into the builder.
 
@@ -368,7 +383,12 @@ class VerticalPlanner:
         caller knows it (+1 after a liftoff root); ign_alt_m, the altitude [m] above the
         datum at which a first stage stated by ``height_method: event`` lights (the
         track exit plus the height; required for such a stage, ValueError otherwise,
-        and None for every other). Records t_flight_start_s and
+        and None for every other); floor_m, the shaft floor [m] (``prelude.shaft_floor_m``,
+        the parked carriage; a track run passes it, None on a pad), the impact surface of
+        a falling sub-phase that starts below the ground, or of any falling sub-phase when
+        the floor lies below the ground (``_shaft_floor_for``: the 1-D flight never leaves
+        the shaft's axis; ``_coast``, ``_burn``; SP7 step S4a fix rounds 3 and 4). Records
+        t_flight_start_s and
         y_flight_start (where the loss accounting begins), then runs COAST_PRE_IGN,
         BURN, STAGING, COAST_STAGING, ... and the terminal coast the run's ``end`` asks
         for; sets tr.status ("nominal", "impact") and tr.burnouts. The first stage's
@@ -400,7 +420,14 @@ class VerticalPlanner:
                     )
                 t_coast_end = t + stage.coast_before_ignition_s
                 t, y, how = self._coast(
-                    tr, ("COAST_STAGING", "FALL_STAGING"), k, t, t_coast_end, y, sigma_hint
+                    tr,
+                    ("COAST_STAGING", "FALL_STAGING"),
+                    k,
+                    t,
+                    t_coast_end,
+                    y,
+                    sigma_hint,
+                    floor_m=floor_m,
                 )
                 sigma_hint = None
                 if how == "impact":
@@ -416,7 +443,7 @@ class VerticalPlanner:
                 if k > 0:  # the first stage's settings were flagged by run_pad/run_track
                     self._flag_ignored_ignition_settings(tr, stage.name, spec)
                 self._fail_ignition(tr, k, t, y, sigma_hint)
-                self._terminal_coast(tr, k, t, y, sigma_hint)
+                self._terminal_coast(tr, k, t, y, sigma_hint, floor_m=floor_m)
                 return
             if t_ign is None:  # a pending ignition: stage 1 lights at the altitude event
                 if ign_alt_m is None:
@@ -425,14 +452,23 @@ class VerticalPlanner:
                         "event, but no ignition altitude was given (a track run passes the "
                         "track exit plus the height)"
                     )
-                t, y, coasted = self._coast_to_ignition(tr, k, t, y, sigma_hint, ign_alt_m)
+                t, y, coasted = self._coast_to_ignition(
+                    tr, k, t, y, sigma_hint, ign_alt_m, floor_m=floor_m
+                )
                 t_ign = t
                 if coasted:
                     sigma_hint = None
             tr.t_ign_abs_s[stage.name] = t_ign
             if t_ign > t + ZERO_SPAN_S:
                 t, y, how = self._coast(
-                    tr, ("COAST_PRE_IGN", "FALL_PRE_IGN"), k, t, t_ign, y, sigma_hint
+                    tr,
+                    ("COAST_PRE_IGN", "FALL_PRE_IGN"),
+                    k,
+                    t,
+                    t_ign,
+                    y,
+                    sigma_hint,
+                    floor_m=floor_m,
                 )
                 sigma_hint = None
                 if how == "impact":
@@ -440,7 +476,7 @@ class VerticalPlanner:
             schedule = stage.schedule(t_ign, spec.startup, spec.fails)
             if t_ign >= t - ZERO_SPAN_S and not tr.has_event("ignition", k):
                 tr.add_event("ignition", t, "BURN", k, y)
-            t, y, how = self._burn(tr, k, schedule, t, y, sigma_hint)
+            t, y, how = self._burn(tr, k, schedule, t, y, sigma_hint, floor_m=floor_m)
             sigma_hint = None
             if how == "impact":
                 return
@@ -455,7 +491,7 @@ class VerticalPlanner:
                 y = map_staging(y, self.vehicle, k)
                 tr.add_event("staging", t, "COAST_STAGING", k + 1, y)
                 continue
-            self._terminal_coast(tr, k, t, y, None)
+            self._terminal_coast(tr, k, t, y, None, floor_m=floor_m)
             return
 
     def _coast_to_ignition(
@@ -466,6 +502,8 @@ class VerticalPlanner:
         y: np.ndarray,
         sigma_hint: int | None,
         ign_alt_m: float,
+        *,
+        floor_m: float | None = None,
     ) -> tuple[float, np.ndarray, bool]:
         """A pending ignition of stage k (``height_method: event``): COAST_PRE_IGN from
         t [s] (state y, the release) to the ``ignition_height`` event (``ev_altitude_up``:
@@ -481,14 +519,23 @@ class VerticalPlanner:
         than the track's g_eff = mu/R_E^2, so its apex lies at or above the drag-free
         apex v_e^2 / (2 g_eff) that the resolver refuses. An apex below the height means
         the flight's gravity exceeds g_eff on the coast (a track exit below the datum, or
-        an injected test gravity) or the numerical edge of that refusal. Frame: the +z-up
-        datum frame."""
+        an injected test gravity) or the numerical edge of that refusal. floor_m: the
+        shaft floor [m] (``ascend``), handed to ``_coast``. Frame: the +z-up datum frame."""
         event = ev_altitude_up(VerticalDynamics1D(), ign_alt_m, IGNITION_HEIGHT_EVENT)
         if event.fn(t, y) >= -event.zero_tol:
             return t, y, False
         kinds = ("COAST_PRE_IGN", "FALL_PRE_IGN")
         t, y, how = self._coast(
-            tr, kinds, k, t, None, y, sigma_hint, stop_at_apex=True, extra=(event,)
+            tr,
+            kinds,
+            k,
+            t,
+            None,
+            y,
+            sigma_hint,
+            stop_at_apex=True,
+            extra=(event,),
+            floor_m=floor_m,
         )
         if how == IGNITION_HEIGHT_EVENT:
             return t, y, True
@@ -649,6 +696,7 @@ class VerticalPlanner:
         *,
         stop_at_apex: bool = False,
         extra: tuple[EventSpec, ...] = (),
+        floor_m: float | None = None,
     ) -> tuple[float, np.ndarray, str]:
         """Unpowered flight from t to t_end (None: open-ended). kinds = (rising kind,
         falling kind). Rising phases list apex; falling ones impact. Returns (t, y, how)
@@ -667,16 +715,28 @@ class VerticalPlanner:
         down: an apex within ATOL_M of the ground, or a start at the ground already
         sinking) is the "phase starting on the event surface moving into it" case the
         engine's disarm rule cannot resolve (``integrate_phase``), so it is the impact
-        itself: the phase is a zero-length pass-through ended by impact at t0."""
+        itself: the phase is a zero-length pass-through ended by impact at t0. One that
+        lands on the shaft floor floor_m [m] (``_shaft_floor_for``: it starts more than
+        ATOL_M below the ground, an apex inside the shaft after a release below the
+        ground, SP7 step S4a fix round 3, P3-M1; or the floor lies below the ground, so a
+        fall back from above the mouth passes the open mouth into the shaft, fix round 4,
+        P4-M1) lists the impact at that floor (``prelude.shaft_floor_m``: the parked
+        carriage) in place of the ground and ends at its root with the plain flag of
+        ``_flag_floor_impact`` (a start on the ground is then no impact: the mouth is
+        open); one that starts in the shaft within ATOL_M above that floor or below it, or
+        with no floor (None), is an impact at once (``_shaft_fallback``). Frame: the +z-up
+        datum frame."""
         extra_names = {ev.name for ev in extra}
         while True:
             sigma = self._sigma(y, None, t, sigma_hint)
+            in_shaft = sigma == -1 and float(y[_IZ]) < self.z_ground_m - ATOL_M
+            floor = None if sigma == 1 else self._shaft_floor_for(y, floor_m)
             if sigma == 1:
                 kind = kinds[0]
                 events: tuple[EventSpec, ...] = (ev_apex(), *extra)
             else:
                 kind = kinds[1]
-                events = (ev_impact(self.z_ground_m),)
+                events = (ev_impact(self.z_ground_m if floor is None else floor),)
             spec = PhaseSpec(
                 kind,
                 k,
@@ -688,7 +748,8 @@ class VerticalPlanner:
                 self.atol,
                 sigma=sigma,
             )
-            if sigma == -1 and abs(float(y[_IZ]) - self.z_ground_m) <= ATOL_M:
+            on_ground = abs(float(y[_IZ]) - self.z_ground_m) <= ATOL_M
+            if sigma == -1 and floor is None and on_ground:
                 note = (
                     f"{kind} starts on the ground (z = {float(y[_IZ]):.6g} m, within "
                     f"{ATOL_M:.3g} m of z_ground = {self.z_ground_m:.6g} m) moving down: "
@@ -698,6 +759,8 @@ class VerticalPlanner:
                 tr.add_event("impact", t, kind, k, y)
                 tr.status = "impact"
                 return t, y, "impact"
+            if in_shaft and self._at_floor(y, floor_m):
+                return self._shaft_fallback(tr, spec, kind, k, t, y, floor_m)
             res = self._integrate(tr, spec, y)
             t, y = res.t_end, res.y_end
             if res.ended_by in ("t_end", "zero_span"):
@@ -710,7 +773,74 @@ class VerticalPlanner:
                 sigma_hint = -1
                 continue
             tr.status = "impact"
+            if floor is not None:
+                self._flag_floor_impact(tr, kind, t, y, floor_m)
             return t, y, "impact"
+
+    def _shaft_floor_for(self, y: np.ndarray, floor_m: float | None) -> float | None:
+        """The shaft floor [m] a falling sub-phase starting in state y lists as its impact
+        surface in place of the ground z_ground, or None (the ground). It is floor_m (the
+        parked carriage, ``prelude.shaft_floor_m``) when the start is more than ATOL_M
+        below the ground (inside the shaft, SP7 step S4a fix round 3, P3-M1), or when the
+        floor lies more than ATOL_M below the ground (a release below the ground: the
+        vehicle, which in 1-D never leaves the shaft's axis, falls back through the open
+        mouth onto the carriage, fix round 4, P4-M1); None with no floor (a pad) or a
+        floor at or above the ground (a release at a track exit at the ground: the
+        obstacle-free fall to the ground of Phase 1, "Failed-ignition coast"). Frame: the
+        +z-up datum frame."""
+        if floor_m is None:
+            return None
+        z = float(y[_IZ])
+        if z < self.z_ground_m - ATOL_M or floor_m < self.z_ground_m - ATOL_M:
+            return floor_m
+        return None
+
+    @staticmethod
+    def _at_floor(y: np.ndarray, floor_m: float | None) -> bool:
+        """True for a falling start in the shaft that is already on its floor: within
+        ATOL_M above the shaft floor floor_m [m] or below it, or with no floor known
+        (None); such a sub-phase is an impact at once (``_shaft_fallback``). Frame: the
+        +z-up datum frame."""
+        return floor_m is None or float(y[_IZ]) <= floor_m + ATOL_M
+
+    def _flag_floor_impact(
+        self, tr: TraceBuilder, kind: str, t: float, y: np.ndarray, floor_m: float | None
+    ) -> None:
+        """Flag the impact on the shaft floor floor_m [m] (the parked carriage) that ended
+        a falling sub-phase of kind ``kind`` that listed it (``_shaft_floor_for``), at t
+        [s] in state y: '<kind> at t = <t> s: ' and ``prelude.shaft_fallback_note`` of that
+        impact, with its speed |v| [m/s] (SP7 step S4a fix rounds 3 and 4, P3-M1, P4-m2).
+        Frame: the +z-up datum frame."""
+        note = shaft_fallback_note(
+            float(y[_IZ]), self.z_ground_m, floor_m, speed_mps=abs(float(y[_IV]))
+        )
+        tr.flags.append(f"{kind} at t = {t:.6g} s: {note}")
+
+    def _shaft_fallback(
+        self,
+        tr: TraceBuilder,
+        spec: PhaseSpec,
+        kind: str,
+        k: int,
+        t: float,
+        y: np.ndarray,
+        floor_m: float | None,
+    ) -> tuple[float, np.ndarray, str]:
+        """A falling sub-phase ``spec`` (kind ``kind``, stage k) that starts more than
+        ATOL_M below the ground and already on its shaft floor floor_m [m] (``_at_floor``:
+        within ATOL_M above it or below it, which a carriage braking at less than the
+        vehicle's deceleration gives, or with no floor known; SP7 step S4a fix rounds 1
+        and 3): its impact event is already past at t [s]; the run ends there as a
+        zero-length pass-through ended by impact, logged at that apex with the plain note
+        ``prelude.shaft_fallback_note`` as its flag (status impact; the same phase, event
+        and state as the engine's already-past rule, which would word the flag as an
+        opaque engine note). Unreachable on a flight that starts at or above the ground,
+        whose fall reaches the ground first. Frame: the +z-up datum frame."""
+        note = shaft_fallback_note(float(y[_IZ]), self.z_ground_m, floor_m)
+        tr.add_phase(_pass_through(spec, y, "impact", [note], (("impact", t),)))
+        tr.add_event("impact", t, kind, k, y)
+        tr.status = "impact"
+        return t, y, "impact"
 
     def _burn(
         self,
@@ -720,6 +850,8 @@ class VerticalPlanner:
         t: float,
         y: np.ndarray,
         sigma_hint: int | None,
+        *,
+        floor_m: float | None = None,
     ) -> tuple[float, np.ndarray, str]:
         """Burn stage k from t until its propellant event (how = "burnout") or an impact
         while falling under thrust (how = "impact"). Sub-phases follow ``_segments``;
@@ -727,7 +859,15 @@ class VerticalPlanner:
         back to +1 (apex listed), and the burn continues in the same segment. As in
         ``_coast`` the sigma partition of the event lists is what keeps the event that
         ended the previous phase off the next one's list: the rising list has no
-        turnaround, the falling list no apex."""
+        turnaround, the falling list no apex. A falling sub-phase that lands on the shaft
+        floor floor_m [m] (``_shaft_floor_for``, as in ``_coast``: it starts more than
+        ATOL_M below the ground, an apex inside the shaft, or the floor lies below the
+        ground, a fall back through the open mouth) lists the turnaround as every falling
+        one does and, in place of the ground, the impact at that floor (the parked
+        carriage), so the thrust can turn the vehicle around above the carriage as it does
+        above the ground; one that starts in the shaft on or below that floor, or with
+        none, is an impact at once (``_shaft_fallback``; SP7 step S4a fix rounds 1, 3 and
+        4, P3-M1, P4-M1). Frame: the +z-up datum frame."""
         m_dry = self.vehicle.stack_dry_mass_kg(k)
         for t_a, t_b, max_step in self._segments(schedule):
             if t_b is not None and t_b <= t + ZERO_SPAN_S:
@@ -736,11 +876,14 @@ class VerticalPlanner:
                 raise RuntimeError(f"burn of stage {k} starts at t = {t} before ignition {t_a}")
             while True:
                 sigma = self._sigma(y, schedule, t, sigma_hint)
+                in_shaft = sigma == -1 and float(y[_IZ]) < self.z_ground_m - ATOL_M
+                floor = None if sigma == 1 else self._shaft_floor_for(y, floor_m)
                 events: list[EventSpec] = [ev_propellant(m_dry)]
                 if sigma == 1:
                     events.append(ev_apex())
                 else:
-                    events += [ev_turnaround(), ev_impact(self.z_ground_m)]
+                    surface = self.z_ground_m if floor is None else floor
+                    events += [ev_turnaround(), ev_impact(surface)]
                 spec = PhaseSpec(
                     "BURN",
                     k,
@@ -753,6 +896,8 @@ class VerticalPlanner:
                     max_step,
                     sigma,
                 )
+                if in_shaft and self._at_floor(y, floor_m):
+                    return self._shaft_fallback(tr, spec, "BURN", k, t, y, floor_m)
                 res = self._integrate(tr, spec, y)
                 t, y = res.t_end, res.y_end
                 ended = res.ended_by
@@ -765,6 +910,8 @@ class VerticalPlanner:
                     return t, y, "burnout"
                 if ended == "impact":
                     tr.status = "impact"
+                    if floor is not None:
+                        self._flag_floor_impact(tr, "BURN", t, y, floor_m)
                     return t, y, "impact"
                 sigma_hint = -1 if ended == "apex" else 1
         raise RuntimeError(f"burn of stage {k} ran out of sub-phases without a burnout")
@@ -776,12 +923,17 @@ class VerticalPlanner:
         t: float,
         y: np.ndarray,
         sigma_hint: int | None,
+        *,
+        floor_m: float | None = None,
     ) -> None:
         """What happens after the last burnout (or a failed ignition) for end "apex" or
-        "impact": COAST to apex, then FALL to z_ground (status impact). A vehicle already
+        "impact": COAST to apex, then FALL to z_ground (status impact), or, after a
+        release below the ground, to the shaft floor floor_m [m] (``_coast``,
+        ``_shaft_floor_for``). A vehicle already
         falling at end "apex" has passed its apex: the run ends there with a flag.
         ``ascend`` returns before calling this for the burnout ends, so any other end
-        here is a planner bug."""
+        here is a planner bug. Frame: the 1-D state y at t [s] in the +z-up datum frame
+        (z_ground and floor_m altitudes [m])."""
         if self.end not in ("apex", "impact"):
             raise RuntimeError(f"terminal coast reached with end = {self.end!r} (planner bug)")
         sigma = self._sigma(y, None, t, sigma_hint)
@@ -791,9 +943,17 @@ class VerticalPlanner:
                 tr.add_event("end", t, "FALL", k, y)
                 return
             t, y, _how = self._coast(
-                tr, ("COAST", "FALL"), k, t, None, y, sigma_hint, stop_at_apex=True
+                tr,
+                ("COAST", "FALL"),
+                k,
+                t,
+                None,
+                y,
+                sigma_hint,
+                stop_at_apex=True,
+                floor_m=floor_m,
             )
             tr.add_event("end", t, "COAST", k, y)
             return
-        t, y, _how = self._coast(tr, ("COAST", "FALL"), k, t, None, y, sigma_hint)
+        t, y, _how = self._coast(tr, ("COAST", "FALL"), k, t, None, y, sigma_hint, floor_m=floor_m)
         tr.add_event("end", t, "FALL", k, y)

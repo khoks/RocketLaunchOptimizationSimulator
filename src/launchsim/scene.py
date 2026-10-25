@@ -22,7 +22,12 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   labelled by name and stage, each at its matched row's time; a pad's liftoff and ramp
   end synthesised from the metrics and marked so; events at one time grouped;
 - the assist geometry and push settings (metric first, config fallback for directories
-  from before SP1), the requested and achieved ramp start, the startup;
+  from before SP1; an acceleration derived from the exit speed for the prescribed drive
+  only, and for a linear-motor run its ``drive``: law, limits, command, release and
+  measured speed at release, with ``label``, the drive clause of
+  ``replay.linear_motor_clause``, as payload data: the frozen template draws no push
+  label, so the page shows the drive through its caveat list; SP7 step S4a), the
+  requested and achieved ramp start, the startup;
 - the separated bodies (the spent stage from the staging event, the fairing from its
   drop) on a display-only vacuum coast (display.vacuum_coast) clipped at the run's last
   time, with each body's own apex, impact time, speed and downrange, and the body's own
@@ -49,12 +54,20 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   R_E and omega_p from constants, the camera and tolerance constants, the page's drawing
   constant that the display-only text quotes (PLUME_OF_STACK), the display-only list
   (design 4.9), the caveats (every line replay.caveats gives the same selection, so the
-  scene's model caveats are a superset of the replay page's, plus the directory's
-  ``offload.caveats`` word for word when an offload run is shown), the exploratory mark
-  (replay.EXPLORATORY_CAVEAT for an exploratory directory, else None: the one string the
-  page's banner, strip, footer and in-canvas tag use), the provenance footer and the
-  caveat line every captured frame carries (``frame_caveat``: the model, each vehicle's
-  calibration, where the full list is).
+  scene's model caveats are a superset of the replay page's, plus, for a push released
+  at its release speed below the mouth, the scene's own ``early_release_caveat`` (the
+  frozen template draws its carriage braking from the mouth; SP7 step S4a fix round 1),
+  and, for a run whose flight ended inside the shaft, ``fall_back_caveat`` (fix round 5),
+  plus the directory's ``offload.caveats`` word for word when an offload run is shown),
+  the exploratory mark (replay.EXPLORATORY_CAVEAT for an exploratory directory, else
+  None: the one string the page's banner, strip, footer and in-canvas tag use), the
+  provenance footer and the caveat line a frame the page captures with its own lines
+  carries (``frame_caveat``: the model, each vehicle's calibration, an early release's
+  frame line of ``early_release_lines`` and, for a run whose flight ended inside the
+  shaft (its shaft_fallback flag, whatever its release trigger), its fall-back line (fix
+  rounds 3 and 5: on its carriage, or at its apex), where the full list is; the app's
+  Save video passes the server's footer, ``app.video_footer``, which appends the same
+  frame lines, fix rounds 2 and 3).
 
 With no run selection the payload shows D-SP2-28's default pair (``default_pair``): the
 baseline on the left; on the right the first solved stage-1 offload case, else the first
@@ -97,7 +110,7 @@ the planar inertial frame for the coast, a y-up screen for the drawn angle.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -110,6 +123,7 @@ from launchsim.constants import R_EARTH_M
 from launchsim.metrics import TRACK_COLUMNS
 from launchsim.metrics_planar import RAMP_START_METRICS, RAMP_START_REQUEST_METRICS
 from launchsim.phases.planar import COAST_STAGING, FAIRING_EVENT
+from launchsim.phases.prelude import SHAFT_FALLBACK
 from launchsim.phases.trace import ASSIST_KIND
 from launchsim.search import OK_STATUS
 from launchsim.units import deg_to_rad, from_g, kg_to_t, rad_to_deg, t_to_kg, to_g
@@ -312,6 +326,44 @@ DISPLAY_ONLY: tuple[str, ...] = (
 )
 """What the scene shows that the model does not support (design 4.9), as data for the
 page, the manual and the gallery entry."""
+DISPLAY_ONLY_CARRIAGE_INDEX = 4
+"""The index of DISPLAY_ONLY's carriage item ('The carriage after release ...')."""
+DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM = (
+    "The carriage after release and where it brakes: the model gives a braking distance "
+    "only. After a release below the ground, a vehicle whose apex lies inside the shaft "
+    "below its parked carriage (a carriage braking at less than the vehicle's deceleration, "
+    "parked above that apex) ends its run at once at that apex (the model has no contact "
+    "with the carriage on its braking path), so only the drawn impact note's 'altitude 0' "
+    "does not hold for it. Any other fall back follows the obstacle-free path to the ground "
+    "when the carriage parks at or above the ground (no contact with the carriage, the "
+    "mouth or the shaft), and, after a release below the ground whose carriage parks below "
+    "it (released below the mouth, or at a track exit below the ground), ends over the "
+    "shaft on the parked carriage, the floor of the flight model there, so the note's 'no "
+    "contact with the carriage' and 'altitude 0' do not hold for it. Each run whose flight "
+    "ended inside the shaft has a caveat of its own saying which."
+)
+"""DISPLAY_ONLY's carriage item for a selection with a run whose flight ended inside the
+shaft (``display_only_for``; SP7 step S4a fix rounds 4 and 5, V4-1, H4-m1, M1, M2,
+C5-m4), worded on the code's rule (``_shaft_floor_for`` and ``_at_floor`` in both
+planners), whatever the release trigger: a falling start inside the shaft at or below
+the parked carriage ends at once at its apex (a soft brake, the carriage parked above the
+apex wherever it parks); else the fall ends on the carriage when it parks more than ATOL_M
+below the ground, and at the ground along the obstacle-free path when it parks at or
+above it. DISPLAY_ONLY itself is gallery text and stays as it is."""
+
+
+def display_only_for(run_flags: Iterable[Sequence[Any]]) -> list[str]:
+    """The 'what the scene draws that the model does not compute' list (DISPLAY_ONLY) of a
+    selection whose runs carry the flags ``run_flags`` (metrics.json, one list per run):
+    DISPLAY_ONLY, with its carriage item (DISPLAY_ONLY_CARRIAGE_INDEX) replaced by
+    DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM when some run fell back inside the shaft
+    (``fell_back_in_shaft``: its impact is on the parked carriage, or at its apex below a
+    carriage parked above it, not along the obstacle-free path; SP7 step S4a fix rounds 4
+    and 5, V4-1, M1). The scene payload and the app's results panel both use it. Pure."""
+    items = list(DISPLAY_ONLY)
+    if any(fell_back_in_shaft(flags) for flags in run_flags):
+        items[DISPLAY_ONLY_CARRIAGE_INDEX] = DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM
+    return items
 
 
 # ------------------------------------------------------------------ directory and display files
@@ -493,14 +545,20 @@ def assist_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str
     config.py, for a track block written without ``angle_deg`` or ``exit_altitude_m``:
     neither recorded nor computed). Metric first, the resolved config as the fallback for
     directories from before SP1 (which lack stroke_m, net_accel_* and the ramp-start
-    keys), derived values last: a = v^2 / (2 L), v = sqrt(2 a L), the
-    braking distance v^2 / (2 a_brake), the facility length as stroke plus braking, the
-    track start altitude as exit altitude less stroke x sin(track angle). SI, with the
-    acceleration also in g (units.to_g) and the track angle in degrees as the config
-    writes it."""
+    keys), derived values last: a = v^2 / (2 L), v = sqrt(2 a L) and the push time v / a
+    for the prescribed drive only (CONSTANT_ACCEL_MODEL), the braking distance v^2 / (2
+    a_brake), the facility length as stroke plus braking, the track start altitude as
+    exit altitude less stroke x sin(track angle). SI, with the acceleration also in g
+    (units.to_g) and the track angle in degrees as the config writes it. A linear-motor
+    run (SP7 step S4a) has no single push acceleration: its net_accel_mps2 and
+    net_accel_g stay None (never a = v^2 / (2 L) from its measured exit speed), and its
+    settings gain ``drive`` (``linear_motor_drive``: the law, the limits, the command,
+    the release and the drive clause as payload data), its source 'metric' when the run's
+    metrics record the drive (push_force_max_N), else 'config'."""
     model = str(assist.get("model", NO_ASSIST_MODEL))
     if model == NO_ASSIST_MODEL:
         return None
+    prescribed = model == replay.CONSTANT_ACCEL_MODEL
     sources: dict[str, str] = {}
 
     def pick(key: str, metric_key: str, config_value: float | None) -> float | None:
@@ -523,10 +581,10 @@ def assist_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str
     exit_speed = pick(
         "exit_speed_mps", "exit_speed_mps", run_data.finite(assist.get("exit_speed_mps"))
     )
-    if accel is None and exit_speed is not None and stroke:
+    if prescribed and accel is None and exit_speed is not None and stroke:
         accel = exit_speed * exit_speed / (2.0 * stroke)
         sources["net_accel_mps2"] = "derived"
-    if exit_speed is None and accel is not None and stroke is not None:
+    if prescribed and exit_speed is None and accel is not None and stroke is not None:
         exit_speed = math.sqrt(max(0.0, 2.0 * accel * stroke))
         sources["exit_speed_mps"] = "derived"
     angle_deg = run_data.finite(track.get("angle_deg"))
@@ -572,7 +630,10 @@ def assist_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str
     shaft = assist.get("shaft")
     if shaft is not None:
         sources["shaft"] = "config"
-    return {
+    drive = linear_motor_drive(assist, m) if model == replay.LINEAR_MOTOR_MODEL else None
+    if drive is not None:
+        sources["drive"] = "metric" if _metric(m, "push_force_max_N") is not None else "config"
+    settings = {
         "model": model,
         "stroke_m": stroke,
         "net_accel_mps2": accel,
@@ -591,6 +652,40 @@ def assist_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str
         "shaft": None if shaft is None else str(shaft),
         "sources": sources,
     }
+    if drive is not None:  # a linear-motor run only: every other payload is unchanged
+        settings["drive"] = drive
+    return settings
+
+
+def linear_motor_drive(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str, Any]:
+    """A linear-motor push as scene data (SP7 step S4a): ``label``, the drive clause
+    (``replay.linear_motor_clause``: the law, F_max and P_max, the acceleration law's
+    command, how it released and the measured speed at release, no push acceleration),
+    payload data that the frozen templates/scene.html does not draw (no push label is
+    shown; the page names the drive through its caveat list, ``replay.drive_caveat``);
+    the settings of ``replay.linear_motor_settings`` (``control``, ``force_max_N`` [N],
+    ``power_max_W`` [W], ``rise_time_s`` [s], ``accel_command_mps2`` [m/s^2] or None,
+    ``stop_taper_m`` [m] or None, ``release_speed_mps`` [m/s] or None, ``cap_bound``)
+    and from the run's metrics ``corner_speed_mps`` (P_max/F_max [m/s]),
+    ``release_trigger`` (``track_end`` or ``target_speed``), ``release_position_m`` [m
+    along the track], ``exit_speed_mps`` [m/s, measured at release], ``power_limited``
+    and ``accel_mean_mps2`` (v_exit/t_push [m/s^2], a mean over the whole push), each
+    None when the metrics hold none."""
+    out: dict[str, Any] = {"label": replay.linear_motor_clause(assist, m)}
+    out.update(replay.linear_motor_settings(assist, m))
+    trigger = m.get("release_trigger")
+    limited = m.get("push_power_limited")
+    out.update(
+        {
+            "corner_speed_mps": _metric(m, "push_corner_speed_mps"),
+            "release_trigger": trigger if isinstance(trigger, str) else None,
+            "release_position_m": _metric(m, "release_position_m"),
+            "exit_speed_mps": _metric(m, "exit_speed_mps"),
+            "power_limited": limited if isinstance(limited, bool) else None,
+            "accel_mean_mps2": _metric(m, "push_accel_mean_mps2"),
+        }
+    )
+    return out
 
 
 def ramp_start(
@@ -1298,15 +1393,378 @@ def default_pair(
     return names or list(available[:1])
 
 
-def frame_caveat(vehicles: Sequence[str]) -> str:
-    """The caveat line every captured frame of the scene carries under its provenance
-    footer (a video frame travels without the page's caveat list; D-SP2-36): the model in
-    brief (FRAME_MODEL_TEXT), each vehicle's calibration as the replay page words it
-    (replay.calibration_caveat: its gap, inside or outside the gate, the findings note)
-    and where the full list is (FRAME_MORE_TEXT). ``vehicles``: the vehicle names of the
-    runs the payload holds, each once in order. Pure."""
+def frame_caveat(vehicles: Sequence[str], drawing: Sequence[str] = ()) -> str:
+    """The caveat line a frame the scene page captures with its own lines carries under
+    its provenance footer (the template's frameFooterLines uses it when the caller gives
+    no footer lines; the app's Save video gives the server's, ``app.video_footer``, which
+    carry the same drawing limits; a video frame travels without the page's caveat list;
+    D-SP2-36): the model in brief (FRAME_MODEL_TEXT), each vehicle's calibration as the
+    replay page words it (replay.calibration_caveat: its gap, inside or outside the gate,
+    the findings note), the frame-level drawing limits ``drawing`` of the runs shown
+    (``early_release_lines``' frame lines for a push released below the mouth and for one
+    whose flight ended inside the shaft, on its carriage or at its apex, SP7 step S4a fix
+    rounds 1 to 5; none for every other run, so their line is unchanged) and
+    where the full list is (FRAME_MORE_TEXT). ``vehicles``: the vehicle names of the runs
+    the payload holds, each once in order. Pure."""
     calibration = [replay.calibration_caveat(v) for v in dict.fromkeys(vehicles)]
-    return " ".join([FRAME_MODEL_TEXT, *calibration, FRAME_MORE_TEXT])
+    return " ".join([FRAME_MODEL_TEXT, *calibration, *drawing, FRAME_MORE_TEXT])
+
+
+def _released_below_mouth(assist: Mapping[str, Any]) -> bool:
+    """True when a payload record's ``assist`` settings (``assist_settings``) describe a
+    silo whose exit is at the ground (``replay.is_mouth``: a vertical track, the exit
+    within ATOL_M of 0), so a release before the track end is a release below the mouth
+    (SP7 step S4a fix round 2)."""
+    return replay.is_mouth(
+        run_data.finite(assist.get("track_angle_deg")),
+        run_data.finite(assist.get("exit_altitude_m")),
+    )
+
+
+def early_release_caveat(record: Mapping[str, Any], run_flags: Sequence[str] = ()) -> str | None:
+    """The scene's own caveat for a run whose push released at its release speed before
+    the track end, below the mouth of a silo whose exit is at the ground
+    (``_released_below_mouth``; else 'before the track end') (SP7 step S4a fix rounds 1
+    and 2), from its payload record's ``assist`` settings (``assist_settings``: the drive's
+    release position, the stroke, the braking distance and the facility length) and the
+    run's own flags ``run_flags`` (metrics.json); None for every other run. The frozen
+    template brakes every drawn carriage from the end of the stroke (``carriageS`` and
+    the rails start at stroke_m), so after an early release the drawn carriage jumps to
+    the mouth, above the vehicle still in the shaft, and brakes on rails drawn above the
+    mouth, where the model brakes it from the release point (facility max(L, s + d)): in
+    the stroke left, where it stops below the mouth, or through the stroke left to where
+    it stops above the mouth: a limit of the page's drawing, stated here. A run that fell
+    back inside the shaft (a ``prelude.SHAFT_FALLBACK`` flag) gets ``fall_back_caveat``
+    after it: its impact is logged on its parked carriage, not where the base returns to
+    altitude 0 as the drawing's impact note says, and the note's 'no contact with the
+    carriage' does not hold for it (fix rounds 3 and 4, H4-m1); or, with its carriage
+    parked above its apex inside the shaft, it stopped rising there and its impact is
+    logged at once at that apex, where only the note's 'altitude 0' does not hold (fix
+    round 5, M1)."""
+    assist = run_data.as_mapping(record.get("assist"))
+    drive = run_data.as_mapping(assist.get("drive"))
+    if drive.get("release_trigger") != replay.RELEASE_TARGET_SPEED:
+        return None
+    s_rel = drive.get("release_position_m")
+    stroke = assist.get("stroke_m")
+    braking = assist.get("braking_distance_m")
+    facility = assist.get("facility_length_m")
+    name = record.get("key")
+    mouth = _released_below_mouth(assist)
+    end = "the mouth" if mouth else "the track end"
+    if s_rel is None or stroke is None:
+        return (
+            f"{name} is released before the end of the stroke: the scene draws its carriage "
+            f"braking from {end} (a limit of the page's drawing), not from the release "
+            "point, from which the model brakes it."
+        )
+    if mouth:
+        text = (
+            f"{name} is released {stroke - s_rel:.1f} m below the mouth: from the release on "
+            "the scene draws its carriage at the mouth, above the vehicle still in the shaft, "
+            "and braking on rails drawn above the ground (the page brakes every carriage from "
+            "the end of the stroke, a limit of its drawing); the model brakes it from the "
+            "release point"
+        )
+    else:
+        text = (
+            f"{name} is released {stroke - s_rel:.1f} m before the track end: from the release "
+            "on the scene draws its carriage at the track end, ahead of the vehicle still on "
+            "the track, and braking on rails drawn beyond it (the page brakes every carriage "
+            "from the end of the stroke, a limit of its drawing); the model brakes it from "
+            "the release point"
+        )
+    if braking is not None:
+        stop = s_rel + braking - stroke
+        if stop < 0.0:
+            short = "below the mouth" if mouth else "before the track end"
+            text += f" in the stroke left, where it stops {abs(stop):.1f} m {short}"
+        else:
+            past = "above the mouth" if mouth else "beyond the track end"
+            text += f", through the stroke left to {stop:.1f} m {past}"
+    if facility is not None:
+        text += f" (facility {facility:.1f} m)"
+    text += "."
+    fell = fall_back_caveat(str(name), run_flags)
+    if fell is not None:
+        text += f" {fell}"
+    return text
+
+
+def fell_back_in_shaft(run_flags: Sequence[str]) -> bool:
+    """True when a run's flags (metrics.json) carry ``prelude.SHAFT_FALLBACK``: its flight
+    after a release below the ground ended inside the shaft and its impact is logged there
+    (on the parked carriage, or at its apex below a carriage parked above it;
+    ``shaft_impact_kind``) (SP7 step S4a fix rounds 1 and 3)."""
+    return any(SHAFT_FALLBACK in str(f) for f in run_flags)
+
+
+SHAFT_IMPACT_CARRIAGE = "carriage"
+"""``shaft_impact_kind`` of a run whose shaft_fallback flag says it fell onto the parked
+carriage (replay.SHAFT_CARRIAGE_WORDS)."""
+SHAFT_IMPACT_APEX = "apex"
+"""``shaft_impact_kind`` of a run whose shaft_fallback flag says it stopped rising inside the
+shaft, its carriage parked above that apex (replay.SHAFT_APEX_WORDS)."""
+SHAFT_IMPACT_UNSTATED = "unstated"
+"""``shaft_impact_kind`` of a shaft_fallback flag in neither form (never written by
+``prelude.shaft_fallback_note``): no place is stated."""
+
+
+def shaft_impact_kind(run_flags: Sequence[str]) -> str:
+    """Where a run that fell back inside the shaft (``fell_back_in_shaft``) has its impact
+    logged, as one of SHAFT_IMPACT_CARRIAGE, SHAFT_IMPACT_APEX and SHAFT_IMPACT_UNSTATED,
+    from ``replay.shaft_impact_words`` of its flags, the one criterion of the scene and the
+    replay (SP7 step S4a fix round 5, M1, P5-M1: the scene's fall-back texts branch on it)."""
+    words = replay.shaft_impact_words(run_flags)
+    if words == replay.SHAFT_CARRIAGE_WORDS:
+        return SHAFT_IMPACT_CARRIAGE
+    if words == replay.SHAFT_APEX_WORDS:
+        return SHAFT_IMPACT_APEX
+    return SHAFT_IMPACT_UNSTATED
+
+
+def fall_back_caveat(name: str, run_flags: Sequence[str]) -> str | None:
+    """The scene's caveat sentence for the run ``name`` whose flight ended inside the shaft
+    (``fell_back_in_shaft`` of its flags ``run_flags``; None for every other run), by
+    ``shaft_impact_kind`` (SP7 step S4a fix rounds 3 to 5):
+
+    - on the carriage: '<name> fell back inside the shaft: its impact is logged there, on its
+      parked carriage, the floor of the flight model in the shaft, not where the base returns
+      to altitude 0 as the drawn impact note says, and the note's 'no contact with the
+      carriage' does not hold for it.' (fix round 4, H4-m1);
+    - at the apex (a carriage braking at less than the vehicle's deceleration, parked above
+      it): '<name> stopped rising inside the shaft, below its carriage parked above it (the
+      model has no contact with the carriage on its braking path): its impact is logged at
+      once at that apex, not where the base returns to altitude 0 as the drawn impact note
+      says.' (fix round 5, M1, P5-M1: it did not fall, and the note's 'no contact' holds);
+    - neither form: '<name> fell back inside the shaft: its impact is logged there, not where
+      the base returns to altitude 0 as the drawn impact note says.'
+
+    ``early_release_caveat`` appends it; ``early_release_lines`` gives it alone to a run
+    released at its track end, a buried track exit's (fix round 5, M2: keyed on the flag,
+    not on the release trigger)."""
+    if not fell_back_in_shaft(run_flags):
+        return None
+    kind = shaft_impact_kind(run_flags)
+    if kind == SHAFT_IMPACT_APEX:
+        return (
+            f"{name} stopped rising inside the shaft, below its carriage parked above it (the "
+            "model has no contact with the carriage on its braking path): its impact is "
+            "logged at once at that apex, not where the base returns to altitude 0 as the "
+            "drawn impact note says."
+        )
+    if kind == SHAFT_IMPACT_CARRIAGE:
+        return (
+            f"{name} fell back inside the shaft: its impact is logged there, "
+            f"{shaft_impact_text(run_flags)}, not where the base returns to altitude 0 as the "
+            "drawn impact note says, and the note's 'no contact with the carriage' does not "
+            "hold for it."
+        )
+    return (
+        f"{name} fell back inside the shaft: its impact is logged there, not where the base "
+        "returns to altitude 0 as the drawn impact note says."
+    )
+
+
+SHAFT_CARRIAGE_TEXT = replay.SHAFT_CARRIAGE_TEXT
+"""The words of ``prelude.shaft_fallback_note`` for an impact on the shaft floor (the parked
+carriage); its other form, an impact at the apex, says 'stopped rising'
+(``replay.SHAFT_APEX_TEXT``)."""
+
+
+def shaft_impact_text(run_flags: Sequence[str]) -> str:
+    """Where a run that fell back inside the shaft (``fell_back_in_shaft``) has its impact
+    logged, from its ``prelude.SHAFT_FALLBACK`` flag: ``replay.shaft_impact_words``, the one
+    criterion of the scene and the replay (SP7 step S4a fix rounds 3 and 4, H4-M1):
+    replay.SHAFT_CARRIAGE_WORDS when the note says SHAFT_CARRIAGE_TEXT,
+    replay.SHAFT_APEX_WORDS when it says the vehicle stopped rising (a carriage that brakes
+    at less than the vehicle's deceleration parks above the apex)."""
+    return replay.shaft_impact_words(run_flags)
+
+
+def early_release_frame_text(names: Sequence[str], mouth: bool = True) -> str:
+    """The frame caveat's short form of ``early_release_caveat`` for the runs ``names``
+    (one line for all of them, so a frame footer spends as few canvas lines as it can):
+    '<runs>: released below the mouth; the carriage drawn at and above the mouth after
+    release is a drawing limit (the model brakes it from the release point).' (``mouth``
+    False: 'released before the track end; the carriage drawn at and beyond the track
+    end ...')."""
+    where, drawn = (
+        ("below the mouth", "at and above the mouth")
+        if mouth
+        else ("before the track end", "at and beyond the track end")
+    )
+    items = list(names)
+    runs = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+    return (
+        f"{runs}: released {where}; the carriage drawn {drawn} after release is a drawing "
+        "limit (the model brakes it from the release point)."
+    )
+
+
+def fall_back_frame_text(names: Sequence[str], kind: str = SHAFT_IMPACT_CARRIAGE) -> str:
+    """The frame line of the runs ``names`` whose flight ended inside the shaft
+    (``fell_back_in_shaft``), all of one ``shaft_impact_kind`` ``kind`` (SP7 step S4a fix
+    rounds 3 to 5, H3-m1, V4-1, M1, P5-M1):
+
+    - SHAFT_IMPACT_CARRIAGE: the drawn impact note is wrong for them in both its claims, so
+      a captured frame says where the impact is logged and that the carriage is the model's
+      floor there: '<runs>: fell back inside the shaft, whose floor in the model is the
+      parked carriage; the impact is logged there, not where or as the drawn impact note
+      says (its 'no contact with the carriage' and 'altitude 0' do not hold for it/them).';
+    - SHAFT_IMPACT_APEX: only the note's 'altitude 0' is wrong: '<runs>: stopped rising
+      inside the shaft, below its carriage parked above it (below their carriages parked
+      above them); the impact is logged at once at that apex (each at its apex), not at
+      altitude 0 as the drawn impact note says.';
+    - SHAFT_IMPACT_UNSTATED: '<runs>: fell back inside the shaft; the impact is logged
+      there, not at altitude 0 as the drawn impact note says.'"""
+    items = list(names)
+    runs = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+    one = len(items) == 1
+    if kind == SHAFT_IMPACT_APEX:
+        below, logged = (
+            ("below its carriage parked above it", "the impact is logged at once at that apex")
+            if one
+            else (
+                "below their carriages parked above them",
+                "each impact is logged at once at its apex",
+            )
+        )
+        return (
+            f"{runs}: stopped rising inside the shaft, {below}; {logged}, not at altitude 0 as "
+            "the drawn impact note says."
+        )
+    if kind == SHAFT_IMPACT_UNSTATED:
+        return (
+            f"{runs}: fell back inside the shaft; the impact is logged there, not at altitude 0 "
+            "as the drawn impact note says."
+        )
+    them = "it" if one else "them"
+    return (
+        f"{runs}: fell back inside the shaft, whose floor in the model is the parked "
+        "carriage; the impact is logged there, not where or as the drawn impact note says "
+        f"(its 'no contact with the carriage' and 'altitude 0' do not hold for {them})."
+    )
+
+
+NO_RELEASE_STATUSES = (replay.DRIVE_STALL_STATUS, "drive_limit")
+"""Run statuses of a push that never released: the drive could not start it, or it stopped
+on the track (``prelude.fly_track``)."""
+
+
+def no_release_caveat(record: Mapping[str, Any]) -> str | None:
+    """The scene's caveat for a linear-motor run that never released (its ``assist`` settings
+    carry a ``drive`` with no ``release_trigger`` and its status is one of
+    NO_RELEASE_STATUSES; SP7 step S4a fix round 4, V4-3): the frozen template draws the
+    carriage at the end of the stroke from T+0 on, as if released, above a vehicle that
+    stayed where the push stopped: '<run> was never released: its push never moved (status
+    drive_stall) | stopped on the track (status drive_limit), and the run ends there; the
+    scene still draws its carriage at the mouth (the track end) after T+0, a limit of the
+    page's drawing'. None for every other run."""
+    assist = run_data.as_mapping(record.get("assist"))
+    drive = run_data.as_mapping(assist.get("drive"))
+    status = record.get("status")
+    if not drive or drive.get("release_trigger") is not None or status not in NO_RELEASE_STATUSES:
+        return None
+    end = "the mouth" if _released_below_mouth(assist) else "the track end"
+    how = (
+        f"its push never moved (status {status})"
+        if status == replay.DRIVE_STALL_STATUS
+        else f"its push stopped on the track (status {status})"
+    )
+    return (
+        f"{record.get('key')} was never released: {how}, and the run ends there; the scene "
+        f"still draws its carriage at {end} after T+0, away from the vehicle (a limit of the "
+        "page's drawing: the model's carriage stays under the vehicle where the push stopped)."
+    )
+
+
+def no_release_frame_text(names: Sequence[str], mouth: bool = True) -> str:
+    """The frame line of the runs ``names`` that never released (``no_release_caveat``;
+    SP7 step S4a fix round 4, V4-3): '<runs>: never released; the carriage drawn at the
+    mouth (the track end) after T+0 is a drawing limit (the push stopped on the track).'"""
+    items = list(names)
+    runs = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+    end = "the mouth" if mouth else "the track end"
+    return (
+        f"{runs}: never released; the carriage drawn at {end} after T+0 is a drawing limit "
+        "(the push stopped on the track)."
+    )
+
+
+def early_release_lines(
+    records: Sequence[Mapping[str, Any]], flags_of: Mapping[str, Sequence[str]]
+) -> tuple[list[str], list[str]]:
+    """(caveats, frame lines) of the payload records ``records`` (each with ``key`` and
+    ``assist``: ``assist_settings``) and the runs' own flags ``flags_of`` (run name ->
+    metrics.json flags): ``early_release_caveat`` of each run it describes, and one
+    ``early_release_frame_text`` line for the runs released below the mouth and one for
+    those released before another track end, then one ``fall_back_frame_text`` line per
+    ``shaft_impact_kind`` for the runs whose flight ended inside the shaft (fix round 3,
+    H3-m1: the drawn impact note is wrong for them; fix round 5, M1: the carriage and the
+    apex worded apart), keyed on the run's shaft_fallback flag, not on its release trigger
+    (fix round 5, M2: a run released at a buried track exit gets ``fall_back_caveat`` alone),
+    and ``no_release_caveat`` of each linear-motor run that never released with one
+    ``no_release_frame_text`` line per kind of track end (fix round 4, V4-3); all empty for
+    every other selection (SP7 step S4a fix round 2: the one source of these lines for the
+    scene payload, ``scene_payload``, and the app's panel caveats and video footer,
+    ``early_release_lines_of``)."""
+    caveats: list[str] = []
+    mouth: list[str] = []
+    other: list[str] = []
+    fell: dict[str, list[str]] = {}
+    stuck: dict[bool, list[str]] = {}
+    for r in records:
+        name = str(r.get("key"))
+        flags = flags_of.get(name, ())
+        text = early_release_caveat(r, flags)
+        if fell_back_in_shaft(flags):
+            fell.setdefault(shaft_impact_kind(flags), []).append(name)
+        if text is None:
+            unreleased = no_release_caveat(r)
+            if unreleased is not None:
+                caveats.append(unreleased)
+                below = _released_below_mouth(run_data.as_mapping(r.get("assist")))
+                stuck.setdefault(below, []).append(name)
+            alone = fall_back_caveat(name, flags)
+            if alone is not None:
+                caveats.append(alone)
+            continue
+        caveats.append(text)
+        below = _released_below_mouth(run_data.as_mapping(r.get("assist")))
+        (mouth if below else other).append(name)
+    frames = [early_release_frame_text(mouth)] if mouth else []
+    if other:
+        frames.append(early_release_frame_text(other, mouth=False))
+    for kind in (SHAFT_IMPACT_CARRIAGE, SHAFT_IMPACT_APEX, SHAFT_IMPACT_UNSTATED):
+        if kind in fell:
+            frames.append(fall_back_frame_text(fell[kind], kind))
+    frames += [no_release_frame_text(names, mouth=below) for below, names in stuck.items()]
+    return caveats, frames
+
+
+def early_release_lines_of(
+    metrics: Mapping[str, Any], config: Mapping[str, Any], names: Sequence[str]
+) -> tuple[list[str], list[str]]:
+    """``early_release_lines`` of the runs ``names`` of a planar results directory, from
+    its metrics.json (``metrics``) and resolved_config.yaml (``config``) alone (each run's
+    record built as ``run_payload`` builds its ``assist`` and ``status``: ``assist_settings``
+    of its run block's assist and its metrics, and its metrics' status, run_data.run_source;
+    raises its
+    run_data.RunDataError for a run metrics.json does not describe): the app's results
+    panel and video footer (SP7 step S4a fix round 2). Pure."""
+    records = []
+    flags_of: dict[str, Sequence[str]] = {}
+    for name in names:
+        source = run_data.run_source(dict(metrics), dict(config), name)
+        m = source["metrics"]
+        assist_cfg = run_data.as_mapping(source["config"].get("assist"))
+        records.append(
+            {"key": name, "status": m.get("status"), "assist": assist_settings(assist_cfg, m)}
+        )
+        flags = m.get("flags")
+        flags_of[name] = [str(f) for f in flags] if isinstance(flags, list) else []
+    return early_release_lines(records, flags_of)
 
 
 def structure_note(
@@ -1421,6 +1879,18 @@ def scene_payload(
             record["geometry"] = None
 
     caveats = list(replay.replay_data(run_dir, kept)["meta"]["caveats"])
+    # SP7 step S4a fix rounds 1, 2 and 5: a release below the mouth, which the frozen
+    # template draws braking from the mouth, and a flight that ended inside the shaft;
+    # nothing for every other run.
+    flags_of = {
+        name: run_data.run_source(metrics, config, name, error=SceneError, wording=SCENE_WORDING)[
+            "metrics"
+        ].get("flags")
+        or []
+        for name in kept
+    }
+    early, early_frame = early_release_lines(records, flags_of)
+    caveats += early
     offload_caveats: list[str] = []
     if any(r["role"] == run_data.ROLE_OFFLOAD for r in records):
         raw = run_data.as_mapping(metrics.get("offload")).get("caveats")
@@ -1467,11 +1937,11 @@ def scene_payload(
             "tank_decimals": TANK_DECIMALS,
         },
         "drawing": {"plume_of_stack": PLUME_OF_STACK},
-        "display_only": list(DISPLAY_ONLY),
+        "display_only": display_only_for(flags_of.values()),
         "caveats": caveats + offload_caveats,
         "offload_caveats": offload_caveats,
         "footer": FOOTER_TEXT,
-        "frame_caveat": frame_caveat([r["vehicle"] for r in records]),
+        "frame_caveat": frame_caveat([r["vehicle"] for r in records], early_frame),
         "excluded": excluded,
         "runs": records,
     }
@@ -1555,6 +2025,8 @@ def write_scene_page(
 __all__ = [
     "DEFAULT_DISPLAY_DIR",
     "DISPLAY_ONLY",
+    "DISPLAY_ONLY_CARRIAGE_INDEX",
+    "DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM",
     "DRIFT_DECIMALS",
     "EMPTY_SERIES_WORDING",
     "FAILED_MARKER",
@@ -1562,6 +2034,7 @@ __all__ = [
     "FRAME_MODEL_TEXT",
     "FRAME_MORE_TEXT",
     "G_DECIMALS",
+    "NO_RELEASE_STATUSES",
     "PLUME_OF_STACK",
     "SCENE_COLUMNS",
     "SCENE_CONFIG_FILE",
@@ -1572,6 +2045,10 @@ __all__ = [
     "SCENE_TEMPLATE",
     "SCENE_WORDING",
     "SELECTION_CHECK_UNIT",
+    "SHAFT_CARRIAGE_TEXT",
+    "SHAFT_IMPACT_APEX",
+    "SHAFT_IMPACT_CARRIAGE",
+    "SHAFT_IMPACT_UNSTATED",
     "SOURCE_DEFAULT",
     "SUMMARY_FILE",
     "TANK_DECIMALS",
@@ -1584,12 +2061,22 @@ __all__ = [
     "default_pair",
     "default_scene_path",
     "display_geometry_for",
+    "display_only_for",
+    "early_release_caveat",
+    "early_release_frame_text",
+    "early_release_lines",
+    "early_release_lines_of",
     "event_label",
+    "fall_back_caveat",
+    "fall_back_frame_text",
+    "fell_back_in_shaft",
     "frame_caveat",
     "git_record",
     "load_display_configs",
     "load_scene_config",
     "load_template",
+    "no_release_caveat",
+    "no_release_frame_text",
     "offload_flags",
     "opening_pair",
     "ramp_start",
@@ -1600,6 +2087,8 @@ __all__ = [
     "scene_payload",
     "scene_run_label",
     "selection_check",
+    "shaft_impact_kind",
+    "shaft_impact_text",
     "site_omega_p",
     "structure_note",
     "synthetic_events",

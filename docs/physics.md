@@ -990,14 +990,24 @@ built from a config.
 **Stage-1 phases** (each a `solve_ivp` call; every flight phase that can reach the
 ground lists the ground event `impact`: h - z_ground crossing downward, z_ground = 0 at
 the pad and the silo mouth; a rising coast or rise lists the `apex` split instead,
-which ends it before it could come down; lit phases are split at the thrust kinks with the ramp and lag `max_step` caps, and a
+which ends it before it could come down; a burn sub-phase that starts inside the shaft,
+rising, after a release below the mouth lists `shaft_exit` and `shaft_apex` in place of
+the ground event, SP7 step S4a, "Linear motor: the flown power cap, the release at a
+target speed and the readers": `shaft_exit` is thus logged only when a KICK,
+GRAVITY_TURN or after-apex rise is in flight at the mouth, whenever the kick began in
+the shaft, never for a vehicle that leaves it in the pre-ignition coast or the vertical
+rise, and a falling sub-phase that starts below the ground, or (fix round 4) one before
+the kick, over the shaft, when the shaft's floor lies below the ground, lists the impact
+at the shaft's floor, the parked carriage, in place of the ground and, in a burn without a
+turnaround split of its own, `shaft_turnaround` (fix round 3), its impact flagged with a
+plain `shaft_fallback` note; lit phases are split at the thrust kinks with the ramp and lag `max_step` caps, and a
 ramp end inside a flight phase is logged as `ramp_end`; every flight phase, lit or not,
 also carries the planar cap `planar_max_step_s`, 2 s, "Integrator"):
 
 | Phase | RHS / law | Events (direction; all terminal) | Next |
 |---|---|---|---|
 | HOLD (pad) | the prelude in `PLANAR_LAYOUT`: mass only | `liftoff`: T(t, p(0)) - m g_ref (+), the delivered thrust at the pad pressure, g_ref = g(R_E) - omega_p^2 R_E | flight start (t_fs, theta = 0) |
-| ASSIST (track) | the prelude's flat 1-DOF track, g_eff = g_ref, p = p(z_exit) | `track_end`, `propellant`, `drive_limit` | `map_release_planar`, flight start |
+| ASSIST (track) | the prelude's flat 1-DOF track, g_eff = g_ref, p = p(z_exit) | `track_end`, `propellant`, `drive_limit` (and a linear motor's watches and, with a release speed, `target_speed`) | `map_release_planar`, flight start |
 | COAST_PRE_IGN | unpowered (a release before ignition) | rising: `apex` (v_r, -), a split; falling: `impact`; t_end = t_ign. A pending ignition (`height_method: event`): open-ended, stopped at the apex, rising: `apex` and `ignition_height` (+): h - (z_mouth + h_req), folded past an apex (`ev_altitude_up`) | VERTICAL_RISE (or KICK at once) at ignition, which for the pending ignition is the `ignition_height` root; GuidanceFailure `no_ignition` when the apex comes first |
 | VERTICAL_RISE | `Radial` | `propellant` (-); rising: `apex` as a split; falling: `impact` and `turnaround` (v_r, +) as a split; `kick_start` (+): min(V - v_k, w); `kick_deadline` (+): t - (t_ign + deadline) | KICK (with no rise at all when the trigger is already past at the first lit instant); GuidanceFailure `no_kick` at the deadline or at burnout before the trigger; status impact |
 | KICK | `FixedTilt(delta)` | `propellant` (MECO), `impact`, `kick_end` (+): (u cos delta - w sin delta)/V = sin(beta_rel - delta), `kick_timeout` (+): t - (t_kick + kick_max) | GRAVITY_TURN; GuidanceFailure `kick_timeout` |
@@ -3544,7 +3554,9 @@ table under the peak, as CLAUDE.md asks; and, planar only, the push settings as 
 of a push stated by its exit speed and are the source of the replay page's drive
 label, "Silo model"); for a failed ignition the highest apex and the
 impact (`summary.PLANAR_FAILED_ROWS`: failed stage, apex altitude and time, impact time
-and |v_rel|);
+and |v_rel|, the last labelled `summary.PLANAR_SHAFT_IMPACT_LABEL` when a run of the
+table fell back inside the shaft, SP7 step S4a fix round 3; n/a for a run without a
+failed ignition, fix round 4);
 how stage 1 starts and its ramp start (SP1 step 3, `metrics_planar.ramp_start_metrics`
 through `sim.planar_ramp_start_items`, every recorded planar run: the achieved
 `ramp_start_t_rel_release_s`, `ramp_start_alt_m` (datum; negative in the shaft),
@@ -4100,10 +4112,21 @@ lists only the events that can end it. Factories:
 | `track_end` | s - L | +1 | `ATOL_M` 1e-6 m (0 on a drive whose push time is not exact, the linear motor: never disarmed, "Linear motor") | the push (RELEASE follows) |
 | `drive_limit` | F_drive(t, y), the assist model's drive force at the delivered thrust | -1 | `ATOL_KG` g_eff [N] | the push (status `drive_limit`); listed only when the model forbids a negative drive force |
 | `power_limit`, `power_limit_end`, `drive_cap`, `drive_cap_end`, `taper_start` (`ev_push_watch`, the drive's `push_watches`; the linear motor only, SP7 step S4) | the watch value at the delivered thrust, negated for an `_end` event (the limit stopping) ("Linear motor") | +1 | by unit: `ATOL_MPS`, `ATOL_KG` g_eff [N], `ATOL_M` | the track sub-phase only (logged; the push goes on from the crossing: "Linear motor") |
+| `target_speed` (`ev_release_speed(v_release, layout)`; a linear motor with a release speed, SP7 step S4a) | sdot - v_release | +1 | `ATOL_MPS` 1e-9 m/s | the push, before the track end (RELEASE follows; a sub-phase ending with sdot within ATOL_MPS of v_release, or past it, releases there: "Linear motor: the flown power cap, the release at a target speed and the readers") |
 | `ignition_height` (`ev_altitude_up(model, z, name)`, either model) | altitude - z + k min(w, 0)^2, w the altitude rate (v on 1-D, v_r planar), k = `APEX_FOLD_GAIN_S2PM` | +1 | `ATOL_M` 1e-6 m | the rising pre-ignition coast of a first stage stated by `height_method: event` (SP1 step 4): stage 1 lights at the root |
+| `shaft_exit` (`ev_altitude_up(model, z_ground, "shaft_exit")`, planar; SP7 step S4a) | the same, at the ground altitude | +1 | `ATOL_M` 1e-6 m | a planar burn sub-phase that starts below the ground, rising (after a release below the mouth): it ends the sub-phase only, the next one starting at the mouth with the ground armed |
+| `shaft_apex` (`ev_radial_apex` renamed, planar; SP7 step S4a) | v_r | -1 | `ATOL_MPS` 1e-9 m/s | the same sub-phase, at an apex inside the shaft: the next one starts below the ground falling, with the impact at the shaft floor (the parked carriage) and `shaft_turnaround` (fix round 3) |
+| `shaft_turnaround` (`ev_radial_turnaround` renamed, planar; SP7 step S4a fix round 3) | v_r | +1 | `ATOL_MPS` 1e-9 m/s | a planar burn sub-phase that starts below the ground falling (KICK, GRAVITY_TURN and the other burns without a `turnaround` split of their own), beside the impact at the shaft floor: it ends the sub-phase only, the next one rising inside the shaft with `shaft_exit` and `shaft_apex` |
+| `impact` at the shaft floor (`ev_impact(z_floor)` 1-D, `ev_ground(model, z_floor)` planar; SP7 step S4a fix round 3) | z - z_floor | -1 | `ATOL_M` 1e-6 m | a falling sub-phase that starts more than ATOL_M below the ground, or (fix round 4, P4-M1) one over the shaft when z_floor lies more than ATOL_M below the ground (every 1-D one; a planar one before the kick: the pre-ignition coast, the vertical rise, a failed stage 1's coast), in place of the ground's (z_floor = `prelude.shaft_floor_m`, the parked carriage; status `impact` with the `shaft_fallback` flag and the touchdown speed) |
 
-The two track events read the track state (`ev_track_end`, `ev_drive_limit`; "Silo
-model" for the drive-limit threshold and its disarm behaviour). An event built
+The three track events read the track state (`ev_track_end`, `ev_drive_limit` and
+`ev_release_speed`; "Silo model" for the drive-limit threshold and its disarm
+behaviour). `ev_altitude_up` is listed only in rising sub-phases that end at their apex
+(w = 0): the rising unpowered coasts, and since S4a the planar burn sub-phases that
+start in the shaft beside `shaft_apex`, so its fold argument holds there; on a powered
+sub-phase whose apex has a downward acceleration below APEX_FOLD_ACCEL_MPS2 a crossing
+just below the apex can go unlogged, the apex then ending the sub-phase above the
+mouth with the flight unchanged. An event built
 by hand gets `EVENT_ZERO_TOL` = 1e-12 in its own unit. `ev_liftoff` takes the pad
 pressure `p_amb_pa` (0 in Phase 1, where vacuum thrust from sea level is a stated
 assumption); Phase 2 must pass the real pad pressure, because on vacuum thrust the pad
@@ -4405,7 +4428,7 @@ omega_p from the single `OMEGA_P_PHASE1_RADS` = 0 it quotes in the assumptions.
 |---|---|---|---|
 | HOLD (t_ign_abs < 0; pad, or a silo with the engine lit before the push) | vehicle clamped: z, v held, mass by closed form `propellant_burned_kg` (no ODE; `hold_closed_form` subtracts only its own segment's increment of that closed form, so a lit hold split at any time after ignition, as a track prelude splitting at a startup kink does, gives the single-call mass); hold-down force m g_eff - T(t) tracked, its minimum reported (`hold_down_force_min_N`; not a tensile flag). On a silo the clamp carries the weight component along the track, m g_eff sin phi, and there is no liftoff extension: the push starts at t = 0 whatever the thrust | t = 0 | ASSIST or RELEASE |
 | HOLD extension (pad, vehicle at rest on the ground, T(0) < m g_eff) | split at the thrust kinks. Before the ignition kink the sub-phase is *unlit* (`HoldParams.lit = False`: T = 0, nothing changes, sampled directly, no events), and at the start of every lit sub-phase the balance T - m g_eff is re-evaluated with the lit schedule, so a step whose thrust exceeds the weight lifts off exactly at its kink with the mass untouched (no root search across the discontinuity; the integrator's last stage never sees the step's f(0) = 1 from the left, which would bias the mass by 5e-6 kg, above `ATOL_KG`). A lit sub-phase integrates the mass alone (`rhs_hold`), max_step as in a burn. An ignition inside the extension is logged in the HOLD | `liftoff` (T - m g_eff, +1) -> "hold extended to t = X s for liftoff (TWR < 1 at release)" in the assumptions; `propellant` -> ValueError; t_max -> status `no_liftoff` (no exception) | BURN from the liftoff root, sigma = +1 |
-| ASSIST (track) | state [s, sdot, m_v, *extra, E_drive, W_thrust, J_mass] in the track layout (`dynamics.rhs_track`, "Silo model" below); sub-phases split at the thrust kinks inside the push (ignition, ramp end) and, for the linear motor, at its own kink (the end of its rise), at the delivered thrust's clamp (`prelude.thrust_clamp_time`, where a ramp's or lag's T_vac reaches p_amb A_e; not logged) and at every crossing of its watches, each flown to a second time as a fixed end ("Linear motor"); a sub-phase that ends at the ignition kink is *unlit* (T = 0 whatever the schedule says at its closing boundary, as for the HOLD); max_step = t_push/push_steps, tightened by the ramp or lag cap once lit; the ignition, ramp_end and drive_limit events (and the linear motor's drive_ramp_end, power_limit, power_limit_end, drive_cap, drive_cap_end and taper_start) are logged with the ascent-frame view of the track state (`track_to_vertical`: z = start altitude + z(s), v = sdot sin phi); a ramp that ends at the very instant of release (`silo_hot_ramp_on_track`) logs its ramp_end on the track, right before the release, and the flight's burn skips the finished segment, so the event appears once | `track_end` (s - L, +1) -> RELEASE; `drive_limit` (F_drive, -1; not listed when the model allows a negative drive force) -> status `drive_limit`, the run stops on the track (a push that starts with F_drive already negative ends at t0 by the engine's already-past rule); `propellant` -> ValueError (exhausted on the track); a drive watch's crossing -> the next sub-phase of the push (linear motor); a linear motor that cannot start the push (`stall_reason`) -> status `drive_stall`, a zero-length phase at push start, the run stops on the track | RELEASE |
+| ASSIST (track) | state [s, sdot, m_v, *extra, E_drive, W_thrust, J_mass] in the track layout (`dynamics.rhs_track`, "Silo model" below); sub-phases split at the thrust kinks inside the push (ignition, ramp end) and, for the linear motor, at its own kink (the end of its rise), at the delivered thrust's clamp (`prelude.thrust_clamp_time`, where a ramp's or lag's T_vac reaches p_amb A_e; not logged) and at every crossing of its watches, each flown to a second time as a fixed end ("Linear motor"); a sub-phase that ends at the ignition kink is *unlit* (T = 0 whatever the schedule says at its closing boundary, as for the HOLD); max_step = t_push/push_steps, tightened by the ramp or lag cap once lit; the ignition, ramp_end and drive_limit events (and the linear motor's drive_ramp_end, power_limit, power_limit_end, drive_cap, drive_cap_end and taper_start, and target_speed at a release at its release speed, SP7 step S4a) are logged with the ascent-frame view of the track state (`track_to_vertical`: z = start altitude + z(s), v = sdot sin phi); a ramp that ends at the very instant of release (`silo_hot_ramp_on_track`) logs its ramp_end on the track, right before the release, and the flight's burn skips the finished segment, so the event appears once | `track_end` (s - L, +1) -> RELEASE; `target_speed` (sdot - v_release, +1; a linear motor with a release speed, S4a) -> RELEASE before the track end; `drive_limit` (F_drive, -1; not listed when the model allows a negative drive force) -> status `drive_limit`, the run stops on the track (a push that starts with F_drive already negative ends at t0 by the engine's already-past rule); `propellant` -> ValueError (exhausted on the track); a drive watch's crossing -> the next sub-phase of the push (linear motor); a linear motor that cannot start the push (`stall_reason`) -> status `drive_stall`, a zero-length phase at push start, the run stops on the track | RELEASE |
 | RELEASE (map) | pad: z = z0, v = v0 of the `AscentStart` (0, 0 for the pad; only a start at rest *on the ground* is held down, one at rest above it falls; a *moving* start lit before release is a test-only emulation of "lit on the carriage" without a track: the HOLD burns mass only and its rows keep v0, which is not a physical state but reproduces the straddle form exactly), m = m(0); track: `map_release` (z = exit altitude, v = sdot, m; a track angle other than pi/2 raises: projecting sdot onto the vertical would silently discard the downrange component, so the 1-D map is exact for a vertical track only and a tilted exit waits for the planar branch); quadratures reset; t_release recorded | | COAST_PRE_IGN or BURN |
 | COAST_PRE_IGN | T = 0, sigma = +1 | t = t_ign_abs (a ramp start stated by a closed-form height is such a time, converted before the run: the coast ends at the closed-form time, not at an altitude, so the height reached there is the flown coast's); for a first stage stated by `height_method: event` (a pending ignition, SP1 step 4) the coast is open-ended and its rising phase also lists `ignition_height` (z - (z_exit + h), +1, `ev_altitude_up`): its root is the ignition time; an apex first raises ValueError (stage 1 never lights); `apex` -> FALL_PRE_IGN (sigma = -1, `impact` listed) | BURN; impact -> status `impact` |
 | BURN k | ramp sub-phase (ends at t_ign + t_ramp, max_step t_ramp/ramp_steps) then the full burn (open-ended); lag: one burn with max_step tau/lag_steps_per_tau; step: one burn; `propellant` always listed | sigma = +1: `apex` -> same burn with sigma = -1 (`turnaround`, `impact` listed); sigma = -1: `turnaround` -> sigma = +1 (`apex` listed), `impact` -> status `impact`; `propellant` -> burnout | STAGING, or end |
@@ -5172,8 +5195,9 @@ required by `acceleration`, refused by `force`); `stop_taper_m` s_taper (optiona
 >= 0 and below the stroke; 0 or absent: no taper); `carriage_mass_t` m_c (>= 0, default
 0); `brake_decel_g` a_b (> 0); `drive_efficiency` eta in (0, 1] (default 1);
 `exhaust_impingement_fraction` f_imp in [0, 1] (default 0); `shaft: vented` only (the
-sealed shaft is S5); `track`. No key of the assist family (`net_accel_g`,
-`exit_speed_mps`) and no `release_speed_mps` (S4a). An optional key given must hold a
+sealed shaft is S5); `track`; `release_speed_mps` (optional, since S4a: "Linear motor:
+the flown power cap, the release at a target speed and the readers (SP7 step S4a)").
+No key of the assist family (`net_accel_g`, `exit_speed_mps`). An optional key given must hold a
 number (a null does not unset it), and `model_dump` leaves out the one holding None. The
 SI properties go through units.py (kN, MW, g0, t). The depth bound of a ramp start
 (`at_depth_m <= stroke_m`) applies to both track drives (`TRACK_DRIVE_CONFIGS`); a ramp
@@ -5189,29 +5213,30 @@ g_a = g_eff sin phi, and t on the push clock (t = 0 at push start), r(t) = min(1
 t/t_r) (1 for a step):
 
     M sddot = F + T_sys - M g_a,        F_int = m_v (sddot + g_a) - T
-    force law:         F = min(F_lim(t), F_max, P_max/sdot),  F_lim = F_0 + (F_max - F_0) r(t)
+    force law:         F = min(F_h + (min(F_lim(t), F_max) - F_h) w(s), P_max/sdot)
+                       F_lim = F_0 + (F_max - F_0) r(t),  F_h = M g_a - T_sys
     acceleration law:  F = min(M (a_cmd r(t) w(s) + g_a) - T_sys, F_max, P_max/sdot)
     holding force:     F_0 = max(0, M_0 g_eff sin phi(0) - (1 - f_imp) T(0))   (bound at push start)
     taper weight:      w(s) = min(1, (L - s)/s_taper), 1 without a taper (in [0, 1] for s <= L)
-    force-law taper:   F <- F_h + (F - F_h) w(s),  F_h = M g_a - T_sys
 
 The power term applies only for sdot > 0; F_lim is F_max exactly once the rise has
 ended. The taper weight is not floored at 0: past L only the trial stages of the step
 that crosses the release read it, and the straight line continued below 0 keeps the
 force smooth there (a floor would be a kink at s = L inside that step). While a cap
 binds, the acceleration law's sddot follows from the capped F (the command is not
-flown). The force law's taper scales the force toward the holding value (sddot -> 0 at
-L); the acceleration law's scales its command (the same x'' = -(a/s_t) x, cold, while
-F_max (force law) or the uncapped command (acceleration law) holds in the taper; not
-under the power limit, which flies sddot = (P_max/sdot - M g) w/M under the force law
-and the capped force under the acceleration law). The force law's taper scales the force
-after the power cap (the brief's order, design 4.6): where P_max/sdot binds in the taper
-the flown power is F_h sdot (1 - w) + P_max w, below P_max, and `power_limit` marks the
-law's power branch on the untapered force (review pass 1 rerun, P1-m1: with the corner
-inside a 30 m taper the push reads power-limited at a peak of 0.970 P_max and exits 0.19
-m/s, 0.28 %, below the same push with the cap on the tapered force; whether the cap
-should apply to the flown force is an open design question under D-SP7-24 (TODO.md),
-left to the user; S4 keeps design 4.6's order). With thrust on the track the holding
+flown). The force law's taper scales its force limit toward the holding value F_h
+(sddot -> 0 at L); the acceleration law's scales its command (the same x'' = -(a/s_t) x,
+cold, while F_max (force law) or the uncapped command (acceleration law) holds in the
+taper; not under the power limit, which flies P_max/sdot, the power phase, under either
+law). The power cap applies to the flown, tapered force (D-SP7-50, SP7 step S4a; design
+4.10: "the command or the force limit is scaled ... toward the holding value"), so F
+sdot <= P_max on every branch, the taper's included ("Linear motor: the flown power cap,
+the release at a target speed and the readers (SP7 step S4a)"). S4 shipped the other
+order, the cap on the untapered force: where P_max/sdot bound in the taper it flew
+F_h sdot (1 - w) + P_max w, below P_max (review pass 1 rerun, P1-m1: with the corner
+inside a 30 m taper the push read power-limited at a peak of 0.970 P_max and exited 0.19
+m/s, 0.28 %, below the same push with the cap on the tapered force), and above the cap
+where P_max/sdot < F_h; D-SP7-50 settled the order (KI-045). With thrust on the track the holding
 force is the stack's: under the force law with a rise (t_r > 0) a thrust share above the
 stack's weight ((1 - f_imp) T(0) >= M_0 g sin phi(0), so F_0 = 0) starts the interface
 in tension, F_int = -T (m_c + f_imp m_v)/M at push start (the vehicle drags the
@@ -5268,8 +5293,8 @@ each event terminal for the track sub-phase and firing upward:
 
 | Event | Watched value | Unit (zero_tol) | Meaning |
 |---|---|---|---|
-| `power_limit` | (F_pre sdot - P_max)/F_max, F_pre the law's force before the power term (min(F_lim, F_max), or min(command, F_max)) | m/s (`ATOL_MPS`) | the power limit starts binding; after the force law's rise it is sdot - P_max/F_max (the corner); under the force law's taper F_pre is the untapered force, so it marks the law's power branch while the flown power stays below P_max (Model) |
-| `power_limit_end` | minus the same | m/s (`ATOL_MPS`) | the power limit stops binding (the acceleration law's command falling in the taper or under a rising thrust) |
+| `power_limit` | (F_pre sdot - P_max)/F_max, F_pre the law's force before the power term (the force law's min(F_lim, F_max), scaled toward F_h inside its taper; or min(command, F_max)) | m/s (`ATOL_MPS`) | the power limit starts binding; after the force law's rise and before its taper it is sdot - P_max/F_max (the corner); inside the force law's taper F_pre is the tapered force, the force the cap applies to (D-SP7-50, S4a), so where it has fired the flown power is P_max |
+| `power_limit_end` | minus the same | m/s (`ATOL_MPS`) | the power limit stops binding (the acceleration law's command falling in the taper or under a rising thrust; since S4a, D-SP7-50, the force law's tapered force falling to P_max/sdot in its taper) |
 | `drive_cap` (acceleration law) | command - min(F_max, P_max/sdot) | N (`ATOL_KG` g_eff) | a cap starts binding (the command is no longer flown) |
 | `drive_cap_end` (acceleration law) | minus the same | N (`ATOL_KG` g_eff) | the cap stops binding (the command back below it) |
 | `taper_start` (with a taper) | s - (L - s_taper) | m (`ATOL_M`) | the push enters the stop taper (one-way) |
@@ -5474,7 +5499,7 @@ brake_decel_g g0, no braking phase in the trace, B-007): distance v^2/(2 a_b), t
 v/a_b, the brake's force on the carriage m_c (a_b - g_eff sin phi) (negative would mean
 gravity alone decelerates it faster), brake energy (1/2) m_c v^2 (1 - g_eff sin phi/a_b)
 = force x distance (0 for m_c = 0), facility max(L, s_release + d_brake) with s_release
-= L in S4.
+= L in S4 (the flown release position since S4a, at the speed at release).
 
 **Metrics** (`LINEAR_MOTOR_METRICS`, after every key a constant_accel run writes; 1-D
 and planar; `net_accel_*` stay None on planar): `push_force_max_N` F_max,
@@ -5491,20 +5516,32 @@ within about 1e-6 is a tie at the release that does not count; on the force plat
 with k = P_max/(F_max v_e) (the design's r, not the rise fraction r(t)), measured on the
 cold force law, k = 1 logs no event and 1 - k = 1e-9 logs one 9.1e-10 of the push time
 before the release; any such event when the push did not release. The event marks the
-law's power branch on its force before the power term, so under the force law's taper,
-where that force is the untapered one, a push reads power-limited with the flown power
-below P_max (Model). A binding inside one integrator step is logged (*Passed over*)
+law's power branch on its force before the power term, the force the cap applies to
+(the force law's tapered force inside its taper since S4a, D-SP7-50), so a push that
+reads power-limited flew at P_max. A binding inside one integrator step is logged (*Passed over*)
 unless its margin stays inside the watch's zero band or, should a step hold two extrema
 of the margin, the scan does not see its maximum; such a binding is not logged and does
-not make the push power-limited), `push_accel_mean_mps2` = v_exit/t_push (a mean, not a
-held acceleration), `push_felt_g_plateau` (the felt axial acceleration at the end of the
-rise, t = t_r, from the flown state; at push start for a step: the value at t_r, not one
-held after it, since the burn on a hot push and a power limit or the taper beginning
-later move it, and `felt_g_track_peak` is the peak; None when the push ended before t_r
+not make the push power-limited), `push_cap_bound` (since S4a fix round 1: under the
+acceleration law whether a cap, F_max or P_max/sdot, bound its command, a `drive_cap`
+event before the release with the same tie; False means no cap bound, so the push flew
+its command wherever it ran, and held a_cmd after its rise, scaled by a taper if any,
+when it released after the rise; True records no timing, a cap can bind inside the rise
+and let go again, `drive_cap_end`; None for the force law and, since fix round 2, for a
+stalled push), `push_accel_mean_mps2` =
+v_exit/t_push (a mean over the whole push, the rise, any capped or power-limited part and
+the taper included, not a single held acceleration), `push_felt_g_plateau` (the felt
+axial acceleration at the end of the rise, t = t_r, from the flown state; at push start
+for a step: where the plateau starts. The acceleration law holds it until a cap or the
+taper binds (a cap that bound inside the rise makes the value at t_r a capped one, S4a
+fix round 2), the cold force law until the power limit or the taper; the burn on a hot
+force-law push moves it, and `felt_g_track_peak` is the peak; None when the push ended before t_r
 or stalled, and when the power limit or the taper began before t_r, as then the rise
-reaches no plateau), `release_position_m` (L), `release_trigger` (`track_end`),
+reaches no plateau), `release_position_m` and `release_trigger` (L and `track_end` in
+S4; the real release since S4a, `metrics.release_point`),
 `electrical_power_peak_W`, `braking_time_s`, `brake_force_N`, `brake_energy_J` (release
-items None without a release; `brake_force_N` always but on a stall). The omega_p of the
+items None without a release; `brake_force_N` always but on a stall), and since S4a
+(KI-052) the settings `push_control_law`, `push_accel_command_mps2`, `push_stop_taper_m`
+and `push_release_speed_mps` (fix round 1: and `push_cap_bound`). The omega_p of the
 planar site is quoted in the drive's track g_eff line, as for constant_accel
 (`sim.planar_setup`).
 
@@ -5630,10 +5667,652 @@ of P_max, the felt g and the mean acceleration are biased high and the interface
 and the drive work low; under the acceleration law, while no cap binds, the drive work,
 the peak drive power and the interface force are biased low, and while a cap binds (or
 drag makes one bind) the exit speed is biased high); the sealed shaft and its air column (S5); the
-release at a target speed and a release before L (S4a, `release_speed_mps`); a braking
+release at a target speed and a release before L (S4a, `release_speed_mps`, done); a braking
 phase in the trace (B-007); the readers (replay, scene, app) and the summary rows of the
-drive (S4a); the drive in the app's form (B-016); the structural transform on a flown
+drive (S4a, done); the drive in the app's form (B-016); the structural transform on a flown
 push (S4b).
+
+## Linear motor: the flown power cap, the release at a target speed and the readers (SP7 step S4a)
+
+Modules: `assist/linear_motor.py` (`pre_power_force_N`, `drive_force_N`,
+`release_speed_mps`, `release_assumption`, `RELEASE_TRIGGER_TARGET_SPEED`,
+`RELEASE_TRIGGERS`, `facility_length_m(track, v, s_release_m)`), `assist/base.py` (the
+protocol member `release_speed_mps`; a class constant None on constant_accel and none),
+`config.py` (`LinearMotorConfig.release_speed_mps`), `phases/engine.py`
+(`ev_release_speed`, `TARGET_SPEED_EVENT`), `phases/prelude.py` (`fly_track`'s release
+at the target speed, `TrackExit.release_position_m` and `.release_trigger`,
+`early_release_assumption`, `RELEASE_SPEED_NOT_REACHED`, `TRACK_END_EVENT`,
+`_exit_x_m(track, s)`; fix round 1: `PreludeLayout.aerodynamic`, `SHAFT_FALLBACK`,
+`shaft_fallback_note`), `phases/vertical.py` and `phases/planar.py` (the ignition height
+above the mouth; the planar shaft events `SHAFT_EXIT_EVENT` and `SHAFT_APEX_EVENT`,
+`PlanarPlanner._in_shaft`; fix round 1: `_shaft_fallback` in both planners),
+`phases/engine.py` (`ev_altitude_up`'s contract), `metrics.py` (`release_point`,
+`linear_motor_facility_m`, KI-052's keys, `carriage_park_altitude_m`; fix round 1:
+`push_cap_bound`, `_cap_bound`), `metrics_planar.py`, `replay.py` (`push_accel_g`,
+`linear_motor_settings`, `release_text`, `linear_motor_clause`, `is_vented`,
+`drive_caveat`, `_linear_motor_omissions`; fix round 1: `linear_motor_law_text`,
+`motor_acceleration_text`, `early_flight_text`, `motor_exit_text`, `release_depth_m`,
+`release_speed_missed`, `below_mouth`, `_motor_omission`, `early_release_note`,
+`closeup_notes`, `is_vertical`), `scene.py` (`assist_settings`, `linear_motor_drive`;
+fix round 1: `early_release_caveat`, `frame_caveat`'s drawing lines), `plots.py` (`DRIVE_CURVE_QUANTITY`, `drive_curve_rows`,
+`drive_curve_figure`, `write_drive_curve`), `summary.py` (`LINEAR_MOTOR_ROWS`,
+`_linear_motor_cell`, `SWEEP_NO_OFFLOAD_CELL`, `sweep_table_rows`); fix round 2:
+`PlanarPlanner._impact_failure`, `replay.is_mouth`, `fell_back_in_shaft`,
+`series_mouth_crossing`, `early_release_results_note`, `_shaft_drag_clause`,
+`scene.early_release_frame_text`, `early_release_lines`, `early_release_lines_of`,
+`app.panel_caveats` and `app.video_footer`'s early-release line,
+`summary._is_linear_motor_run`; fix round 3: `prelude.shaft_floor_m` and the reworded
+`shaft_fallback_note`, `FlightStart.shaft_floor_m`, `planar.SHAFT_TURNAROUND_EVENT`, the
+planners' `_fall_surface_m`, `_at_floor` and `_flag_floor_impact` (the parked carriage as
+the floor of a fall back inside the shaft), `metrics.impact_in_shaft`,
+`sim.FAILED_IGNITION_SHAFT_ASSUMPTIONS`, `sim.PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS`,
+`summary.PLANAR_SHAFT_IMPACT_LABEL`, `replay.shaft_impact_words`,
+`SHAFT_CARRIAGE_WORDS`, `SHAFT_APEX_WORDS`, `scene.fell_back_in_shaft`,
+`shaft_impact_text` and `fall_back_frame_text` (`scene.early_release_frame` dropped: no
+reader called it); fix round 4: the planners' `_shaft_floor_for` (in place of the 1-D
+`_fall_surface_m`; the planar `over_shaft` of `_coast`, `_burn` and `_terminal_coast`),
+`PlanarPlanner._speed_rel_mps`, `shaft_fallback_note`'s `speed_mps`,
+`early_release_assumption`'s `floor_m`, `sim.FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS`,
+`sim.PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS`, `summary.PLANAR_FAILED_SOURCE`,
+`replay.shaft_impact_words` keyed on the run's flag (`SHAFT_APEX_SPEED_MPS` dropped),
+`SHAFT_CARRIAGE_TEXT`, `SHAFT_APEX_TEXT`, `carriage_park_alt_m`, `shaft_turn_event`,
+`shaft_turn_text`, `fall_back_text`, `scene.display_only_for`,
+`DISPLAY_ONLY_CARRIAGE_INDEX`, `DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM`, `no_release_caveat`,
+`no_release_frame_text`, `NO_RELEASE_STATUSES`, and `plots.AnimationRun.push_peak_g`'s
+never-moved push; fix round 5: `scene.shaft_impact_kind` (`SHAFT_IMPACT_CARRIAGE`,
+`SHAFT_IMPACT_APEX`, `SHAFT_IMPACT_UNSTATED`), `scene.fall_back_caveat`,
+`fall_back_frame_text`'s `kind`, `early_release_lines` keyed on the flag,
+`replay.SHAFT_APEX_STOP_TEXT`, `fall_back_text`'s `subject`, `_track_end_fall_backs`.
+Tests:
+`tests/test_linear_motor_release.py`, `tests/test_linear_motor_readers.py`; KI-042 in
+`tests/test_offload_pipeline.py`. Design: docs/phases/inputs/2026-10-08-SP7-design.md
+sections 4.6 and 4.7; D-SP7-50 (KI-045), KI-052, KI-042.
+
+**The power cap on the flown force** (D-SP7-50, KI-045). The force law's power cap
+applies to the force that is flown, after the stop taper:
+
+    F = min(F_h + (min(F_lim(t), F_max) - F_h) w(s), P_max/sdot)   (the cap for sdot > 0),   F_h = M g_a - T_sys
+
+so F sdot <= P_max on every branch, the taper's included. `pre_power_force_N` is the
+tapered force for the force law (the acceleration law's capped command, its taper in the
+command, as before) and `drive_force_N` caps it by P_max/sdot. Where w = 1 (no taper, or
+before it) the operations are S4's F = min(F_lim, F_max, P_max/sdot), float for float,
+so constant_accel, every acceleration-law push and every force-law push that never enters
+a taper are bit-identical (measured on 1-D and fixed-guidance planar runs before and
+after the change: their time series, events and every metric value). The `power_limit`
+watch reads the flown force: (F_pre sdot - P_max)/F_max with F_pre the tapered force
+inside the taper (the margin of P_max/sdot over the force the cap applies to, written as
+a product so it stays finite at sdot = 0); the event set and the sub-phase splitting of
+S4 are otherwise unchanged. Where the cap binds in the taper the flown force is
+P_max/sdot and the motion is the power phase, whatever the taper weight; the cap lets go
+where the tapered force falls to P_max/sdot (`power_limit_end`), and from there the
+taper's position form holds. S4 applied the taper after the cap, F_h + (min(F_law,
+P_max/sdot) - F_h) w, which flew below the rated power in the taper (0.28 % slower exit on
+the review's probe) and above P_max/sdot wherever P_max/sdot < F_h.
+
+Closed form (vertical, cold, F_0 = M g, the corner v_c = P/F_max before the taper;
+`test_the_power_cap_applies_to_the_tapered_force_in_closed_form`): the power phase of
+"Linear motor" (t - t_c and s - s_c with v_inf = P/(M g)) runs into the taper
+(`taper_start` at s_0 = L - s_t, v_0 the root of s(v_0) = s_0); the cap lets go at v_1,
+the root of (M g + M a_f (L - s(v))/s_t) v = P with a_f = F_max/M - g, s_1 = s(v_1), t_1 =
+t(v_1); then x = L - s obeys x'' = -(a_f/s_t) x from x_1 = L - s_1 at v_1: v^2 = v_1^2 +
+Omega^2 (x_1^2 - x^2), v_e^2 = v_1^2 + Omega^2 x_1^2, t_e = t_1 + atan(Omega x_1/v_1)/Omega,
+Omega = sqrt(a_f/s_t). The cap does not bind again: d/dt [(M g + M a_f x/s_t) v] = M
+Omega^2 (2 Omega^2 x^2 + g x - v_1^2 - Omega^2 x_1^2), negative at x_1 (the cap letting
+go) and falling further as x falls toward 0 (the bracket increases with x for x > 0, and
+x only decreases after x_1).
+
+*Where P_max/sdot < F_h.* On a straight track with a thrust that does not fall (every
+track a config builds) this edge is never reached: F_h = M g sin phi - T_sys does not
+rise (M falls, T rises or holds), the drive force before the cap is never below F_h
+(F_lim >= F_0 >= F_h(0), w in [0, 1]), so sdot cannot pass P_max/F_h(t), where a capped
+push stops accelerating. It needs a holding force that rises along the track, which a
+curved track gives: `test_the_power_cap_binds_below_the_holding_force_on_an_arc` injects
+an arc from horizontal to vertical (R = L/(pi/2)) and a push power-limited from v_c = 10
+m/s that carries a speed above P/F_h into a 60 m taper. The flown force there is
+P_max/sdot, below F_h (the stack slows); F sdot <= P_max (1 + 1e-12) at every integrator
+step and every sampled row, where S4's order would have flown more than 1.001 P_max
+(computed in the test); the exit agrees with an independent quadrature of the scalar ODE
+M sddot = F - M g sin phi(s) (solve_ivp, DOP853, rtol 1e-12, restarted at the rise end,
+the cap binding or letting go and the taper start).
+
+**Release at a target speed** (design 4.7). `LinearMotorConfig.release_speed_mps`
+v_release (> 0, strict and finite; left out of the dump when unset; refused together with
+any `stop_taper_m`, 0 included: the taper brings the push to its holding force at L, a
+release-at-L device, design 4.6) reaches the model as `LinearMotorAssist.release_speed_mps`
+(refused with a taper, and when not finite or not > 0) and the protocol's
+`release_speed_mps` (None for constant_accel and none). `fly_track` lists the terminal
+event `target_speed` (`engine.ev_release_speed`: sdot - v_release crossing upward,
+zero_tol ATOL_MPS) in every sub-phase of such a push and flies it to as a fixed end, like
+every crossing ("Linear motor", *Second flight*). The exit: a sub-phase that ends at
+`target_speed`, or with sdot >= v_release - ATOL_MPS (a crossing at a watch, or a second
+flight a hair short: so no sub-phase starts with the event in its zero band), and not at
+`track_end`, releases there. Its TrackExit holds z, phi and x at the release position s
+(z = start + z(s), phi(s), x = 0 on a vertical StraightTrack and s cos phi otherwise),
+`release_position_m` = s and `release_trigger` = `target_speed`; the `target_speed`
+event is logged at the release (an ASSIST event, before the planner's `release`); and the
+run gains the run-specific assumption line of `early_release_assumption`, worded for the
+flight model (`PreludeLayout.aerodynamic`: True for the planar prelude) and the track
+(fix round 1): "linear_motor: released at the release speed <v> m/s at s = <s> m, <L - s>
+m before the track end (L = <L> m; the track exit at the ground, the silo mouth), at
+altitude <z> m: the vehicle flies in the vented shaft after the release <as the model
+flies>[; the floor of the flight model in the shaft is the parked carriage at z = <z_f>
+m: a fall back onto it, from inside the shaft or through the open mouth, is an impact (no
+catch and re-hold)]; the carriage brakes from the release point (facility max(L, s +
+braking distance): within the stroke left when s + braking distance <= L, else past the
+track end; in place of L + braking distance); the ideal screening estimate is taken at
+this release speed, not at the speed at the track exit, which <changes>" (fix round 4,
+H4-m4: 'the rest of the vented shaft' and 'brakes in the stroke left' were false for a
+fall back and for a carriage that brakes past the mouth; V4-2: the bracketed floor clause
+when the floor lies below the ground). The planar model flies it "as in the
+open atmosphere at its altitude (no shaft flow model and no walls: drag, dynamic
+pressure and Mach number are computed as in open air, and stage 1 may light and its
+pitch kick begin there, with no clearance check: the offset at the ground is the
+downrange of the shaft_exit event, logged when the kick began in the shaft)", <changes>
+being "gravity, drag and any thrust over the rest of the track change (the gravity and
+drag over it are in the flight's losses, the thrust in its delta-v)"; the 1-D model "as
+the 1-D flight flies everywhere: drag-free, with vacuum thrust (no atmosphere; no shaft
+flow model, no walls)" ("with the thrust at the constant ambient pressure <p> Pa" for a
+planner built with p_amb > 0, which no experiment builds: `sim.simulate` builds every
+1-D planner at 0 Pa) and "gravity and any thrust over the rest of the track change (the
+gravity over it is in the flight's losses, the thrust in its delta-v)" (fix round 2,
+H2-m2: thrust is not a loss, and the 1-D model has no atmosphere and no kick). The exit is called the silo mouth only when it is at the ground
+(within ATOL_M); a release above the ground (a tower exit) flies "over the rest of the
+track's length", and one below a tower exit "in the vented shaft and on the track above
+the ground after the release". A push that reaches the track end below
+v_release - ATOL_MPS releases there (`track_end`) with the flag
+`release_speed_not_reached: the push reached <v_L> m/s at the track end (s = L = <L> m),
+below the release speed <v> m/s; it released at the track end`; its push is bit for bit
+that of the same drive without a release speed (an event that never fires moves no
+step). A `track_end` exit keeps z(L), phi(L) and x of SP1 bit for bit (the same
+expressions). TrackExit's two new fields have defaults: it is not reached by the 1-D
+golden dump (D-SP7-27; `tests/test_golden_dump_fields.py` lists what is). The metrics
+read the release from the trace (`metrics.release_point`): the `target_speed` ASSIST
+event marks the trigger and s is the last ASSIST phase's end state (the release state);
+otherwise L and `track_end`.
+
+The release maps take the release altitude: the 1-D `map_release` (vertical, z at s)
+and the planar `map_release_planar` (a vertical exit with x = 0, unchanged; r = r_datum +
+z(s)). The planar track's constant ambient pressure stays p(z at L). A height-event
+ignition (`height_method: event`; on this drive only an injected spec, as the config
+converts no ramp start for it) lights at the mouth plus h, not at the release point plus
+h, in both planners (z(L) + h: the same float as before for a release at L).
+
+Closed forms of the release position the tests use (cold, vertical, M constant, g =
+g_eff): the acceleration law on its plateau, v^2 = 2 a s - a^2 t_r^2/12, so s_rel =
+(v_release^2 + a^2 t_r^2/12)/(2 a) at t = t_r/2 + v_release/a; the force law on its force
+phase, s_rel = s_r + (v_release^2 - v_r^2)/(2 a_f) at t = t_r + (v_release - v_r)/a_f (v_r
+= a_f t_r/2 and s_r = a_f t_r^2/6 at the end of the rise from F_0 = M g), and on its power
+phase s_rel = s_c + s(v_release) at t_c + t(v_release) (the power phase from v_c, "Linear
+motor"); a release speed at a kink of the drive, the end of the rise (v_r at t_r) or the
+power corner (v_c, where `power_limit`'s value sdot - P/F_max and `target_speed`'s share
+their root), releases there.
+
+**After a release below the mouth.** The vehicle begins its free flight inside the vented
+shaft (z < 0 for a buried silo). The 1-D planner lists the impact in falling phases only,
+so nothing changes there while it rises. The planar planner lists the ground event in
+every burn sub-phase (`_burn`: the vertical rise after an apex, the kick, the gravity
+turn), whose already-past rule would end a burn starting below the ground at once as an
+impact. So a burn sub-phase that starts more than ATOL_M below the ground altitude while
+rising (`PlanarPlanner._in_shaft` and `_rising`) lists instead `shaft_exit` (the altitude
+crossing the ground upward, `ev_altitude_up`) and `shaft_apex` (the radial apex), each of
+which ends the sub-phase only (and is logged, as every planar event is): from the mouth
+on the ground is armed as on every other flight. `shaft_exit` is therefore logged only
+when a burn sub-phase that lists the ground (KICK, GRAVITY_TURN, the rise after an apex)
+is in flight at the mouth crossing, that is, whenever the kick has begun inside the
+shaft; a vehicle that leaves the shaft in the pre-ignition coast or in the vertical rise
+(sub-phases that list no ground event while rising) logs no crossing: it is not steered
+off the vertical before its kick (fix round 1, P1-m5). Its downrange there is the
+vehicle's offset from the shaft axis at the mouth; no clearance against the shaft wall
+is checked (the model has no walls), and the replay's close-up note reports it (to the
+page's 1 m). On a powered sub-phase whose apex has a downward acceleration below
+APEX_FOLD_ACCEL_MPS2 a crossing just below that apex can go unlogged ("Event rules",
+`ev_altitude_up`); the apex then ends the sub-phase above the mouth and the flight is
+unchanged. A vehicle that stops rising inside the shaft (an apex below the ground) falls
+back: its next sub-phase starts below the ground falling, where the ground's impact event
+is already past. In its place the falling sub-phase lists the impact at the floor of the
+shaft, the parked carriage (fix round 3, P3-M1): z_floor = z(s_release) + d_brake sin
+phi(s_release) (`prelude.shaft_floor_m`, from the TrackExit and the carriage's braking
+distance at the release speed; `metrics.carriage_park_altitude_m` of the same run),
+carried by the 1-D `ascend`'s `floor_m` and the planar `FlightStart.shaft_floor_m` into
+every coast and burn (`_shaft_floor_for` in both planners). A carriage braking at a total
+deceleration a_b no smaller than the vehicle's (g_eff, plus the drag, less any thrust)
+stays below the vehicle and is parked by v/a_b, before the vehicle, past its apex at v/g
+or later, can come back down, so the parked carriage is the first obstacle of the fall;
+the model has no contact with the carriage on its braking path or with the shaft walls.
+A falling burn lists the turnaround as every falling burn does (1-D: `turnaround`; the
+planar vertical rise: its `turnaround` split; KICK, GRAVITY_TURN and the other planar
+burns: `SHAFT_TURNAROUND_EVENT`, which ends the sub-phase only), so the thrust turns the
+vehicle around above the carriage as it does above the ground; the burns and the coasts
+list the floor's impact in place of the ground's. Released at 10 m/s about 98 m down and
+lit 0.5 s later on the F9's 2 s ramp, the 1-D vehicle turns around at -93.540 m, 3.43 m
+above its carriage, and flies to burnout, within 1e-3 m of the same push on a track moved
+up out of the ground (mu/r^2 differs by about 3e-5 between the two release radii); the
+planar flight turns around at -96.506 m (carriage at -96.974 m) and kicks at 198 m, 0.04
+m and 0.75 m from its moved-up twin (its back pressure is higher at 100 m less altitude,
+and mu/r^2 and omega_p differ; the F9 of these tests, generic_f9_class.yaml, has no aero
+block, so no drag enters: fix round 5, P5-m2). Before S4a fix round 3 both planners ended such a run at once at
+the apex (P3-M1: a recoverable flight read as an impact).
+
+*Over the shaft* (fix round 4, P4-M1). A vehicle released below the mouth whose apex lies
+above the mouth falls back through the open mouth, not onto the ground: the mouth is an
+opening, and its first obstacle is the carriage below it. So when the floor lies more than
+ATOL_M below the ground, a falling sub-phase over the shaft lists the floor's impact in
+place of the ground's whether it starts above or below the mouth (`_shaft_floor_for`),
+and a start on the ground is then no impact at t0. Over the shaft means every 1-D
+sub-phase (the 1-D flight never leaves the shaft's axis) and, planar, the sub-phases
+before the kick (`over_shaft`: the pre-ignition coast, the vertical rise and a failed
+stage 1's terminal coast, which never kicks; the Coriolis drift before the kick is
+centimetres); after the kick, and after a vertical-only rise's MECO, the ground stays the
+surface of a sub-phase that starts above it. A floor at or above the ground (a release
+at the mouth, whose carriage parks d_brake above it, or a carriage braking past the
+mouth) keeps the obstacle-free fall to the ground of Phase 1 ("Failed-ignition coast").
+Before fix round 4 the floor stopped at the mouth, so the outcome jumped at apex = mouth:
+on the F9 (a = 3 g0, a 5 g0 brake, lit 4 s after the release) 38.0 m/s turned around at
+-16.257 m (twin -16.250) and flew on, while 38.5 and 39 m/s (apex 1.1 m and 3.8 m above
+the mouth) hit the ground at z = 0 at 4.2 and 6.2 m/s. Now 38.5 m/s turns around at
+-12.120 m (twin -12.112 m) and 39 m/s at -8.019 m (twin -8.012 m), 47 and 50 m above
+their carriages; planar (`to_kick`, the 28.5 deg site, on the drag-free F9:
+generic_f9_class.yaml has no aero block) 38.5, 39 and 40 m/s kick at 234 to 249 m, 0.5 m
+from their twins, where they raised GuidanceFailure "hit the ground at t = 6.03 s before
+the kick". A failed ignition released at 50 m/s rises 70 m above the mouth and falls back
+onto its carriage 31.7 m below the mouth at 44.73 m/s (the energy speed), where it hit the
+ground at 37.1 m/s with the carriage items None. On the drag-carrying
+generic_f9_class_2d.yaml the same failed ignition lands on its carriage at 44.7121 m/s,
+0.029 m/s below the drag-free 44.7411 m/s, 9.6916 s after the release, matching an
+independent radial quadrature with the vehicle's drag, mu/r^2 and omega_p^2 r (Coriolis
+neglected) to 1e-8 m/s and 1.5e-6 s (fix round 5, P5-m2:
+`test_a_planar_fall_back_with_drag_matches_a_radial_quadrature`).
+
+A fall onto the carriage ends the run in an impact there, at the event root, however slow
+the touchdown (no catch and re-hold is modelled: on the pad the same vehicle would be
+held until its thrust exceeds its weight; touchdowns at 0.6 to 2.2 m/s on the carriage end
+lit 1-D runs released at 4 to 20 m/s; a KI candidate), and `_flag_floor_impact` adds the
+plain run flag "<kind> at t = <t> s: shaft_fallback: the vehicle fell back inside the
+shaft, after a release below the ground, onto the parked carriage at z = <z> m (<d> m
+below the ground) at <v> m/s: the impact is logged there (the model's floor in the shaft
+is the carriage, parked after braking from the release; any touchdown on it ends the
+run, no catch and re-hold being modelled; no contact with the shaft walls)", <v> the
+touchdown speed (|v| in 1-D, the Earth-relative |v_rel| in planar; fix round 4, P4-m2).
+The floor applies to any release below the ground, a constant_accel push to a buried
+track exit included (TrackConfig allows exit_altitude_m < 0; no shipped experiment has
+one): a 1 g0 push of 20 m to an exit 50 m down with a failed ignition now ends on its
+carriage at -46.0 m at 17.7 m/s, where before S4a fix round 3 the engine's already-past
+rule ended it at once at its apex, -29.98 m, with an opaque note (fix round 4, P4-m1,
+C4-m2). A falling
+sub-phase that starts within ATOL_M above the floor or below it (`_at_floor`: a carriage
+braking at less than the vehicle's deceleration parks above the apex, its braking path
+meeting the vehicle where the model has no contact), or with no floor known (a flight
+started below the ground without a track release, which only a test builds), is an
+impact at once at that apex (`_shaft_fallback`, the zero-length pass-through of fix round
+1), its flag "... the vehicle stopped rising <d> m below the ground (z = <z> m), inside
+the shaft after a release below the ground, at or below the parked carriage's altitude z
+= <z_f> m (braking at less than the vehicle's deceleration, the carriage met it on its
+braking path, where the model has no contact) | with no shaft floor known (no track
+release): the impact is logged at once at that apex". Which record carries it (fix round
+2, P2-M2): the 1-D run and the planar failed-ignition coast keep that trace, so the note
+is a run flag; on the planar flight every experiment runs, the impact ends `to_kick` (or
+`from_kick`, or the staging coast) in a GuidanceFailure whose trace is discarded, so
+`PlanarPlanner._impact_failure` words the failure from the same note with `logged`
+False (fix round 3, H3-m2: nothing is recorded): "impact: the vehicle's flight ended
+inside the shaft at t = <t> s before the kick: shaft_fallback: the vehicle fell back
+inside the shaft, after a release below the ground, onto the parked carriage at z = <z> m
+(<d> m below the ground) at <v> m/s: the run ends in an impact there (the failed trace is
+not kept, so no event is recorded) (...)" (the run's one `guidance_failed` flag; "the
+vehicle's flight ended" since fix round 4, H4-m2, as an apex impact does not fall; the
+touchdown speed since P4-m2; "hit the ground" stays the wording of an impact at the
+ground). Such a run has an empty time series, so the replay and the scene
+leave it out, and the summary's linear-motor rows read n/a for it. The impact is thus
+logged inside the shaft (on the carriage, or at the apex), not where the base returns to
+the ground; the scene's drawn impact note, which says the latter, is corrected by the
+scene's caveat and, on every captured frame, by its fall-back frame line (fix round 3,
+H3-m1) for such a run, worded by where the impact is (fix round 5, M1, P5-M1): on the
+carriage, both the note's "no contact with the carriage" and its "altitude 0" are
+corrected; at the apex, where the vehicle stopped rising and the model had no contact
+with the carriage parked above it, only its "altitude 0". Both are keyed on the run's
+`shaft_fallback` flag, not on its release trigger, so a release at a buried track exit
+gets them too (fix round 5, M2). Every sub-phase of a flight that starts at or above the ground lists the
+events of SP2, in their order (the bit-identity check above included the planar pad and
+silo runs), and no falling sub-phase of such a flight starts below the ground or lists
+a floor (its floor, where it has one, lies at or above the ground). The carriage brakes
+from the release point: facility = max(L, s_release + d_brake), within the stroke left
+when s_release + d_brake <= L, else past the track end
+(`LinearMotorAssist.facility_length_m(track, v, s_release)`, written into
+`facility_length_m` by `metrics.linear_motor_facility_m`; L + d_brake to the bit for a
+release at L), and the 1-D failed-ignition carriage parks at z(s_release) + d_brake sin
+phi(s_release) (`carriage_park_altitude_m`). The braking metrics use the speed at release;
+`push_accel_mean_mps2` = v_exit/t_push stays a mean.
+
+**Metrics** (KI-052; LINEAR_MOTOR_METRICS, 18 keys): `push_control_law` (`force` or
+`acceleration`), `push_accel_command_mps2` (a_cmd; None for the force law),
+`push_stop_taper_m` (None without a taper) and `push_release_speed_mps` (None when no
+release speed is set; a push that does not reach it keeps the set value, with
+`release_trigger` `track_end` and the flag) join the settings of S4, for a linear-motor
+run only (no field of a dataclass the 1-D golden dump reaches); `release_position_m` and
+`release_trigger` read the real release. Fix round 1 adds `push_cap_bound`
+(`metrics._cap_bound`: under the acceleration law a `drive_cap` event before the
+release, with `_power_limited`'s tie; False: no cap bound, so the push flew its command
+wherever it ran; True: a cap bound at some time, which the key does not record (fix
+round 2: on the 1-D F9 at a_cmd 3 g0 and t_r 0.5 s a cap at F_max = 0.9 M (a + g) binds
+at 0.433 s, inside the rise, and never lets go, and one at 0.85 M (a + g) on a hot push
+binds at 0.459 s and lets go at 0.772 s); None for the force law and for a stalled
+push), so the readers can say whether an acceleration-law push held its command (with
+its release time against t_r: `replay.motor_acceleration_text`).
+
+**The readers.** No single push acceleration is claimed for a drive that does not hold
+one, a plateau the drive does hold is not denied, a mean is named a mean, and a release
+before the mouth is stated (fix round 1 reworded S4a's first readers, which said every
+linear-motor push "holds no constant acceleration": false for an acceleration-law push
+with no binding cap, which holds a_cmd after its rise, and for the plateau of a cold
+force-law push at F_max).
+
+- replay.py: `push_accel_g` is None for any drive but constant_accel (a block without a
+  model key read as it), so no label states a push acceleration for the linear motor (no
+  "<a> g net push", no derived v^2/(2 L)); the caveat names the acceleration law's
+  command as a command, and says it was held only when the run records that no cap bound
+  and that it released after its rise (fix round 2).
+  `linear_motor_law_text` words the law and limits from `linear_motor_settings`
+  (KI-052's metrics first, the config block as the fallback; with t_r, a_cmd, the taper
+  and `push_cap_bound`): "force law, F_max <F> MN, P_max <P> MW"; "acceleration law:
+  a_cmd <a> g0 net after a <t_r> s rise, F_max ..., P_max ..." (the command named as a
+  command; "acceleration law, a_cmd <a> g0, ..." in the detail line), either ending ", a
+  <s> m stop taper" for a push with one (fix round 3, H3-m3). `release_text`
+  words the release with its measured speed: "released on reaching its release speed,
+  <v> m/s measured, <d> m below the mouth" (`below_mouth`: a vertical silo whose exit is
+  at the ground; else "before the track end"); "released at the track end at a measured
+  exit speed of <v> m/s" (", its release speed <v_set> m/s not reached" when the run
+  carries the `release_speed_not_reached` flag, `release_speed_missed`). The clause
+  `linear_motor_clause` is "a linear motor (<law and limits>), <release>".
+  `assist_text` gives a linear-motor run's detail line the short law ("linear motor
+  (force law, F_max ..., P_max ...)") and `motor_exit_text`: "exit <v> m/s (measured)",
+  "(measured; its release speed <v_set> m/s not reached)", or for an early release
+  "released at <v> m/s (measured) <d> m below the mouth". `drive_caveat` gives each
+  linear-motor run a sentence of its own after the first ("The drive of <name> is
+  <clause>; <motor_acceleration_text>", "The drive is ..." when it is the only assisted
+  run shown). `motor_acceleration_text` words the acceleration by law from the settings
+  and the run's metrics (fix round 2): the force law's "is not prescribed: it follows
+  from the force and power limits, the mass and the thrust, so no single push
+  acceleration is quoted" (", the stop taper" after the limits for a push with one, fix
+  round 3, H3-m3); under the acceleration law "the push never started (status
+  drive_stall: ...)" for a stall, "the push stopped on the track before any release
+  (status <s>), so no push acceleration is quoted" for a push that never released, "no
+  cap bound, so it held its command, <a> g0 net, from the end of its rise to the
+  release" only for a push with `push_cap_bound` False that released after its rise
+  (`push_time_s` above t_r (1 + 1e-9); "(scaled down over its stop taper)" with one;
+  "from push start" for a step), "no cap bound, and it released by the end of its <t_r>
+  s rise, so it never held its command, ..." for one that released by then, "a cap
+  (F_max or P_max / sdot) bound on this push, where its acceleration followed from the
+  capped force; it flies its command, <a> g0 net after its rise, only where no cap binds,
+  so no single push acceleration is quoted" for True (no timing claimed: fix round 1's
+  "it flew its command ... from the end of its rise until a cap ... bound" was false for
+  a cap that bound inside the rise, and in the wrong order for one that bound and let
+  go), and "it flies its command ... wherever no cap ... binds" for an older directory
+  without the key (both with "(scaled down over its stop taper)" after the command for a
+  push with one, fix round 3). A push released below the mouth adds `early_flight_text` after the
+  clause that has said how far below the mouth it was released: "it then flew the rest
+  of the shaft as in the open atmosphere (drag, dynamic pressure and Mach number computed
+  there; no shaft flow model, no walls), where stage 1 lit and its kick began" (each
+  named only when its event lies after the release below the ground), or, for a run that
+  fell back inside the shaft (`fell_back_in_shaft`: an impact below the ground after the
+  release; fix round 2, P2-m1), "it then flew in the shaft as in the open atmosphere
+  (...), until it fell back [until it rose <h> m above the mouth and fell back into the
+  shaft, for an apex above the mouth: fix round 4, P4-M1], its impact logged <d> m below
+  the mouth on its parked carriage, the floor of the flight model in the shaft" (or, for
+  a run whose flag says it stopped rising, "..., until it stopped rising <d> m below the
+  mouth, below its carriage parked above it, its impact logged at once at that apex":
+  fix round 5, M1, as it did not fall; `shaft_impact_words` reads which from the
+  run's `shaft_fallback` flag, the one criterion of the replay and the scene, never from
+  the page's speed rounded to 0.01 m/s, which a planar apex, keeping about 2 omega_p dz
+  of |v_rel|, exceeds after a rise of about 39 m: fix round 4, H4-M1, C4-m1; no place is
+  said without the flag). A turnaround inside the shaft (`shaft_turn_text`, from the
+  record's last apex and first `turnaround` or `shaft_turnaround` event below the ground
+  and `carriage_park_alt_m`, the track start plus release_position_m and
+  braking_distance_m) adds "; it stopped rising <a> m below the mouth and sank back [it
+  rose <a> m above the mouth and fell back into the shaft], and its thrust turned it
+  around <b> m below the mouth, <c> m above its parked carriage, at T+<t> s" (fix round 4,
+  H4-m3, V4-2). Its shaft is said to have no air
+  drag on the push only, in the drive caveat's one shaft clause (`_shaft_drag_clause`,
+  fix round 2: "the shaft has no air drag (<runs>; on the push only for <early runs>)",
+  "on the push" alone when every vented run shown is an early release). The omissions are worded per run (`_motor_omission`, runs with the
+  same words grouped): under the acceleration law with no cap bound, the massless
+  carriage and the missing shaft drag do not change the push and bias the drive energy
+  and peak power (and, for the drag, the interface force) low, as for the prescribed
+  drive, while either could make a cap bind; with a cap bound the same while no cap
+  binds, and they can change the speed at release (or the release position of an early
+  release) where one does; under the force law they can change the speed at release or
+  the release position and the payload, the missing shaft drag biasing the speed at
+  release high (or the release position and push time low) and the interface force and
+  drive work low, as the run's shaft line says, and, with a massless carriage, the
+  carriage biasing the release position and push time low (or the speed at release
+  high) and the interface force high ("all of the drive force reaches the vehicle": N =
+  (m_v F - m_c (T - D))/M is the whole drive force at m_c = 0), the drag's interface
+  clause then limited to the power phase ("in the power phase only, without a carriage
+  mass": at F_max the drag moves N by D m_c / M, zero then) (fix round 3, V3-2); the size
+  is not established here; a push that stopped on the track has "(<law>, no release) ...
+  can change how the push ran on the track" (fix round 2), and a stalled push (status
+  drive_stall) "(<law>, stalled) the push never moved: the missing shaft drag changes
+  nothing and a carriage mass would only add to the load the drive could not lift" (fix
+  round 3, H3-m4). Runs grouped under one sentence get it worded for several ("each
+  push", "none of these pushes reached", "the pushes never moved"; fix round 3, V3-1).
+  `closeup_notes` gives an early release a sentence of its own (`early_release_note`:
+  "<name> starts 100 m below ground and is released on reaching its release speed, <v>
+  m/s, after <t> s, <d> m below the silo mouth; it passes the mouth at <v_m> m/s at T+<t_m>
+  s, within 1 m of the shaft axis" from the `shaft_exit` event, the offset written as "<x>
+  m off the shaft axis (no clearance is checked)" from MOUTH_AXIS_TOL_M on; "it falls back
+  inside the shaft, its impact logged <d> m below the mouth on its parked carriage, the
+  floor of the flight model in the shaft" (from the run's flag since fix round 4; "it
+  rises <h> m above the mouth and falls back into the shaft, ..." for an apex above the
+  mouth, `fall_back_text`, P4-M1; for a run whose flag says it stopped rising, "it stops
+  rising <d> m below the mouth, below its carriage parked above it, and its impact is
+  logged at once at that apex", fix round 5, M1, in place of round 3's "it falls back
+  inside the shaft, ... at its apex"); a run released at a track exit below the ground
+  whose flight ended inside the shaft gets a sentence of its own after its group's,
+  "<name> falls back inside the shaft, its impact logged <d> m below the ground on its
+  parked carriage, the floor of the flight model in the shaft" (`_track_end_fall_backs`,
+  keyed on its flag, not on its release trigger: fix round 5, M2); a turnaround inside the shaft first ("it stops rising <a> m below the mouth and
+  sinks back, and its thrust turns it around <b> m below the mouth, <c> m above its parked
+  carriage, at T+<t> s", `shaft_turn_text`), the mouth crossing then being the one after
+  it (fix round 4, H4-m3, V4-2); the measured speed at release and the push time
+  formatted once, from the unrounded metrics (fix round 4, H4-m5: the page record's
+  values are rounded to 0.01, so 72.6468 read 72.7; a linear-motor run released at the
+  track end likewise in its group's 'leaves the silo mouth at <v> m/s'); or,
+  since no `shaft_exit` is logged unless the kick began in the shaft (fix round 2, H2-m1,
+  P2-m2, V2-4), the crossing read from the record's sampled series
+  (`series_mouth_crossing`, interpolated between the two samples that bracket it): "it
+  passes the mouth [unpowered] at about <v> m/s at about T+<t> s (read from the sampled
+  series: no mouth crossing is logged)", then ", before its kick" (its kick_start event at
+  or above the ground), ", after its kick began in the shaft" (below it: the powered-apex
+  fold limit) or ", and no kick is logged"; with no crossing in the series either, only
+  what is logged ("no mouth crossing and no kick are logged", "its kick began in the
+  shaft, and no mouth crossing is logged", "no mouth crossing is logged before its
+  kick")). The vented-shaft note then reads "... inside it on the push; after the release
+  below the mouth of <names> the flight in the shaft is computed as in the open
+  atmosphere, with drag, dynamic pressure and Mach number (no shaft flow model, no
+  walls)", true whether the vehicle left the shaft or fell back in it. The results notes
+  add, for early releases (`early_release_results_note`), that their exit-speed column is
+  their speed at release, below the mouth (else "before the track end": `below_mouth`,
+  the exit within ATOL_M of 0 as in `prelude.early_release_assumption`, `is_mouth`; fix
+  round 2, C2-m6), that the close-up notes say where, and that their ideal screening is
+  taken at that speed, not at the speed at the mouth. `is_vented`
+  reads a linear-motor block without a shaft key as vented (its default and only shaft
+  until S5), and `is_vertical` one without a track angle as vertical (its default and
+  only angle until Phase 3). templates/replay.html is unchanged (sha256
+  1fa6eba6...6916990): only the data and text the Python side writes change, and only
+  for linear-motor runs (every page without one is byte-identical).
+- scene.py: `assist_settings` derives a = v^2/(2 L), v = sqrt(2 a L) and the push time
+  v/a for the prescribed drive only (`model == CONSTANT_ACCEL_MODEL`); a linear-motor
+  run's net_accel_* stay None and its settings gain `drive` (`linear_motor_drive`: the
+  settings of `linear_motor_settings`, the corner speed, the release trigger and
+  position, the measured speed at release, power limited, the mean v_exit/t_push, and
+  `label`, the drive clause of `linear_motor_clause`), its source "metric" when the
+  run's metrics record the drive, else "config". The label is payload data only:
+  templates/scene.html is frozen and draws no push label (and no push acceleration); the
+  page names the drive through its caveat list (the replay's `drive_caveat`). No other
+  run's payload changes (no key is added). The frozen template brakes every drawn
+  carriage from the end of the stroke (`carriageS`, the rails from stroke_m), so after a
+  release below the mouth the drawn carriage jumps to the mouth, above the vehicle still
+  in the shaft, and brakes on rails drawn above the ground, where the model brakes it
+  from s_release (facility max(L, s + d)): a limit of the drawing, which the scene
+  states (fix round 1) in a caveat of its own for such a run (`early_release_caveat`:
+  where the model's carriage stops, "in the stroke left, where it stops <x> m below the
+  mouth" or "through the stroke left to <x> m above the mouth" (fix round 2, H2-m4), the
+  facility, and, for a run whose flight ended inside the shaft (`fell_back_in_shaft`: a
+  `shaft_fallback` flag), `fall_back_caveat` by `shaft_impact_kind` (the flag's words,
+  `replay.shaft_impact_words`): on the carriage, "<run> fell back inside the shaft: its
+  impact is logged there, on its parked carriage, the floor of the flight model in the
+  shaft, not where the base returns to altitude 0 as the drawn impact note says, and the
+  note's 'no contact with the carriage' does not hold for it." (fix rounds 3 and 4,
+  H4-m1); at the apex, "<run> stopped rising inside the shaft, below its carriage parked
+  above it (the model has no contact with the carriage on its braking path): its impact
+  is logged at once at that apex, not where the base returns to altitude 0 as the drawn
+  impact note says." (fix round 5, M1, P5-M1: round 4 gave this run the carriage case's
+  "fell back" and "'no contact' does not hold", both false for it); "before the track
+  end" for an exit that is not a mouth, `_released_below_mouth`) and in one frame line for
+  every such run shown (`early_release_lines`, `early_release_frame_text`: "<runs>:
+  released below the mouth; the carriage drawn at and above the mouth after release is a
+  drawing limit (the model brakes it from the release point)."), then one per
+  `shaft_impact_kind` for the runs whose flight ended inside the shaft
+  (`fall_back_frame_text`, fix rounds 3 to 5, H3-m1, V4-1, M1: on the carriage, "<runs>:
+  fell back inside the shaft, whose floor in the model is the parked carriage; the impact
+  is logged there, not where or as the drawn impact note says (its 'no contact with the
+  carriage' and 'altitude 0' do not hold for it/them)."; at the apex, "<runs>: stopped
+  rising inside the shaft, below its carriage parked above it (below their carriages
+  parked above them); the impact is logged at once at that apex (each impact ... at its
+  apex), not at altitude 0 as the drawn impact note says.": the frozen template's impact
+  note says the model has no contact with the carriage and logs the impact where the base
+  returns to altitude 0). The fall-back caveat and frame line are keyed on the run's flag,
+  not on its release trigger (fix round 5, M2): a run released at a track exit below the
+  ground (a constant_accel push to a buried exit) that fell back onto its carriage gets
+  `fall_back_caveat` alone and its frame line. Then, for a linear-motor push that never released (status drive_stall or
+  drive_limit, no `release_trigger`; `no_release_caveat`, fix round 4, V4-3), its caveat
+  "<run> was never released: its push never moved (status drive_stall) | stopped on the
+  track (status drive_limit), and the run ends there; the scene still draws its carriage
+  at the mouth after T+0, away from the vehicle (a limit of the page's drawing: the
+  model's carriage stays under the vehicle where the push stopped)." and one frame line
+  per kind of track end (`no_release_frame_text`: "<runs>: never released; the carriage
+  drawn at the mouth after T+0 is a drawing limit (the push stopped on the track)."; a
+  constant_accel run gets neither). These lines reach a captured
+  frame two ways: through the page's own `frame_caveat(vehicles, drawing)`, which the
+  template uses for a capture that brings no footer lines, and, for the app's Save
+  video, whose captures bring the server's footer, through `app.video_footer` (fix round
+  2, C2-M1, H2-M2, V2-1: round 1 put it in the former only, so no MP4 frame carried it).
+  A page without such a run has the caveats and frame caveat it had.
+- app.py: its run browser and results panel read a linear-motor directory through
+  replay and scene (`tests/test_linear_motor_readers.py`, and the gate's app run on a
+  scratch root). Fix round 2: `panel_caveats` adds the scene's early-release caveat of
+  each shown run released below the mouth (`scene.early_release_lines_of`, from
+  metrics.json and resolved_config.yaml), since the embedded scene hides its own caveat
+  list, and `video_footer` appends the frame lines after plots.animation_caveats' lines
+  (the fall-back line too since fix round 3); every other pair's caveats and footer are
+  unchanged. The display-only list
+  (scene.DISPLAY_ONLY, on the gallery page too) is unchanged: the drawn rails' length is
+  the run's braking distance; their place is what the early-release caveat corrects. A
+  selection with a run that fell back inside the shaft (a `shaft_fallback` flag) gets its
+  carriage item replaced by `scene.DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM` (`display_only_for`,
+  in the scene payload and the app's results panel; fix rounds 4 and 5, V4-1, H4-m1, M1,
+  M2, C5-m4), worded on the code's rule, whatever the release trigger: "... After a
+  release below the ground, a vehicle whose apex lies inside the shaft below its parked
+  carriage (a carriage braking at less than the vehicle's deceleration, parked above that
+  apex) ends its run at once at that apex (the model has no contact with the carriage on
+  its braking path), so only the drawn impact note's 'altitude 0' does not hold for it.
+  Any other fall back follows the obstacle-free path to the ground when the carriage
+  parks at or above the ground (no contact with the carriage, the mouth or the shaft),
+  and, after a release below the ground whose carriage parks below it (released below the
+  mouth, or at a track exit below the ground), ends over the shaft on the parked carriage,
+  the floor of the flight model there, so the note's 'no contact with the carriage' and
+  'altitude 0' do not hold for it. Each run whose flight ended inside the shaft has a
+  caveat of its own saying which." (round 4's item tied the obstacle-free path to a
+  release at the track end and the carriage to a release below the mouth, false for a
+  release below the mouth whose carriage parks above the ground, which falls to z = 0,
+  and for a buried track exit, which falls onto its carriage; and it gave the apex case
+  the carriage case's 'no contact' correction); every other selection, the gallery's
+  included, keeps DISPLAY_ONLY. `panel_caveats` adds `scene.fall_back_caveat` of each
+  shown run whose flight ended inside the shaft, through `early_release_lines_of` (fix
+  round 5, M2).
+- plots.py: `write_drive_curve` writes plots/<run>_drive_curve.png for a linear-motor run
+  only (its metrics carry `push_force_max_N`): the recorded drive force [MN] and power
+  [MW] of the sampled ASSIST rows against the speed along the track (the time series'
+  `v_mps` or `speed_rel_mps`, sdot on the vertical track both release maps require),
+  F_max and P_max dashed on axes topped at 1.25 F_max and 1.6 P_max (so the two lines
+  never sit at one height), the power cap on the force P_max/sdot dash-dot above the
+  corner speed, the corner speed P_max/F_max dotted ("cap meets F_max": the acceleration
+  law's command meets the cap at P_max/F_cmd), a set release speed dashed (labelled "(not
+  reached)" for a run with the `release_speed_not_reached` flag, "release speed set <v>
+  m/s (no release: status <status>)" for a push that never released, fix round 4, V4-3),
+  a two-line title (the run and its law; what is drawn) and the legend under the axes; no
+  other run's plot list changes. `AnimationRun.push_peak_g` is None for a push with one
+  ASSIST row only, its start (a stalled push, or one stopped on the track at t = 0, whose
+  felt g is that of a stack at rest), so the animation footer names no push load for it
+  (fix round 4, V4-3).
+- summary.py: LINEAR_MOTOR_ROWS (the 18 keys) follow the facility row of the 1-D and the
+  planar per-variant tables only when a linear-motor run is in the table (the
+  conditional-row precedent of RAMP_START_ROWS and FAILED_ROWS): '-' in another run's
+  column, "none" for an unset push setting, n/a in every row for a linear-motor run
+  without a push record (its search or guidance failed; `_is_linear_motor_run` reads its
+  run block's assist, and such a run alone still brings the rows; fix round 2, P2-m3).
+  The rise row names whose rise it is (the force limit's or the command's); the cap row
+  says a cap bound at some time on the push, and that False means no cap bound before the
+  release, so a_cmd was held after the rise (scaled by a taper) when the push released
+  after its rise (n/a under the force law and for a stalled push; fix round 2); the
+  mean's row calls it a mean over the whole push (the rise, any capped or power-limited
+  part and the taper included); the felt-g row calls it the value at t_r, where the
+  acceleration law's command plateau starts when no cap bound in the rise (else a capped
+  value) and where a cold force-law push's F_max plateau starts; the release
+  position's row says a value less than the stroke L is a release before the track end;
+  the brake rows give their formulas and say they go negative when a_b < g_eff sin phi
+  (the brake then holds the carriage up; fix round 4, H4-m2). The planar failed-ignition
+  rows (`summary.PLANAR_FAILED_ROWS`) read n/a for a run without a failed ignition
+  (`PLANAR_FAILED_SOURCE`: a burn's apex in the shaft is not a fall-back coast's; fix
+  round 4, V4-2), and their impact-speed row, when a run fell back inside the shaft,
+  reads "impact speed |v_rel| at the ground, or inside the shaft after a fall back there
+  (shaft_fallback flag): on the parked carriage, or at the apex (about 0) when the
+  carriage parks above it [m/s]" (fix round 4, H4-m2, C4-m1). No constant_accel summary
+  changes. KI-042: the planar sweep summary's table
+  (`sweep_table_rows`) prints a no_offload point's `<case>.offload_kg`,
+  `<case>.stage1_fraction` and `<case>.total_fraction` cells as SWEEP_NO_OFFLOAD_CELL ("n/a:
+  no offload"), never a bare 0 beside the status; sweep_index.csv keeps its numbers
+  (data); the 1-D sweep summary is unchanged.
+
+**Assumption lines.** With a release speed, `release_assumption` replaces the release
+line: "linear_motor: release where the speed along the track reaches the release speed <v>
+m/s (assumed), before the track end, or at the track end (s = L) when the push does not
+reach it there (flag release_speed_not_reached); no stop taper: the drive force drops to
+zero in a step at release, and the carriage brakes from the release (facility max(L,
+s_release + braking distance): within the stroke left, or past the track end when the
+braking distance exceeds it)" (fix round 4, H4-m4's sibling: "in the stroke left beyond
+the release" was false past the mouth); the shaft line then says that the air drag on the
+vehicle in the shaft is neglected during the push (after a release before the track end
+the flight model flies on in the shaft after it, as the early-release line says)
+and what it would do to where the push reaches that speed (under the force law it would
+delay the release, the release position and the push time biased low, the speed at
+release the release speed while the push still reaches it and biased high when it
+releases at the track end without reaching it; under the acceleration law, while no cap
+binds, the release position is unchanged, and while a cap binds the release is delayed,
+or the speed at a release at the track end biased high). The force law's taper line
+names the cap's order: "the force limit is scaled toward the holding force ... by min(1,
+(L - s) / s_taper), and the power cap P_max / sdot applies to the scaled force
+(D-SP7-50); at L the drive force is the holding force ... (zero net acceleration) unless
+the power cap binds there (never on a straight track a config builds)".
+
+**Measured** (scratch probes, not run by the suite; relative to L, v_e and t_e at rtol
+1e-12, 1e-11 and 1e-10): the power cap in the taper, the exit 6.3e-16 to 8.5e-16, its
+power_limit_end 3.3e-15 to 3.7e-15, every step 5e-15 or better; the arc against its
+quadrature 2.2e-15 to 6.0e-15 in speed and 1.4e-13 to 2.4e-13 in time; the plateau
+release 1.2e-16 (speed) and 2.1e-16 (s); the force and power phases 1.7e-15 or better;
+the release at the end of the rise 2.4e-16; at the power corner 1.4e-16 to 2.8e-16 at
+rtol 1e-12 and 1e-10 and 5e-12 at rtol 1e-11, where the push released by the ATOL_MPS tie
+at the end of a flight that stopped a hair before the root (up to ATOL_MPS/v early: 2e-11
+relative at 50 m/s). The tests assert 1e-9: margins above 1e5, and 200 at the tie.
+
+**Stays out of S4a:** a shaft flow model after an early release; a clearance check of
+the vehicle against the shaft wall after a kick that begins in the shaft (the offset at
+the mouth is reported, not checked); the scene's carriage braking from s_release (the
+frozen template; stated in the scene's caveat and frame caveat instead); a `target_speed`
+crossing passed over inside one
+integrator step (sdot is monotone on every push a config builds: the drive force is never
+below the holding force before a cap and the cap never below it on a straight track; the
+scan of *Passed over* reads the two-way watches only); the structural transform on a
+flown push (S4b).
 
 ## Failed-ignition coast
 
@@ -5712,14 +6391,21 @@ long staging coast before a later stage fails still counts (None when the vehicl
 already falling at that burnout); on a track, `failed_carriage_alt_m`,
 `failed_t_carriage_s` and `failed_speed_at_carriage_mps`, where the braked carriage
 parks and when and how fast the falling vehicle first comes down to it (None when
-the apex is below it; all three None on a pad); `failed_t_return_s`, when the vehicle is back down
+the apex is below it, which a carriage braking at less than the vehicle's deceleration
+gives, inside the shaft or above the ground; all three None on a pad);
+`failed_t_return_s`, when the vehicle is back down
 at its release altitude (the mouth, or the pad): the first downward crossing of
 z_release after that burn, found by brentq on the FALL phase's dense output
 (`metrics.descent_crossing_time_s`), which is the impact event itself when the mouth is at
 the ground and None when the ground is above the mouth (a sunken exit: in the 1-D
 model the vehicle rises through z = 0 unhindered, a rising phase listing no impact,
 and "hits the ground" there on the way back, so that case is a bookkeeping check of
-the altitude split, not a consistent geometry); `failed_impact_speed_mps`, |v| at
+the altitude split, not a consistent geometry; it holds only while the carriage parks at
+or above the ground: since SP7 step S4a fix rounds 3 and 4 a buried exit whose carriage
+parks below the ground falls back onto it, below), and None after a push released at its
+release speed below the ground whose carriage parks at or above the ground (the fall ends
+at the ground, above the release altitude; SP7 step S4a fix round 5, P5-m1);
+`failed_impact_speed_mps`, |v| at
 the impact (the ground); and,
 on a track, `failed_speed_at_shaft_bottom_mps` from the formula above. With the mouth
 at the ground they duplicate the generic `apex_*` / `impact_*` items under their own
@@ -5761,6 +6447,71 @@ integrated; no
 abort is modelled (a tilted exit that carries the vehicle clear of the mouth is the
 planar branch of Phase 2/3); Coriolis drift during the coast is neglected (omega_p =
 0), so the vehicle comes straight back down the shaft.
+
+**A fall back inside the shaft** (SP7 step S4a fix rounds 3 and 4, P3-M2, P4-M1;
+"Linear motor: the flown power cap, the release at a target speed and the readers",
+*After a release below the mouth* and *Over the shaft*). After a release below the
+ground whose carriage parks below the ground (a push released at its release speed below
+the mouth, or a push to a buried track exit, constant_accel included) the floor of the
+flight model in the shaft is the parked carriage (the carriage, braking from the release
+at a_b >= the vehicle's deceleration, is parked before the vehicle comes back), and the
+coast falls onto it whether its apex lies inside the shaft or above the open mouth (the
+coast never kicks, so it stays over the shaft; fix round 4): `failed_t_carriage_s` and
+`failed_speed_at_carriage_mps` are the impact's time and speed (`descent_crossing` takes
+the phase end within ATOL_M of the carriage as the crossing),
+`failed_impact_speed_mps` (at the ground) and `failed_t_return_s` are None (the fall
+ends on the carriage, below the ground, whether or not it passed the mouth, and above the
+release altitude), and the shaft-bottom speed is the obstacle-free value through the
+carriage (from the impact speed and altitude). A carriage braking at less than the
+vehicle's deceleration parks above an apex inside the shaft (wherever it parks, below the
+ground or above it): the run ends at once at the apex, the carriage items None. Such a run (`metrics.impact_in_shaft`: the impact more
+than ATOL_M below the ground) carries the flag `failed ignition: the vehicle fell back
+inside the shaft and its impact is at z = ..., on the parked carriage
+(failed_t_carriage_s and failed_speed_at_carriage_mps are its time and speed);
+failed_impact_speed_mps (at the ground) and failed_t_return_s are None (the fall ends on
+the carriage, below the ground, whether or not it passed the mouth, and above the release
+altitude), and the shaft-bottom speed is the obstacle-free value through the carriage`
+(the apex case: `failed ignition: the vehicle stopped rising inside the shaft and its
+impact is at z = ..., at its apex, at or below the parked carriage's altitude (...); ...
+and the shaft-bottom speed is the obstacle-free value from the apex, below the
+carriage`, fix round 4, H4-m2) in place of the mouth flag, and
+`sim.FAILED_IGNITION_SHAFT_ASSUMPTIONS` in place of the two track lines above ("the
+floor of the flight model is the braked carriage ... the impact is on it ..., from an
+apex inside the shaft or through the open mouth from one above it, or at the apex when
+the carriage parks above it; a carriage withdrawn in time is not modelled in the shaft,
+any touchdown on the carriage ends the run (no catch and re-hold), and the fall ends
+below the ground, above the release altitude ...", and the shaft-bottom speed "derived
+from the impact speed (on the carriage, or 0 at the apex) and the fall from the impact
+altitude ..., the obstacle-free value, as if the carriage were withdrawn"). A push
+released at its release speed whose impact is not inside the shaft (its carriage parks
+at or above the ground: the obstacle-free fall to the ground) gets
+`sim.FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS` in place of the two track lines, whose first
+says the carriage parks its braking distance "beyond the release point (a push released
+at its release speed before the track end; ...), at or above the ground here" (fix round
+4: the track line's "beyond the track exit" is false for an early release), that the
+vehicle meets it on the way down only "where it parks below the vehicle's apex" (the
+carriage items None "when it parks above the apex", as a soft brake parks it), and that
+"the impact at the ground and the shaft-bottom speed are the obstacle-free values, and
+failed_t_return_s is None after a release below the ground (the fall ends at the ground,
+above the release altitude)" (fix round 5, P5-m1, m1, C5-m1: round 4's line called "the
+return to the release altitude" an obstacle-free value, None in every such run below the
+ground, and no flag says why: `failed_ignition_flags` returns nothing for a mouth at the
+ground). 1-D, released at 70 m/s about 16 m down (a = 3 g0, a 5 g0 brake), the carriage
+parks 33.5 m above the ground and the vehicle hits the ground 14.050 s after the release
+at 67.663 m/s, the quadrature's time and the energy speed (to 1e-12); with a 0.5 g0 brake
+at 38.5 m/s the carriage parks 76.6 m above the ground, above the apex 1.1 m above it, and
+failed_t_carriage_s is None (`test_a_failed_ignition_after_an_early_release_falls_to_the_ground_past_its_carriage`,
+with the planar analogue and `sim.PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS`). Every other failed-ignition run keeps the lines, flags
+and items above unchanged. The planar failed-ignition coast does the same
+(`sim.PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS` in place of the planar line, a run
+flagged `shaft_fallback`; `sim.PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS`, "... from the
+release point of a push released at its release speed before the track end", for an
+early release that did not fall back inside the shaft, fix round 4), and its summary
+table labels the impact-speed row `summary.PLANAR_SHAFT_IMPACT_LABEL` ("impact speed
+|v_rel| at the ground, or inside the shaft after a fall back there (shaft_fallback
+flag): on the parked carriage, or at the apex (about 0) when the carriage parks above it
+[m/s]", fix round 4, H4-m2) only when one of its runs fell back inside the shaft; the 1-D
+labels are unchanged, their cells reading the carriage items and n/a at the ground.
 
 Validation (`tests/test_failed_ignition.py`, every expected value a closed form in the
 test): the shipped `silo_failed` variant, resolved from the experiment YAML, through
@@ -8425,6 +9176,39 @@ The same on a track (`sim.FAILED_IGNITION_TRACK_ASSUMPTIONS`):
   the ground and the fall from there to the track start (v^2 = v_impact^2 + 2 g_eff
   (z_impact - z_track_start)), not integrated.
 
+In place of those two on a track run whose impact lies inside the shaft
+(`sim.FAILED_IGNITION_SHAFT_ASSUMPTIONS`, `metrics.impact_in_shaft`; SP7 step S4a fix
+round 3, "Failed-ignition coast"):
+
+- failed ignition: the vehicle fell back inside the shaft after a release below the
+  ground, where the floor of the flight model is the braked carriage, parked its
+  braking distance beyond the release point (failed_carriage_alt_m): the impact is on
+  it (failed_t_carriage_s, failed_speed_at_carriage_mps, from the drag-free coast), from
+  an apex inside the shaft or through the open mouth from one above it, or at the apex
+  when the carriage parks above it; a carriage withdrawn in time is not modelled in the
+  shaft, any touchdown on the carriage ends the run (no catch and re-hold), and the fall
+  ends below the ground, above the release altitude (failed_impact_speed_mps and
+  failed_t_return_s are None).
+- failed ignition: the speed at the shaft bottom is derived from the impact speed (on
+  the carriage, or 0 at the apex) and the fall from the impact altitude to the track
+  start (v^2 = v_impact^2 + 2 g_eff (z_impact - z_track_start)), not integrated: the
+  obstacle-free value, as if the carriage were withdrawn.
+
+In place of the two track lines on a push released at its release speed whose impact is
+not inside the shaft (`sim.FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS`; fix round 4), the
+first reads:
+
+- failed ignition: the braked carriage parks its braking distance beyond the release
+  point (a push released at its release speed before the track end;
+  failed_carriage_alt_m), at or above the ground here, in the fall-back path; where it
+  parks below the vehicle's apex the vehicle would meet it there first, on the way down
+  (failed_t_carriage_s, failed_speed_at_carriage_mps, from the drag-free coast; None
+  when it parks above the apex), unless the carriage is withdrawn in time, and no impact
+  with it is modelled: the impact at the ground and the shaft-bottom speed are the
+  obstacle-free values, and failed_t_return_s is None after a release below the ground
+  (the fall ends at the ground, above the release altitude) (fix round 5, P5-m1, m1,
+  C5-m1).
+
 A pad whose hold extended past t = 0 (`VerticalPlanner._liftoff`, in the trace;
 appended after the failed-ignition blocks, before the drive's):
 
@@ -8494,15 +9278,24 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
   - linear_motor: release at the track end (s = L) with no stop taper: the drive force
     drops to zero in a step at release.
   - force law with a taper: linear_motor: release at the track end (s = L) after a stop
-    taper over the last <s_taper> m: the force is scaled toward the holding force M g_eff
-    sin phi - (1 - f_imp) T by min(1, (L - s) / s_taper); at L the drive force is the
-    holding force M g_eff sin phi - (1 - f_imp) T (zero net acceleration), and it drops
-    to zero in a step at release.
+    taper over the last <s_taper> m: the force limit is scaled toward the holding force M
+    g_eff sin phi - (1 - f_imp) T by min(1, (L - s) / s_taper), and the power cap P_max /
+    sdot applies to the scaled force (D-SP7-50); at L the drive force is the holding
+    force M g_eff sin phi - (1 - f_imp) T (zero net acceleration) unless the power cap
+    binds there (never on a straight track a config builds), and it drops to zero in a
+    step at release.
   - acceleration law with a taper: linear_motor: release at the track end (s = L) after
     a stop taper over the last <s_taper> m: the acceleration command is scaled by min(1,
     (L - s) / s_taper); at L the drive force is the holding force M g_eff sin phi - (1 -
     f_imp) T (zero net acceleration) unless a cap binds there, and it drops to zero in a
     step at release.
+  - with a release speed (SP7 step S4a; `release_assumption`, no taper): linear_motor:
+    release where the speed along the track reaches the release speed <v> m/s (assumed),
+    before the track end, or at the track end (s = L) when the push does not reach it
+    there (flag release_speed_not_reached); no stop taper: the drive force drops to zero
+    in a step at release, and the carriage brakes from the release (facility max(L,
+    s_release + braking distance): within the stroke left, or past the track end when
+    the braking distance exceeds it).
 - linear_motor: carriage mass <m_c> t (assumed).
 - linear_motor: carriage braking in closed form at a constant total deceleration a_b =
   <a_b> g0 (assumed): distance v^2 / (2 a_b), time v / a_b, brake force m_c (a_b - g_eff
@@ -8523,6 +9316,24 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
     biased low, as for constant_accel), and while a cap binds it would lower the exit
     speed (biased high; drag can also make a cap bind that the drag-free push never
     reaches).
+  - with a release speed (SP7 step S4a) the line reads "... air drag on the vehicle in
+    the shaft is neglected during the push (after a release before the track end the
+    flight model flies on in the shaft after it, as the run's early-release line says):
+    <drag>", and <drag> is, under the force law: under the force law it would delay the
+    release at the release speed (the release position and the push time are biased
+    low; the speed at release stays the release speed while the push still reaches it
+    before the track end, and is biased high when the push releases at the track end
+    without reaching it) and raise the interface force (by D m_c / M at a given drive
+    force, zero then without a carriage mass, and in the power phase also through P_max
+    / sdot at the lower speed) and the drive work (a longer push to the same speed): both
+    are biased low; the felt g and the mean acceleration are biased high.
+  - with a release speed, acceleration law: under the acceleration law the drive force
+    would absorb it while no cap binds (the drive work, the peak drive power and the
+    interface force are biased low, as for constant_accel, and the release position is
+    unchanged), and while a cap binds it would delay the release at the release speed
+    (the release position and the push time biased low, or the speed at a release at
+    the track end biased high; drag can also make a cap bind that the drag-free push
+    never reaches).
 - the track gravity (`LinearMotorAssist.track_gravity_assumption`, the form of
   constant_accel's): linear_motor: constant g_eff = <value> m/s^2 on the track, omega_p
   = 0, Coriolis neglected (every 1-D run); on a planar run linear_motor: constant g_eff =
@@ -8534,6 +9345,37 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
 - linear_motor: a release-referenced stage-1 ignition lights at the flown release plus
   t_ign_s (the push time is a result of the push); one lit on the track must be stated
   from push_start (a release-referenced t_ign_s < 0 on a stage that lights is refused).
+
+A run released at its release speed before the track end (SP7 step S4a) adds one line of
+its own (`prelude.early_release_assumption`, through the trace's assumptions; worded for
+the flight model and the track since fix round 1): linear_motor: released at the release
+speed <v> m/s at s = <s> m, <L - s> m before the track end (L = <L> m; the track exit at
+the ground, the silo mouth), at altitude <z> m: the vehicle flies in the vented shaft
+after the release <flight>[; the floor of the flight model in the shaft is the parked
+carriage at z = <z_f> m: a fall back onto it, from inside the shaft or through the open
+mouth, is an impact (no catch and re-hold); a carriage braking at less than the vehicle's
+deceleration can park above an apex inside the shaft, and the run then ends at once at
+that apex (the model has no contact with the carriage on its braking path)]; the carriage brakes from the release point
+(facility max(L, s + braking distance): within the stroke left when s + braking distance
+<= L, else past the track end; in place of L + braking distance); the ideal screening
+estimate is taken at this release speed, not at the speed at the track exit, which
+<changes> (fix round 4, H4-m4, V4-2: the floor clause when the floor lies below the
+ground; fix round 5, M1: its apex sentence, since a soft brake ends such a run at its apex
+below the floor, as a 1-D failed ignition released at 15 m/s with a 0.5 g0 brake (the
+force law, 22.43 MN and 1300 MW, a 22 t carriage) ends at -84.45 m, 11.5 m below its
+carriage at -72.99 m). On a planar run
+<flight> is "as in the open atmosphere at its altitude (no shaft flow model and no walls:
+drag, dynamic pressure and Mach number are computed as in open air, and stage 1 may light
+and its pitch kick begin there, with no clearance check: the offset at the ground is the
+downrange of the shaft_exit event, logged when the kick began in the shaft)" and
+<changes> "gravity, drag and any thrust over the rest of the track change (the gravity
+and drag over it are in the flight's losses, the thrust in its delta-v)"; on a 1-D run,
+which evaluates no atmosphere and has no kick, "as the 1-D flight flies everywhere:
+drag-free, with vacuum thrust (no atmosphere; no shaft flow model, no walls)" and
+"gravity and any thrust over the rest of the track change (the gravity over it is in the
+flight's losses, the thrust in its delta-v)" (fix round 2). A track exit
+away from the ground reads "the track exit at altitude <z_exit> m", and a release above
+the ground "over the rest of the track's length".
 
 The atmosphere module ("Atmosphere"): these three, plus the in-flight floor clamp,
 are exported as the `ATMOSPHERE_ASSUMPTIONS` tuple (exact texts in "Atmosphere,
@@ -8694,7 +9536,17 @@ release the hold-down convention (held to the release at t = 0 after the ramp,
 amendment 14). A planar push adds `sim.TRACK_ASSUMPTIONS` and the track geometry, a
 failed ignition whose coast ran `sim.PLANAR_FAILED_IGNITION_ASSUMPTIONS` (no abort; the
 coast flown with drag, rotation and mu/r^2; the 1-D texts assume no atmosphere and are
-not reused), and the drive's lines follow. On a planar run the `constant_accel`
+not reused; `sim.PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS` in its place for a coast that
+fell back inside the shaft, a `shaft_fallback` flag: "... and ends on the parked
+carriage, the floor of the flight model in the shaft, from an apex inside the shaft or
+through the open mouth from one above it (the coast never kicks, so it stays over the
+shaft), or at the apex when the carriage parks above it (a carriage withdrawn in time is
+not modelled; any touchdown on the carriage ends the run): the impact time and speed are
+there, not at the ground", SP7 step S4a fix rounds 3 and 4;
+`sim.PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS` for an early release that did not fall
+back inside it: "... flown with drag, rotation and mu/r^2, from the release point of a
+push released at its release speed before the track end", fix round 4), and the drive's
+lines follow. On a planar run the `constant_accel`
 track-gravity line names the g_eff actually used and the rotation behind it
 (`ConstantAccelAssist.track_gravity_assumption`): "constant_accel: constant g_eff =
 9.772092 m/s^2 on the track (mu/R_E^2 - omega_p^2 R_E with omega_p = 6.408435e-05 rad/s,
@@ -9118,7 +9970,17 @@ inside the shaft and the carriage beneath lit engines (the model has a vented sh
 one impingement fraction that moves only track forces and drive energy). The carriage
 after release and where it brakes (the model gives a braking distance only); a failed
 ignition falling back along the obstacle-free path (no contact with the carriage, the
-mouth or the shaft). One propellant level per stage, tanks reading empty at depletion
+mouth or the shaft). The code's rule, whatever the release trigger: after a release below
+the ground, an apex inside the shaft below the parked carriage (a carriage braking at
+less than the vehicle's deceleration, parked above it, below the ground or above it) ends
+the run at once there; any other fall back ends on the parked carriage when it parks
+more than ATOL_M below the ground (released below the mouth, or at a buried track exit),
+and at the ground along the obstacle-free path when it parks at or above the ground. The
+scene's caveat and frame line of each run whose flight ended inside the shaft say which
+(keyed on its `shaft_fallback` flag), and a selection with such a run gets the carriage
+item of `scene.DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM`, worded on that rule (SP7 step S4a fix
+rounds 4 and 5, V4-1, H4-m1, M1, M2, C5-m4). One
+propellant level per stage, tanks reading empty at depletion
 (no residual or reserve is modelled). The pad's liftoff marker (the model logs release;
 a pad whose hold is not extended lifts off at release) and the ramp-end marker of a run
 whose ramp ends in or at the end of the hold (a pad, or a hot start held before the push
@@ -9272,9 +10134,44 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_linear_motor.py::test_a_hot_stall_raises_no_interface_tensile_flag` | "Linear motor", *Stall* (review pass 2 rerun, P2-m2 and P2H-m1): lit 0.5 s before push start (T_vac(0) = T_full/4), f_imp 1, F_max 1 MN, a 20 t carriage, with F_max <= M_0 g and m_v g - T(0) > 0 (vacuum and sea-level thrust); the stall row's F_int = (m_v/M_0) F_max - T(0) (1-D, its closed form) is negative and `track_flags` without stalled reads it as tension, while `sim.simulate` (1-D) and `sim.simulate_planar` (the planar prelude) raise the drive_stall flag alone; fails when `track_flags` ignores stalled | 1e-9 relative; exact |
 | `test_linear_motor.py::test_release_referenced_on_track_ignition_is_refused`, `::test_pending_ignition_lights_at_the_flown_release` (t_ign_s 0 and 0.5) | "Linear motor", push time and ignition (D-SP7-25): a release-referenced t_ign_s < 0 refused by `resolve_run` (the line written out) and by the prelude, accepted from push_start, at t_ign_s >= 0, with fails, and on constant_accel; `pending_until_release` by case; the pending ignition lights at t_release + t_ign_s exactly in 1-D (ignition event) and planar (`FlightStart.t_ign1_s`, `t_ign_abs_s`, the ignition event of `to_kick`), the push unlit, nothing burned on the track, no flag | exact |
 | `test_linear_motor.py::test_a_taper_toward_a_negative_holding_force_ends_in_drive_limit` | "Linear motor": hot, the force law's taper toward F_h = M g - T < 0 ends in drive_limit after taper_start with the drive's own flag (written out) | exact |
+| `test_linear_motor_release.py::test_the_power_cap_applies_to_the_tapered_force_in_closed_form` (rtol 1e-11 and 1e-10) | "Linear motor: the flown power cap, the release at a target speed and the readers", D-SP7-50: vertical, cold, F_max = M (3 g0 + g), corner v_c = 50 m/s, a 40 m taper entered on the power phase: events push_start, drive_ramp_end, power_limit, taper_start, power_limit_end in that order; taper_start at s_0 = L - s_t on the power phase (v_0 the root of s(v_0) = s_0, t(v_0)); the flown force P/sdot and the power phase's t(v), s(v) at every step to the cap's release at v_1, the root of (M g + M a_f (L - s(v))/s_t) v = P (power_limit_end at t_1, s_1, v_1); then F = M g + M a_f (L - s)/s_t and v^2 = v_1^2 + Omega^2 (x_1^2 - x^2) at every step, the release v_e^2 = v_1^2 + Omega^2 x_1^2, t_e = t_1 + atan(Omega x_1/v_1)/Omega, Omega = sqrt(a_f/s_t); F sdot <= P (1 + 1e-12) at every step | 1e-9 relative (steps relative to L, v_e, t_e); force 1e-15 (power phase) and 1e-12 (taper) relative; power 1e-12 |
+| `test_linear_motor_release.py::test_the_power_cap_binds_below_the_holding_force_on_an_arc` | "Linear motor: the flown power cap, the release at a target speed and the readers", the edge P_max/sdot < F_h: an injected arc from horizontal to vertical (`ArcTrack`, R = L/(pi/2), phi = s/R, z = R (1 - cos(s/R))), F_max = M 3 g0, v_c = 10 m/s, a 60 m taper: at least three steps in the taper with M g sin phi(s) > P/sdot, where the flown force is P/sdot and S4's order F_h + (min(F_lim, P/sdot) - F_h) w (computed in the test) exceeds 1.001 P; F sdot <= P (1 + 1e-12) at every integrator step and every sampled ASSIST row (`sim.simulate` to stage-1 burnout); the exit speed and time against an independent quadrature of M sddot = min(F_h + (F_lim(t) - F_h) w(s), P/sdot) - M g sin phi(s) (`_arc_quadrature`: solve_ivp DOP853, rtol 1e-12, restarted at the rise end, the cap binding or letting go and the taper start) | 1e-9 relative; power 1e-12 relative; force 1e-15 relative |
+| `test_linear_motor_release.py::test_release_at_a_target_speed_on_the_acceleration_plateau` | "Linear motor: the flown power cap, the release at a target speed and the readers", release at a target speed: acceleration law a = 3 g0 (no cap), v_release = 60 m/s: s_rel = (v^2 + a^2 t_r^2/12)/(2 a), t = t_r/2 + v/a; the TrackExit (sdot, t, release_position_m, trigger target_speed, z = -L + s_rel exactly from the exit's own s, phi = pi/2, x = 0); the target_speed event at the exit's (t, z, v); every step at or below s_rel; the run's one assumption line `early_release_assumption` written out in the 1-D model's words (no atmosphere, no kick; fix round 1; vacuum thrust, the thrust in the delta-v and not the losses, and a planner at 101325 Pa named with its pressure: fix round 2; 'in the vented shaft after the release', the floor clause with the parked carriage z_rel + v^2/(2 a_b) below the ground, 'brakes from the release point ... past the track end': fix round 4, H4-m4, V4-2; the floor clause's apex sentence, a carriage braking at less than the vehicle's deceleration ending the run at once at an apex below it: fix round 5, M1; no floor clause for a floor above the ground); through `sim.simulate` the release metrics (position, trigger, exit speed, push time, push_release_speed_mps, the mean v/t) and the release event's z = -L + release_position_m | 1e-9 relative; exact (z, event, line) |
+| `test_linear_motor_release.py::test_release_at_a_target_speed_under_the_force_law` (v_release 40 and 70 m/s) | "Linear motor: the flown power cap, the release at a target speed and the readers": force law, vertical, cold, corner 50 m/s: on the force phase s = s_r + (v^2 - v_r^2)/(2 a_f), t = t_r + (v - v_r)/a_f; on the power phase s = s_c + s(v), t = t_c + t(v); power_limit logged only for the power-phase release; no step past s_rel | 1e-9 relative |
+| `test_linear_motor_release.py::test_a_release_speed_at_a_kink_of_the_drive_releases_there` (the rise's end, the power corner) | "Linear motor: the flown power cap, the release at a target speed and the readers": v_release = v_r (at t_r, s_r: a sub-phase boundary) and v_release = v_c (at t_c, s_c, sharing its root with power_limit's sdot - P/F_max) release there by the target_speed trigger with no flag | 1e-9 relative |
+| `test_linear_motor_release.py::test_a_release_speed_not_reached_releases_at_the_track_end` | "Linear motor: the flown power cap, the release at a target speed and the readers": v_release 5 m/s above the push's speed at L: track_end at L (release_position_m L), z = 0, phi = pi/2, x = 0, the flag `release_speed_not_reached` written out, the same events and no assumption line; the release time and state equal the same drive's without a release speed bit for bit; its metrics' release items, facility and exit speed equal that run's | exact |
+| `test_linear_motor_release.py::test_a_track_end_release_keeps_the_exit_of_sp1_bit_for_bit` | "Linear motor: the flown power cap, the release at a target speed and the readers": constant_accel and a linear motor without a release speed: TrackExit z = start + z(L), phi(L), x = 0 exactly, release_position_m L and trigger track_end; `metrics.release_point` (L, track_end); no target_speed event | exact |
+| `test_linear_motor_release.py::test_facility_and_carriage_after_an_early_release` (brake 5 and 1.5 g0) | "Linear motor: the flown power cap, the release at a target speed and the readers", after a release below the mouth: braking distance v^2/(2 a_b), facility max(L, s_rel + d) (L with 5 g0, where s_rel + d = 98.2 m; s_rel + d with 1.5 g0), braking time v/a_b, brake force and energy 0 without a carriage, `facility_length_m(track, v, s_rel)`; `release_point` from the trace (s_rel, target_speed); `carriage_park_altitude_m` = -L + s_rel + d | 1e-15 relative; exact |
+| `test_linear_motor_release.py::test_a_height_event_ignition_after_an_early_release_lights_above_the_mouth` | "Linear motor: the flown power cap, the release at a target speed and the readers": an injected height-event spec (h = 20 m) on a push released about 38.5 m below the mouth (s = 61.49 m): ignition_height after the release at z = 0 + h (the mouth's altitude plus h, not the release point's) | 1e-6 m |
+| `test_linear_motor_release.py::test_a_planar_push_releases_at_its_target_speed` | "Linear motor: the flown power cap, the release at a target speed and the readers": the planar prelude (28.5 deg site, g_ref): a cold force-law push released at 60 m/s on its power phase at the closed-form position and time with g = g_ref (s_c + s(v), t_c + t(v); fix round 3, P3-m1); release at r = r_datum + z(s_rel), v_r = 60 m/s, v_theta = omega_p r; the flight start's shaft floor -L + s_rel + v^2/(2 a_b) (fix round 3); the early-release line in the trace; the planar metrics' release position and trigger (equal to `release_point`'s), the exit speed, facility max(L, s_rel + v^2/(2 a_b)), stroke L and push_release_speed_mps; the planar early-release line's wording (the open atmosphere, the shaft_exit offset; fix round 1) | 1e-9 of L (s_rel), 1e-9 relative (t, v); 1e-12 relative (floor); 1e-15 relative (r, v_theta); exact |
+| `test_linear_motor_release.py::test_a_planar_flight_released_below_the_mouth_leaves_the_shaft` | "Linear motor: the flown power cap, the release at a target speed and the readers", after a release below the mouth (planar): a push released at 60 m/s about 36 m down, stage 1 lit 0.5 s later inside the shaft (the kick starting there), flies to MECO (kick 0.025 rad) with one shaft_exit event at the mouth (within 1e-3 m: the planar root's resolution of r), after the ignition and the kick start, before burnout, and no impact; a push released at 20 m/s about 93 m down with stage 1 to light 3 s later coasts to its apex inside the shaft and falls back onto its parked carriage (fix round 3, P3-M1): the flight start's floor z_rel + v^2/(2 a_b) (1e-8 m: z_rel read off r), GuidanceFailure impact with the message 'the vehicle's flight ended inside the shaft at t = ... s before the kick (fix round 4, H4-m2): shaft_fallback: the vehicle fell back inside the shaft, ... onto the parked carriage at z = <floor> m', worded for the discarded trace ('the run ends in an impact there (the failed trace is not kept, so no event is recorded)', never 'is logged': fix round 3, H3-m2; never 'hit the ground': fix round 2, P2-M2), its touchdown speed read from the message, positive and below the unpowered coast's (stage 1 lit 3 s after the release: fix round 5, C5-m5); its coast from the release on a resumed builder (`_coast` with the floor) lists only the floor's impact in its falling sub-phase and ends in one impact at the floor at the drag-free speed from its logged apex, with the one plain flag 'the impact is logged there', its touchdown speed |v_rel| and 'any touchdown on it ends the run' (fix round 4, P4-m2); with no floor the coast ends at once at the apex ('with no shaft floor known'); no already-past note | 1e-3 m (mouth); 1e-8 m (floor); 1e-6 m (impact at the floor); 1e-3 m/s (speed: mu/r^2 and omega_p against g_ref; the test's generic_f9_class.yaml has no aero block, so no drag: fix round 5, P5-m2, C5-m6); exact |
+| `test_linear_motor_release.py::test_a_planar_burn_turns_around_above_the_parked_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers", *After a release below the mouth* (fix round 3, P3-M1), planar: released at 10 m/s about 98 m down and lit 0.5 s later (the 2 s ramp), to_kick reaches the kick (no GuidanceFailure) with a turnaround inside the shaft above the parked carriage, within 0.1 m (turnaround) and 1 m (kick start) of the same push on the track moved up out of the ground (moved down by L; back pressure, mu/r^2 and omega_p differ, and no drag enters: generic_f9_class.yaml has no aero block, fix round 5, P5-m2); a KICK `_burn` (FixedTilt 0) started 10 m above the carriage falling at 5 m/s under full thrust lists propellant, the floor's impact and `shaft_turnaround`, turns around above the carriage and logs shaft_exit, with no impact and no flag | 0.1 m; 1 m; exact |
+| `test_linear_motor_release.py::test_a_fall_back_inside_the_shaft_ends_on_the_parked_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers", *After a release below the mouth* (fix round 3, P3-M1): 1-D, acceleration law a = 3 g0, released at 10 m/s about 98 m down, stage 1 lit 3 s later: the falling coast ends on the parked carriage z_rel + v^2/(2 a_b) (`carriage_park_altitude_m` = `prelude.shaft_floor_m`), at the time of an independent quadrature of z'' = -mu/(R_E + z)^2 and the energy speed, with the one flag 'FALL_PRE_IGN at t = ...: shaft_fallback: ... onto the parked carriage at z = ... (... m below the ground) at <|v|> m/s: the impact is logged there' (the speed: fix round 4, P4-m2); with a 0.5 g0 brake the carriage parks above the apex and the run ends at once at the apex (v = 0), its flag 'stopped rising ... at or below the parked carriage's altitude ...: the impact is logged at once at that apex' | 1e-9 m (root); 1e-9 relative (time, speed); 1e-15 relative (floor); 1e-6 m/s; exact |
+| `test_linear_motor_release.py::test_a_burn_lit_after_a_release_in_the_shaft_turns_around_above_the_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers", *After a release below the mouth* (fix round 3, P3-M1): 1-D, released at 10 m/s about 98 m down and lit 0.5 s later (the F9's 2 s ramp): the falling burn lists propellant, turnaround and the floor's impact, turns around above the parked carriage and flies to stage-1 burnout (status nominal, no flag, no impact), the turnaround against the same push on a track moved up out of the ground (moved down by L; mu/r^2 differs by about 3e-5 between the release radii) | 5e-3 m; 1e-3 s; exact |
+| `test_linear_motor_release.py::test_a_failed_ignition_falls_back_onto_the_parked_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers" and "Failed-ignition coast" (fix round 3, P3-M2): 1-D, released at 15 m/s about 96 m down with stage 1's ignition failed (end impact): failed_carriage_alt_m the floor, failed_t_carriage_s and failed_speed_at_carriage_mps the impact's (the quadrature's time, the energy speed), impact_t_s equal to it, failed_impact_speed_mps and failed_t_return_s None, the apex above the floor and before it, the shaft-bottom speed sqrt(v_c^2 + 2 g_eff (z_c + L)); one shaft_fallback flag 'onto the parked carriage', the failed-ignition flag written out (fix round 4: 'the fall ends on the carriage, below the ground, whether or not it passed the mouth'); FAILED_IGNITION_SHAFT_ASSUMPTIONS in the assumptions and no FAILED_IGNITION_TRACK_ASSUMPTIONS line | 1e-15 relative (floor); 1e-9 relative; 1e-12 relative (shaft bottom); exact |
+| `test_linear_motor_release.py::test_a_fall_back_through_the_open_mouth_turns_around_above_the_carriage` (38.0 and 38.5 m/s) | "Linear motor: the flown power cap, the release at a target speed and the readers", *Over the shaft* (fix round 4, P4-M1): 1-D, a = 3 g0, a 5 g0 brake, lit 4 s after the release, the apex 1.5 m below the mouth and 1.1 m above it: both nominal with no flag, the falling burn listing propellant, turnaround and the floor's impact, the turnaround above the parked carriage and below the mouth, within 0.02 m and 1e-3 s of the same push moved up out of the ground (mu/r^2 over the 8.5 s flight; 7.6 mm measured) | 0.02 m; 1e-3 s; exact |
+| `test_linear_motor_release.py::test_a_failed_ignition_falls_back_through_the_open_mouth_onto_the_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers" and "Failed-ignition coast" (fix round 4, P4-M1): 1-D, released at 50 m/s about 57 m down with stage 1's ignition failed: the apex above the mouth, the impact on the carriage (z_rel + v^2/(2 a_b), below the ground) at the time of an independent quadrature and the energy speed, the carriage items its time and speed, failed_impact_speed_mps and failed_t_return_s None, one shaft flag with the touchdown speed (P4-m2), the failed-ignition flag, FAILED_IGNITION_SHAFT_ASSUMPTIONS and no FAILED_IGNITION_TRACK_ASSUMPTIONS line | 1e-9 relative; 1e-9 m (root); exact |
+| `test_linear_motor_release.py::test_a_planar_fall_back_through_the_open_mouth_before_the_kick` | "Linear motor: the flown power cap, the release at a target speed and the readers", *Over the shaft* (fix round 4, P4-M1), planar (28.5 deg site): released at 38.5 m/s and lit 4 s later, the apex above the mouth: `to_kick` reaches the kick (no GuidanceFailure), the turnaround above the parked carriage and below the mouth within 0.2 m and the kick start within 1 m of the moved-up twin (the shaft's higher back pressure, mu/r^2 and omega_p; 0.09 m and 0.52 m measured); a failed ignition released at 50 m/s ends on the carriage (1e-6 m), its apex above the mouth, its speed within 1e-3 m/s of sqrt(v^2 + 2 g_ref (z_rel - z_floor)) (mu/r^2 and omega_p against g_ref; 8e-5 m/s measured), one shaft flag 'onto the parked carriage'; the test's generic_f9_class.yaml has no aero block, so no drag enters either comparison (fix round 5, P5-m2, C5-m6) | 0.2 m; 1 m; 1e-6 m; 1e-3 m/s |
+| `test_linear_motor_release.py::test_a_buried_constant_accel_exit_falls_back_onto_its_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers", *Over the shaft*, and "Failed-ignition coast" (fix round 4, P4-m1, C4-m2): 1-D constant_accel, a 1 g0 push of 20 m to an exit 50 m below the ground with stage 1's ignition failed: the apex inside the shaft, the impact on the carriage parked v0^2/(2 a_b) above the exit at the quadrature's time and the energy speed, failed_impact_speed_mps None, the shaft flag, no already-past note, FAILED_IGNITION_SHAFT_ASSUMPTIONS; a 3 g0 push of 100 m to the same exit, whose carriage parks 10 m above the ground: Phase 1's obstacle-free impact at z = 0 at the energy speed, no shaft flag, FAILED_IGNITION_TRACK_ASSUMPTIONS | 1e-12 relative (floor); 1e-9 relative; 1e-9 m; exact |
+| `test_linear_motor_release.py::test_a_failed_ignition_after_an_early_release_falls_to_the_ground_past_its_carriage` | "Linear motor: the flown power cap, the release at a target speed and the readers", *Over the shaft*, and "Failed-ignition coast" (fix round 5, P5-m1, m1, C5-m1): 1-D, a failed ignition released at 70 m/s about 16 m below the mouth (a = 3 g0, a 5 g0 brake), its carriage parked 33.5 m above the ground: the impact at z = 0 at the quadrature's time and the energy speed, failed_impact_speed_mps its speed, the carriage items the quadrature's crossing of the carriage's altitude, failed_t_return_s None, no shaft flag and no failed-ignition flag, FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS (its 'None when it parks above the apex' and 'failed_t_return_s is None after a release below the ground', never round 4's 'the return to the release altitude') in place of the track line, never the shaft lines, and no floor clause in the early-release line; with a 0.5 g0 brake at 38.5 m/s the carriage parked 76.6 m above the ground, above the apex 1.1 m above it: the carriage items None, the impact at the ground; planar (the drag-free F9), the 70 m/s failed ignition at the ground (1e-6 m), no shaft flag, `planar_assumption_list` with PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS in place of PLANAR_FAILED_IGNITION_ASSUMPTIONS, never the shaft line | 1e-12 relative (carriage); 1e-9 relative; 1e-9 m (1-D ground); 1e-6 m (planar ground); exact |
+| `test_linear_motor_release.py::test_a_planar_fall_back_with_drag_matches_a_radial_quadrature` | "Linear motor: the flown power cap, the release at a target speed and the readers", *Over the shaft* (fix round 5, P5-m2, C5-m6): on the drag-carrying generic_f9_class_2d.yaml, a planar failed ignition released at 50 m/s about 57 m below the mouth rises above it and falls back onto its carriage (1e-6 m); its impact time after the release and |v_rel| against an independent radial quadrature r'' = -mu/r^2 + omega_p^2 r - sign(w) D/m, D = 0.5 rho w^2 C_D(|w|/a) A_ref (DOP853, rtol 1e-12; the ICAO atmosphere, the vehicle's C_D table, the release event's mass; Coriolis neglected), 1.5e-6 s and 1e-8 m/s measured; the drag-free speed at least 0.01 m/s higher (0.029 m/s), so drag is exercised | 1e-4 s; 1e-5 m/s; 1e-6 m; 0.01 m/s (drag) |
+| `test_linear_motor_release.py::test_metrics_record_the_control_law_command_taper_and_release_speed` | "Linear motor: the flown power cap, the release at a target speed and the readers", KI-052: push_control_law, push_accel_command_mps2 (None for the force law), push_stop_taper_m (None without a taper), push_release_speed_mps (None when no release speed is set) and (fix round 1) push_cap_bound (None for the force law, False for an acceleration law whose caps never bind, True with F_max = 0.9 M (a + g), a drive_cap early in the push, and, fix round 2, None for a stalled push, F_max = 0.5 M g) on five runs; LINEAR_MOTOR_METRICS last, in order, push_control_law first; RELEASE_TRIGGERS | exact |
+| `test_linear_motor_release.py::test_release_speed_in_the_config_the_model_and_the_event` | "Linear motor: the flown power cap, the release at a target speed and the readers": `release_speed_mps` validates, is dumped when given and left out when not (the dump validates again), reaches the model through `build_assist`; refused with a stop taper by the config, and by the model (with a taper > 0; non-finite or <= 0); 0 taper accepted by the model; None on constant_accel and none; `ev_release_speed`: name target_speed, terminal, upward, zero_tol ATOL_MPS, value sdot - v_release, refusing v <= 0 and NaN | exact |
+| `test_linear_motor_release.py::test_the_release_and_shaft_lines_of_a_release_speed` | "Linear motor: the flown power cap, the release at a target speed and the readers", assumption lines: ten lines with `release_assumption` third, written out; the force law's shaft line for a release speed (its opening written out: the drag neglected during the push, the speed at release biased high when not reached; fix round 1), S4's line unchanged without a release speed, the acceleration law's (the release position unchanged); `release_assumption` is `taper_assumption` without a release speed; the force law's taper line naming the cap's order and the cap at L (written out) | exact |
+| `test_linear_motor_readers.py::test_no_acceleration_is_claimed_for_a_linear_motor_push` | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers: `replay.push_accel_g` reads constant_accel's metric, then its key (a block without a model key read as one), and is None for the linear motor even with a stray net_accel_g metric and key; `linear_motor_settings` from the KI-052 metrics and push_cap_bound (an unset setting's None read as such), and from the config block (kN, MW, g0) for a directory without them | exact |
+| `test_linear_motor_readers.py::test_the_release_and_the_drive_in_words` | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers (fix round 1): `release_text` (the track end with the measured exit speed; on reaching the release speed, below the mouth or before the track end; not reached by the run's flag, not said without it; None), `linear_motor_clause` (the force law's limits; the acceleration law's 'a_cmd 3 g0 net after a 0.5 s rise'), `motor_acceleration_text` (the force law's 'not prescribed'; the acceleration law's command held with no cap bound after a release past the rise, a cap that bound worded without a timing, flown wherever none binds when unrecorded: fix round 2) and `assist_text` (the short law; 'released at 60.0 m/s (measured) 35.7 m below the mouth'; 'exit ... (measured; its release speed 90 m/s not reached)') written out; a stop taper named in both forms of `linear_motor_law_text` ('a 20 m stop taper'), among what the force law's acceleration follows from ('the stop taper') and as scaling the command where it is flown, capped or unrecorded (fix round 3, H3-m3); none of them states a push acceleration (regex); `is_vented` and `is_vertical` of a linear-motor block without a shaft key or a track angle (its defaults) | exact |
+| `test_linear_motor_readers.py::test_what_the_acceleration_law_did_in_words` | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers (fix round 2, P2-M1, H2-M1, V2-2): `motor_acceleration_text` of the acceleration law on hand-built metrics written out: a release inside the rise (0.412 s) and one at its end never held the command; a stall (status drive_stall) never started; a push stopped on the track (status drive_limit) has no release; a step rise held it from push start, scaled over a taper (capped: 'from push start (scaled down over its stop taper), only where', fix round 3); a cap that bound claims neither a held command nor 'until a cap'; `_motor_omission` of a push stopped on the track names no release, and of a stall says it never moved (the missing drag changes nothing, a carriage mass would only add to the load; 'the pushes never moved' for several: fix round 3, H3-m4) | exact |
+| `test_linear_motor_readers.py::test_the_cap_record_and_its_words_on_real_pushes` (a cap in the rise, a cap that lets go, held) | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers on real 1-D F9 pushes (fix round 2, P2-M1, V2-2): a_cmd 3 g0, t_r 0.5 s; F_max = 0.9 M (a + g) cold: drive_cap inside the rise and no drive_cap_end; 0.85 M (a + g) lit at push start: drive_cap inside the rise and one drive_cap_end after the rise, with no second drive_cap (fix round 3, H3-m5); 2 M (a + g): no drive_cap; push_cap_bound True, True, False and the words of `motor_acceleration_text` (the capped sentence, never 'from the end of its rise until'; the held command) | exact |
+| `test_linear_motor_readers.py::test_drive_caveat_beside_a_prescribed_push` | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers: `replay.drive_caveat` of a prescribed run beside three linear-motor runs written out (fix round 1): the prescribed push first, lm_target's shaft without air drag on the push only in the one shaft clause ('on the push only for lm_target'; 'on the push' alone when every vented run is early: fix round 2); a sentence per linear motor with its clause and `motor_acceleration_text` (the force law's acceleration not prescribed; the uncapped acceleration law's command held), lm_target's flight through the rest of the shaft (lit and kicked there, from its events); the omissions per run by law and cap (the force law's 'can change' with the missing drag's directions, the release position for lm_target; the uncapped acceleration law's biases low and a cap that could bind); a linear motor shown alone is 'The drive'; a capped acceleration law's words without a timing (fix round 2) and its omissions 'while no cap binds ... where it does'; two runs with the same omissions in one sentence worded for both ('each push', 'none of these pushes reached': fix round 3, V3-1); a force-law run with a massless carriage released early and at the track end: the carriage's directions (the release position and push time low, or the speed at release high, and the interface force high) and the drag's interface clause 'in the power phase only, without a carriage mass' (fix round 3, V3-2) | exact |
+| `test_linear_motor_readers.py::test_close_up_notes_of_a_release_below_the_mouth` | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers (fix round 1, P1-M1): `replay.closeup_notes` of a release at L and a release below the mouth written out (released on reaching its release speed, the push time and the depth; the mouth crossing from its shaft_exit event within 1 m of the axis, or 4 m off it with no clearance checked; a fall back with the depth of its impact 'on its parked carriage, the floor of the flight model in the shaft' (fix round 3), and `early_flight_text` until it fell back, the place read from the run's shaft_fallback flag (no place without a flag; `replay.shaft_impact_words` and `scene.shaft_impact_text` agree: fix round 4, H4-M1, C4-m1); an apex impact (at the page's 0.01 m/s) written out in full in the close-up and in `early_flight_text`, 'it stops rising 30.0 m below the mouth, below its carriage parked above it, and its impact is logged at once at that apex', never 'falls' or 'fell' (fix round 5, M1); a constant_accel push to a buried track exit that falls back onto its carriage, its group's 'leaves the silo mouth' sentence followed by '<name> falls back inside the shaft, its impact logged 46.0 m below the ground on its parked carriage, ...', and nothing without its flag (fix round 5, M2); a rise 1.1 m above the mouth before the fall back through it ('it rises ... and falls back into the shaft', 'until it rose ... and fell back into the shaft': P4-M1); a turnaround 0.5 m above the parked carriage written out in the close-up and in `early_flight_text`, with the mouth crossing after it (H4-m3, V4-2); a measured speed 72.6468 m/s read '72.6', never the page's 72.65 rounded again, for an early release and a release at the track end (H4-m5); with no shaft_exit, what is logged (no crossing and no kick; a kick begun in the shaft) or the crossing read from the sampled series, 'unpowered', 'about', before the kick or with no kick logged: fix round 2); the vented-shaft note limited to the push with the flight in the shaft computed as in the open atmosphere, and unchanged without an early release; `early_release_results_note` of one run and of two ('their', 'before the track end' for an exit above the ground); `below_mouth` with an exit within ATOL_M of 0 | exact |
+| `test_linear_motor_readers.py::test_scene_push_settings_of_a_linear_motor_run` | "Linear motor: the flown power cap, the release at a target speed and the readers", the readers: `scene.assist_settings` of a linear-motor run (net_accel_* None, no derived source, push time the metric, `drive` written out with its label `linear_motor_clause`'s, its source 'metric', 'config' for a directory without the drive metrics); a constant_accel run derives a = v^2/(2 L) and t = v/a as before and has no drive; `early_release_caveat` (the drawn carriage at the mouth, the model's braking through the stroke left to 1.0 m above it, facility 101.0 m; in the stroke left to 15.7 m below it, facility 100.0 m (fix round 3, C3-m1); an exit above the ground 'before the track end'; the fall back's impact note, on its parked carriage or at its apex from the flag's words, fix round 3) and `early_release_frame_text` written out, None at the track end; `early_release_lines` grouping the frame lines, then the fall-back line (`fall_back_frame_text`, fix round 3, H3-m1; both claims of the drawn note corrected, 'it' or 'them', and the caveat's 'no contact with the carriage' clause: fix round 4, V4-1, H4-m1); fix round 5 (M1, P5-M1): `shaft_impact_kind` (carriage, apex, unstated), `fall_back_caveat` of each kind written out (the apex 'stopped rising inside the shaft, below its carriage parked above it (the model has no contact ...): its impact is logged at once at that apex', with no 'no contact' correction), `fall_back_frame_text` of the apex kind for one run and two and of the unstated kind written out, one frame line per kind (the carriage line, then the apex line); (M2) keyed on the flag: a constant_accel record at a buried exit with the carriage flag gets `fall_back_caveat` alone and its frame line, nothing without the flag, and a track-end run with the flag its frame line; nothing at the track end without a flag; `frame_caveat` with the drawing line before FRAME_MORE_TEXT; `display_only_for` (DISPLAY_ONLY unchanged without a fall back, its carriage item swapped for DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM with a carriage or an apex flag, the rest unchanged: V4-1; the item worded on the code's rule, the apex case first with only 'altitude 0' corrected, then the carriage parked at or above the ground or below it, never 'released at the track end': fix round 5, M1, M2, C5-m4); `no_release_caveat` of a stalled and a stopped linear-motor push written out, with its frame line, None for constant_accel and for a nominal run (V4-3) | exact |
+| `test_linear_motor_readers.py::test_summary_rows_of_a_linear_motor_run` | "Linear motor: the flown power cap, the release at a target speed and the readers", the summary: LINEAR_MOTOR_ROWS (every LINEAR_MOTOR_METRICS key) right after the facility row of the 1-D and planar tables with a linear-motor run, none without one; cells '-' (not a linear motor), "none" (unset settings), n/a (the cap row under the force law, an absent metric), False (an uncapped acceleration law), the metric (`_fmt`); the labels (the mean over the whole push, the felt g at t_r and its capped case, the cap row's False and its stall, whose rise, less than the stroke L), with no 'holds no constant acceleration', 'not a held value' or 'False: a_cmd held after the rise'; a linear-motor run without a push record (fix round 2): n/a in every row, its rows brought by its config; the brake rows' 'negative when a_b < g_eff sin phi' (fix round 4, H4-m2); the planar failed rows n/a for a run without a failed ignition (a burn's apex in the shaft) and the failed run's metric (V4-2); PLANAR_SHAFT_IMPACT_LABEL written out (H4-m2, C4-m1) | exact |
+| `test_linear_motor_readers.py::test_the_drive_curve_is_drawn_for_a_linear_motor_run_only` | "Linear motor: the flown power cap, the release at a target speed and the readers", the figure: `write_plots` of a 1-D linear-motor run (force law, a 90 m/s release speed not reached) writes <run>_drive_curve.png (a PNG) beside its panels; `drive_curve_rows` within F_max and P_max (1 + 1e-12), from 0 to the exit speed; the figure's x label, two-line title with the law, the F_max line on the force axis and the P_max line on the power axis at their values, the axes topped at 1.25 F_max and 1.6 P_max, the corner line at P/F_max, the power cap P/sdot from the corner on, the release line '(not reached)', the legend below the axes and their labels (its window extent under both axes' tight boxes after an Agg draw: fix round 2); a stalled push (F_max 3 MN, status drive_stall): its release line 'release speed set 50 m/s (no release: status drive_stall)' (fix round 4, V4-3); none for constant_accel, whose plot list is its panels alone | exact; 1e-12 relative; 1e-9 relative (exit speed) |
+| `test_linear_motor_readers.py::test_pages_summary_and_plots_of_a_linear_motor_directory` (slow: about 12 s with its fixture) | "Linear motor: the flown power cap, the release at a target speed and the readers", a real fixed-guidance planar directory in a temporary folder (pad, silo_cold, lm, lm_target, lm_fall: released at 15 m/s with stage 1's ignition failed, fix round 3, and lm_stall: F_max 3 MN, status drive_stall, fix round 4): the replay details (3 g net push for silo_cold only; the short law; lm_target released below the mouth), the drive caveat's two force-law sentences and the shaft without drag on the push only for lm_target, lm_target's close-up note (released below the mouth, the mouth crossed within 1 m of the axis) and the vented note limited to the push, the results note; the page written (ASCII); the scene payload's lm_target (no acceleration, the drive's trigger and label, its early-release caveat and frame caveat; strict JSON); summary.md's release-trigger row (- - track_end target_speed target_speed n/a) and the early-release line; lm_fall on its parked carriage (the shaft impact label, the flag, the planar shaft assumption line, its final altitude the carriage's within 1e-6 m, its close-up note: fix round 3, P3-M1, P3-M2); the drive-curve PNGs of the linear motors only; the scene payload of pad and lm_fall with the swapped display-only carriage item, of pad and lm_target with DISPLAY_ONLY (fix round 4, V4-1); of pad and lm_stall with its no-release caveat and frame line, and lm_stall's AnimationRun with no push peak g (V4-3) | exact |
+| `test_linear_motor_readers.py::test_the_app_lists_and_panels_a_linear_motor_directory` (slow, the same fixture) | "Linear motor: the flown power cap, the release at a target speed and the readers", the app: `app.directory_row` (complete, playable, planar_2d) and `app.results_panel` of pad and lm_target with the shipped basis: the push block's model linear_motor, the short law in its text, net_accel_g None, the force law's 'not prescribed' acceleration in the panel's caveats and no 'holds no constant acceleration'; (fix round 2) lm_target's early-release caveat in the panel's caveats, `app.video_footer` of pad and lm_target ending with its frame line and equal to the panel's video_footer, pad and lm's video footer plots.animation_caveats' lines alone and no early-release caveat in their panel; (fix round 3, H3-m1) the footer of pad and lm_fall ending with the early-release line and the fall-back line; (fix round 4) the panel of pad and lm_fall with the fall-back display-only carriage item and of pad and lm_target with DISPLAY_ONLY (V4-1), the footer of pad and lm_stall naming no push load and ending with its no-release line (V4-3) | exact |
 | `test_linear_motor.py::test_braking_closed_forms` (m_c 0 and 22 t) | "Linear motor", braking: d = v^2/(2 a_b), t = v/a_b, F = m_c (a_b - g sin phi) (vertical and horizontal), E = (1/2) m_c v^2 (1 - g sin phi/a_b) = F d, all 0 for m_c = 0, facility L + d; a run's braking metrics at its exit speed | 1e-15 relative (F d 1e-14) |
 | `test_linear_motor.py::test_linear_motor_metrics_and_assumption_lines`, `::test_planar_track_metrics_of_a_linear_motor_push` | "Linear motor", metrics: LINEAR_MOTOR_METRICS last, in order (1-D; planar right after the push settings, net_accel_* None); the settings, push_power_limited (True power-limited, False with the corner never reached and at the tie k = P_max/(F_max v_e) = 1 with v_e = sqrt(2 a_f L - a_f^2 t_r^2/12), True at k = 0.999), v_e/t_push, the felt plateau F_max/M/g0, L and track_end, the peak power P_max and the electrical peak P_max/eta (0 for a negative power); a constant_accel run has none of the keys; the ten assumption lines, four written out (the shaft line with its biases both ways, the ignition line) and the acceleration law's taper and shaft lines | exact; 1e-12 relative (plateau, peak) |
-| `test_linear_motor.py::test_linear_motor_config_si_properties_and_build`, `::test_linear_motor_config_refusals` (39 cases), `::test_linear_motor_dump_states_the_given_keys`, `::test_depth_bound_applies_to_every_track_drive`, `::test_union_tags_and_the_app_form` | "Linear motor", config: both blocks validate, YAML integers held as floats, the SI properties (kN, MW, g0, t), `build_assist` through `ASSIST_MODELS` (the unbound model, the buried track); refused: the law's keys, the taper at the stroke, a null optional key, strict finite numbers (a bool and a numeric string for each of the ten numbers, NaN, inf), the bounds (zero force, power and command; a negative rise and taper; an efficiency above 1, a negative impingement), a sealed shaft, an assist-family key and release_speed_mps; the model's `CONTROL_LAWS` equal `config.ControlLaw`; the dump leaves out None keys and validates again (python and json); the depth bound on both drives (`TRACK_DRIVE_CONFIGS`), a depth within it refused where the specs are built; `ASSIST_UNION_TAGS` derived from the union, `PLANNED_MODELS == ("cable_winch",)`, the app form's tags, its site choices and a request naming the drive refused | raises (message or type) / exact |
+| `test_linear_motor.py::test_linear_motor_config_si_properties_and_build`, `::test_linear_motor_config_refusals` (45 cases), `::test_linear_motor_dump_states_the_given_keys`, `::test_depth_bound_applies_to_every_track_drive`, `::test_union_tags_and_the_app_form` | "Linear motor", config: both blocks validate, YAML integers held as floats, the SI properties (kN, MW, g0, t), `build_assist` through `ASSIST_MODELS` (the unbound model, the buried track); refused: the law's keys, the taper at the stroke, a null optional key, strict finite numbers (a bool and a numeric string for each of the eleven numbers, NaN, inf), the bounds (zero force, power and command; a negative rise and taper; an efficiency above 1, a negative impingement), a sealed shaft, an assist-family key and (SP7 step S4a) a release_speed_mps given together with any stop_taper_m (5 and 0), a null one, a bool, a numeric string, 0 and inf; the model's `CONTROL_LAWS` equal `config.ControlLaw`; the dump leaves out None keys and validates again (python and json); the depth bound on both drives (`TRACK_DRIVE_CONFIGS`), a depth within it refused where the specs are built; `ASSIST_UNION_TAGS` derived from the union, `PLANNED_MODELS == ("cable_winch",)`, the app form's tags, its site choices and a request naming the drive refused | raises (message or type) / exact |
 | `test_linear_motor.py::test_fires_on_first_step_is_the_guards_own_test` (x' = +-1 from x = 0, direction +-1) | "Event rules", the disarm guard: `engine.fires_on_first_step` is True exactly when `integrate_phase` disarms the event at zero with a note (moving into its direction), False when it moves away | exact |
 | `test_linear_motor.py::test_push_boundaries_merge_the_drive_kinks`, `::test_thrust_clamp_time_is_where_t_vac_reaches_the_back_pressure`, `::test_existing_models_keep_their_push` | "Linear motor", the protocol seam: without a drive kink the boundaries are the thrust kinks as before; a drive kink or the thrust clamp merged once (dropped at or before push start); `prelude.thrust_clamp_time` at t_ign + t_ramp share (ramp) and t_ign - tau ln(1 - share) (lag), share = p_amb A_e/T_full, where T_vac = p_amb A_e (1e-12) and the delivered thrust leaves zero, None for a step, a failed schedule, vacuum and share >= 1; constant_accel and none exact, returning themselves, no kink, no watch, no stall; the linear motor's kink at t_r (none for a step), its watches by law and taper, no estimate unbound | exact |
 | `test_planar_pipeline.py::test_trajectory_key_drops_the_efficiency_for_constant_accel_and_the_linear_motor` | "Reporting definitions (planar)", the sensitivity reuse: the drive efficiency is energy-only (one trajectory key at 0.5 and 0.6) for constant_accel and, since SP7 step S4, the linear motor (P_max mechanical at the carriage), and trajectory-relevant for another model (cable_winch); the two drives' keys differ | exact |
@@ -9422,7 +10319,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_offload_pipeline.py::test_offload_pass_records_each_case_against_hand_numbers`, `::test_offload_runs_carry_their_assumptions`, `::test_offload_pass_skips_what_it_cannot_solve`, `::test_stage1_pad_control_is_a_consistency_test` (6 cases), `::test_pad_control_consistency_rule`, `::test_stage2_and_both_cases_are_quoted_net_of_the_pad_control`, `::test_a_failed_case_solve_is_not_quoted_for_its_own_reason`, `::test_calibration_caveat_follows_the_vehicle`, `::test_sweep_point_energy_keeps_the_vehicle_files_mixture_ratio`, `::test_sweep_offload_columns_follow_the_offload_flag` | the pass on fake runs (the sim seams monkeypatched): per case the propellant removed per stage (a stage-2 pre-offload included; both by the loads' shares), its shares of the loads, x - x_pad, the quoted offload (stage 1 gross, stage 2 and both net, a fixed case imposed), the penalty fields and the energy at 123.5/410.9 and 32.3/107.5 RP-1, against hand numbers from the vehicle file; OFFLOAD_ASSUMPTIONS on every written run, the penalty line on the penalty rows' runs only; no arm without sensitivity (OFFLOAD_ARMS_SKIPPED, also through `planar_experiment_result`), a reference_failed arm and baseline solving nothing; the stage-1 control's bound xtol / s with s the secant of its logged bracket, its verdict (ok inside, outside, without a slope; no_offload by grams, by more than xtol; search_failed) and the blocking of a failing one (its own blocked line); a stage-2 case quoted net in the table and the console, "not quoted" with its reason from the basis; a case whose own solve ends search_failed (stage 2 beside an ok control, and stage 1) quoting nothing on the basis `OFFLOAD_QUOTED_FAILED`, not the pad control's, the console saying so; the calibration caveat 100 (26054.4/22800 - 1) % from the gate record, none for an unknown vehicle; an arm (its case record captured from `_offload_arm_record`) and a sweep point whose load is below the fuel mass keep the vehicle file's ratio; the sweep columns only with offload on ("Reporting definitions (planar)", "Propellant saved at fixed payload"; "Pad control, and why") | 1e-12 relative; exact |
 | `test_offload_pipeline.py::test_offload_in_memory_writes_nothing`, `::test_offload_cases_end_to_end`, `::test_offload_outputs_written_and_replayed`, `::test_no_offload_skips_the_block`, `::test_sweep_offload_columns_match_the_experiment_solve` (slow) | gate fork on a small searched grid (gamma* 18-28 deg, refine maxiter 3, search rtol 1e-9): the in-memory path writes nothing; the solved stage-1 case's recorded run flies exactly P_ref at the pad's liftoff mass (sum of the vehicle file's masses + P_ref) less x*, verified within search_final_flag_rel x P_ref, decomposition explained with the D_id change c1 ln(m0/(m0 - x*)) (c1 = g0 x 311 s), its shares and energy by hand arithmetic, the paired pad offloaded by x*; the fixed 5 % case (its margin term of the sign opposite to P* - P_ref); the pad control's verdict by the section 5.3 rule applied to its own fields (a failing one in a blocked line of its own, `summary.PAD_CONTROL_BLOCKED`); OFFLOAD_ASSUMPTIONS on every written run; the arms (efficiency arms reuse x* with the electrical energy x 1/(1 +/- 0.1)); the written outputs and the replay; --no-offload; a one-point sweep naming the case reproduces x* and (SP1 step 8a) the run command's solve gamma*_ref in `s1.solve_gamma_star_rad`, its flag count in `s1.n_flags` and its flag line under `summary.OFFLOAD_SWEEP_FLAGS_TEXT` ("Reporting definitions (planar)", "Propellant saved at fixed payload") | 1e-6 kg; 1e-8 m/s; 1e-14 relative; 1e-12 relative (energy); 1e-9 kg (sweep); 5e-12 relative (sweep gamma*_ref, CSV) |
 | `test_offload_pipeline.py::test_sweep_index_records_each_point_solves_gamma_star_and_flags`, `::test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms`, `::test_calibration_caveat_of_the_readme_loads_fork`, `::test_stage2_caveat_does_not_assume_a_stage1_offload_maximises_total_tonnes` | SP1 step 8a: OFFLOAD_SWEEP_COLUMNS is step 7's twelve (written out in the test, in order) followed by `solve_gamma_star_rad` and `n_flags` (and, since SP7 step S3c, `dv_shortfall_mps`: the next row); a point's solved case records its solve's gamma*_ref (23.4 deg), not the point's payload-search gamma* (22.0 deg), and its two flags; a fixed case none and 0, a reference_failed point none and none, a search_failed solve NaN and 0; read back from the CSV, gamma*_ref within half a unit of its 12th significant digit; the Checks section lists each point's flags ("; "-joined, `none`, the no-list note, a search_failed solve's "none (solve search_failed: bracket)" and a failed fixed case's payload-search status) after the decomposition lines, and nothing new without offload cases; the payload Sensitivity note of a block with an empty `of` (the full texts written out: with the offload arms, with `--no-offload`, without arms, and with arms none of which ran because their case's variant did not, whose offload record has no arms and whose offload section no arms table) and the notes kept without a block, for a block naming runs and with `--no-sensitivity`, carried by `planar_experiment_result` and printed by the table; the README-loads fork's offload caveat 100 (24,700/22,800 - 1) = +8.3% high with its masses; the stage-2 caveat written out, never "cannot beat the headline" (pre-registration Amendment 1, item 4) ("Reporting definitions (planar)", "Propellant saved at fixed payload", "Calibration notes (build step 26)") | exact; 5e-12 relative (CSV) |
-| `test_offload_pipeline.py::test_sweep_index_and_summary_report_each_no_offload_point` | SP7 step S3c (pre-registration section 9, last bullet; section 6, item 5), on synthetic records: `dv_shortfall_mps` is OFFLOAD_SWEEP_COLUMNS' last column, after `n_flags` in every case's group (the structure columns of a structural case follow the last case's plain group); it holds the record's `solve.dv_shortfall_mps`: empty for an ok solve (NaN), a fixed case (no solve), a reference_failed point and a search_failed solve (NaN; no summary line either), the shortfall for a no_offload solve, structural or not (37.1234567891 m/s at the structural end, every one of its 12 significant digits in the CSV text; 2.5 times it at the uncharged end, read back within 5e-12); `summary.sweep_no_offload_lines` prints `SWEEP_NO_OFFLOAD_HEAD` and one line per (point, case) that ended no_offload, in point order, written out word for word: the structural end with "carrying dm 6526.53 kg", the uncharged end without the clause, each with its shortfall to 6 significant digits, the column that holds it and "payload deficit at the full load not flown (a payload case flies a variant, not a sweep point)", never "0 t"; `planar_sweep_summary` prints them after `sweep_structure_lines` and before the Assumptions; a sweep without a no_offload end gets no line and no heading, its index the one empty column and its summary table the column's header over an `n/a` cell ("Reporting definitions (planar)", "Propellant saved at fixed payload", Sweeps) | exact; 5e-12 relative (CSV) |
+| `test_offload_pipeline.py::test_sweep_index_and_summary_report_each_no_offload_point` | SP7 step S3c (pre-registration section 9, last bullet; section 6, item 5), on synthetic records: `dv_shortfall_mps` is OFFLOAD_SWEEP_COLUMNS' last column, after `n_flags` in every case's group (the structure columns of a structural case follow the last case's plain group); it holds the record's `solve.dv_shortfall_mps`: empty for an ok solve (NaN), a fixed case (no solve), a reference_failed point and a search_failed solve (NaN; no summary line either), the shortfall for a no_offload solve, structural or not (37.1234567891 m/s at the structural end, every one of its 12 significant digits in the CSV text; 2.5 times it at the uncharged end, read back within 5e-12); `summary.sweep_no_offload_lines` prints `SWEEP_NO_OFFLOAD_HEAD` and one line per (point, case) that ended no_offload, in point order, written out word for word: the structural end with "carrying dm 6526.53 kg", the uncharged end without the clause, each with its shortfall to 6 significant digits, the column that holds it and "payload deficit at the full load not flown (a payload case flies a variant, not a sweep point)", never "0 t"; `planar_sweep_summary` prints them after `sweep_structure_lines` and before the Assumptions; KI-042 (closed in SP7 step S4a): the table's `<case>.offload_kg`, `<case>.stage1_fraction` and `<case>.total_fraction` cells of a no_offload point read `SWEEP_NO_OFFLOAD_CELL` ("n/a: no offload"; `summary.sweep_table_rows`), an ok point's its number, a reference_failed point's n/a, while the index keeps the solver's 0; a sweep without a no_offload end gets no line and no heading, its index the one empty column and its summary table the column's header over an `n/a` cell ("Reporting definitions (planar)", "Propellant saved at fixed payload", Sweeps) | exact; 5e-12 relative (CSV) |
 | `test_config_planar.py::test_offload_reports_name_the_arms_and_the_bridge_calibration` | on the pre-registered files (nothing run): silo_offload_2d's empty `of` with offload arms gives the note that points to "Propellant saved at fixed payload", never "no sensitivity block declared"; the bridge's fork has a record with 100 (P*/reference - 1) within 10%, and its offload caveat states P* instead of "no calibration record"; the bridge, with no sensitivity block, keeps that note (SP1 step 8a) | exact |
 | `test_config_planar.py::test_structure_experiments_load_as_the_cli_does_with_the_frozen_files` (2 cases), `::test_structure_experiments_fly_the_runs_sp1_flew` (2 cases), `::test_structure_experiment_declares_the_design_table`, `::test_structure_bridge_is_the_structural_headline_on_the_readme_loads_fork` | the pre-registered structural experiments of SP7 step S6a (nothing flown or solved, D-SP7-31; docs/phases/inputs/2026-10-15-SP7-preregistration.md): both load through `cli.load_experiment` (the structure loader, the result-name check and the preflight `sim.check_resolved`), their structure block names the vehicle's structure file, which `cli.load_structure` loads to the same model and whose bytes have the sha256 frozen at S2's commit 45e39d4, the file every structural and payload case resolves against; the pad and every variant resolve to the run and vehicle dicts of the experiments they are copied from (silo_offload_2d, silo_screening_2d, silo_offload_2d_readme), key order included; file A's cases are design 4.10's table plus the plausibility-scaled twin (D-SP7-41), the 4.0 g0 envelope-cap row (design 4.2.6) and silo_cold_200m's pair, in the file's order, every structure key written out and resolved to its row's settings (the outer sets at their recorded margin and cap), SP1's penalty rows, silo_hot_ramp_s1 and silo_cold_200m_s1 unchanged and silo_cold_s1 SP1's without its paired pad; the stage-1 pad control, the eight arms on the structural headline, SP1's sensitivity params and energy block; four payload cases (full-load sizings, every key written out), one at the settings of each case the pre-registration expects to end no_offload (physics_high_mass, outer_high_mass, the step row); the two sweeps solving the uncharged and the central case on each point's run; every derived name valid; file C is SP1's bridge case without its paired pad and file A's headline settings, with the stage-1 pad control and nothing else | exact |
 | `test_animate.py::test_calibration_record_matches_its_findings_note`, `::test_calibration_footnote_says_inside_the_band_when_it_is`, `::test_calibration_band_includes_both_edges`, `test_replay.py::test_calibration_caveat_says_within_the_band_for_the_readme_loads_fork` | every calibration record (the gate and, since SP1 step 8a, the README-loads fork): its vehicle is the case of tests/data/calibration_record.json whose vehicle file carries that name, its P* that case's recorded P* to 0.1 kg, and the findings note's results row of the case prints P* to 0.1 kg, 100 (P*/22,800 - 1) % to two decimals and inside or outside the 10% band; the gate's one-paragraph result; the footnote keeps the gate's sentence word for word, says "+8.3% high ... inside the +/-10% band" for the README-loads fork (not "Gate vehicle"), and each record's line ends left of the frame's right edge at 1280 px; both edges of the band, 22,800 +/- 2,280 kg, read inside (P*/22,800 - 1 rounds above 0.1 at the upper one) and 0.1 kg beyond either reads outside; the replay page says the fork lies within the gate band, never a miss, and keeps the gate's sentence word for word ("Calibration notes (build step 26)") | exact (0.1 kg; 0.01 percentage points) |

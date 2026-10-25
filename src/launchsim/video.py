@@ -47,7 +47,8 @@ to the server, which pipes it to ffmpeg as it arrives; the server never decodes 
   removes its reservation.
 
 The caveat footer of every frame is the server's (app.video_footer: plots.animation_caveats
-of the shown runs, with the exploratory line for an app run); the display-only caveat is the
+of the shown runs, with the exploratory line for an app run, and, for a run released below
+the mouth, the scene's early-release frame lines, SP7 step S4a); the display-only caveat is the
 scene page's own footer line (scene.FOOTER_TEXT), which every captured frame carries, so
 the server does not repeat it (D-SP2-23: one source per caveat; fix round 1).
 

@@ -25,7 +25,10 @@ from scipy.optimize import brentq
 
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.linear_motor import (
+    CONTROL_ACCELERATION,
+    DRIVE_CAP,
     POWER_LIMIT,
+    RELEASE_TRIGGER_TARGET_SPEED,
     RELEASE_TRIGGER_TRACK_END,
     TAPER_START,
     LinearMotorAssist,
@@ -47,6 +50,7 @@ from launchsim.phases import (
     ASCENT_KINDS,
     ASSIST_KIND,
     ATOL_M,
+    ATOL_MPS,
     ZERO_SPAN_S,
     HoldParams,
     IgnitionSpec,
@@ -477,7 +481,9 @@ def track_metrics(
     and drive_power_min_W = min(0, min P), the braking power the drive must absorb (0
     when it only pushes). exit_speed_mps and push_time_s are the release state (None
     when the run stopped on the track); the facility length includes the carriage
-    braking distance from the exit speed; drive_energy_J is the net drive work of the
+    braking distance from the exit speed (L + d_brake; for a linear-motor push
+    ``linear_motor_facility_m``'s max(L, s_release + d_brake), which overwrites it, SP7
+    step S4a); drive_energy_J is the net drive work of the
     energy identity, drive_work_in_J and drive_work_out_J its positive and negative
     parts (``losses.drive_work_split``), and electrical_energy_J = drive_work_in_J /
     efficiency: the electricity the drive draws, with no regeneration credited for any
@@ -544,6 +550,7 @@ def track_metrics(
     out.update(stall_unavailable_metrics(trace))
     if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
         out.update(linear_motor_metrics(trace, assist, track, v_exit, p_peak))
+        out["facility_length_m"] = linear_motor_facility_m(trace, assist, track, v_exit)
     return out
 
 
@@ -575,11 +582,16 @@ def stall_unavailable_metrics(trace: RunTrace) -> dict[str, Any]:
 
 
 LINEAR_MOTOR_METRICS: tuple[str, ...] = (
+    "push_control_law",
     "push_force_max_N",
     "push_power_max_W",
     "push_rise_time_s",
     "push_corner_speed_mps",
+    "push_accel_command_mps2",
+    "push_stop_taper_m",
+    "push_release_speed_mps",
     "push_power_limited",
+    "push_cap_bound",
     "push_accel_mean_mps2",
     "push_felt_g_plateau",
     "release_position_m",
@@ -590,8 +602,10 @@ LINEAR_MOTOR_METRICS: tuple[str, ...] = (
     "brake_energy_J",
 )
 """The track metrics written for a ``linear_motor`` run only (SP7 step S4; design 4.6;
-``linear_motor_metrics``), after every key a constant_accel run writes, which gains
-none of them (the 1-D golden tier and the planar output capture)."""
+``linear_motor_metrics``; the control law, a_cmd, s_taper and the release speed since
+S4a, KI-052, and whether a cap bound the acceleration law's command, S4a fix round 1),
+after every key a constant_accel run writes, which gains none of them
+(the 1-D golden tier and the planar output capture)."""
 POWER_LIMIT_TIE_REL = 1e-6
 """A ``power_limit`` event later than t_release (1 - POWER_LIMIT_TIE_REL) [relative to
 the push time] is a tie at the release, not a power-limited push: the speed where the
@@ -633,9 +647,10 @@ def _power_limited(trace: RunTrace, released: bool) -> bool:
     """Whether the power limit bound on the push: a ``power_limit`` ASSIST event, earlier
     than t_release (1 - POWER_LIMIT_TIE_REL) when the push released (an event at the
     release itself is the tie k = P_max/(F_max v_e) = 1), any one when it did not. The
-    event marks the law's power branch on its force before the power term: under the
-    force law's stop taper that is the untapered force, so the flown power stays below
-    P_max there (review pass 1 rerun, P1-m1). A binding inside one integrator step is
+    event marks the law's power branch on its force before the power term, the force
+    the cap applies to: under the force law's stop taper the tapered force since SP7
+    step S4a (D-SP7-50; S4 read the untapered force there, review pass 1 rerun, P1-m1),
+    so a push that reads power-limited flew at P_max. A binding inside one integrator step is
     logged (``prelude._passed_over``) unless its margin stays inside the watch's zero
     band (ATOL_MPS) or, should a step hold two extrema of the margin, the scan does not
     see its maximum; such a binding is not logged and does not count."""
@@ -643,6 +658,61 @@ def _power_limited(trace: RunTrace, released: bool) -> bool:
     if not released:
         return bool(times)
     return any(t_e < trace.t_release_s * (1.0 - POWER_LIMIT_TIE_REL) for t_e in times)
+
+
+def _cap_bound(trace: RunTrace, released: bool, control: str) -> bool | None:
+    """Whether a cap (F_max or P_max / sdot) bound the acceleration law's command on the
+    push (SP7 step S4a fix round 1): a ``drive_cap`` ASSIST event, earlier than t_release
+    (1 - POWER_LIMIT_TIE_REL) when the push released (a cap reached only at the release
+    itself is a tie, as for ``_power_limited``), any one when it did not. While no cap
+    binds the acceleration law flies its command exactly (the net acceleration a_cmd
+    r(t) w(s)); False therefore means no cap bound on the push: it flew its command
+    wherever it ran, and held a_cmd after its rise (scaled by the stop taper, if any)
+    only when it released after the rise (fix round 2: a release inside the rise, or a
+    push that stopped on the track, holds nothing to a release). True says that a cap
+    bound, not when (it can bind inside the rise and let go later, ``drive_cap_end``).
+    None for the force law, whose force limit is the law itself (its power cap is
+    ``push_power_limited``), and for a stalled push (``DRIVE_STALL``: it never moved,
+    fix round 2). The same logging limits as ``_power_limited`` apply to a binding inside
+    one integrator step."""
+    if control != CONTROL_ACCELERATION or trace.status == DRIVE_STALL:
+        return None
+    times = _assist_event_times(trace, DRIVE_CAP)
+    if not released:
+        return bool(times)
+    return any(t_e < trace.t_release_s * (1.0 - POWER_LIMIT_TIE_REL) for t_e in times)
+
+
+def release_point(trace: RunTrace, track: TrackGeometry) -> tuple[float, str]:
+    """(s_release [m], trigger) of a track push that released: (L, ``track_end``) for a
+    release at the track end, or, for a push released at its release speed before it
+    (SP7 step S4a: ``prelude.fly_track`` logs the ``target_speed`` ASSIST event there),
+    the flown release position, s of the last ASSIST phase's end state (the release
+    state), and ``target_speed``. Inputs: the RunTrace and the track. Frame: arc length
+    along the track from its start."""
+    target = RELEASE_TRIGGER_TARGET_SPEED
+    if any(e.name == target and e.phase == ASSIST_KIND for e in trace.events):
+        last = trace.assist_phases()[-1]
+        layout = last.spec.params.layout
+        return float(layout.get(last.y_end, "s_m")), target
+    return track.length_m, RELEASE_TRIGGER_TRACK_END
+
+
+def linear_motor_facility_m(
+    trace: RunTrace, assist: LinearMotorAssist, track: TrackGeometry, v_exit_mps: float | None
+) -> float | None:
+    """The facility length [m] of a linear-motor push: max(L, s_release + d_brake) with
+    s_release from ``release_point`` and d_brake from the speed at release v_exit_mps
+    [m/s] (``LinearMotorAssist.facility_length_m``: the carriage brakes from an early
+    release, within the stroke left or past the track end); None when the run never
+    released. It equals L + d_brake,
+    to the bit, for a release at the track end."""
+    if v_exit_mps is None or trace.y_release is None:
+        return None
+    s_release, trigger = release_point(trace, track)
+    if trigger == RELEASE_TRIGGER_TRACK_END:
+        return assist.facility_length_m(track, v_exit_mps)
+    return assist.facility_length_m(track, v_exit_mps, s_release)
 
 
 def linear_motor_metrics(
@@ -657,47 +727,64 @@ def linear_motor_metrics(
     Inputs: the RunTrace; the drive (its settings: the bound copy the phases carry is
     not needed); the track; v_exit_mps, the exit speed [m/s] (None when the run stopped
     on the track); drive_power_peak_W, the peak mechanical drive power [W] of the push.
-    Output: the settings push_force_max_N (F_max), push_power_max_W (P_max, mechanical
-    at the carriage), push_rise_time_s (t_r) and push_corner_speed_mps (P_max / F_max);
+    Output: the settings push_control_law (``force`` or ``acceleration``),
+    push_force_max_N (F_max), push_power_max_W (P_max, mechanical at the carriage),
+    push_rise_time_s (t_r), push_corner_speed_mps (P_max / F_max),
+    push_accel_command_mps2 (a_cmd of the acceleration law, None for the force law),
+    push_stop_taper_m (s_taper, None without a taper) and push_release_speed_mps
+    (v_release, None when no release speed is set; the last four since S4a, KI-052);
     push_power_limited, whether the power limit bound (a ``power_limit`` event logged
     on the push, earlier than the release by more than POWER_LIMIT_TIE_REL of the push
     time: an event at the release itself is the tie k = P_max/(F_max v_e) = 1; under the
-    force law's taper it marks the law's power branch on the untapered force, the flown
-    power below P_max; ``_power_limited``);
+    force law's taper it marks the cap binding on the tapered force, D-SP7-50;
+    ``_power_limited``); push_cap_bound, under the acceleration law whether a cap (F_max
+    or P_max / sdot) bound its command (a ``drive_cap`` event before the release, the
+    same tie; False: no cap bound, so the push flew its command wherever it ran; True
+    carries no timing), None for the force law and for a stalled push (``_cap_bound``,
+    S4a fix rounds 1 and 2);
     push_accel_mean_mps2 =
-    v_exit / t_push, a mean, not an acceleration the drive held; push_felt_g_plateau,
+    v_exit / t_push, a mean over the whole push (the rise, any capped or power-limited
+    part and the taper included), not a single held acceleration; push_felt_g_plateau,
     the felt axial acceleration [g0] at the end of the rise (t = t_r, the
     drive_ramp_end boundary; push start for a step), from the flown state: the value
     at t_r, not one held after it (the burn on a hot push, and a power limit or the
     taper beginning later, move it; felt_g_track_peak is the peak); None when the push
     ended before t_r or stalled, and when the power limit or the taper began before
     t_r (no plateau: ``_felt_at_rise_end``);
-    release_position_m (L: release at the track end in S4) and release_trigger
-    (``track_end``); electrical_power_peak_W = peak mechanical power / efficiency; and
-    the carriage's closed-form braking at the constant total deceleration a_b from the
-    exit speed: braking_time_s = v / a_b, brake_force_N = m_c (a_b - g_eff sin phi) and
-    brake_energy_J = (1/2) m_c v^2 (1 - g_eff sin phi / a_b), with the track's g_eff
-    (the phases') and phi at the release. Items that need the release are None
-    without one (brake_force_N does not, except on a stall: the carriage never moved).
-    Frame: the flat track frame."""
+    release_position_m and release_trigger, the real release (``release_point``: L and
+    ``track_end``, or the flown position where sdot reached the release speed and
+    ``target_speed``, SP7 step S4a); electrical_power_peak_W = peak mechanical power /
+    efficiency; and the carriage's closed-form braking at the constant total
+    deceleration a_b from the speed at release: braking_time_s = v / a_b, brake_force_N
+    = m_c (a_b - g_eff sin phi) and brake_energy_J = (1/2) m_c v^2 (1 - g_eff sin phi /
+    a_b), with the track's g_eff (the phases') and phi at the release position. Items
+    that need the release are None without one (brake_force_N does not, except on a
+    stall: the carriage never moved). The facility length of such a push, max(L,
+    s_release + d_brake), is ``linear_motor_facility_m``'s, which ``track_metrics``
+    writes into the common key ``facility_length_m``. Frame: the flat track frame."""
     released = trace.y_release is not None and v_exit_mps is not None
     phases = trace.assist_phases()
     g_eff = phases[0].spec.params.g_eff_mps2
-    s_release = assist.release_position_m(track)
+    s_release, trigger = release_point(trace, track)
     phi = track.phi(s_release)
     stalled = trace.status == DRIVE_STALL
     out: dict[str, Any] = {
+        "push_control_law": assist.control,
         "push_force_max_N": assist.force_max_N,
         "push_power_max_W": assist.power_max_W,
         "push_rise_time_s": assist.rise_time_s,
         "push_corner_speed_mps": assist.corner_speed_mps,
+        "push_accel_command_mps2": assist.accel_command_mps2,
+        "push_stop_taper_m": assist.stop_taper_m,
+        "push_release_speed_mps": assist.release_speed_mps,
         "push_power_limited": _power_limited(trace, released),
+        "push_cap_bound": _cap_bound(trace, released, assist.control),
         "push_accel_mean_mps2": (
             v_exit_mps / trace.t_release_s if released and v_exit_mps is not None else None
         ),
         "push_felt_g_plateau": None if stalled else _felt_at_rise_end(trace, assist.rise_time_s),
         "release_position_m": s_release if released else None,
-        "release_trigger": RELEASE_TRIGGER_TRACK_END if released else None,
+        "release_trigger": trigger if released else None,
         "electrical_power_peak_W": assist.electrical_power_W(drive_power_peak_W),
         "braking_time_s": assist.braking_time_s(v_exit_mps) if v_exit_mps is not None else None,
         "brake_force_N": None if stalled else assist.brake_force_N(g_eff, phi),
@@ -794,26 +881,50 @@ def carriage_park_altitude_m(
 ) -> float | None:
     """Altitude [m] in the +z-up datum frame at which the braked carriage comes to rest
     after release: its braking distance from the exit speed (``braking_distance_m``)
-    along the track tangent beyond the exit, z = z_exit + d_brake sin phi(L). None on
-    a pad or when the run never released."""
+    along the track tangent beyond the release point, z = z_exit + d_brake sin phi(L)
+    for a release at the track end, z(s_release) + d_brake sin phi(s_release) for a
+    push released at its release speed before it (SP7 step S4a, ``release_point``: the
+    carriage brakes from the release point). None on a pad or when the run never
+    released."""
     if track is None or trace.y_release is None:
         return None
     v_exit = abs(float(VERTICAL_LAYOUT.get(trace.y_release, "v_mps")))
     d_brake = assist.braking_distance_m(v_exit)
+    s_release, trigger = release_point(trace, track)
+    if trigger != RELEASE_TRIGGER_TRACK_END:
+        z_release = track.start_altitude_m + track.z(s_release)
+        return z_release + d_brake * math.sin(track.phi(s_release))
     z_exit = track.start_altitude_m + track.z(track.length_m)
     return z_exit + d_brake * math.sin(track.phi(track.length_m))
 
 
+def impact_in_shaft(trace: RunTrace, z_ground_m: float) -> bool:
+    """True when the run's impact event lies more than ATOL_M below the ground altitude
+    z_ground_m [m]: a fall back inside the shaft after a release below the ground (from an
+    apex inside the shaft, or through the open mouth from one above it, when the floor
+    lies below the ground), onto the parked carriage (``prelude.shaft_floor_m``) or, with
+    a carriage braking at less than the vehicle's deceleration, at the apex (SP7 step S4a
+    fix rounds 3 and 4, P3-M2, P4-M1). False without an impact. Frame: the +z-up datum
+    frame."""
+    impact = trace.first_event("impact")
+    return impact is not None and impact.z_m < z_ground_m - ATOL_M
+
+
 def failed_ignition_metrics(
-    trace: RunTrace, g_eff_mps2: float, assist: AssistModel, track: TrackGeometry | None
+    trace: RunTrace,
+    g_eff_mps2: float,
+    assist: AssistModel,
+    track: TrackGeometry | None,
+    z_ground_m: float = 0.0,
 ) -> dict[str, Any]:
     """The metrics of a run in which a stage's ignition failed (docs/physics.md,
     "Failed-ignition coast"); an empty dict when no stage failed.
 
     Inputs: the RunTrace (``failed_stage`` set); g_eff_mps2, the constant effective
     gravity of the track [m/s^2]; assist, the assist model (its carriage braking
-    distance); track, the track geometry or None for a pad. Output keys (SI; times
-    relative to release; None when the run did not reach the item):
+    distance); track, the track geometry or None for a pad; z_ground_m [m], the
+    planner's ground altitude (the impact surface outside the shaft). Output keys (SI;
+    times relative to release; None when the run did not reach the item):
     ``failed_stage`` (the stage name); ``failed_apex_alt_m``, the highest apex [m] of
     the unpowered flight that ends in the failure, i.e. after the last burnout before
     it or after release for a first stage (``last_burn_end_s``; None when the vehicle
@@ -822,19 +933,35 @@ def failed_ignition_metrics(
     (``carriage_park_altitude_m``), ``failed_t_carriage_s`` [s] and
     ``failed_speed_at_carriage_mps`` [m/s], when and how fast the falling vehicle
     first comes down to that altitude (the first obstacle in the fall-back path; None
-    when the apex is below it); ``failed_t_return_s`` [s], when the vehicle is back
+    when the apex is below it, which a carriage braking at less than the vehicle's
+    deceleration gives, inside the shaft or above the ground); ``failed_t_return_s`` [s],
+    when the vehicle is back
     down at its release altitude (the silo mouth, or the pad): the first downward
     crossing of z_release after that last burn (``descent_crossing_time_s``), which is
     the impact event itself when the mouth is at the ground (the plan's datum,
-    exit_altitude_m = 0) and None when the ground is above the mouth;
-    ``failed_impact_speed_mps`` [m/s], |v| at the impact event (the ground, z =
-    z_ground); and, for a track run, ``failed_speed_at_shaft_bottom_mps`` [m/s], the
+    exit_altitude_m = 0) and None when the ground is above the mouth, when the
+    vehicle falls back inside the shaft onto the parked carriage, which lies above the
+    release point (from an apex inside the shaft or, through the open mouth, above it),
+    or when, after a push released at its release speed below the ground whose carriage
+    parks at or above the ground, the fall ends at the ground, above the release altitude
+    (FAILED_IGNITION_EARLY_TRACK_ASSUMPTIONS; SP7 step S4a fix round 5, P5-m1);
+    ``failed_impact_speed_mps`` [m/s], |v| at the impact event at the ground (z =
+    z_ground), None for an impact inside the shaft (``impact_in_shaft``: after a release
+    below the ground the floor of the flight model there is the parked carriage, so the
+    impact's time and speed are ``failed_t_carriage_s`` and
+    ``failed_speed_at_carriage_mps``, or, with a carriage braking at less than the
+    vehicle's deceleration, the impact is at the apex; SP7 step S4a fix round 3, P3-M2,
+    and ``failed_ignition_flags``); and, for a track run,
+    ``failed_speed_at_shaft_bottom_mps`` [m/s], the
     speed a vehicle falling on from the impact point would have at the track start
     (the shaft bottom), derived and not integrated: v_bottom^2 = v_impact^2 + 2 g_eff
     (z_impact - z_track_start) under the track's constant g_eff (the mirror of the
     push; z_impact - z_track_start = L when the mouth is at the ground). The carriage
     items and the shaft-bottom speed are the obstacle-free coast values: no impact
-    with the carriage is modelled (stated in FAILED_IGNITION_TRACK_ASSUMPTIONS).
+    with the carriage is modelled (stated in FAILED_IGNITION_TRACK_ASSUMPTIONS), except
+    inside the shaft after a release below the ground, where the carriage is the floor
+    and the shaft-bottom speed the obstacle-free value through it
+    (FAILED_IGNITION_SHAFT_ASSUMPTIONS).
     Frame: the +z-up datum frame with z = 0 at the ground.
     """
     if trace.failed_stage is None:
@@ -869,7 +996,7 @@ def failed_ignition_metrics(
             None if at_carriage is None else abs(float(at_carriage[1][i_v]))
         ),
         "failed_t_return_s": _rel_release(trace, t_return),
-        "failed_impact_speed_mps": v_impact,
+        "failed_impact_speed_mps": None if impact_in_shaft(trace, z_ground_m) else v_impact,
         "failed_speed_at_shaft_bottom_mps": v_bottom,
     }
 
@@ -879,12 +1006,36 @@ def failed_ignition_flags(
 ) -> list[str]:
     """Run flags of a failed-ignition track run whose mouth (the track exit) is not at
     the ground z_ground_m [m] the impact event fires on: the coast metrics then split
-    between the two altitudes, and the flag says which is which. Inputs: the RunTrace
-    (with an impact event), the track geometry and the planner's ground altitude; empty
-    for a pad, a run without an impact, or a mouth at the ground (within ATOL_M).
-    Frame: the +z-up datum frame."""
-    if track is None or trace.failed_stage is None or trace.first_event("impact") is None:
+    between the two altitudes, and the flag says which is which; or, for one whose impact
+    lies inside the shaft (``impact_in_shaft``; SP7 step S4a fix rounds 3 and 4, P3-M2,
+    P4-M1, H4-m2), that flag alone: where the impact is (on the parked carriage, its time
+    and speed in the carriage items, after a fall from an apex inside the shaft or through
+    the open mouth; or at the apex, the carriage parked above it) and which items are
+    None. Inputs: the RunTrace (with an impact event), the track geometry and the
+    planner's ground altitude; empty for a pad, a run without an impact, or a mouth at
+    the ground (within ATOL_M) with the impact there. Frame: the +z-up datum frame."""
+    impact = trace.first_event("impact")
+    if track is None or trace.failed_stage is None or impact is None:
         return []
+    if impact_in_shaft(trace, z_ground_m):
+        if abs(impact.v_mps) > ATOL_MPS:
+            return [
+                f"failed ignition: the vehicle fell back inside the shaft and its impact is "
+                f"at z = {impact.z_m:.6g} m, on the parked carriage (failed_t_carriage_s and "
+                "failed_speed_at_carriage_mps are its time and speed); "
+                "failed_impact_speed_mps (at the ground) and failed_t_return_s are None (the "
+                "fall ends on the carriage, below the ground, whether or not it passed the "
+                "mouth, and above the release altitude), and the shaft-bottom speed is the "
+                "obstacle-free value through the carriage"
+            ]
+        return [
+            f"failed ignition: the vehicle stopped rising inside the shaft and its impact is "
+            f"at z = {impact.z_m:.6g} m, at its apex, at or below the parked carriage's "
+            "altitude (a carriage that brakes at less than the vehicle's deceleration); "
+            "failed_impact_speed_mps (at the ground) and failed_t_return_s are None (it "
+            "never comes back down to the ground or to the release altitude), and the "
+            "shaft-bottom speed is the obstacle-free value from the apex, below the carriage"
+        ]
     z_mouth = track.start_altitude_m + track.z(track.length_m)
     if abs(z_mouth - z_ground_m) <= ATOL_M:
         return []

@@ -22,9 +22,9 @@ phi) - T (positive: the carriage pushes the vehicle).
 The protocol members the force-limited drive needs (SP7 step S4, design D-SP7-24 and
 D-SP7-25) are backward compatible: ``push_time_exact`` (True for the existing models),
 ``at_push_start`` (they return themselves), ``kink_times``, ``push_watches`` (both
-empty for them) and ``stall_reason`` (None for them), so for an existing model the
-integration of the push (RHS, sub-phase boundaries, events, step cap) is that of
-SP1.
+empty for them), ``stall_reason`` and, since SP7 step S4a, ``release_speed_mps`` (None
+for them: release at the track end), so for an existing model the integration of the
+push (RHS, sub-phase boundaries, events, step cap) is that of SP1.
 """
 
 from __future__ import annotations
@@ -146,13 +146,21 @@ class AssistModel(Protocol):
     kink_times: (event name, time) kinks of the drive force inside the push, which the
     planner makes sub-phase boundaries and logs; push_watches: the crossings the
     planner logs and splits the push at (``PushWatch``); stall_reason: why the bound
-    drive cannot start the push (None when it can); braking_distance_m and
-    facility_length_m: what the carriage needs after release; assumptions: the strings
-    every summary lists.
+    drive cannot start the push (None when it can); release_speed_mps: the speed along
+    the track [m/s] at which the push releases before the track end (SP7 step S4a; the
+    planner's ``target_speed`` event; None: release at the track end); braking_distance_m
+    and facility_length_m: what the carriage needs after release; assumptions: the
+    strings every summary lists.
     """
 
     push_time_exact: ClassVar[bool]
     """Whether ``push_time_estimate`` is the exact push time (class constant)."""
+
+    @property
+    def release_speed_mps(self) -> float | None:
+        """The release speed v_release [m/s] along the track (sdot crossing it upward
+        releases the push before the track end), or None: release at the track end."""
+        ...
 
     @property
     def name(self) -> str:

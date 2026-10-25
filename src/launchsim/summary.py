@@ -60,9 +60,11 @@ from launchsim.config import (
     STRUCTURE_SET_NAMES,
     STRUCTURE_SIZING_FLOWN,
     STRUCTURE_SIZING_FULL_LOAD,
+    LinearMotorConfig,
     SweepPoint,
 )
 from launchsim.offload import NO_OFFLOAD_STATUS
+from launchsim.phases.prelude import SHAFT_FALLBACK
 from launchsim.search import OK_STATUS
 from launchsim.structure import (
     ENTRY_AFT_RING,
@@ -282,6 +284,136 @@ FAILED_ROWS: tuple[VariantRow, ...] = (
 )
 
 
+LINEAR_MOTOR_SOURCE = "linear_motor"
+"""Row source of a linear-motor row (``_linear_motor_cell``: the run's metric, "none" for
+an unset push setting, "-" for a run that is not a linear-motor run, n/a for a
+linear-motor run with no push record)."""
+LINEAR_MOTOR_MARK_KEY = "push_force_max_N"
+"""The metric whose presence marks a linear-motor run (``metrics.LINEAR_MOTOR_METRICS``:
+written for that drive only)."""
+LINEAR_MOTOR_UNSET_KEYS: frozenset[str] = frozenset(
+    {"push_accel_command_mps2", "push_stop_taper_m", "push_release_speed_mps"}
+)
+"""The push settings a linear-motor run may leave unset (no command under the force law,
+no taper, no release speed set): their cell reads "none", not n/a."""
+LINEAR_MOTOR_NOT_A_MOTOR = "-"
+"""The cell of a linear-motor row in the column of a run that is not one."""
+LINEAR_MOTOR_ROWS: tuple[VariantRow, ...] = (
+    (
+        "linear motor (SP7; '-': not a linear-motor run; n/a in every row: a linear-motor "
+        "run with no push record): control law",
+        LINEAR_MOTOR_SOURCE,
+        "push_control_law",
+    ),
+    ("  force limit F_max [N]", LINEAR_MOTOR_SOURCE, "push_force_max_N"),
+    (
+        "  power limit P_max [W] (mechanical, at the carriage)",
+        LINEAR_MOTOR_SOURCE,
+        "push_power_max_W",
+    ),
+    (
+        "  rise time t_r [s] (of the force limit, or of the acceleration command)",
+        LINEAR_MOTOR_SOURCE,
+        "push_rise_time_s",
+    ),
+    ("  corner speed P_max / F_max [m/s]", LINEAR_MOTOR_SOURCE, "push_corner_speed_mps"),
+    (
+        "  acceleration command a_cmd [m/s^2] (acceleration law; a cap can cut it)",
+        LINEAR_MOTOR_SOURCE,
+        "push_accel_command_mps2",
+    ),
+    ("  stop taper [m]", LINEAR_MOTOR_SOURCE, "push_stop_taper_m"),
+    ("  release speed set [m/s]", LINEAR_MOTOR_SOURCE, "push_release_speed_mps"),
+    (
+        "  power limited (the power limit bound on the push)",
+        LINEAR_MOTOR_SOURCE,
+        "push_power_limited",
+    ),
+    (
+        "  a cap bound the command (acceleration law: F_max or P_max / sdot, at some time on "
+        "the push; False: no cap bound before the release, so a_cmd was held after the rise, "
+        "scaled by a taper if any, when the push released after its rise; n/a under the "
+        "force law and for a stalled push)",
+        LINEAR_MOTOR_SOURCE,
+        "push_cap_bound",
+    ),
+    (
+        "  mean push acceleration v_exit / t_push [m/s^2] (a mean over the whole push: the "
+        "rise, any capped or power-limited part and the taper included)",
+        LINEAR_MOTOR_SOURCE,
+        "push_accel_mean_mps2",
+    ),
+    (
+        "  felt axial g at the end of the rise [g0] (at t_r: where the acceleration law's "
+        "command plateau starts when no cap bound in the rise, else a capped value; where "
+        "a cold force-law push's F_max plateau starts, held until the power limit or the "
+        "taper; a hot burn moves it)",
+        LINEAR_MOTOR_SOURCE,
+        "push_felt_g_plateau",
+    ),
+    (
+        "  release position along the track [m] (less than the stroke L: released before "
+        "the track end)",
+        LINEAR_MOTOR_SOURCE,
+        "release_position_m",
+    ),
+    ("  release trigger (track_end or target_speed)", LINEAR_MOTOR_SOURCE, "release_trigger"),
+    (
+        "  electrical power peak [W] (mechanical peak / efficiency)",
+        LINEAR_MOTOR_SOURCE,
+        "electrical_power_peak_W",
+    ),
+    ("  carriage braking time [s]", LINEAR_MOTOR_SOURCE, "braking_time_s"),
+    (
+        "  carriage brake force [N] (m_c (a_b - g_eff sin phi); negative when a_b < g_eff "
+        "sin phi: the brake then holds the carriage up)",
+        LINEAR_MOTOR_SOURCE,
+        "brake_force_N",
+    ),
+    (
+        "  carriage brake energy [J] ((1/2) m_c v^2 (1 - g_eff sin phi / a_b); negative when "
+        "a_b < g_eff sin phi)",
+        LINEAR_MOTOR_SOURCE,
+        "brake_energy_J",
+    ),
+)
+"""The linear motor's rows (SP7 step S4a; ``metrics.LINEAR_MOTOR_METRICS`` with the
+settings of KI-052), inserted after the facility-length row of the 1-D and the planar
+per-variant tables only when some run of the table is a linear-motor run
+(``_has_linear_motor``), so the summary of every other experiment is unchanged (the
+conditional-row precedent of RAMP_START_ROWS and FAILED_ROWS)."""
+LINEAR_MOTOR_AFTER_KEY = "facility_length_m"
+"""The row the linear motor's rows follow."""
+
+
+def _is_linear_motor_run(rr: RunResult) -> bool:
+    """True when a run is a linear-motor run: its metrics carry LINEAR_MOTOR_MARK_KEY, or
+    its resolved run block's assist is a LinearMotorConfig (a run whose search or guidance
+    failed writes no push metrics; SP7 step S4a fix round 2)."""
+    if LINEAR_MOTOR_MARK_KEY in rr.result.metrics:
+        return True
+    run = getattr(rr.resolved, "run", None)
+    return isinstance(getattr(run, "assist", None), LinearMotorConfig)
+
+
+def _has_linear_motor(runs: Mapping[str, RunResult]) -> bool:
+    """True when some run is a linear-motor run (``_is_linear_motor_run``)."""
+    return any(_is_linear_motor_run(rr) for rr in runs.values())
+
+
+def _linear_motor_cell(m: Mapping[str, Any], key: str, motor: bool = True) -> str:
+    """One linear-motor cell of a run's metrics m: LINEAR_MOTOR_NOT_A_MOTOR for a run
+    that is not a linear-motor run (``motor`` False, and no LINEAR_MOTOR_MARK_KEY), n/a
+    (``_fmt`` of None) for a linear-motor run whose metrics hold no push record, "none"
+    for an unset push setting (LINEAR_MOTOR_UNSET_KEYS), else the metric (``_fmt``)."""
+    if LINEAR_MOTOR_MARK_KEY not in m:
+        return _fmt(None) if motor else LINEAR_MOTOR_NOT_A_MOTOR
+    value = m.get(key)
+    if value is None and key in LINEAR_MOTOR_UNSET_KEYS:
+        return "none"
+    return _fmt(value)
+
+
 def ignition_rows(stage_name: str) -> tuple[VariantRow, ...]:
     """The rows that say how the first stage (``stage_name``) ignites: t_ign relative
     to release, the startup kind (``ignition_timing_metrics``) and its duration."""
@@ -325,17 +457,21 @@ def _flight_burn_differs(er: ExperimentResult) -> bool:
 def variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
     """VARIANT_ROWS with the ignition rows after the flags row, the before-flight pair
     after the before-release pair when it differs for some run
-    (``_flight_burn_differs``), plus FAILED_ROWS when any run carries a
+    (``_flight_burn_differs``), LINEAR_MOTOR_ROWS after the facility row when some run
+    is a linear-motor run (SP7 step S4a), plus FAILED_ROWS when any run carries a
     failed-ignition item."""
     rows: list[VariantRow] = []
     flight_pair = _flight_burn_differs(er)
     stage = first_stage_name(er)
+    motor = _has_linear_motor(er.runs)
     for row in VARIANT_ROWS:
         rows.append(row)
         if row[1] == "flags":
             rows += ignition_rows(stage)
         elif row[2] == FLIGHT_BURN_AFTER_KEY and flight_pair:
             rows += FLIGHT_BURN_ROWS
+        elif row[2] == LINEAR_MOTOR_AFTER_KEY and motor:
+            rows += LINEAR_MOTOR_ROWS
     if any("failed_stage" in rr.result.metrics for rr in er.runs.values()):
         rows += FAILED_ROWS
     return tuple(rows)
@@ -375,6 +511,8 @@ def _variant_cell(er: ExperimentResult, name: str, source: str, key: str) -> str
         return _fmt(value) if value is None or phase is None else f"{_fmt(value)} ({phase})"
     if source == "m":
         return _fmt(rr.result.metrics.get(key))
+    if source == LINEAR_MOTOR_SOURCE:
+        return _linear_motor_cell(rr.result.metrics, key, _is_linear_motor_run(rr))
     if name == er.baseline.name:
         return "(baseline)"
     return _fmt(er.comparison.get(name, {}).get(key))
@@ -1170,15 +1308,30 @@ PLANAR_VARIANT_ROWS: tuple[VariantRow, ...] = (
 """Rows of the planar per-variant table (label with unit, source, key): sources as
 VARIANT_ROWS plus PLANAR_DEG_SOURCE; every PLANAR_REQUIRED_METRICS key is a row.
 ``planar_variant_rows`` inserts the stage-1 ignition rows after the flags row."""
+PLANAR_FAILED_SOURCE = "failed"
+"""Row source of PLANAR_FAILED_ROWS' coast cells: the run's metric for a run with a failed
+ignition (``failed_stage``), n/a for every other run, whose apex or impact (a burn's apex
+inside the shaft, SP7 step S4a fix round 4, V4-2) is not the fall-back coast's."""
 PLANAR_FAILED_ROWS: tuple[VariantRow, ...] = (
     ("failed ignition: stage", "m", "failed_stage"),
-    ("  apex altitude of the fall-back coast [m]", "m", "apex_alt_m"),
-    ("  time of that apex after release [s]", "m", "apex_t_s"),
-    ("  impact time after release [s]", "m", "impact_t_s"),
-    ("  impact speed |v_rel| at the ground [m/s]", "m", "impact_speed_mps"),
+    ("  apex altitude of the fall-back coast [m]", PLANAR_FAILED_SOURCE, "apex_alt_m"),
+    ("  time of that apex after release [s]", PLANAR_FAILED_SOURCE, "apex_t_s"),
+    ("  impact time after release [s]", PLANAR_FAILED_SOURCE, "impact_t_s"),
+    ("  impact speed |v_rel| at the ground [m/s]", PLANAR_FAILED_SOURCE, "impact_speed_mps"),
 )
 """Appended to the planar table when any run carries a failed ignition (the planar
-metric names: the highest apex and the impact of the unpowered coast)."""
+metric names: the highest apex and the impact of the unpowered coast; n/a for a run
+without a failed ignition, PLANAR_FAILED_SOURCE)."""
+PLANAR_SHAFT_IMPACT_LABEL = (
+    "  impact speed |v_rel| at the ground, or inside the shaft after a fall back there "
+    "(shaft_fallback flag): on the parked carriage, or at the apex (about 0) when the "
+    "carriage parks above it [m/s]"
+)
+"""The label of PLANAR_FAILED_ROWS' impact-speed row when some run of the table fell back
+inside the shaft (a ``prelude.SHAFT_FALLBACK`` flag: its impact is on the parked carriage,
+the floor of the flight model there, not at the ground, or, with a carriage braking at less
+than the vehicle's deceleration, at the apex; SP7 step S4a fix rounds 3 and 4, P3-M2,
+H4-m2); every other table keeps the label of PLANAR_FAILED_ROWS."""
 
 
 RAMP_TRIGGER_SOURCE = "ramp_trigger"
@@ -1236,18 +1389,29 @@ def _ramp_trigger_cell(er: ExperimentResult, name: str) -> str:
 def planar_variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
     """PLANAR_VARIANT_ROWS with the stage-1 ignition rows (``ignition_rows``) after the
     flags row, followed by RAMP_START_ROWS when some run states its ramp start by depth,
-    speed or height (``_states_ramp_trigger``), plus PLANAR_FAILED_ROWS when any run
-    carries a failed ignition."""
+    speed or height (``_states_ramp_trigger``), LINEAR_MOTOR_ROWS after the facility row
+    when some run is a linear-motor run (SP7 step S4a), plus PLANAR_FAILED_ROWS when any
+    run carries a failed ignition (the impact-speed row labelled PLANAR_SHAFT_IMPACT_LABEL
+    when some run fell back inside the shaft, fix round 3)."""
     rows: list[VariantRow] = []
     ramp = _states_ramp_trigger(er)
+    motor = _has_linear_motor(er.runs)
     for row in PLANAR_VARIANT_ROWS:
         rows.append(row)
         if row[1] == "flags":
             rows += ignition_rows(first_stage_name(er))
             if ramp:
                 rows += RAMP_START_ROWS
+        elif row[2] == LINEAR_MOTOR_AFTER_KEY and motor:
+            rows += LINEAR_MOTOR_ROWS
     if any("failed_stage" in rr.result.metrics for rr in er.runs.values()):
-        rows += PLANAR_FAILED_ROWS
+        shaft = any(SHAFT_FALLBACK in str(f) for rr in er.runs.values() for f in rr.result.flags)
+        rows += [
+            (PLANAR_SHAFT_IMPACT_LABEL, src, key)
+            if shaft and key == "impact_speed_mps"
+            else (label, src, key)
+            for label, src, key in PLANAR_FAILED_ROWS
+        ]
     return tuple(rows)
 
 
@@ -1256,7 +1420,10 @@ def _planar_cell(
 ) -> str:
     """One cell of the planar per-variant table: a PLANAR_DEG_SOURCE metric in degrees,
     the PLANAR_SCREENING_SOURCE row as ``screening_cell`` ("(baseline)" for the
-    baseline), everything else as ``_variant_cell``."""
+    baseline), the RAMP_TRIGGER_SOURCE row as ``_ramp_trigger_cell``, a
+    PLANAR_FAILED_SOURCE row n/a for a run without a failed ignition (no
+    ``failed_stage``; SP7 step S4a fix round 4, H4-m3) and as a plain metric otherwise,
+    everything else as ``_variant_cell``."""
     _label, source, key = row
     if source == PLANAR_SCREENING_SOURCE:
         if name == er.baseline.name:
@@ -1264,6 +1431,10 @@ def _planar_cell(
         return screening_cell(er.comparison.get(name, {}))
     if source == RAMP_TRIGGER_SOURCE:
         return _ramp_trigger_cell(er, name)
+    if source == PLANAR_FAILED_SOURCE:
+        if runs[name].result.metrics.get("failed_stage") is None:
+            return _fmt(None)
+        source = "m"
     if source == PLANAR_DEG_SOURCE:
         value = runs[name].result.metrics.get(key)
         return _fmt(value if not _is_finite_number(value) else float(rad_to_deg(float(value))))
@@ -4176,7 +4347,9 @@ def planar_sweep_summary(
     """The top-level summary.md text of a planar sweep: the comparison basis and the
     guidance label (sweep-optimized, or fixed guidance), one table per sweep (the sweep
     index: release speed, P* and dP*, the screening yardstick, the kick regime per point,
-    q-alpha and max-Q against the point's baseline, the screening status), the paired
+    q-alpha and max-Q against the point's baseline, the screening status; a no_offload
+    point's offload and share cells read SWEEP_NO_OFFLOAD_CELL, ``sweep_table_rows``,
+    KI-042), the paired
     baselines of paired sweeps, the assumptions (union over the baseline and every
     point) and the Checks (``sweep_checks_section``: blocked findings, not_checked,
     gamma*-sensitive verdicts); under a table whose offload cases are structural at some
@@ -4211,8 +4384,7 @@ def planar_sweep_summary(
             parts += ["(no points)", ""]
             continue
         header = [str(c) for c in frame.columns]
-        rows = [[_fmt(v) for v in rec] for rec in frame.itertuples(index=False, name=None)]
-        parts += [_table(header, rows), ""]
+        parts += [_table(header, sweep_table_rows(frame)), ""]
         structure = sweep_structure_lines(sweep.offload)
         if structure:
             parts += [*structure, ""]
@@ -4223,6 +4395,41 @@ def planar_sweep_summary(
     parts += ["## Assumptions", "", section, ""]
     parts += ["## Checks", "", sweep_checks_section(sweeps, baseline), ""]
     return "\n".join(parts)
+
+
+SWEEP_NO_OFFLOAD_CELL = "n/a: no offload"
+"""What a planar sweep table prints in a no_offload point's ``<case>.offload_kg``,
+``<case>.stage1_fraction`` and ``<case>.total_fraction`` cells (KI-042, SP7 step S4a):
+the index keeps the solver's x* = 0 (sweep_index.csv is data), but a no-offload end is
+never worded as an offload of "0 t" (D-SP7-32)."""
+SWEEP_NO_OFFLOAD_FIELDS: tuple[str, ...] = ("offload_kg", "stage1_fraction", "total_fraction")
+"""The offload columns (``results_io.OFFLOAD_SWEEP_COLUMNS``) whose cell reads
+SWEEP_NO_OFFLOAD_CELL at a point where the case's status is no_offload."""
+
+
+def sweep_table_rows(frame: pd.DataFrame) -> list[list[str]]:
+    """The cells of a planar sweep table, one row per sweep_index.csv point: ``_fmt`` of
+    each value, except that a case's SWEEP_NO_OFFLOAD_FIELDS cells (columns
+    ``<case>.offload_kg``, ``<case>.stage1_fraction``, ``<case>.total_fraction``) read
+    SWEEP_NO_OFFLOAD_CELL where that point's ``<case>.status`` is no_offload (KI-042);
+    the frame itself, the CSV's data, is not changed."""
+    columns = [str(c) for c in frame.columns]
+    status_at: dict[int, int] = {}
+    for j, column in enumerate(columns):
+        case, dot, field = column.rpartition(".")
+        if dot and field in SWEEP_NO_OFFLOAD_FIELDS and f"{case}.status" in columns:
+            status_at[j] = columns.index(f"{case}.status")
+    rows: list[list[str]] = []
+    for rec in frame.itertuples(index=False, name=None):
+        rows.append(
+            [
+                SWEEP_NO_OFFLOAD_CELL
+                if j in status_at and rec[status_at[j]] == NO_OFFLOAD_STATUS
+                else _fmt(value)
+                for j, value in enumerate(rec)
+            ]
+        )
+    return rows
 
 
 SWEEP_STRUCTURE_HEAD = "Structural offload cases of this sweep (SP7, D-SP7-22):"

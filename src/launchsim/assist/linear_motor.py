@@ -17,11 +17,17 @@ for a step t_r = 0):
   follows from the capped F.
 
 The stop taper (release at L) over the last s_taper metres scales, by w(s) = min(1,
-(L - s) / s_taper), the acceleration law's command, or the force law's force toward the
-holding value F_h = M g_eff sin phi - T_sys: F = F_h + (F - F_h) w(s). P_max is the
-mechanical power at the carriage; the electricity is the drive work over the efficiency,
-which moves no trajectory. The carriage brakes after release in closed form at the
-constant total deceleration a_b. SI, radians, pure.
+(L - s) / s_taper), the acceleration law's command, or the force law's force limit toward
+the holding value F_h = M g_eff sin phi - T_sys, and the power cap applies to the force
+that is flown (D-SP7-50, SP7 step S4a): F = min(F_h + (min(F_lim(t), F_max) - F_h) w(s),
+P_max / sdot) under the force law, so F sdot <= P_max on every branch. The push releases
+at the track end, or (S4a, ``release_speed_mps``) where sdot reaches the release speed
+v_release before it (``phases.prelude.fly_track``; refused with a taper, a release-at-L
+device). P_max is the mechanical power at the carriage; the electricity is the drive work
+over the efficiency, which moves no trajectory. The carriage brakes after release in
+closed form at the constant total deceleration a_b, from the release point (facility
+max(L, s_release + d_brake): within the stroke left, or past the track end). SI, radians,
+pure.
 """
 
 from __future__ import annotations
@@ -51,12 +57,13 @@ DRIVE_RAMP_END = "drive_ramp_end"
 command, t = t_r), a sub-phase boundary of the push."""
 POWER_LIMIT = "power_limit"
 """Event where the power limit starts binding on the law's force before the power term
-(after the force law's rise: sdot crossing the corner speed P_max / F_max upward). Under
-the force law's stop taper that force is the untapered one, so the event marks the law's
-power branch while the flown power, F_h sdot (1 - w) + P_max w, stays below P_max."""
+(``pre_power_force_N``; after the force law's rise and before its taper: sdot crossing
+the corner speed P_max / F_max upward). Under the force law's stop taper that force is
+the tapered one (D-SP7-50), so where the event has fired the flown power is P_max."""
 POWER_LIMIT_END = "power_limit_end"
 """Event where the power limit stops binding (the law's force before the power term
-falling back below P_max / sdot: the acceleration law's command in the taper, say)."""
+falling back below P_max / sdot: the force law's tapered force or the acceleration law's
+command in the taper, say)."""
 DRIVE_CAP = "drive_cap"
 """Event where a cap (F_max or P_max / sdot) starts binding the acceleration law's
 command."""
@@ -66,8 +73,14 @@ or under a rising thrust), so the cap stops binding."""
 TAPER_START = "taper_start"
 """Event where the push enters the stop taper (s crossing L - s_taper upward)."""
 RELEASE_TRIGGER_TRACK_END = "track_end"
-"""How the push released (SP7 step S4: at the track end only; a release at a target
-speed is S4a's)."""
+"""How the push released: at the track end s = L (the ``track_end`` event, or a push
+that stops within ``prelude.RELEASE_TIE_M`` of L)."""
+RELEASE_TRIGGER_TARGET_SPEED = "target_speed"
+"""How the push released (SP7 step S4a): where sdot reached the release speed
+``release_speed_mps`` before the track end (the ``target_speed`` event,
+``phases.engine.ev_release_speed``, whose name it is)."""
+RELEASE_TRIGGERS: tuple[str, ...] = (RELEASE_TRIGGER_TRACK_END, RELEASE_TRIGGER_TARGET_SPEED)
+"""The values of the ``release_trigger`` metric of a run that released."""
 
 
 @dataclass(frozen=True)
@@ -101,7 +114,10 @@ class LinearMotorAssist:
     assumptions only (the dynamics take g_eff through ``state_rate``); omega_p_rads: the
     planar rotation rate folded into it [rad/s], quoted only (the planar setup sets it);
     push_start: the PushStart bound by ``at_push_start`` (None before; ``state_rate``,
-    ``push_time_estimate``, ``push_watches`` and ``stall_reason`` need it). name,
+    ``push_time_estimate``, ``push_watches`` and ``stall_reason`` need it);
+    release_speed_mps: v_release [m/s], the speed along the track at which the push
+    releases before the track end (SP7 step S4a; ``phases.prelude.fly_track`` watches
+    sdot - v_release; None: release at the track end; refused with a stop taper). name,
     extra_state_names, push_time_exact (False: the push time is a result of the flown
     push) and allow_negative_drive (False: a negative drive force ends the run with
     ``drive_limit``) are class constants. Forces of one instant: see the module
@@ -126,6 +142,7 @@ class LinearMotorAssist:
     g_eff_mps2: float | None = None
     omega_p_rads: float = 0.0
     push_start: PushStart | None = None
+    release_speed_mps: float | None = None
 
     @classmethod
     def from_config(
@@ -154,10 +171,18 @@ class LinearMotorAssist:
             efficiency=config.drive_efficiency,
             f_imp=config.exhaust_impingement_fraction,
             g_eff_mps2=g_eff_mps2,
+            release_speed_mps=config.release_speed_mps,
         )
         return model, track
 
     def __post_init__(self) -> None:
+        """Refuse (ValueError) a control law outside CONTROL_LAWS; F_max or P_max not
+        finite and > 0; t_r not finite and >= 0; a_cmd given for the force law, missing
+        for the acceleration law, or not finite and > 0; a taper, carriage mass or brake
+        deceleration out of range; an efficiency outside (0, 1]; f_imp outside [0, 1];
+        omega_p not finite; and (SP7 step S4a) a release speed not finite and > 0, or set
+        together with a stop taper longer than 0 m (``tapered``: the taper is a
+        release-at-L device)."""
         if self.control not in CONTROL_LAWS:
             raise ValueError(f"control must be one of {CONTROL_LAWS}, got {self.control!r}")
         for label, value in (("force_max_N", self.force_max_N), ("power_max_W", self.power_max_W)):
@@ -183,6 +208,15 @@ class LinearMotorAssist:
             raise ValueError("f_imp must lie in [0, 1]")
         if not math.isfinite(self.omega_p_rads):
             raise ValueError("omega_p_rads must be finite")
+        v_release = self.release_speed_mps
+        if v_release is not None:
+            if not (math.isfinite(v_release) and v_release > 0.0):
+                raise ValueError("release_speed_mps must be finite and > 0")
+            if self.tapered:
+                raise ValueError(
+                    "release_speed_mps is refused with a stop taper (the taper is a "
+                    "release-at-L device)"
+                )
 
     # ------------------------------------------------------------------ the force laws
 
@@ -258,11 +292,20 @@ class LinearMotorAssist:
         g_axial_mps2: float,
         length_m: float,
     ) -> float:
-        """The law's force before the power term [N]: min(F_lim(t), F_max) for the force
-        law, min(command, F_max) for the acceleration law (inputs as in
-        ``command_force_N``)."""
+        """The law's force before the power term [N] (inputs as in ``command_force_N``):
+        for the force law min(F_lim(t), F_max), scaled inside the stop taper toward the
+        holding value F_h = M g_axial - T_sys by the taper weight, F_h + (min(F_lim(t),
+        F_max) - F_h) w(s) (untouched where w = 1: before the taper and without one);
+        for the acceleration law min(command, F_max), the command already tapered.
+        ``drive_force_N`` caps this force by P_max / sdot (D-SP7-50: the cap applies to
+        the force that is flown, after the taper)."""
         if self.control == CONTROL_FORCE:
-            return self.force_limit_N(t)
+            force = self.force_limit_N(t)
+            w = self.taper_weight(s_m, length_m)
+            if w < 1.0:
+                hold = m_total_kg * g_axial_mps2 - thrust_sys_N
+                force = hold + (force - hold) * w
+            return force
         command = self.command_force_N(t, s_m, m_total_kg, thrust_sys_N, g_axial_mps2, length_m)
         return min(command, self.force_max_N)
 
@@ -279,20 +322,17 @@ class LinearMotorAssist:
         """The drive force F [N] along the track at push-clock time t [s], position s_m
         [m], speed sdot_mps [m/s], with M = m_total_kg [kg], T_sys = thrust_sys_N [N],
         g_axial = g_eff sin phi [m/s^2] and the track length length_m [m]: the law's
-        force (``pre_power_force_N``), capped by P_max / sdot for sdot > 0, then for the
-        force law scaled toward the holding value F_h = M g_axial - T_sys by the taper
-        weight (the acceleration law's taper is in its command). The order is the brief's
-        (design 4.6): under the force law's taper the cap P_max / sdot applies to the
-        untapered force, so where it binds the flown power is F_h sdot (1 - w) + P_max w,
-        below P_max."""
+        force (``pre_power_force_N``: the force law's force limit scaled toward the
+        holding value F_h = M g_axial - T_sys by the taper weight, or the acceleration
+        law's capped command, its taper in the command), capped by P_max / sdot for
+        sdot > 0. The power cap applies to the force that is flown, after the taper
+        (D-SP7-50, design 4.10): F = min(F_h + (min(F_lim(t), F_max) - F_h) w(s), P_max /
+        sdot) under the force law, so F sdot <= P_max on every branch, the taper's
+        included (where the holding value itself exceeds P_max / sdot the cap binds below
+        it and the stack slows)."""
         force = self.pre_power_force_N(t, s_m, m_total_kg, thrust_sys_N, g_axial_mps2, length_m)
         if sdot_mps > 0.0:
             force = min(force, self.power_max_W / sdot_mps)
-        if self.control == CONTROL_FORCE:
-            w = self.taper_weight(s_m, length_m)
-            if w < 1.0:
-                hold = m_total_kg * g_axial_mps2 - thrust_sys_N
-                force = hold + (force - hold) * w
         return force
 
     def state_rate(
@@ -407,9 +447,11 @@ class LinearMotorAssist:
     def push_watches(self) -> tuple[PushWatch, ...]:
         """The logged crossings (``assist.base.PushWatch``): POWER_LIMIT, the power limit
         starting to bind, (F_pre sdot - P_max) / F_max [m/s] with F_pre the law's force
-        before the power term (``pre_power_force_N``; after the force law's rise this is
-        sdot - P_max / F_max; under the force law's taper the untapered force, whose
-        power branch it marks), two-way (POWER_LIMIT_END when it stops binding); for the
+        before the power term (``pre_power_force_N``; after the force law's rise and
+        before its taper this is sdot - P_max / F_max; inside the force law's taper the
+        tapered force, the force the cap applies to, D-SP7-50: the margin is that of
+        P_max / sdot over the flown force, written as a product so it stays finite at
+        sdot = 0), two-way (POWER_LIMIT_END when it stops binding); for the
         acceleration law DRIVE_CAP, a cap starting to bind, command - min(F_max, P_max /
         sdot) [N], two-way (DRIVE_CAP_END); with a taper TAPER_START, s - (L - s_taper)
         [m], one-way. Together with the rise end (``kink_times``), the thrust kinks and
@@ -437,7 +479,8 @@ class LinearMotorAssist:
         g_eff_mps2: float,
         track: TrackGeometry,
     ) -> float:
-        """(F_pre sdot - P_max) / F_max [m/s] (POWER_LIMIT; inputs as in
+        """(F_pre sdot - P_max) / F_max [m/s] with F_pre = ``pre_power_force_N`` (the
+        force law's tapered force inside its taper; POWER_LIMIT; inputs as in
         ``state_rate``)."""
         total = m_vehicle_kg + m_carriage_kg
         g_axial = g_eff_mps2 * math.sin(track.phi(s_m))
@@ -487,8 +530,10 @@ class LinearMotorAssist:
     # -------------------------------------------------------- release and braking
 
     def release_position_m(self, track: TrackGeometry) -> float:
-        """Where the vehicle releases [m] along the track: the track end L (SP7 step S4;
-        a release at a target speed before L is S4a's)."""
+        """The nominal release position [m] along the track: the track end L. A push
+        with a release speed (``release_speed_mps``) releases where sdot reaches it,
+        which only the flown push knows (``phases.prelude.TrackExit.release_position_m``;
+        the metrics read it from the trace, ``metrics.release_point``)."""
         return track.length_m
 
     def braking_distance_m(self, v_mps: float) -> float:
@@ -520,13 +565,16 @@ class LinearMotorAssist:
             * (1.0 - g_eff_mps2 * math.sin(phi_rad) / self.brake_decel_mps2)
         )
 
-    def facility_length_m(self, track: TrackGeometry, v_exit_mps: float) -> float:
-        """Facility length [m]: max(L, s_release + d_brake) with d_brake from the exit
-        speed v_exit_mps [m/s] (s_release = L in S4, so L + d_brake)."""
-        return max(
-            track.length_m,
-            self.release_position_m(track) + self.braking_distance_m(v_exit_mps),
-        )
+    def facility_length_m(
+        self, track: TrackGeometry, v_exit_mps: float, s_release_m: float | None = None
+    ) -> float:
+        """Facility length [m]: max(L, s_release + d_brake), with d_brake from the speed
+        at release v_exit_mps [m/s] and s_release_m [m] the release position along the
+        track (None: the track end L, so L + d_brake): the carriage brakes in the stroke
+        left beyond an early release, and past L only by what that stroke does not
+        hold."""
+        s_release = self.release_position_m(track) if s_release_m is None else s_release_m
+        return max(track.length_m, s_release + self.braking_distance_m(v_exit_mps))
 
     def electrical_power_W(self, mechanical_power_W: float) -> float:
         """The electrical power [W] behind a mechanical drive power [W]: max(0, P) /
@@ -580,8 +628,26 @@ class LinearMotorAssist:
             f"while a cap binds the acceleration follows from the capped force{never_pulls}"
         )
 
+    def release_assumption(self) -> str:
+        """The release line: a release at the release speed (``release_speed_mps``,
+        SP7 step S4a), else ``taper_assumption`` (the track end, with or without the
+        stop taper)."""
+        v_release = self.release_speed_mps
+        if v_release is None:
+            return self.taper_assumption()
+        return (
+            f"linear_motor: release where the speed along the track reaches the release "
+            f"speed {v_release:g} m/s (assumed), before the track end, or at the track end "
+            "(s = L) when the push does not reach it there (flag release_speed_not_reached); "
+            "no stop taper: the drive force drops to zero in a step at release, and the "
+            "carriage brakes from the release (facility max(L, s_release + braking "
+            "distance): within the stroke left, or past the track end when the braking "
+            "distance exceeds it)"
+        )
+
     def taper_assumption(self) -> str:
-        """The release line: the stop taper, or a step release."""
+        """The release line of a push released at the track end: the stop taper, or a
+        step release."""
         if not self.tapered:
             return (
                 "linear_motor: release at the track end (s = L) with no stop taper: the drive "
@@ -589,8 +655,14 @@ class LinearMotorAssist:
             )
         hold = "the holding force M g_eff sin phi - (1 - f_imp) T"
         if self.control == CONTROL_FORCE:
-            what = f"the force is scaled toward {hold} by min(1, (L - s) / s_taper)"
-            at_end = f"at L the drive force is {hold} (zero net acceleration)"
+            what = (
+                f"the force limit is scaled toward {hold} by min(1, (L - s) / s_taper), and "
+                "the power cap P_max / sdot applies to the scaled force (D-SP7-50)"
+            )
+            at_end = (
+                f"at L the drive force is {hold} (zero net acceleration) unless the power cap "
+                "binds there (never on a straight track a config builds)"
+            )
         else:
             what = "the acceleration command is scaled by min(1, (L - s) / s_taper)"
             at_end = (
@@ -604,8 +676,35 @@ class LinearMotorAssist:
 
     def shaft_assumption(self) -> str:
         """The shaft line: vented, no friction, and what the neglected air drag on the
-        vehicle in the shaft would do under this control law."""
-        if self.control == CONTROL_FORCE:
+        vehicle in the shaft during the push would do under this control law (with a
+        release speed, SP7 step S4a: what it would do to where the push reaches that
+        speed, and to the speed of a push that releases at the track end without reaching
+        it; after a release before the track end the flight model flies on in the shaft
+        after it, whether the vehicle leaves the shaft or falls back in it, which the run's
+        early-release line words: fix round 5, m2, C5-m3)."""
+        if self.release_speed_mps is not None and self.control == CONTROL_FORCE:
+            drag = (
+                "under the force law it would delay the release at the release speed (the "
+                "release position and the push time are biased low; the speed at release "
+                "stays the release speed while the push still reaches it before the track "
+                "end, and is biased high when the push releases at the track end without "
+                "reaching it) and raise the interface force (by D m_c / M at a given drive "
+                "force, zero then without a carriage mass, and in the power phase also "
+                "through P_max / sdot at the lower speed) and the drive work (a longer push "
+                "to the same speed): both are biased low; the felt g and the mean "
+                "acceleration are biased high"
+            )
+        elif self.release_speed_mps is not None:
+            drag = (
+                "under the acceleration law the drive force would absorb it while no cap "
+                "binds (the drive work, the peak drive power and the interface force are "
+                "biased low, as for constant_accel, and the release position is unchanged), "
+                "and while a cap binds it would delay the release at the release speed (the "
+                "release position and the push time biased low, or the speed at a release "
+                "at the track end biased high; drag can also make a cap bind that the "
+                "drag-free push never reaches)"
+            )
+        elif self.control == CONTROL_FORCE:
             drag = (
                 "under the force law it would lower the exit speed (the exit speed is biased "
                 "high) and raise the interface force (by D m_c / M at a given drive force, "
@@ -623,6 +722,13 @@ class LinearMotorAssist:
                 "the exit speed (biased high; drag can also make a cap bind that the "
                 "drag-free push never reaches)"
             )
+        if self.release_speed_mps is not None:
+            return (
+                "linear_motor: shaft vented (no air column), no friction; air drag on the "
+                "vehicle in the shaft is neglected during the push (after a release before "
+                "the track end the flight model flies on in the shaft after it, as the run's "
+                f"early-release line says): {drag}"
+            )
         return (
             "linear_motor: shaft vented (no air column), no friction; air drag on the "
             f"vehicle in the shaft is neglected: {drag}"
@@ -639,7 +745,7 @@ class LinearMotorAssist:
             "electricity is the positive drive work / efficiency and the electrical power "
             f"peak the mechanical peak / efficiency, drive efficiency {self.efficiency:g} "
             "(assumed), which moves no trajectory",
-            self.taper_assumption(),
+            self.release_assumption(),
             f"linear_motor: carriage mass {units.kg_to_t(self.carriage_mass_kg):g} t (assumed)",
             "linear_motor: carriage braking in closed form at a constant total deceleration "
             f"a_b = {units.to_g(self.brake_decel_mps2):g} g0 (assumed): distance v^2 / (2 "

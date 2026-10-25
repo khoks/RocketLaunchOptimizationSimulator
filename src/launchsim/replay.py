@@ -11,8 +11,8 @@ runs. The page replays the recorded time series; nothing is re-simulated in it.
 
 ``replay_data`` builds the embedded data set: per run the series resampled on a common
 clock (the time after release: REPLAY_EARLY_DT_S steps up to REPLAY_EARLY_END_S, then
-REPLAY_LATE_DT_S), q and Mach as JSON null where they are undefined (inside a vented
-shaft, where no air drag is modelled), the events of events.csv and the headline
+REPLAY_LATE_DT_S), q and Mach as JSON null where they are undefined (on the push inside
+a vented shaft, where no air drag is modelled), the events of events.csv and the headline
 metrics of metrics.json, plus the text of the page (subtitle, run labels, notes,
 caveats) generated from the run data. Run selection and the output-path rule are the
 shared ones of run_data, which ``launchsim animate`` uses too (run_data.run_names: the
@@ -36,7 +36,12 @@ control); ``run_source`` finds which.
 
 The page's text is built from the run data and the metrics, never fixed (SP2 step A1a,
 D-SP2-23, KI-029): the drive caveat says what each omission of the assist model does to
-the numbers of the runs shown (``drive_caveat``), the structure caveat names each pushed
+the numbers of the runs shown (``drive_caveat``; a linear-motor run's clause names its
+control law, F_max and P_max, the acceleration law's command, its measured speed at
+release and how it released, and what its acceleration does over the push, never one
+push acceleration, which only the prescribed drive has: ``push_accel_g``,
+``linear_motor_clause``, ``motor_acceleration_text``, SP7 step S4a; a release below the
+mouth is stated in the close-up notes and the results notes), the structure caveat names each pushed
 run's own flown load and peak felt g and what structural mass its record charges, three
 ways (none; a penalty row's assumed stage-1 dry mass; since SP7 step S3a a structural
 run's modelled mass, worded from the run's own metrics keys; ``structure_caveat``), an
@@ -60,7 +65,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -68,11 +73,20 @@ from typing import Any
 import pandas as pd
 
 from launchsim import __version__, run_data
+from launchsim.assist.linear_motor import (
+    CONTROL_ACCELERATION,
+    CONTROL_FORCE,
+    RELEASE_TRIGGER_TARGET_SPEED,
+    RELEASE_TRIGGER_TRACK_END,
+)
 from launchsim.compare import CHECK_NA
 from launchsim.config import OFFLOAD_GROSS_MODES
 from launchsim.metrics_planar import KICK_NONE
 from launchsim.offload import NO_OFFLOAD_STATUS
 from launchsim.phases import HOLD_KIND
+from launchsim.phases.engine import ATOL_M
+from launchsim.phases.planar import SHAFT_APEX_EVENT, SHAFT_EXIT_EVENT, SHAFT_TURNAROUND_EVENT
+from launchsim.phases.prelude import DRIVE_STALL, RELEASE_SPEED_NOT_REACHED, SHAFT_FALLBACK
 from launchsim.search import OK_STATUS, SEARCH_FAILED_STATUS
 from launchsim.summary import (
     STRUCTURE_NO_SIZING_TEXT,
@@ -85,7 +99,20 @@ from launchsim.summary import (
     structure_run_record,
     tree_state,
 )
-from launchsim.units import kg_to_t, m_to_km, pa_to_kpa, t_to_kg, to_percent
+from launchsim.units import (
+    from_g,
+    kg_to_t,
+    km_to_m,
+    kn_to_n,
+    m_to_km,
+    mw_to_w,
+    n_to_mn,
+    pa_to_kpa,
+    t_to_kg,
+    to_g,
+    to_percent,
+    w_to_mw,
+)
 
 
 class ReplayError(run_data.RunDataError):
@@ -136,8 +163,27 @@ INSERTED = "inserted"
 CONSTANT_ACCEL_MODEL = "constant_accel"
 """Assist model of a prescribed-acceleration push (assist.model), under which the
 release speed and the payload do not depend on the carriage mass or the shaft drag."""
+LINEAR_MOTOR_MODEL = "linear_motor"
+"""Assist model of the force- and power-limited linear motor (SP7 step S4): no single
+push acceleration is quoted for it (``push_accel_g`` is None for it): under the force
+law its acceleration follows from its limits, the mass and the thrust; under the
+acceleration law it flies its command a_cmd after the rise while no cap binds. Its
+speed at release is measured, and its text names its control law, limits, command and
+release (``linear_motor_clause``, ``motor_acceleration_text``)."""
+RELEASE_TARGET_SPEED = RELEASE_TRIGGER_TARGET_SPEED
+"""metrics.json ``release_trigger`` of a linear-motor push released where it reached its
+release speed, before the track end (SP7 step S4a;
+``linear_motor.RELEASE_TRIGGER_TARGET_SPEED``, the same object); RELEASE_TRACK_END
+otherwise."""
+RELEASE_TRACK_END = RELEASE_TRIGGER_TRACK_END
+"""metrics.json ``release_trigger`` of a push released at the track end
+(``linear_motor.RELEASE_TRIGGER_TRACK_END``, the same object)."""
 VENTED_SHAFT = "vented"
-"""assist.shaft of a silo whose air column is not modelled (no shaft drag)."""
+"""assist.shaft of a silo whose air column is not modelled (no shaft drag on the push)."""
+MOUTH_AXIS_TOL_M = 0.5
+"""|downrange| [m] at the mouth crossing (the ``shaft_exit`` event; the page's events
+carry the downrange to 1 m) below which the close-up note says the vehicle left the
+shaft within 1 m of its axis."""
 EXPLORATORY_LABEL = "exploratory"
 """metrics.json ``label`` of a directory launched from the local app's form (SP2,
 D-SP2-12); every other value, and no label, is a recorded experiment. config.py takes
@@ -727,8 +773,13 @@ def is_assisted(assist: dict[str, Any]) -> bool:
 
 
 def is_vertical(assist: dict[str, Any]) -> bool:
-    """True when the assist track is a vertical silo (track angle 90 deg)."""
+    """True when the assist track is a vertical silo (track angle 90 deg). A linear-motor
+    block that leaves the angle out has its config's default, VERTICAL_TRACK_DEG (the
+    only angle allowed until Phase 3; SP7 step S4a fix round 1); for any other drive a
+    missing angle reads as before (not vertical)."""
     angle = (assist.get("track") or {}).get("angle_deg")
+    if angle is None and assist.get("model") == LINEAR_MOTOR_MODEL:
+        angle = VERTICAL_TRACK_DEG
     return angle is not None and abs(float(angle) - VERTICAL_TRACK_DEG) < TRACK_ANGLE_TOL_DEG
 
 
@@ -770,9 +821,530 @@ def push_accel_g(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float | Non
     metric (metrics.json; written for every planar push whichever way its config
     states it, so a push defined by ``exit_speed_mps`` has it too), else the assist
     block's ``net_accel_g`` key (resolved_config.yaml; results written before the
-    metric existed). None when neither holds a finite number."""
+    metric existed). None when neither holds a finite number, and None for any drive
+    other than the prescribed one (CONSTANT_ACCEL_MODEL; a block without a model key is
+    read as it, every push before SP7 being one): no single push acceleration is quoted
+    for the linear motor (SP7 step S4a), not even its mean; its acceleration law's
+    command is named as a command (``linear_motor_law_text``)."""
+    if str(assist.get("model", CONSTANT_ACCEL_MODEL)) != CONSTANT_ACCEL_MODEL:
+        return None
     accel = _finite(m.get("net_accel_g"))
     return _finite(assist.get("net_accel_g")) if accel is None else accel
+
+
+def linear_motor_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str, Any]:
+    """A linear-motor push's settings as data (SP7 step S4a): ``control`` (the law,
+    ``force`` or ``acceleration``), ``force_max_N`` [N], ``power_max_W`` [W],
+    ``rise_time_s`` [s] (t_r), ``accel_command_mps2`` [m/s^2] (a_cmd; None under the force
+    law), ``stop_taper_m`` [m] (None without a taper), ``release_speed_mps`` [m/s] (None
+    when no release speed is set) and ``cap_bound`` (whether a cap bound the acceleration
+    law's command; None under the force law or when unrecorded), each from the run's
+    metrics (push_control_law, push_force_max_N, push_power_max_W, push_rise_time_s,
+    push_accel_command_mps2, push_stop_taper_m, push_release_speed_mps, push_cap_bound;
+    KI-052 and fix round 1) and, where a metric is absent (a directory written before
+    it), from the assist block of resolved_config.yaml (control, force_max_kN,
+    power_max_MW, force_rise_time_s, accel_command_g, stop_taper_m, release_speed_mps;
+    units.py converts); None where neither holds it. A setting that may be unset (a_cmd,
+    the taper, the release speed) reads the metric when its key is present, None
+    included."""
+
+    def setting(
+        metric_key: str,
+        config_key: str,
+        convert: Callable[[float], Any] | None = None,
+        *,
+        nullable: bool = False,
+    ) -> float | None:
+        """One setting: the finite metric ``metric_key`` (with ``nullable``, the metric
+        even when it is None, if its key is present: an unset setting), else the finite
+        config value ``config_key`` converted to SI by ``convert`` (a units.py function;
+        None: already SI), else None."""
+        value = _finite(m.get(metric_key))
+        if value is not None or (nullable and metric_key in m):
+            return value
+        raw = _finite(assist.get(config_key))
+        return raw if raw is None or convert is None else float(convert(raw))
+
+    control = m.get("push_control_law")
+    if not isinstance(control, str):
+        control = assist.get("control") if isinstance(assist.get("control"), str) else None
+    cap = m.get("push_cap_bound")
+    return {
+        "control": control,
+        "force_max_N": setting("push_force_max_N", "force_max_kN", kn_to_n),
+        "power_max_W": setting("push_power_max_W", "power_max_MW", mw_to_w),
+        "rise_time_s": setting("push_rise_time_s", "force_rise_time_s"),
+        "accel_command_mps2": setting(
+            "push_accel_command_mps2", "accel_command_g", from_g, nullable=True
+        ),
+        "stop_taper_m": setting("push_stop_taper_m", "stop_taper_m", nullable=True),
+        "release_speed_mps": setting("push_release_speed_mps", "release_speed_mps", nullable=True),
+        "cap_bound": cap if isinstance(cap, bool) else None,
+    }
+
+
+def release_depth_m(m: Mapping[str, Any]) -> float | None:
+    """How far before the track end a push released [m]: stroke_m - release_position_m
+    from its metrics, None when either is missing (a release at the track end gives 0)."""
+    where = _finite(m.get("release_position_m"))
+    stroke = _finite(m.get("stroke_m"))
+    return None if where is None or stroke is None else stroke - where
+
+
+def release_speed_missed(m: Mapping[str, Any], v_release_mps: float | None) -> bool:
+    """True when a push with a release speed released at the track end below it: one of
+    the run's flags (metrics.json ``flags``) starts with
+    ``prelude.RELEASE_SPEED_NOT_REACHED``; for metrics without a flags list, a release at
+    the track end with a release speed v_release_mps set."""
+    flags = m.get("flags")
+    if isinstance(flags, list):
+        return any(str(f).startswith(RELEASE_SPEED_NOT_REACHED) for f in flags)
+    return v_release_mps is not None and m.get("release_trigger") == RELEASE_TRACK_END
+
+
+def is_mouth(angle_deg: float | None, exit_altitude_m: float | None) -> bool:
+    """True when a track exit is a silo mouth: a vertical track (angle_deg within
+    TRACK_ANGLE_TOL_DEG of VERTICAL_TRACK_DEG) whose exit is at the ground
+    (exit_altitude_m [m] within ATOL_M of 0, the tolerance of
+    ``prelude.early_release_assumption``; None reads as the config's default, 0)."""
+    vertical = (
+        angle_deg is not None and abs(float(angle_deg) - VERTICAL_TRACK_DEG) < TRACK_ANGLE_TOL_DEG
+    )
+    return vertical and (exit_altitude_m is None or abs(float(exit_altitude_m)) <= ATOL_M)
+
+
+def below_mouth(assist: Mapping[str, Any]) -> bool:
+    """True when a release before the track end is a release below the silo mouth: a
+    vertical track (``is_vertical``) whose exit is at the ground (assist.track
+    exit_altitude_m within ATOL_M of 0, the config's default when absent; ``is_mouth``)."""
+    exit_m = _finite(_mapping(assist.get("track")).get("exit_altitude_m"))
+    angle = VERTICAL_TRACK_DEG if is_vertical(dict(assist)) else None
+    return is_mouth(angle, exit_m)
+
+
+def release_text(
+    m: Mapping[str, Any], v_release_mps: float | None = None, mouth: bool = False
+) -> str | None:
+    """How a linear-motor push released, with its measured speed at release
+    (metrics.json ``exit_speed_mps``), from its metrics (SP7 step S4a): 'released on
+    reaching its release speed, <v> m/s measured, <d> m before the track end'
+    (``release_trigger`` RELEASE_TARGET_SPEED; d = ``release_depth_m``; 'below the mouth'
+    when ``mouth``, a vertical silo), 'released at the track end at a measured exit
+    speed of <v> m/s' (with ', its release speed <v_set> m/s not reached' when
+    ``release_speed_missed`` for the set speed v_release_mps), None when the run records
+    no release."""
+    trigger = m.get("release_trigger")
+    v = _finite(m.get("exit_speed_mps"))
+    if trigger == RELEASE_TARGET_SPEED:
+        text = "released on reaching its release speed"
+        if v is not None:
+            text += f", {v:.1f} m/s measured"
+        depth = release_depth_m(m)
+        where = _finite(m.get("release_position_m"))
+        if depth is not None:
+            text += f", {depth:.1f} m {'below the mouth' if mouth else 'before the track end'}"
+        elif where is not None:
+            text += f", at s = {where:.1f} m, before the track end"
+        return text
+    if trigger is None:
+        return None
+    text = "released at the track end"
+    if v is not None:
+        text += f" at a measured exit speed of {v:.1f} m/s"
+    if v_release_mps is not None and release_speed_missed(m, v_release_mps):
+        text += f", its release speed {v_release_mps:g} m/s not reached"
+    return text
+
+
+def linear_motor_law_text(cfg: Mapping[str, Any], short: bool = False) -> str:
+    """The law and limits of a linear-motor push in words, from ``linear_motor_settings``
+    data ``cfg``: 'force law, F_max <F> MN, P_max <P> MW'; 'acceleration law: a_cmd <a>
+    g0 net after a <t_r> s rise, F_max ..., P_max ...' (the command named as a command;
+    ``short``: 'acceleration law, a_cmd <a> g0, F_max ..., P_max ...', for the replay's
+    detail line); 'law unknown, ...' without a recorded law; either form ends ', a <s> m
+    stop taper' when the push has one (``stop_taper_m``; fix round 3, H3-m3: the taper
+    scales the force or the command toward the holding value over its last metres)."""
+    control = cfg.get("control")
+    bits = []
+    if cfg.get("force_max_N") is not None:
+        bits.append(f"F_max {float(n_to_mn(cfg['force_max_N'])):.4g} MN")
+    if cfg.get("power_max_W") is not None:
+        bits.append(f"P_max {float(w_to_mw(cfg['power_max_W'])):.5g} MW")
+    taper = cfg.get("stop_taper_m")
+    if taper is not None:
+        bits.append(f"a {float(taper):g} m stop taper")
+    a_cmd = cfg.get("accel_command_mps2")
+    if control == CONTROL_ACCELERATION and a_cmd is not None:
+        a_g = f"{float(to_g(a_cmd)):.4g} g0"
+        rise = cfg.get("rise_time_s")
+        if short:
+            return ", ".join([f"acceleration law, a_cmd {a_g}", *bits])
+        after = (
+            f" after a {rise:g} s rise"
+            if rise is not None and rise > 0.0
+            else " from push start"
+            if rise is not None
+            else ""
+        )
+        return ", ".join([f"acceleration law: a_cmd {a_g} net{after}", *bits])
+    head = f"{control} law" if isinstance(control, str) else "law unknown"
+    return ", ".join([head, *bits])
+
+
+def linear_motor_clause(assist: Mapping[str, Any], m: Mapping[str, Any]) -> str:
+    """The drive of a linear-motor push in words (SP7 step S4a): 'a linear motor (<law
+    and limits>), <how it released>', the law, the force and power limits and the
+    acceleration law's command (``linear_motor_law_text`` of ``linear_motor_settings``)
+    and the release with its measured speed (``release_text``; 'below the mouth' for a
+    vertical silo, ``below_mouth``); no push acceleration is quoted (the mean,
+    push_accel_mean_mps2, is in metrics.json and the summary, named a mean)."""
+    cfg = linear_motor_settings(assist, m)
+    text = f"a linear motor ({linear_motor_law_text(cfg)})"
+    how = release_text(m, cfg["release_speed_mps"], below_mouth(assist))
+    return text if how is None else f"{text}, {how}"
+
+
+RISE_END_TIE_REL = 1e-9
+"""A push released within RISE_END_TIE_REL of its rise time t_r [relative] released at
+the end of its rise: it never held its command (``motor_acceleration_text``)."""
+DRIVE_STALL_STATUS = DRIVE_STALL
+"""metrics.json ``status`` of a push whose drive could not start it (prelude.DRIVE_STALL)."""
+
+
+def motor_acceleration_text(cfg: Mapping[str, Any], m: Mapping[str, Any] | None = None) -> str:
+    """What a linear-motor push's acceleration does, from ``linear_motor_settings`` data
+    ``cfg`` and the run's metrics m (SP7 step S4a fix rounds 1 and 2): under the force
+    law it is not prescribed (it follows from the force and power limits, the mass and
+    the thrust). Under the acceleration law: a stalled push (status DRIVE_STALL) never
+    moved; a push that stopped on the track (no ``release_trigger``) has no release to
+    hold a command to; with no cap bound (``cap_bound`` False) the push held its command
+    a_cmd from the end of its rise to the release (scaled over a stop taper) only when it
+    released after the rise (``push_time_s`` > t_r by more than RISE_END_TIE_REL), else it
+    released by the end of its rise and never held it; with a cap bound (True, which
+    records no timing: a cap can bind inside the rise, or bind and let go) it flew its
+    command only where no cap bound; unrecorded (None, or m None: an older directory) it
+    flies its command wherever no cap binds (both 'scaled down over its stop taper' when
+    it has one, and under the force law the taper is named among what the acceleration
+    follows from: fix round 3, H3-m3). In every case but a held command no single push
+    acceleration is quoted."""
+    m = {} if m is None else m
+    control = cfg.get("control")
+    a_cmd = cfg.get("accel_command_mps2")
+    if control == CONTROL_ACCELERATION and a_cmd is not None:
+        a_g = f"{float(to_g(a_cmd)):.4g} g0"
+        rise = cfg.get("rise_time_s")
+        stepped = rise is not None and rise <= 0.0
+        start = "push start" if stepped else "the end of its rise"
+        command = f"{a_g} net {'from push start' if stepped else 'after its rise'}"
+        cap = cfg.get("cap_bound")
+        status = m.get("status")
+        if status == DRIVE_STALL_STATUS:
+            return (
+                f"the push never started (status {DRIVE_STALL_STATUS}: the drive at its force "
+                "limit and the thrust cannot lift the stack), so it flew no command and no "
+                "push acceleration is quoted"
+            )
+        if m and m.get("release_trigger") is None:
+            stopped = f" (status {status})" if isinstance(status, str) else ""
+            return (
+                f"the push stopped on the track before any release{stopped}, so no push "
+                "acceleration is quoted"
+            )
+        t_push = _finite(m.get("push_time_s"))
+        if cap is False and t_push is not None and rise is not None:
+            if not stepped and t_push <= rise * (1.0 + RISE_END_TIE_REL):
+                return (
+                    f"no cap bound, and it released by the end of its {rise:g} s rise, so it "
+                    f"never held its command, {a_g} net, and no single push acceleration is "
+                    "quoted"
+                )
+            taper = " (scaled down over its stop taper)" if cfg.get("stop_taper_m") else ""
+            return (
+                f"no cap bound, so it held its command, {a_g} net, from {start} to the "
+                f"release{taper}"
+            )
+        tapered = " (scaled down over its stop taper)" if cfg.get("stop_taper_m") else ""
+        if cap is True:
+            return (
+                "a cap (F_max or P_max / sdot) bound on this push, where its acceleration "
+                f"followed from the capped force; it flies its command, {command}"
+                f"{tapered}, only where no cap binds, so no single push acceleration is "
+                "quoted"
+            )
+        return (
+            f"it flies its command, {command}{tapered}, wherever no cap (F_max or P_max / "
+            "sdot) binds, the acceleration following from the capped force where one does, "
+            "so no single push acceleration is quoted"
+        )
+    if control == CONTROL_FORCE:
+        taper = ", the stop taper" if cfg.get("stop_taper_m") else ""
+        return (
+            "its acceleration is not prescribed: it follows from the force and power "
+            f"limits{taper}, the mass and the thrust, so no single push acceleration is "
+            "quoted"
+        )
+    return "no single push acceleration is quoted"
+
+
+def fell_back_in_shaft(record: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The page record's impact event after the release below the ground (a fall back
+    inside the shaft after a release below the mouth, from an apex inside the shaft or
+    through the open mouth from one above it, ``prelude.SHAFT_FALLBACK``: the impact is
+    logged on the parked carriage, the floor of the flight model in the shaft, or at the
+    apex when the carriage parks above it; ``shaft_impact_words``), or None when the
+    record has none (SP7 step S4a fix rounds 2, 3 and 4)."""
+    return next(
+        (
+            e
+            for e in record.get("events") or []
+            if (e.get("t") or 0.0) >= 0.0
+            and e.get("name") == "impact"
+            and e.get("alt_m") is not None
+            and e["alt_m"] < 0.0
+        ),
+        None,
+    )
+
+
+SHAFT_CARRIAGE_WORDS = "on its parked carriage, the floor of the flight model in the shaft"
+"""Where a fall back inside the shaft onto the parked carriage is logged (SP7 step S4a fix
+round 3; ``shaft_impact_words``, the one criterion of the replay and the scene)."""
+SHAFT_APEX_WORDS = "at its apex, with its carriage parked above it"
+"""Where a flight that ended inside the shaft is logged when the carriage parks above the
+apex (a carriage that brakes at less than the vehicle's deceleration): the value
+``shaft_impact_words`` returns for that case, the criterion the readers branch on; since
+SP7 step S4a fix round 5 (M1) the texts word the case as a stop, not a fall
+(``fall_back_text``, ``early_flight_text``, ``scene.fall_back_caveat``: 'stopped rising ...,
+SHAFT_APEX_STOP_TEXT')."""
+SHAFT_CARRIAGE_TEXT = "onto the parked carriage"
+"""The words of ``prelude.shaft_fallback_note`` for an impact on the shaft floor (the parked
+carriage)."""
+SHAFT_APEX_TEXT = "stopped rising"
+"""The words of ``prelude.shaft_fallback_note`` for an impact at once at the apex (the
+carriage parked above it)."""
+SHAFT_APEX_EVENTS = ("apex", SHAFT_APEX_EVENT)
+"""The planar events that log an apex after the release (a coast's or the vertical rise's
+split, and a burn's radial apex inside the shaft)."""
+SHAFT_TURN_EVENTS = ("turnaround", SHAFT_TURNAROUND_EVENT)
+"""The planar events that log a turnaround after the release (the vertical rise's split,
+and a burn's radial turnaround inside the shaft)."""
+
+
+def shaft_impact_words(run_flags: Sequence[Any]) -> str:
+    """Where a run that fell back inside the shaft has its impact logged, from its
+    ``prelude.SHAFT_FALLBACK`` flag (metrics.json ``flags``; SP7 step S4a fix rounds 3 and
+    4, H4-M1: the one criterion of the replay and the scene, ``scene.shaft_impact_text``,
+    never the page's rounded speed): SHAFT_CARRIAGE_WORDS when the note says
+    SHAFT_CARRIAGE_TEXT, SHAFT_APEX_WORDS when it says SHAFT_APEX_TEXT, '' without such a
+    flag (the place is then not stated)."""
+    note = next((str(f) for f in run_flags if SHAFT_FALLBACK in str(f)), "")
+    if SHAFT_CARRIAGE_TEXT in note:
+        return SHAFT_CARRIAGE_WORDS
+    if SHAFT_APEX_TEXT in note:
+        return SHAFT_APEX_WORDS
+    return ""
+
+
+def _after_release(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The page record's events at or after the release (t >= 0 s, release-relative)."""
+    return [e for e in record.get("events") or [] if (e.get("t") or 0.0) >= 0.0]
+
+
+def carriage_park_alt_m(record: Mapping[str, Any], m: Mapping[str, Any]) -> float | None:
+    """Where a vertical push's braked carriage parks [m] (+z-up datum frame, the ground at
+    0): the track start altitude (the record's ``start_alt_m``) plus the release position
+    and the braking distance (metrics ``release_position_m``, ``braking_distance_m``), the
+    value of ``metrics.carriage_park_altitude_m``; None off a vertical track or when an
+    item is missing (SP7 step S4a fix round 4)."""
+    start = _finite(record.get("start_alt_m"))
+    s_rel = _finite(m.get("release_position_m"))
+    d = _finite(m.get("braking_distance_m"))
+    if not record.get("vertical") or None in (start, s_rel, d):
+        return None
+    return float(start) + float(s_rel) + float(d)  # type: ignore[arg-type]
+
+
+def shaft_turn_event(record: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The first turnaround logged below the ground after the release (SHAFT_TURN_EVENTS:
+    a burn that sank back in the shaft and was turned around by its thrust; SP7 step S4a
+    fix round 4), or None."""
+    return next(
+        (
+            e
+            for e in _after_release(record)
+            if e.get("name") in SHAFT_TURN_EVENTS
+            and e.get("alt_m") is not None
+            and e["alt_m"] < 0.0
+        ),
+        None,
+    )
+
+
+def shaft_turn_text(
+    record: Mapping[str, Any], m: Mapping[str, Any], ground: str, past: bool
+) -> str | None:
+    """A turnaround inside the shaft after a release below the ground, in words (SP7 step
+    S4a fix round 4, H4-m3, V4-2): 'it stops rising <a> m below <ground>' (or 'it rises <a>
+    m above <ground>' for an apex above it, the record's last apex before the turnaround),
+    'sinks back' ('falls back into the shaft') 'and its thrust turns it around <b> m below
+    <ground>, <c> m above its parked carriage (``carriage_park_alt_m``), at T+<t> s'; in
+    the past tense with ``past``; None without such a turnaround. ``ground``: 'the mouth'
+    or 'the ground'."""
+    turn = shaft_turn_event(record)
+    if turn is None:
+        return None
+    t_turn = turn.get("t") or 0.0
+    apexes = [
+        e
+        for e in _after_release(record)
+        if e.get("name") in SHAFT_APEX_EVENTS
+        and e.get("alt_m") is not None
+        and (e.get("t") or 0.0) <= t_turn
+    ]
+    stops, rises, sinks, falls, turns = (
+        ("stopped rising", "rose", "sank back", "fell back into the shaft", "turned")
+        if past
+        else ("stops rising", "rises", "sinks back", "falls back into the shaft", "turns")
+    )
+    lead = ""
+    if apexes:
+        a = float(apexes[-1]["alt_m"])
+        lead = (
+            f"it {rises} {a:.1f} m above {ground} and {falls}"
+            if a >= 0.0
+            else f"it {stops} {abs(a):.1f} m below {ground} and {sinks}"
+        )
+        lead += f", and its thrust {turns} it around"
+    else:
+        lead = f"its thrust {turns} it around after it {sinks}"
+    text = f"{lead} {abs(float(turn['alt_m'])):.1f} m below {ground}"
+    park = carriage_park_alt_m(record, m)
+    if park is not None and park < float(turn["alt_m"]):
+        text += f", {float(turn['alt_m']) - park:.1f} m above its parked carriage"
+    if turn.get("t") is not None:
+        text += f", at T+{float(turn['t']):.1f} s"
+    return text
+
+
+SHAFT_APEX_STOP_TEXT = "below its carriage parked above it"
+"""Where the apex of a flight that ended inside the shaft lies against its carriage, when a
+carriage braking at less than the vehicle's deceleration parks above it (SP7 step S4a fix
+round 5, M1: the vehicle stopped rising there and did not fall)."""
+
+
+def fall_back_text(
+    record: Mapping[str, Any],
+    fell: Mapping[str, Any],
+    run_flags: Sequence[Any],
+    ground: str,
+    subject: str = "it",
+) -> str:
+    """How a run whose flight ended inside the shaft (``fell_back_in_shaft``'s impact event
+    ``fell``) came down, in the present tense, ``subject`` its subject ('it' or the run's
+    name) (SP7 step S4a fix rounds 3 to 5): '<subject> falls back inside the shaft', or,
+    when its highest apex after the release lies above ``ground`` ('the mouth' or 'the
+    ground'), '<subject> rises <h> m above <ground> and falls back into the shaft' (P4-M1:
+    through the open mouth onto the carriage); then 'its impact logged <d> m below
+    <ground>' and where (``shaft_impact_words`` of the run's flags). A run whose flag says
+    it stopped rising (SHAFT_APEX_WORDS: a carriage braking at less than the vehicle's
+    deceleration, parked above its apex) did not fall: '<subject> stops rising <d> m below
+    <ground>, below its carriage parked above it, and its impact is logged at once at that
+    apex' (fix round 5, M1)."""
+    words = shaft_impact_words(run_flags)
+    depth = abs(fell["alt_m"])
+    if words == SHAFT_APEX_WORDS:
+        return (
+            f"{subject} stops rising {depth:.1f} m below {ground}, {SHAFT_APEX_STOP_TEXT}, "
+            "and its impact is logged at once at that apex"
+        )
+    apex = _highest_apex_before(record, fell)
+    if apex is not None and apex >= 0.0:
+        lead = f"{subject} rises {apex:.1f} m above {ground} and falls back into the shaft"
+    else:
+        lead = f"{subject} falls back inside the shaft"
+    return f"{lead}, its impact logged {depth:.1f} m below {ground}" + (
+        f" {words}" if words else ""
+    )
+
+
+def _highest_apex_before(record: Mapping[str, Any], event: Mapping[str, Any]) -> float | None:
+    """The highest apex altitude [m] logged after the release and before ``event`` (an
+    event record of the page), or None."""
+    t_end = event.get("t") or 0.0
+    alts = [
+        float(e["alt_m"])
+        for e in _after_release(record)
+        if e.get("name") in SHAFT_APEX_EVENTS
+        and e.get("alt_m") is not None
+        and (e.get("t") or 0.0) <= t_end
+    ]
+    return max(alts) if alts else None
+
+
+def early_flight_text(
+    record: Mapping[str, Any],
+    mouth: bool,
+    run_flags: Sequence[Any] = (),
+    m: Mapping[str, Any] | None = None,
+) -> str:
+    """For a push released at its release speed before the track end (SP7 step S4a fix
+    rounds 1 to 4), after its clause has said where: it then flew the rest of the shaft
+    (of the track, off a silo: ``mouth`` False) as in the open atmosphere (drag, dynamic
+    pressure and Mach number computed; no shaft flow model, no walls), or, for a run that
+    fell back inside it (``fell_back_in_shaft``), it flew in the shaft that way until it
+    fell back (after rising <h> m above the mouth, through the open mouth, when its apex
+    lies above it: fix round 4, P4-M1), its impact logged <d> m below the mouth (the
+    ground, off a silo: its impact altitude) on its parked carriage
+    (``shaft_impact_words`` of the run's flags ``run_flags``, fix round 4, H4-M1), or
+    until it stopped rising <d> m below the mouth, below its carriage parked above it, its
+    impact logged at once at that apex (fix round 5, M1: it did not fall); with,
+    from the page record's events after the release below the ground, 'stage 1 lit' and
+    'its kick began' there when they did, and a turnaround inside the shaft
+    (``shaft_turn_text`` in the past tense with the run's metrics ``m``: how far above its
+    parked carriage the thrust turned it around, fix round 4, H4-m3)."""
+    fell = fell_back_in_shaft(record)
+    if fell is not None:
+        rest = "in the shaft"
+    else:
+        rest = "the rest of the shaft" if mouth else "the rest of the track"
+    text = (
+        f"it then flew {rest} as in the open atmosphere (drag, dynamic pressure and Mach "
+        "number computed there; no shaft flow model, no walls)"
+    )
+    inside = {
+        str(e.get("name"))
+        for e in _after_release(record)
+        if e.get("alt_m") is not None and e["alt_m"] < 0.0
+    }
+    done = [
+        w for n, w in (("ignition", "stage 1 lit"), ("kick_start", "its kick began")) if n in inside
+    ]
+    if done and mouth:
+        text += f", where {' and '.join(done)}"
+    ground = "the mouth" if mouth else "the ground"
+    turn = shaft_turn_text(record, {} if m is None else m, ground, past=True)
+    if turn is not None:
+        text += f"; {turn}"
+    if fell is not None:
+        words = shaft_impact_words(run_flags)
+        if words == SHAFT_APEX_WORDS:  # it stopped rising there (fix round 5, M1)
+            return text + (
+                f", until it stopped rising {abs(fell['alt_m']):.1f} m below {ground}, "
+                f"{SHAFT_APEX_STOP_TEXT}, its impact logged at once at that apex"
+            )
+        apex = _highest_apex_before(record, fell)
+        if apex is not None and apex >= 0.0:
+            text += (
+                f", until it rose {apex:.1f} m above {ground} and fell back into the shaft, its "
+                f"impact logged {abs(fell['alt_m']):.1f} m below {ground}"
+            )
+        else:
+            text += (
+                f", until it fell back, its impact logged {abs(fell['alt_m']):.1f} m below {ground}"
+            )
+        if words:
+            text += f" {words}"
+    return text
 
 
 def carriage_mass_kg(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float | None:
@@ -789,8 +1361,13 @@ def carriage_mass_kg(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float |
 
 def is_vented(assist: Mapping[str, Any]) -> bool:
     """True when a run's shaft is vented (assist.shaft; the only setting the config
-    takes today, so the air column is never modelled). No metric records it."""
-    return assist.get("shaft") == VENTED_SHAFT
+    takes today, so the air column is never modelled on the push). No metric records
+    it. A linear-motor block that leaves the key out is vented (SP7 step S4a: its
+    config's default and only shaft until S5); for any other drive a missing key reads as
+    before (not stated). After a release below the mouth the planar flight computes drag,
+    q and Mach in the rest of the shaft (``closeup_notes``)."""
+    default = VENTED_SHAFT if assist.get("model") == LINEAR_MOTOR_MODEL else None
+    return assist.get("shaft", default) == VENTED_SHAFT
 
 
 def kicked(m: Mapping[str, Any]) -> bool:
@@ -811,8 +1388,13 @@ def is_exploratory(metrics: Mapping[str, Any]) -> bool:
 
 def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
     """The ground start of a run: 'pad start' or the assist geometry, drive (the net
-    acceleration of ``push_accel_g``), carriage mass and exhaust impingement fraction
-    (when non-zero) and exit speed, from resolved_config.yaml and metrics.json."""
+    acceleration of ``push_accel_g`` for the prescribed drive; for the linear motor its
+    law and limits in brief, ``linear_motor_law_text``, SP7 step S4a, the acceleration
+    law's command named as a command), carriage mass and exhaust impingement fraction
+    (when non-zero) and exit speed (for the linear motor said to be measured, with a
+    release speed not reached, or, released at its release speed before the track end,
+    'released at <v> m/s (measured) <d> m below the mouth': ``motor_exit_text``), from
+    resolved_config.yaml and metrics.json."""
     if not is_assisted(assist):
         return "pad start"
     depth = _finite(m.get("track_start_altitude_m"))
@@ -830,6 +1412,9 @@ def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
     accel = push_accel_g(assist, m)
     if model == CONSTANT_ACCEL_MODEL and accel is not None:
         drive = f"{accel:g} g net push"
+    elif model == LINEAR_MOTOR_MODEL:
+        law = linear_motor_law_text(linear_motor_settings(assist, m), short=True)
+        drive = f"linear motor ({law})"
     parts = [where, drive]
     carriage = _finite(assist.get("carriage_mass_t"))
     if carriage is not None and carriage > 0.0:
@@ -838,9 +1423,29 @@ def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
     if impinged is not None and impinged > 0.0:
         parts.append(f"exhaust impingement fraction {impinged:g}")
     exit_v = _finite(m.get("exit_speed_mps"))
-    if exit_v is not None:
+    if exit_v is not None and model == LINEAR_MOTOR_MODEL:
+        parts.append(motor_exit_text(assist, m, exit_v))
+    elif exit_v is not None:
         parts.append(f"exit {exit_v:.1f} m/s")
     return ", ".join(parts)
+
+
+def motor_exit_text(assist: Mapping[str, Any], m: Mapping[str, Any], v_mps: float) -> str:
+    """The speed at release of a linear-motor push for the detail line (SP7 step S4a):
+    'released at <v> m/s (measured) <d> m below the mouth' for a release at its release
+    speed before the track end (``release_depth_m``; 'before the track end' off a silo),
+    else 'exit <v> m/s (measured)', with '; its release speed <v_set> m/s not reached'
+    inside the brackets when ``release_speed_missed``. v_mps [m/s]: metrics.json
+    exit_speed_mps."""
+    if m.get("release_trigger") == RELEASE_TARGET_SPEED:
+        depth = release_depth_m(m)
+        where = "" if depth is None else f" {depth:.1f} m"
+        where += " below the mouth" if below_mouth(assist) else " before the track end"
+        return f"released at {v_mps:.1f} m/s (measured){where}"
+    v_set = linear_motor_settings(assist, m)["release_speed_mps"]
+    if v_set is not None and release_speed_missed(m, v_set):
+        return f"exit {v_mps:.1f} m/s (measured; its release speed {v_set:g} m/s not reached)"
+    return f"exit {v_mps:.1f} m/s (measured)"
 
 
 def is_yardstick(m: dict[str, Any]) -> bool:
@@ -1215,6 +1820,30 @@ def _unless_all(names: Sequence[str], assisted: Sequence[str]) -> str:
     return "" if list(names) == list(assisted) else f" ({_names(names)})"
 
 
+SHAFT_NO_DRAG = "the shaft has no air drag"
+"""The vented-shaft clause of ``drive_caveat`` (``_shaft_drag_clause``)."""
+
+
+def _shaft_drag_clause(
+    vented: Sequence[str], push_only: Sequence[str], assisted: Sequence[str]
+) -> str:
+    """The vented-shaft clause of ``drive_caveat`` (one clause since SP7 step S4a fix
+    round 2): SHAFT_NO_DRAG for the ``vented`` runs (named unless every assisted run is
+    one, ``_unless_all``), those of ``push_only`` (released at their release speed below
+    the mouth, whose flight in the shaft after the release is computed as in the open
+    atmosphere) named as 'on the push only': 'the shaft has no air drag (silo and lm; on
+    the push only for lm_target)'; 'the shaft has no air drag on the push' when every
+    vented run is one of them."""
+    whole = [n for n in vented if n not in push_only]
+    early = [n for n in vented if n in push_only]
+    if not early:
+        return SHAFT_NO_DRAG + _unless_all(whole, assisted)
+    if not whole:
+        return f"{SHAFT_NO_DRAG} on the push" + _unless_all(early, assisted)
+    named = "" if list(vented) == list(assisted) else f"{_names(whole)}; "
+    return f"{SHAFT_NO_DRAG} ({named}on the push only for {_names(early)})"
+
+
 def paired_baseline_metrics(metrics: Mapping[str, Any], name: str) -> dict[str, Any]:
     """The ``paired_baseline_metrics`` of the bounds record whose ``run`` is ``name`` (the
     metrics of the paired baseline a bound re-run is compared with); {} when metrics.json
@@ -1329,7 +1958,16 @@ def drive_caveat(
     ``sources``: run_source per run (its metrics give the push's net acceleration,
     ``push_accel_g``, the carriage mass, ``carriage_mass_kg``, the kick regime and the
     peak q-alpha); ``metrics``: the directory's metrics.json (the baseline's and the
-    paired baselines' peak q-alpha)."""
+    paired baselines' peak q-alpha). A linear-motor run (SP7 step S4a) gets a sentence
+    of its own after the first ('The drive' when it is the only assisted run shown, else
+    'The drive of <name>'): ``linear_motor_clause`` (its law, F_max and P_max, the
+    acceleration law's command, how it released and its measured speed at release) and
+    ``motor_acceleration_text`` (what its acceleration does over the push, by law, cap and
+    release, from its metrics), and, for a push released at its release speed below the
+    mouth, ``early_flight_text`` (the rest of the shaft flown as in the open atmosphere, or
+    until it fell back); its shaft is said to have no air drag on the push only, in the
+    one shaft clause (``_shaft_drag_clause``). Its omissions are worded per run by law,
+    whether a cap bound and how it released (``_motor_omission``)."""
     assisted = [r["key"] for r in runs if r["assisted"]]
     if not assisted:
         return None
@@ -1342,6 +1980,9 @@ def drive_caveat(
     vented: list[str] = []
     omitted: dict[str, list[str]] = {}
     kicking: list[str] = []
+    motors: list[str] = []
+    early: list[str] = []
+    push_only: list[str] = []
     for name in assisted:
         assist = run_assist(sources[name]["config"])
         m = sources[name]["metrics"]
@@ -1352,6 +1993,10 @@ def drive_caveat(
             pushes.setdefault(accel, []).append(name)
         else:
             others.setdefault(str(assist.get("model")), []).append(name)
+        if assist.get("model") == LINEAR_MOTOR_MODEL:
+            motors.append(name)
+            if m.get("release_trigger") == RELEASE_TARGET_SPEED:
+                early.append(name)
         if carriage_mass_kg(assist, m) == 0.0:
             applies.setdefault("the carriage is massless", []).append(name)
             if is_prescribed:
@@ -1359,7 +2004,9 @@ def drive_caveat(
             else:
                 omitted.setdefault(name, []).append("the massless carriage")
         if is_vented(assist):
-            applies.setdefault("the shaft has no air drag", []).append(name)
+            applies.setdefault(SHAFT_NO_DRAG, []).append(name)
+            if name in early:  # released below the mouth: the rest is flown in the open air
+                push_only.append(name)
             if is_prescribed:
                 vented.append(name)
             else:
@@ -1377,10 +2024,25 @@ def drive_caveat(
     ]
     if stated:
         parts.append("the drive is " + _names(stated))
-    parts += [part + _unless_all(names, assisted) for part, names in applies.items()]
+    parts += [
+        _shaft_drag_clause(names, push_only, assisted)
+        if part == SHAFT_NO_DRAG
+        else part + _unless_all(names, assisted)
+        for part, names in applies.items()
+    ]
     if parts:
         text = _names(parts)
         sentences.append(text[0].upper() + text[1:] + ".")
+    for n in motors:
+        assist = run_assist(sources[n]["config"])
+        m = sources[n]["metrics"]
+        subject = "The drive" if assisted == [n] else f"The drive of {n}"
+        text = f"{subject} is {linear_motor_clause(assist, m)}; "
+        text += motor_acceleration_text(linear_motor_settings(assist, m), m)
+        if n in early:
+            flags = m.get("flags") if isinstance(m.get("flags"), list) else []
+            text += f"; {early_flight_text(by_key[n], below_mouth(assist), flags, m)}"
+        sentences.append(text + ".")
     if prescribed:
         figures = ["the release speed"]
         if any(by_key[n]["payload_kg"] is not None for n in prescribed):
@@ -1415,6 +2077,9 @@ def drive_caveat(
         left_out = [n for n in names if n in omitted]
         if not left_out:
             continue
+        if model == LINEAR_MOTOR_MODEL:
+            sentences += _linear_motor_omissions(left_out, omitted, sources, by_key)
+            continue
         bits = list(dict.fromkeys(bit for n in left_out for bit in omitted[n]))
         changed = "the release speed"
         if any(by_key[n]["payload_kg"] is not None for n in left_out):
@@ -1428,6 +2093,132 @@ def drive_caveat(
     if kick is not None:
         sentences.append(kick)
     return " ".join(sentences) if sentences else None
+
+
+OMISSION_BIAS: dict[str, str] = {
+    "the massless carriage": "the drive energy and peak power",
+    "the missing shaft drag": "the drive energy, peak power and interface force",
+}
+"""What each omission of the push model biases low while a prescribed motion is flown
+(the prescribed drive, and the acceleration law while no cap binds: the kinematics are the
+command's, so only the drive's own figures move; RQ3-silo-screening-2d for the prescribed
+drive, the same equation of motion for the acceleration law)."""
+
+
+def _motor_omission(
+    bits: Sequence[str],
+    cfg: Mapping[str, Any],
+    m: Mapping[str, Any],
+    payload: bool,
+    many: bool = False,
+) -> str:
+    """What the omitted pieces ``bits`` (``OMISSION_BIAS`` keys) do to one linear-motor
+    run's numbers, from its settings ``cfg`` (``linear_motor_settings``) and metrics m
+    (SP7 step S4a fix round 1), with the subject's parenthesis: under the acceleration
+    law with no cap bound they leave the push unchanged and bias its own figures low
+    (``OMISSION_BIAS``), and could make a cap bind; with a cap bound (or unrecorded) the
+    same while no cap binds, and they can change the release speed (or, released at its
+    release speed, the release position) where one does; under the force law they can
+    change the release speed or the release position, and the payload, the massless
+    carriage biasing the release position and push time low (or the speed at release
+    high) and the interface force high, all of the drive force reaching the vehicle (fix
+    round 3, V3-2), and the missing shaft drag with the directions of the run's shaft
+    assumption line (its interface clause limited to the power phase without a carriage
+    mass); a push that stopped on the track (no ``release_trigger``; fix round 2) has no
+    release to change, so they can change how the push ran on the track; a stalled push
+    (status DRIVE_STALL_STATUS) never moved, so the missing shaft drag changes nothing
+    and a carriage mass would only add to the load the drive could not lift (fix round 3,
+    H3-m4). 'its size' or 'their size is not established here' ends every case but the
+    uncapped acceleration law's and the stall's. ``many``: the words of a sentence shared
+    by several runs, 'each push' for 'its push' (fix round 3, V3-1)."""
+    one = len(bits) == 1
+    names = _names(list(bits))
+    size = f"{'its' if one else 'their'} size is not established here"
+    control = cfg.get("control")
+    law = f"{control} law" if isinstance(control, str) else "law unknown"
+    push = "each push" if many else "its push"
+    the_push = "each push" if many else "the push"
+    if m.get("status") == DRIVE_STALL_STATUS:
+        parts = []
+        if "the missing shaft drag" in bits:
+            parts.append("the missing shaft drag changes nothing")
+        if "the massless carriage" in bits:
+            parts.append("a carriage mass would only add to the load the drive could not lift")
+        moved = "the pushes never moved" if many else "the push never moved"
+        return f"({law}, stalled) {moved}: {' and '.join(parts)}"
+    if m and m.get("release_trigger") is None:  # stopped on the track: no release
+        return f"({law}, no release) {names} can change how {the_push} ran on the track; {size}"
+    early = m.get("release_trigger") == RELEASE_TARGET_SPEED
+    if early:
+        changed = f"where {the_push} reaches its release speed (the release position)"
+    else:
+        changed = "the speed at release"
+    if payload:
+        changed += " and the payload"
+    biases = ", and ".join(f"{bit} biases {OMISSION_BIAS[bit]} low" for bit in bits)
+    if cfg.get("control") == CONTROL_ACCELERATION:
+        cap = cfg.get("cap_bound")
+        if cap is False:
+            never = "none of these pushes reached" if many else "this push never reached"
+            return (
+                f"(acceleration law, no cap bound) {names} {'does' if one else 'do'} not "
+                f"change {push}: {biases}; with {'it' if one else 'them'} a cap could "
+                f"bind that {never}"
+            )
+        bound = "a cap bound" if cap is True else "a cap may bind"
+        where = "where it does" if cap is True else "where one does"
+        return (
+            f"(acceleration law, {bound}) {names} {'does' if one else 'do'} not change "
+            f"{push} while no cap binds ({biases}), and can change {changed} {where}; {size}"
+        )
+    text = f"({law}) {names} can change {changed}"
+    massless = "the massless carriage" in bits
+    if massless and control == CONTROL_FORCE:
+        moved = "the release position and push time low" if early else "the speed at release high"
+        text += (
+            f"; the massless carriage biases {moved} and the interface force high (all of the "
+            "drive force reaches the vehicle)"
+        )
+    if "the missing shaft drag" in bits and control == CONTROL_FORCE:
+        moved = "the release position and push time low" if early else "the speed at release high"
+        interface = (
+            "the interface force (in the power phase only, without a carriage mass)"
+            if massless
+            else "the interface force"
+        )
+        text += f"; the missing shaft drag biases {moved}, and {interface} and drive work low"
+    return f"{text}; {size}"
+
+
+def _linear_motor_omissions(
+    names: Sequence[str],
+    omitted: Mapping[str, Sequence[str]],
+    sources: Mapping[str, Mapping[str, Any]],
+    by_key: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    """The omissions sentences of the linear-motor runs ``names`` (SP7 step S4a; per run
+    since fix round 1): each run's omitted pieces (``omitted``) worded for its law,
+    whether a cap bound and how it released (``_motor_omission``), the payload named for
+    a run that has one; runs with the same wording share a sentence ('For <names>
+    (linear_motor drive, ...) ...'), worded for several runs ('each push', fix round 3,
+    V3-1)."""
+    groups: dict[str, list[str]] = {}
+    args: dict[str, tuple[Sequence[str], dict[str, Any], Mapping[str, Any], bool]] = {}
+    for n in names:
+        assist = run_assist(sources[n]["config"])
+        m = sources[n]["metrics"]
+        cfg = linear_motor_settings(assist, m)
+        one = (omitted[n], cfg, m, by_key[n]["payload_kg"] is not None)
+        text = _motor_omission(*one)
+        groups.setdefault(text, []).append(n)
+        args.setdefault(text, one)
+    out = []
+    for text, group in groups.items():
+        if len(group) > 1:
+            text = _motor_omission(*args[text], many=True)
+        head, _, rest = text.partition(") ")
+        out.append(f"For {_names(group)} ({LINEAR_MOTOR_MODEL} drive, {head[1:]}) {rest}.")
+    return out
 
 
 def model_caveat(
@@ -1687,18 +2478,184 @@ def caveats(
     return out
 
 
+def early_release_note(record: Mapping[str, Any], m: Mapping[str, Any], mouth: bool) -> str:
+    """The close-up sentence of a push released at its release speed before the track end
+    (SP7 step S4a fix rounds 1 and 2): where it starts, that it is released on reaching
+    its release speed (the measured speed at release, the push time and
+    ``release_depth_m`` below the mouth, ``mouth``), then from the page record's events
+    after the release: the mouth crossing (the ``shaft_exit`` event: its speed, time
+    after release and the offset from the shaft axis, its downrange, to the page's 1 m; no
+    clearance is checked), or a fall back inside the shaft (``fell_back_in_shaft``: an
+    impact below the ground, with its depth), or, with neither (``planar.SHAFT_EXIT_EVENT``
+    is logged only when the kick began in the shaft), the crossing read from the record's
+    sampled series (``series_mouth_crossing``: 'about' its speed and time, 'unpowered'
+    when no ignition event precedes it), placed against the kick from the record's
+    ``kick_start`` event ('before its kick' when the kick began at or above the ground,
+    'after its kick began in the shaft' when below it, 'no kick is logged' when none is);
+    without a crossing in the series either, only what is logged is said. A turnaround
+    inside the shaft (``shaft_turn_text``: how far above its parked carriage the thrust
+    turned it around) comes first, and the crossing is then the one after it; a fall back
+    says whether it rose above the mouth first (``fall_back_text``) and where its impact is
+    logged from the run's flag (fix round 4: P4-M1, H4-M1, H4-m3, V4-2). The measured
+    speed at release is formatted once from the unrounded metric (fix round 4, H4-m5)."""
+    name = record["key"]
+    start = record.get("start_alt_m")
+    text = name
+    if start is not None and start < 0.0:
+        text += f" starts {abs(start):.0f} m below ground"
+    else:
+        text += " starts at ground level"
+    text += " and is released on reaching its release speed"
+    v = _finite(m.get("exit_speed_mps"))
+    push = _finite(m.get("push_time_s"))
+    if v is None:
+        v = record.get("exit_speed_mps")
+    if push is None:
+        push = record.get("push_s")
+    if v is not None:
+        text += f", {v:.1f} m/s"
+    if push is not None:
+        text += f", after {push:.1f} s"
+    depth = release_depth_m(m)
+    if depth is not None:
+        where = "below the silo mouth" if mouth else "before the end of the track"
+        text += f", {depth:.1f} m {where}"
+    if not mouth:
+        return text + "."
+    events = record.get("events") or []
+    turn_event = shaft_turn_event(record)
+    t_from = 0.0 if turn_event is None else float(turn_event.get("t") or 0.0)
+    after = [e for e in events if (e.get("t") or 0.0) >= t_from]
+    turn = shaft_turn_text(record, m, "the mouth", past=False)
+    if turn is not None:
+        text += f"; {turn}"
+    exit_ = next((e for e in after if e.get("name") == SHAFT_EXIT_EVENT), None)
+    fell = fell_back_in_shaft(record)
+    if exit_ is not None:
+        x_km = exit_.get("x_km")
+        offset = ""
+        if x_km is not None:
+            x_m = float(km_to_m(abs(float(x_km))))
+            offset = (
+                ", within 1 m of the shaft axis"
+                if x_m < MOUTH_AXIS_TOL_M
+                else f", {x_m:.0f} m off the shaft axis (no clearance is checked)"
+            )
+        speed = "" if exit_.get("v") is None else f" at {exit_['v']:.1f} m/s"
+        when = "" if exit_.get("t") is None else f" at T+{exit_['t']:.1f} s"
+        return text + f"; it passes the mouth{speed}{when}{offset}."
+    if fell is not None:
+        flags = m.get("flags") if isinstance(m.get("flags"), list) else []
+        return text + f"; {fall_back_text(record, fell, flags, 'the mouth')}."
+    kick = next((e for e in _after_release(record) if e.get("name") == "kick_start"), None)
+    kick_in_shaft = kick is not None and (kick.get("alt_m") or 0.0) < 0.0
+    cross = series_mouth_crossing(record, t_from)
+    if cross is None:
+        if kick is None:
+            return text + "; no mouth crossing and no kick are logged."
+        if kick_in_shaft:
+            return text + "; its kick began in the shaft, and no mouth crossing is logged."
+        return text + "; no mouth crossing is logged before its kick."
+    t_cross, v_cross = cross
+    lit = any(e.get("name") == "ignition" and (e.get("t") or 0.0) <= t_cross for e in events)
+    speed = "" if v_cross is None else f" at about {v_cross:.1f} m/s"
+    text += (
+        f"; it passes the mouth{'' if lit else ' unpowered'}{speed} at about T+{t_cross:.1f} s "
+        "(read from the sampled series: no mouth crossing is logged)"
+    )
+    if kick is None:
+        return text + ", and no kick is logged."
+    return text + (
+        ", after its kick began in the shaft." if kick_in_shaft else ", before its kick."
+    )
+
+
+def series_mouth_crossing(
+    record: Mapping[str, Any], t_from_s: float = 0.0
+) -> tuple[float, float | None] | None:
+    """The first upward crossing of altitude 0 (the mouth of a silo whose exit is at the
+    ground) at or after t_from_s [s after release] (the release; a turnaround inside the
+    shaft, fix round 4) in a page record's sampled series (``t`` [s after
+    release], ``alt_m`` [m], ``v`` [m/s], the resampled rows of ``run_series``): (t, v)
+    linearly interpolated between the two samples that bracket it (v None when either
+    sample has none), or None when the series has no such crossing (SP7 step S4a fix round
+    2: read where no ``shaft_exit`` event is logged; good to the sample step, so worded
+    'about')."""
+    t_s, alt, v = record.get("t") or [], record.get("alt_m") or [], record.get("v") or []
+    for i in range(1, min(len(t_s), len(alt))):
+        t0, t1, z0, z1 = t_s[i - 1], t_s[i], alt[i - 1], alt[i]
+        if None in (t0, t1, z0, z1) or t0 < max(0.0, t_from_s) or not z0 < 0.0 <= z1:
+            continue
+        f = -z0 / (z1 - z0)
+        v0 = v[i - 1] if i - 1 < len(v) else None
+        v1 = v[i] if i < len(v) else None
+        speed = None if v0 is None or v1 is None else v0 + f * (v1 - v0)
+        return t0 + f * (t1 - t0), speed
+    return None
+
+
+def _track_end_fall_backs(
+    runs: Sequence[dict[str, Any]], names: Sequence[str], sources: Mapping[str, Mapping[str, Any]]
+) -> list[str]:
+    """One close-up sentence for each run of ``names`` (released at its track end) whose
+    flight ended inside the shaft (a release at a track exit below the ground, the only
+    track-end release with a shaft floor below the ground: its ``prelude.SHAFT_FALLBACK``
+    flag and ``fell_back_in_shaft``'s impact event): ``fall_back_text`` with the run's name
+    as its subject, below 'the ground' (SP7 step S4a fix round 5, M2: keyed on the flag,
+    not on the release trigger); none for every other run."""
+    by_key = {r["key"]: r for r in runs}
+    out = []
+    for name in names:
+        record = by_key.get(name)
+        flags = sources[name]["metrics"].get("flags")
+        flags = flags if isinstance(flags, list) else []
+        fell = None if record is None else fell_back_in_shaft(record)
+        if fell is None or not any(SHAFT_FALLBACK in str(f) for f in flags):
+            continue
+        out.append(f"{fall_back_text(record, fell, flags, 'the ground', subject=name)}.")
+    return out
+
+
 def closeup_notes(
     runs: Sequence[dict[str, Any]], sources: Mapping[str, Mapping[str, Any]]
 ) -> list[str]:
     """Sentences under the launch close-up: where each assisted group starts and how it
-    leaves the track; how a held run is released; the vented shaft."""
+    leaves the track (a push released at its release speed before the track end in a
+    sentence of its own, ``early_release_note``, SP7 step S4a), then, for a run of the
+    group whose flight ended inside the shaft after a release at a track exit below the
+    ground, where (``_track_end_fall_backs``, fix round 5); how a held run is
+    released; the vented shaft (on the push only when a run shown was released below the
+    mouth, whose flight in the shaft after the release is computed as in the open
+    atmosphere, whether it left the shaft or fell back in it)."""
     notes: list[str] = []
     groups: dict[tuple[Any, ...], list[str]] = {}
+    order: list[tuple[str, Any]] = []
+    early: list[str] = []
     for r in runs:
-        if r["assisted"]:
-            key = (r["start_alt_m"], r["exit_speed_mps"], r["push_s"], r["vertical"])
-            groups.setdefault(key, []).append(r["key"])
-    for (start, v_exit, push, vertical), names in groups.items():
+        if not r["assisted"]:
+            continue
+        m = sources[r["key"]]["metrics"]
+        if m.get("release_trigger") == RELEASE_TARGET_SPEED:
+            early.append(r["key"])
+            order.append(("early", r))
+            continue
+        v_exit, push = r["exit_speed_mps"], r["push_s"]
+        if run_assist(sources[r["key"]]["config"]).get("model") == LINEAR_MOTOR_MODEL:
+            # measured, not prescribed: formatted once from the metric (fix round 4, H4-m5)
+            v_exit = _finite(m.get("exit_speed_mps"))
+            push = _finite(m.get("push_time_s"))
+        key = (r["start_alt_m"], v_exit, push, r["vertical"])
+        if key not in groups:
+            order.append(("group", key))
+        groups.setdefault(key, []).append(r["key"])
+    for kind, item in order:
+        if kind == "early":
+            assist = run_assist(sources[item["key"]]["config"])
+            notes.append(
+                early_release_note(item, sources[item["key"]]["metrics"], below_mouth(assist))
+            )
+            continue
+        (start, v_exit, push, vertical), names = item, groups[item]
         text = _names(names)
         if start is not None and start < 0.0:
             text += f" start{'s' if len(names) == 1 else ''} {abs(start):.0f} m below ground"
@@ -1709,6 +2666,7 @@ def closeup_notes(
             leave = "leaves" if len(names) == 1 else "leave"
             text += f" and {leave} {exit_at} at {v_exit:.1f} m/s after {push:.1f} s"
         notes.append(text + ".")
+        notes += _track_end_fall_backs(runs, names, sources)
     held = [r for r in runs if r["phase"] and r["phase"][0] == HOLD_KIND]
     on_pad = [r["key"] for r in held if not r["assisted"]]
     on_track = [r["key"] for r in held if r["assisted"]]
@@ -1727,10 +2685,19 @@ def closeup_notes(
         for r in runs
         if r["assisted"] and is_vented(run_assist(sources[r["key"]]["config"]))
     ]
-    if vented:
+    early_vented = [n for n in early if n in vented]
+    if vented and not early_vented:
         notes.append(
             "The shaft is treated as vented, so no air drag, dynamic pressure or Mach "
             "number is computed inside it."
+        )
+    elif vented:
+        notes.append(
+            "The shaft is treated as vented, so no air drag, dynamic pressure or Mach "
+            f"number is computed inside it on the push; after the release below the mouth "
+            f"of {_names(early_vented)} the flight in the shaft is computed as in the open "
+            "atmosphere, with drag, dynamic pressure and Mach number (no shaft flow model, "
+            "no walls)."
         )
     return notes
 
@@ -1937,6 +2904,27 @@ def subtitle_text(
     return text + " (the baseline is not on this page)."
 
 
+def early_release_results_note(
+    early: Sequence[str], sources: Mapping[str, Mapping[str, Any]]
+) -> str:
+    """The results note of the runs ``early`` released at their release speed before the
+    track end (SP7 step S4a fix rounds 1 and 2): their exit-speed column holds the speed at
+    release, below the mouth when every one of them is a silo whose exit is at the ground
+    (``below_mouth``), else before the track end; the close-up notes say where; the ideal
+    screening is taken at that speed, not at the speed at the mouth (the track end).
+    ``sources``: run_source per run."""
+    one = len(early) == 1
+    mouth = all(below_mouth(run_assist(sources[n]["config"])) for n in early)
+    where, end = ("below the mouth", "mouth") if mouth else ("before the track end", "track end")
+    return (
+        f"The exit speed of {_names(early)} is {'its' if one else 'their'} speed at "
+        f"release, {where} ({'it was' if one else 'they were'} released on reaching "
+        f"{'its release speed' if one else 'their release speeds'}; the close-up notes say "
+        f"where), and {'its' if one else 'their'} ideal screening is taken at "
+        f"{'that speed' if one else 'those speeds'}, not at the speed at the {end}."
+    )
+
+
 def replay_data(run_dir: Path, runs: Sequence[str] | None) -> dict[str, Any]:
     """The page's data set for the selected runs of a planar results directory (see the
     module docstring); raises ReplayError for a wrong directory or run selection."""
@@ -1978,6 +2966,14 @@ def replay_data(run_dir: Path, runs: Sequence[str] | None) -> dict[str, Any]:
         )
     if any(r["compared_to"] not in (None, baseline) for r in records):
         results_notes.append(f"Changes are against {baseline} unless the row names another run.")
+    early = [
+        r["key"]
+        for r in records
+        if r["assisted"]
+        and sources[r["key"]]["metrics"].get("release_trigger") == RELEASE_TARGET_SPEED
+    ]
+    if early:  # SP7 step S4a fix rounds 1 and 2: a release before the mouth stated
+        results_notes.append(early_release_results_note(early, sources))
     meta = {
         "experiment": experiment,
         "timestamp": str(metrics.get("timestamp_utc", run_dir.resolve().name)),
