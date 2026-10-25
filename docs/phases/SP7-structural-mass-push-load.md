@@ -849,7 +849,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [x] | 6fa2ff0 |
 | S3c | The sweep's no-offload record, added at S7a (D-SP7-48): `<case>.dv_shortfall_mps` appended to the sweep index, the no-offload lines under the sweep table; Amendment 1 of the pre-registration (74eb3c8); then `sweep` A re-run | results_io.py, summary.py, tests/test_offload_pipeline.py, physics.md | the column and lines on synthetic sweeps (fast tests); the standing gates; honesty review of the wording | [x] | 1e4c732 (pass-3 minors 77e1691) |
 | S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [x] | 25967be (merge 8c4b41a) |
-| S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [ ] | |
+| S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [x] | 7cdc24a |
 | S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [ ] | |
 | S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [ ] | |
 | (checkpoint 2) | the drive realism complete; an in-progress handoff point | | | | |
@@ -1403,6 +1403,25 @@ option fairly with its cost)
   breaks the step's own criterion F sdot <= P_max in an edge the tests do not reach
   (deviation 48, D-SP7-50, KI-045; fixed in S4a). KI-045 to KI-052 opened from the fix
   rounds' candidates. Next: S4a.
+- Step S4a closed (2026-10-25; commit 7cdc24a). First the force law's power cap moved onto the
+  flown, tapered force (D-SP7-50, KI-045), with an arc-track test of the edge P_max/sdot < F_h
+  against an independent quadrature; then the release at a target speed, KI-052's keys, the
+  readers (replay, scene, the force- and power-against-speed figure, the conditional summary
+  rows, KI-042's cells) and the app's listing. After a release below the mouth the vehicle
+  flies the shaft in the open atmosphere and a fall back ends at the shaft floor, the parked
+  carriage (D-SP7-51; deviation 50). Workflow: one implementer; physics, compliance, honesty
+  and visual reviewers in four passes (50, 24, 15 and 17 findings; 10, 8, 2 and 3 majors),
+  four fix rounds (3 rejected with reasons, the rest fixed); the independent gate after round
+  4: the step criterion item by item, fast suite 2101, full suite 2150 (49 slow in 11
+  groups), ruff, the exact 1-D golden tier, the planar pins, the golden-dump field lists, the
+  frozen files and replay.html's sha256, the gallery's six pages byte-identical, the scratch
+  linear-motor run's replay and scene pages against its metrics.json and the app on that
+  scratch root answering 200: all pass. Round 4 was unreviewed, so the session added a
+  focused fifth pass (physics, honesty, compliance: 14 findings, 3 majors, all wording of the
+  soft-brake apex case), a fifth fix round and a re-gate (fast suite 2103, the exact golden
+  tier and planar pins, the touched slow tests, 593 tests of the touched files with their slow
+  cases, the gallery byte-identical): pass (deviation 49). KI-042, KI-045 and KI-052 closed;
+  KI-053 to KI-066 opened from the fix rounds' candidates. Next: S4b.
 
 ## 12. Deviations from the plan
 
@@ -1881,6 +1900,22 @@ Checkpoint 1 and step S6a (2026-10-16):
     not reach. physics.md left the order open for the user; the session settled it from the
     approved design's own words (D-SP7-50): the cap applies to the flown, tapered force, fixed
     in S4a (KI-045). No registered run has flown a linear motor yet.
+49. **Step S4a ran five review passes and five fix rounds** (protocol: up to two fix rounds,
+    an extra round for pass-3 majors): passes 3 and 4 found majors in the fix rounds' own
+    changes (the fall back inside the shaft, deviation 50), so round 4 ran after pass 4, and
+    since nothing had reviewed it the session added a fifth pass on round 4's changes alone, a
+    fifth fix round and a targeted re-gate (the step's full suite ran at the main gate, after
+    round 4; round 5 changed wording, docstrings and tests, with its touched slow tests run).
+    Accepted by the session.
+50. **Step S4a reached files outside its row** (the row names prelude.py, engine.py, replay.py,
+    scene.py, summary.py, plots.py, app.py and physics.md): the planners (phases/vertical.py,
+    phases/planar.py, `FlightStart`), sim.py and video.py. A release below the mouth needs the
+    flight to start inside the shaft: planar burns that started there were ended at once as an
+    impact by the ground event's already-past rule, so the burns list `shaft_exit` and
+    `shaft_apex` while below ground, and a fall back ends at the shaft floor (D-SP7-51). The
+    floor applies to any release below the ground, so a constant_accel push to a buried exit
+    that falls back now ends on its carriage; no shipped experiment has a buried exit and every
+    track_end comparison of the gate is bit-identical. Accepted by the session.
 
 ## 13. Prompt to start this phase
 
