@@ -848,7 +848,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S6a | Files A (silo_structure_2d.yaml) and C (silo_structure_2d_readme.yaml) and the pre-registration, part 1, committed before any run | experiments/, docs/phases/inputs/, tests/test_config_planar.py | the expected readings recomputed by the gate; `git diff --quiet <S2 commit> HEAD -- configs/structures/`; honesty review; clean tree | [x] | cbbd7bc |
 | S7a | `run` A, `sweep` A, `run` C from the clean commit; the findings note's structural part | results/ (summaries), docs/findings/ | no `bug_suspect`; verifications within 1e-4 P_ref or flagged; reproductions within 0.002 kg; the frozen sets recomputed; honesty review | [x] | 6fa2ff0 |
 | S3c | The sweep's no-offload record, added at S7a (D-SP7-48): `<case>.dv_shortfall_mps` appended to the sweep index, the no-offload lines under the sweep table; Amendment 1 of the pre-registration (74eb3c8); then `sweep` A re-run | results_io.py, summary.py, tests/test_offload_pipeline.py, physics.md | the column and lines on synthetic sweeps (fast tests); the standing gates; honesty review of the wording | [x] | 1e4c732 (pass-3 minors 77e1691) |
-| S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [ ] | |
+| S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [x] | 25967be (merge 8c4b41a) |
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [ ] | |
 | S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [ ] | |
 | S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [ ] | |
@@ -1381,6 +1381,28 @@ option fairly with its cost)
   sweep 1 that still offloads 76.71 m/s (100 m), the 25 and 50 m points 60.2 and 18.3 m/s
   short (the extra speed helped but did not pay for the structure). Deviations 45 and 46;
   KI-043 and KI-044 opened. Next: S4 (in progress in the worktree sp7-s4).
+- Step S4 closed (2026-10-24; commit 25967be on branch sp7-s4, merged into main as 8c4b41a,
+  a merge commit because main had moved on with S7a's documents; the branch touched no file
+  S7a touched). Built in a git worktree outside the repository by two implementers (part A:
+  KI-030's strict, finite numbers with the bounds T_IGN_LIMIT_S and EXIT_ALTITUDE_LIMIT_M,
+  and the KI-021 to KI-023 test hygiene; part B: the linear motor). The workflow stopped
+  twice at usage limits and resumed from its journal; the agents cut off re-ran on the
+  current tree. Three reviewers (physics, compliance, honesty) in three passes (15, 9 and 6
+  findings; 2, 0 and 0 majors), every finding fixed, none rejected. An independent gate,
+  every command in the foreground: the step criterion item by item (139 linear-motor cases
+  at 1e-9 against closed forms, limits at every step and sample at 1e-12, the energy
+  identity cold, hot and ramped, the hot interface force for f_imp 0, 0.5 and 1, the
+  refusals, the pending ignition in 1-D and planar, KI-030's sixteen inputs refused under
+  the new source and accepted under 2b343d7's, 288 resolved digests of the nine shipped
+  experiment files unchanged); fast suite 2057 passed (three chunks); ruff; the exact 1-D
+  golden tier (121 passed); the planar digest pin and output capture; the golden-dump field
+  lists; the frozen files and replay.html's sha256; physics.md's section and 44 test-map
+  rows; the full suite 2104 passed (47 slow in 11 groups): all pass. After the merge the
+  fast suite and ruff pass on main. KI-021, KI-022, KI-023 and KI-030 closed. The event set
+  goes beyond design 4.6 (deviation 47, D-SP7-49); the force-law taper and power-cap order
+  breaks the step's own criterion F sdot <= P_max in an edge the tests do not reach
+  (deviation 48, D-SP7-50, KI-045; fixed in S4a). KI-045 to KI-052 opened from the fix
+  rounds' candidates. Next: S4a.
 
 ## 12. Deviations from the plan
 
@@ -1839,6 +1861,26 @@ Checkpoint 1 and step S6a (2026-10-16):
     figures came first from the uncommitted working tree (2026-10-16) and were regenerated from
     the committed scripts after review (tables b82417b; figures, after review passes 2-4,
     a5b21b8). Accepted by the session.
+47. **The linear motor's event set goes beyond design 4.6** (design 4.6 names the events
+    `drive_ramp_end`, `power_limit`, `drive_cap` and `taper_start` as logged boundaries of the
+    push): S4 makes every watch a terminal event that ends a sub-phase, re-flies the step to
+    the crossing, adds the end events `power_limit_end` and `drive_cap_end`, scans each first
+    flight for a watch value passed over inside one step, and splits at the delivered-thrust
+    clamp of a hot push, so that every kink of the drive force lies on a sub-phase boundary and
+    the closed forms hold at 1e-9. docs/physics.md "Linear motor (SP7 step S4)", *Sub-phases
+    and events*, states the set and what it leaves unsplit (KI-048). Decided by the session
+    (D-SP7-49); no constant_accel or pad path changed (the goldens and digests pin them).
+48. **The force law's stop taper is applied after the power cap** (design 4.10: "the command
+    or the force limit is scaled ... toward the holding value", and S4's criterion "F sdot <=
+    P_max at every sample"): S4's `drive_force_N` caps the law's force at P_max/sdot and then
+    scales it toward F_h = M g sin phi - T_sys, so the cap limits a force that is not flown.
+    Where P_max/sdot >= F_h the flown power F_h sdot (1 - w) + P_max w stays below P_max (the
+    review's probe: a 30 m taper inside the power phase reads power-limited at 0.970 P_max and
+    exits 0.19 m/s, 0.28%, below the cap-after-taper order); where P_max/sdot < F_h (a drive
+    too weak to hold the stack at that speed) the flown power exceeds P_max, which the tests do
+    not reach. physics.md left the order open for the user; the session settled it from the
+    approved design's own words (D-SP7-50): the cap applies to the flown, tapered force, fixed
+    in S4a (KI-045). No registered run has flown a linear motor yet.
 
 ## 13. Prompt to start this phase
 

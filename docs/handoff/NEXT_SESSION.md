@@ -43,6 +43,10 @@ per SESSION_PROTOCOL.md section 10 from the step table.
   the first sweep cell for cell; step S7a closed at 6fa2ff0 (the note, docs/findings/RQ1-structural-2d.md).
   S4 runs in a git worktree on branch `sp7-s4` (outside the repository, in the session's scratch
   folder); if this session ended before it was merged, the branch holds its work (`git log main..sp7-s4`).
+- 2026-10-24: step S4 closed (25967be on `sp7-s4`, merged into main as 8c4b41a; the linear
+  motor, KI-030, KI-021 to KI-023). D-SP7-49 (the push's event set) and D-SP7-50 (the force
+  law's power cap on the flown, tapered force; KI-045, fixed in S4a) recorded. Next: S4a, S4b,
+  S5, checkpoint 2, S6b, S7b, S7c, S8, C1, C2.
 - Resume point: the phase file's section 11, entry "2026-10-19 (session 2)" and its S7a close line. If a sweep
   directory newer than 20261016T171522Z exists under results/silo_structure_2d/, check it
   as item 1 of section 6 says (finished, interrupted or raised); the reproduction check of
