@@ -24,6 +24,12 @@ from scipy.integrate import OdeSolution
 from scipy.optimize import brentq
 
 from launchsim.assist.base import AssistModel, TrackGeometry
+from launchsim.assist.linear_motor import (
+    POWER_LIMIT,
+    RELEASE_TRIGGER_TRACK_END,
+    TAPER_START,
+    LinearMotorAssist,
+)
 from launchsim.dynamics import (
     VERTICAL_LAYOUT,
     TrackParams,
@@ -49,6 +55,7 @@ from launchsim.phases import (
     RunTrace,
     sample_grid,
 )
+from launchsim.phases.prelude import DRIVE_STALL
 from launchsim.units import j_to_kwh, to_g
 from launchsim.vehicle import Vehicle
 
@@ -320,8 +327,8 @@ def run_metrics(
     liftoff mass must use.
 
     A pad always releases (the hold-down opens at t = 0, whether or not the vehicle
-    then lifts off). A track run that stopped on the track (status ``drive_limit``)
-    never released: every release item (t_release_s, speed, altitude, mass, the
+    then lifts off). A track run that stopped on the track (status ``drive_limit``
+    or ``drive_stall``) never released: every release item (t_release_s, speed, altitude, mass, the
     ``before_release`` pair) and every time counted from release
     (``t_ign_rel_release_s_*``, ``final_t_s``, the burnout, apex and impact times) is
     None, and what burned is in ``hold_propellant_burned_kg`` and
@@ -331,8 +338,10 @@ def run_metrics(
     ``peak_felt_axial_g`` (a CLAUDE.md summary item) is the peak felt axial
     acceleration over the whole run: the hold (1 g_eff), the track ((F_int + T)/m_v)
     and the free flight (T/m); ``peak_felt_axial_g_phase``, ``_t_s`` and ``_mass_kg``
-    say where it occurs and the mass there. ``peak_felt_g_flight`` (with ``_t_s`` and
-    ``_mass_kg``) is the free-flight peak alone.
+    say where it occurs and the mass there (a ``drive_stall`` run's push-start row is
+    left out, ``STALL_UNAVAILABLE_TRACK_METRICS``: None when nothing else is sampled).
+    ``peak_felt_g_flight`` (with ``_t_s`` and ``_mass_kg``) is the free-flight peak
+    alone.
 
     A pad has no track: every assist item (drive energy, electrical energy, drive
     power, interface force, track-normal load, braking distance, facility length) is
@@ -400,8 +409,10 @@ def run_metrics(
     metrics["peak_felt_g_flight"] = peak_g
     metrics["peak_felt_g_flight_t_s"] = peak_t
     metrics["peak_felt_g_flight_mass_kg"] = peak_m
-    # The run-wide peak: hold, track and flight rows together (the CLAUDE.md item).
-    axial_g, axial_t, axial_m, axial_phase = _peak_felt(frame)
+    # The run-wide peak: hold, track and flight rows together (the CLAUDE.md item);
+    # a stalled push's one row is not reported (STALL_UNAVAILABLE_TRACK_METRICS).
+    felt_frame = frame[frame["phase"] != ASSIST_KIND] if trace.status == DRIVE_STALL else frame
+    axial_g, axial_t, axial_m, axial_phase = _peak_felt(felt_frame)
     metrics.update(
         {
             "dv_vac_mps": budget.dv_vac,
@@ -450,8 +461,16 @@ def track_metrics(
 
     Force peaks and minima are taken over the sampled ASSIST rows of the time series
     (every sample_dt_s plus both ends of every sub-phase, so the push start, the kinks
-    and the release are always included; exact for the forces of the
-    prescribed-acceleration drive, which are monotone within a lit sub-phase). The
+    and the release are always included: the thrust kinks, and for the linear motor
+    the end of its rise and every watch crossing (power_limit, power_limit_end,
+    drive_cap, drive_cap_end, taper_start), each a sub-phase end; exact for the forces
+    of the prescribed-acceleration drive, which are monotone within a lit sub-phase,
+    and for a cold linear-motor push whose stop taper begins after its rise ends; a
+    taper entered during the rise (the rising limit or command times the falling
+    taper weight) can peak between samples, 2e-5 relative with t_r 4 s and a 90 m
+    taper on a 100 m stroke, and so can the felt g and the interface force on a hot
+    linear-motor push in its power phase (P_max/sdot falling, the thrust rising),
+    docs/physics.md "Linear motor"). The
     drive power is not monotone in general, so its extrema come from the dense output
     (``losses.drive_power_extrema``): drive_power_peak_W = max(0, max P) with its
     absolute time drive_power_peak_t_s (0 for a push in which the drive only brakes),
@@ -470,6 +489,9 @@ def track_metrics(
     named here are canonical; the CLAUDE.md summary names of TRACK_METRIC_ALIASES
     (assist_energy_J/kWh, peak_drive_power_W, peak_interface_force_N) are written
     beside them with the same numbers, and peak_track_normal_g = max(vehicle, carriage).
+    A linear-motor push adds LINEAR_MOTOR_METRICS (``linear_motor_metrics``) after
+    them; no other drive gains a key. A ``drive_stall`` run writes
+    STALL_UNAVAILABLE_TRACK_METRICS as None (``stall_unavailable_metrics``).
     """
     rows = frame[frame["phase"] == ASSIST_KIND]
     assist_phases = trace.assist_phases()
@@ -519,21 +541,190 @@ def track_metrics(
     }
     # The CLAUDE.md-named aliases (same numbers; they overwrite the pad's zeros too).
     out.update({alias: out[canonical] for alias, canonical in TRACK_METRIC_ALIASES.items()})
+    out.update(stall_unavailable_metrics(trace))
+    if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
+        out.update(linear_motor_metrics(trace, assist, track, v_exit, p_peak))
     return out
 
 
-def track_flags(frame: pd.DataFrame, drive_work_out_J: float = 0.0) -> list[str]:
+STALL_UNAVAILABLE_TRACK_METRICS: tuple[str, ...] = (
+    "felt_g_track_peak",
+    "felt_g_track_peak_t_s",
+    "felt_g_track_peak_mass_kg",
+    "interface_force_peak_N",
+    "interface_force_min_N",
+    "peak_interface_force_N",
+)
+"""The track metrics a ``drive_stall`` run writes as None (SP7 step S4; review pass 1
+rerun, P1-m2): its one ASSIST row, the push-start state, is the drive at F_max with no
+support reaction, so its sddot = (F_max + T_sys)/M - g_eff sin phi is not positive (zero
+only at the equality, which stalls too) and the felt g and interface force that follow
+from it (felt (F_max + T_sys)/M, at most g_eff sin phi; F_int = m_v (sddot + g_eff sin
+phi) - T, at most what the vehicle at rest on the carriage presses with) are at most the
+loads the stack at rest on its supports sees, and are not reported. The drive
+force (F_max: the drive at its limit), the drive power and energy (0: nothing moves) and
+the track-normal loads (m g_eff cos phi, which sddot does not enter) stay as sampled."""
+
+
+def stall_unavailable_metrics(trace: RunTrace) -> dict[str, Any]:
+    """STALL_UNAVAILABLE_TRACK_METRICS as None for a ``drive_stall`` run (trace.status),
+    an empty dict otherwise (no other run changes). Input: the RunTrace."""
+    if trace.status != DRIVE_STALL:
+        return {}
+    return dict.fromkeys(STALL_UNAVAILABLE_TRACK_METRICS)
+
+
+LINEAR_MOTOR_METRICS: tuple[str, ...] = (
+    "push_force_max_N",
+    "push_power_max_W",
+    "push_rise_time_s",
+    "push_corner_speed_mps",
+    "push_power_limited",
+    "push_accel_mean_mps2",
+    "push_felt_g_plateau",
+    "release_position_m",
+    "release_trigger",
+    "electrical_power_peak_W",
+    "braking_time_s",
+    "brake_force_N",
+    "brake_energy_J",
+)
+"""The track metrics written for a ``linear_motor`` run only (SP7 step S4; design 4.6;
+``linear_motor_metrics``), after every key a constant_accel run writes, which gains
+none of them (the 1-D golden tier and the planar output capture)."""
+POWER_LIMIT_TIE_REL = 1e-6
+"""A ``power_limit`` event later than t_release (1 - POWER_LIMIT_TIE_REL) [relative to
+the push time] is a tie at the release, not a power-limited push: the speed where the
+power limit starts binding, P_max/F_pre (F_pre the law's force before the power term:
+the corner P_max/F_max after the force law's rise, P_max/F_lim(t) inside it, P_max/(M
+(a + g) - (1 - f_imp) T) under the acceleration law), equals the exit speed to within
+about 1e-6 (on the force plateau k = P_max/(F_max v_e) = 1, the design's r = 1 point;
+not the rise fraction r(t)), a limit the push reaches only in its last instant (k = 1
+itself logs no event; 1 - k = 1e-9 logs one 9.1e-10 of the push time before the
+release, measured). It does not set ``push_power_limited``."""
+
+
+def _assist_event_times(trace: RunTrace, name: str) -> list[float]:
+    """Times [s] of the ASSIST events called name, in log order."""
+    return [e.t_s for e in trace.events if e.name == name and e.phase == ASSIST_KIND]
+
+
+def _felt_at_rise_end(trace: RunTrace, rise_time_s: float) -> float | None:
+    """The felt axial acceleration [g0] at the end of the drive's rise (the plateau's
+    start): at the end state of the ASSIST sub-phase that ends at t_r = rise_time_s
+    [s] (a sub-phase boundary), at the push-start state for a step (t_r = 0); None when
+    no sub-phase ends there (the push released, or stopped, before t_r) and when no
+    plateau is reached, because the power limit or the taper began before t_r (a
+    ``power_limit`` or ``taper_start`` event earlier than t_r - ZERO_SPAN_S: the force
+    at t_r is shaped by the power limit or the taper, not by the rise alone)."""
+    early = _assist_event_times(trace, POWER_LIMIT) + _assist_event_times(trace, TAPER_START)
+    if any(t_e < rise_time_s - ZERO_SPAN_S for t_e in early):
+        return None
+    for res in trace.assist_phases():
+        params = res.spec.params
+        if rise_time_s <= 0.0 and res.spec.t0 == 0.0:
+            return track_observables(0.0, np.asarray(res.y[:, 0], dtype=float), params)["felt_g"]
+        if rise_time_s > 0.0 and abs(res.t_end - rise_time_s) <= ZERO_SPAN_S:
+            return track_observables(res.t_end, res.y_end, params)["felt_g"]
+    return None
+
+
+def _power_limited(trace: RunTrace, released: bool) -> bool:
+    """Whether the power limit bound on the push: a ``power_limit`` ASSIST event, earlier
+    than t_release (1 - POWER_LIMIT_TIE_REL) when the push released (an event at the
+    release itself is the tie k = P_max/(F_max v_e) = 1), any one when it did not. The
+    event marks the law's power branch on its force before the power term: under the
+    force law's stop taper that is the untapered force, so the flown power stays below
+    P_max there (review pass 1 rerun, P1-m1). A binding inside one integrator step is
+    logged (``prelude._passed_over``) unless its margin stays inside the watch's zero
+    band (ATOL_MPS) or, should a step hold two extrema of the margin, the scan does not
+    see its maximum; such a binding is not logged and does not count."""
+    times = _assist_event_times(trace, POWER_LIMIT)
+    if not released:
+        return bool(times)
+    return any(t_e < trace.t_release_s * (1.0 - POWER_LIMIT_TIE_REL) for t_e in times)
+
+
+def linear_motor_metrics(
+    trace: RunTrace,
+    assist: LinearMotorAssist,
+    track: TrackGeometry,
+    v_exit_mps: float | None,
+    drive_power_peak_W: float,
+) -> dict[str, Any]:
+    """LINEAR_MOTOR_METRICS of a linear-motor push (SI; docs/physics.md, "Linear motor").
+
+    Inputs: the RunTrace; the drive (its settings: the bound copy the phases carry is
+    not needed); the track; v_exit_mps, the exit speed [m/s] (None when the run stopped
+    on the track); drive_power_peak_W, the peak mechanical drive power [W] of the push.
+    Output: the settings push_force_max_N (F_max), push_power_max_W (P_max, mechanical
+    at the carriage), push_rise_time_s (t_r) and push_corner_speed_mps (P_max / F_max);
+    push_power_limited, whether the power limit bound (a ``power_limit`` event logged
+    on the push, earlier than the release by more than POWER_LIMIT_TIE_REL of the push
+    time: an event at the release itself is the tie k = P_max/(F_max v_e) = 1; under the
+    force law's taper it marks the law's power branch on the untapered force, the flown
+    power below P_max; ``_power_limited``);
+    push_accel_mean_mps2 =
+    v_exit / t_push, a mean, not an acceleration the drive held; push_felt_g_plateau,
+    the felt axial acceleration [g0] at the end of the rise (t = t_r, the
+    drive_ramp_end boundary; push start for a step), from the flown state: the value
+    at t_r, not one held after it (the burn on a hot push, and a power limit or the
+    taper beginning later, move it; felt_g_track_peak is the peak); None when the push
+    ended before t_r or stalled, and when the power limit or the taper began before
+    t_r (no plateau: ``_felt_at_rise_end``);
+    release_position_m (L: release at the track end in S4) and release_trigger
+    (``track_end``); electrical_power_peak_W = peak mechanical power / efficiency; and
+    the carriage's closed-form braking at the constant total deceleration a_b from the
+    exit speed: braking_time_s = v / a_b, brake_force_N = m_c (a_b - g_eff sin phi) and
+    brake_energy_J = (1/2) m_c v^2 (1 - g_eff sin phi / a_b), with the track's g_eff
+    (the phases') and phi at the release. Items that need the release are None
+    without one (brake_force_N does not, except on a stall: the carriage never moved).
+    Frame: the flat track frame."""
+    released = trace.y_release is not None and v_exit_mps is not None
+    phases = trace.assist_phases()
+    g_eff = phases[0].spec.params.g_eff_mps2
+    s_release = assist.release_position_m(track)
+    phi = track.phi(s_release)
+    stalled = trace.status == DRIVE_STALL
+    out: dict[str, Any] = {
+        "push_force_max_N": assist.force_max_N,
+        "push_power_max_W": assist.power_max_W,
+        "push_rise_time_s": assist.rise_time_s,
+        "push_corner_speed_mps": assist.corner_speed_mps,
+        "push_power_limited": _power_limited(trace, released),
+        "push_accel_mean_mps2": (
+            v_exit_mps / trace.t_release_s if released and v_exit_mps is not None else None
+        ),
+        "push_felt_g_plateau": None if stalled else _felt_at_rise_end(trace, assist.rise_time_s),
+        "release_position_m": s_release if released else None,
+        "release_trigger": RELEASE_TRIGGER_TRACK_END if released else None,
+        "electrical_power_peak_W": assist.electrical_power_W(drive_power_peak_W),
+        "braking_time_s": assist.braking_time_s(v_exit_mps) if v_exit_mps is not None else None,
+        "brake_force_N": None if stalled else assist.brake_force_N(g_eff, phi),
+        "brake_energy_J": (
+            assist.brake_energy_J(v_exit_mps, g_eff, phi) if v_exit_mps is not None else None
+        ),
+    }
+    return out
+
+
+def track_flags(
+    frame: pd.DataFrame, drive_work_out_J: float = 0.0, *, stalled: bool = False
+) -> list[str]:
     """Run flags of the push: ``interface_tensile`` when the interface force is negative
     anywhere on the sampled ASSIST rows (the vehicle would have to be held back on the
-    carriage); ``drive_braking`` when the drive did negative work (drive_work_out_J >
-    0: it braked the engine, with allow_negative_drive_force or a push at the
-    drive-limit threshold whose event was disarmed at t0)."""
+    carriage), never on a stalled push (stalled True: a ``drive_stall`` run, whose one
+    ASSIST row is the drive at F_max with no support reaction, at most the loads of the
+    stack at rest; its interface-force metrics are None, ``STALL_UNAVAILABLE_TRACK_METRICS``);
+    ``drive_braking`` when the drive did negative work (drive_work_out_J > 0: it braked
+    the engine, with allow_negative_drive_force or a push at the drive-limit threshold
+    whose event was disarmed at t0)."""
     rows = frame[frame["phase"] == ASSIST_KIND]
     if rows.empty:
         return []
     flags: list[str] = []
     f_min = float(rows["interface_force_N"].min())
-    if f_min < 0.0:
+    if f_min < 0.0 and not stalled:
         t_min = float(rows["t_s"].iloc[int(rows["interface_force_N"].to_numpy().argmin())])
         flags.append(
             f"interface_tensile: the carriage-vehicle interface force reaches {f_min:.6g} N "

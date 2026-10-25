@@ -21,11 +21,12 @@ the internal clock (t = 0 at push start on a track or at hold-down release on a 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy.optimize import brentq
 
 from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.assist.track import StraightTrack
@@ -59,8 +60,10 @@ from launchsim.phases.engine import (
     ev_drive_limit,
     ev_liftoff,
     ev_propellant,
+    ev_push_watch,
     ev_track_end,
     event_state,
+    first_step_value,
     integrate_phase,
     is_lit,
     sample_grid,
@@ -69,7 +72,7 @@ from launchsim.phases.trace import ASSIST_KIND, HOLD_KIND, HoldSummary, TraceBui
 from launchsim.vehicle import Startup, ThrustSchedule, Vehicle, propellant_burned_kg
 
 if TYPE_CHECKING:
-    from launchsim.assist.base import AssistModel, TrackGeometry
+    from launchsim.assist.base import AssistModel, PushWatch, TrackGeometry
     from launchsim.config import IgnitionConfig, RunConfig
 
 IGNITION_REFERENCES = ("release", "push_start")
@@ -85,6 +88,46 @@ IGNITION_HEIGHT_EVENT = "ignition_height"
 """Name of the altitude event (``engine.ev_altitude_up``) at which a first stage stated
 by ``height_method: event`` lights: the root of altitude = track exit + h, crossed
 upward on the coast after release."""
+DRIVE_STALL = "drive_stall"
+"""Run status of a push whose drive cannot start it (``AssistModel.stall_reason``: the
+linear motor at its force limit and the thrust cannot lift the stack at push start); the
+run stops on the track, like ``drive_limit``."""
+RELEASE_TIE_M = 1e-9
+"""A push on a drive whose push time is not exact (the linear motor) that stops within
+this distance [m] of the track end, at a sub-phase boundary or a watch crossing, is
+released there (``fly_track``); any farther short, it flies on to the track end. A solver
+setting, not physics: small enough that a release it accepts is off the track-end state
+by sddot / sdot x 1e-9 m in speed (below 1e-11 relative for the pushes the tests fly),
+and above zero so that a sub-phase ending a rounding error short of L (a second flight
+to the track-end root) is not followed by a closing sub-phase of a few ulps.
+constant_accel keeps ATOL_M (SP1)."""
+WATCH_LOOKAHEAD_REL = 1e-9
+"""The step, as a fraction of the bound drive's push-time estimate (2.9e-9 s on the
+tests' pushes), over which ``_arm_watches`` takes the change of a drive watch's value
+that is at zero, or a hair past it, at a sub-phase start, when no crossing has just set
+the watch's side (a Heun step, ``engine.first_step_value``): a rate test, which way the
+value moves from t0, not where rule 3's first step (first_step_s, 1 ms) would put it,
+which passed over a power cap binding for 0.28 ms and looped the planner (review pass 3,
+P3-M1). A solver setting, not physics: short, so that a limit binding or released for
+longer than it is judged right, and long enough that a moving watch's change over it
+stands clear of rounding (at the restarts of the tests' brief power cap, 4e-8 to 2e-7
+m/s, 3e-2 to 1.3e-1 N and 2e-7 m, 3e6 to 3.5e7 times the spacing of the doubles the
+values come from; measured). A briefer binding is not lost: its events are armed guarded
+(``_guarded``) and the watch whose side was just set is not judged again
+(``_WatchBook``). ``_passed_over`` reads a watch's rate over the same look-ahead at the
+step ends of a flight, to find a binding inside one step."""
+WATCH_TOGGLES_PER_INSTANT = 2
+"""The most times one drive watch may change side (start or stop binding) at one instant
+(within ZERO_SPAN_S of its last change): a touch, the limit starting and stopping at
+once. A watch whose side was just set is not judged again while its value stays in its
+zero band, and its next event is armed guarded, so a third change would need the value
+to cross the band twice more within ZERO_SPAN_S; ``fly_track`` raises RuntimeError (a
+planner bug) instead of looping."""
+EVENT_ROOT_TOL = 4.0 * float(np.finfo(float).eps)
+"""The relative and absolute tolerance [s, and relative] of the root ``_passed_over``
+finds for a crossing scipy's flight passed over: scipy's own for an event root
+(``solve_ivp``'s brentq on the step's interpolant, 4 machine epsilons), so that root is
+placed as scipy places a crossing it sees."""
 VERTICAL_TRACK_TOL_RAD = 1e-12
 """|phi - pi/2| within which a track exit counts as vertical: ``map_release`` refuses
 any other angle (the 1-D map is exact only for a vertical track; the planar branch
@@ -284,7 +327,7 @@ def resolve_ignition(
         raise ValueError(
             f"a ramp start by {key} needs the constant_accel drive and its track (assist "
             f"model {name!r}): the conversion to a time is exact only for a prescribed "
-            "acceleration (force-limited drives arrive in Phase 3)"
+            "acceleration (a force-limited drive's push is known only once it is flown)"
         )
     override = _startup_override(cfg, startup)
     if kind == RAMP_START_HEIGHT_EVENT:
@@ -771,6 +814,74 @@ def _exit_x_m(track: TrackGeometry) -> float | None:
     return track.length_m * math.cos(phi)
 
 
+def pending_until_release(spec: IgnitionSpec, assist: AssistModel | None) -> bool:
+    """Whether a first stage's ignition stays pending through the push and is resolved
+    at the flown release, t_release + t_ign_s (D-SP7-25): a lit, release-referenced
+    time on a drive whose push time is not exact (``AssistModel.push_time_exact`` False:
+    the linear motor). Such an ignition at t_ign_s < 0 (on the track) cannot be placed
+    before the push is flown: ValueError (``config.resolve_run`` refuses it when the
+    experiment resolves). False for a pad (assist None), an exact drive, a push_start
+    reference, a failed stage and a height reached by the altitude event."""
+    if assist is None or assist.push_time_exact or spec.fails or spec.lights_at_height:
+        return False
+    if spec.reference != "release":
+        return False
+    if spec.t_ign_s < 0.0:
+        raise ValueError(
+            f"a release-referenced t_ign_s {spec.t_ign_s:g} s (lit on the track) is refused on "
+            f"the {assist.name} drive, whose push time is known only once the push is flown; "
+            "state it with reference push_start"
+        )
+    return True
+
+
+def thrust_clamp_time(schedule: ThrustSchedule, p_amb_pa: float) -> float | None:
+    """The absolute time [s] at which the delivered thrust max(0, T_vac - p_amb A_e)
+    leaves its clamp at zero during a ramp or lag start, where T_vac(t) = p_amb A_e: a
+    C0 kink of the delivered thrust that ``ThrustSchedule.kink_times`` does not list.
+    With share = p_amb A_e/T_full: ramp t_ign + t_ramp share; lag t_ign - tau ln(1 -
+    share). None for a step start (the thrust jumps at the ignition kink), a failed
+    schedule, share <= 0 (no clamp: vacuum) and share >= 1 (the delivered thrust is zero
+    throughout). Inputs: the stage's schedule (absolute clock) and the ambient pressure
+    [Pa]."""
+    if schedule.fails or schedule.thrust_vac_total_N <= 0.0:
+        return None
+    share = p_amb_pa * schedule.exit_area_total_m2 / schedule.thrust_vac_total_N
+    if not 0.0 < share < 1.0:
+        return None
+    startup = schedule.startup
+    kind = startup.effective_kind
+    if kind == "ramp":
+        return schedule.t_ign_abs_s + startup.t_ramp_s * share
+    if kind == "lag":
+        return schedule.t_ign_abs_s - startup.tau_s * math.log1p(-share)
+    return None
+
+
+def push_boundaries(
+    thrust_kinks: Sequence[float],
+    drive_kinks: Sequence[tuple[str, float]],
+    t_push_start_s: float,
+    thrust_clamp_s: float | None = None,
+) -> list[float]:
+    """The sub-phase boundaries [s] of a push: the thrust kinks (``ThrustSchedule.
+    kink_times``), the drive's own kink times (``AssistModel.kink_times``, (name, time)
+    pairs) and the delivered thrust's clamp time thrust_clamp_s [s] (``thrust_clamp_time``;
+    None: not split) after the push start t_push_start_s [s] (by more than ZERO_SPAN_S),
+    sorted; a drive kink or the clamp within ZERO_SPAN_S of a kink already listed is not
+    repeated. With no drive kink and no clamp the list is the thrust kinks' alone, as
+    before SP7."""
+    after = t_push_start_s + ZERO_SPAN_S
+    kinks = sorted(k for k in thrust_kinks if k > after)
+    extra = [t_k for _name, t_k in drive_kinks]
+    if thrust_clamp_s is not None:
+        extra.append(thrust_clamp_s)
+    for t_k in extra:
+        if t_k > after and all(abs(t_k - k) > ZERO_SPAN_S for k in kinks):
+            kinks.append(t_k)
+    return sorted(kinks)
+
+
 def fly_track(
     tr: TraceBuilder,
     assist: AssistModel,
@@ -790,45 +901,103 @@ def fly_track(
     its track; spec, the first stage's IgnitionSpec; the vehicle and settings; g_eff
     [m/s^2] and the ambient pressure [Pa] of the track; prelude, the flight model's
     layout (VERTICAL_PRELUDE for the 1-D model; it must be the layout tr.view reads,
-    ValueError otherwise). Any TrackGeometry is accepted; the exit's downrange offset
-    is known only for a ``StraightTrack`` (``TrackExit.x_exit_m`` is None otherwise).
-    The first stage's ignition time
-    resolves against the model's push-time estimate (``push_time_estimate``, exact for
-    the prescribed-acceleration drive) for reference ``release`` and against t = 0 for
-    ``push_start`` (a ramp start the config stated by depth, speed or closed-form
-    height arrives here already converted to that pair, ``resolve_ignition``, and adds
-    its ``ramp_start_assumption`` line to tr.assumptions). A first stage that lights
-    at the altitude event (``IgnitionSpec.lights_at_height``; a pending ignition) has
-    no time yet: the push runs unlit, on the schedule of a failed ignition (the
+    ValueError otherwise). Any TrackGeometry is accepted; the exit's downrange offset is
+    known only for a ``StraightTrack`` (``TrackExit.x_exit_m`` is None otherwise). The
+    first stage's ignition time resolves, on a drive whose push time is exact
+    (``push_time_exact``: the prescribed-acceleration drive), against the model's
+    push-time estimate for reference ``release`` and against t = 0 for ``push_start`` (a
+    ramp start the config stated by depth, speed or closed-form height arrives here
+    already converted to that pair, ``resolve_ignition``, and adds its
+    ``ramp_start_assumption`` line to tr.assumptions). A first stage that lights at the
+    altitude event (``IgnitionSpec.lights_at_height``) or, on a drive whose push time is
+    not exact (the linear motor), at a release-referenced t_ign_s >= 0
+    (``pending_until_release``; t_ign_s < 0 raises ValueError) is a pending ignition
+    with no time yet: the push runs unlit, on the schedule of a failed ignition (the
     validated unlit path), no ignition time is written, nothing is flagged as failed,
-    and the planner lights the stage at the event after the release (its assumption
-    line is added here too). With t_ign < 0 the vehicle is clamped to the carriage
-    from ignition
-    to the push start (closed-form HOLD carrying the weight component along the track,
-    m g_eff sin phi; no liftoff extension: the push starts at t = 0 regardless of the
-    thrust). The ASSIST phase integrates the track state (``rhs_track``) from s = 0 at
-    rest, split at the thrust kinks inside the push (a sub-phase ending at the ignition
-    kink is unlit), with max_step = t_push/push_steps (tightened by the ramp or lag cap
-    when lit) and the events ``track_end`` (release), ``drive_limit`` (unless the model
-    allows a negative drive force) and ``propellant`` (exhausted on the track:
-    ValueError). Events logged on the track: push_start, ignition (when inside the
-    push), ramp_end, drive_limit; their states come from ``event_state`` (the step's
-    own interpolant), so they need no dense output. Output: the TrackExit, or None
-    when the drive limit stopped the run on the track (tr.status = "drive_limit" and a
-    flag). The release map, the release event and the ascent are the planner's.
+    and the planner lights the stage after the release (at the event, or at t_release +
+    t_ign_s; a height's assumption line is added here too). With t_ign < 0 the vehicle
+    is clamped to the carriage from ignition to the push start (closed-form HOLD
+    carrying the weight component along the track, m g_eff sin phi; no liftoff
+    extension: the push starts at t = 0 regardless of the thrust). At push start the
+    drive is bound to the stack (``at_push_start`` with the vehicle mass, the delivered
+    thrust at t = 0, g_eff and the track; an existing model returns itself) and every
+    later call uses the bound drive; a drive that cannot start the push
+    (``stall_reason``) ends the run on the track at once (tr.status = DRIVE_STALL, the
+    reason as a flag, a zero-length ASSIST phase holding the push-start state). The
+    ASSIST phase integrates the track state (``rhs_track``) from s = 0 at rest, split at
+    the thrust kinks, the drive's own kinks and, on a drive whose push time is not exact,
+    the delivered thrust's clamp (``thrust_clamp_time``: where a ramp's or lag's T_vac
+    reaches p_amb A_e) inside the push (``push_boundaries``; a sub-phase ending at the
+    ignition kink is unlit), with max_step = t_push/push_steps
+    (the bound drive's push-time estimate when it is not exact; tightened by the ramp or
+    lag cap when lit) and the events ``track_end`` (release), ``drive_limit`` (unless
+    the model allows a negative drive force), ``propellant`` (exhausted on the track:
+    ValueError) and the drive's watches (``push_watches``, ``ev_push_watch``, armed by
+    ``_arm_watches``): a watch crossing (a limit starting to bind, or a two-way watch's
+    limit stopping) ends its sub-phase, is logged, and the push goes on from there to
+    the same boundary, so every kink of the drive force short of the release is a
+    sub-phase end (split, and among the sampled rows the track peaks are read from).
+    That includes a crossing a flight passed over: scipy tests an event's sign only at
+    its step ends, so a limit that binds and is released inside one step changes no
+    sign; ``_passed_over`` scans the first flight of each sub-phase of this drive (its
+    dense output, which ``fly_track`` turns on for it: no step moves; a second flight
+    covers part of an interval already scanned, and ``_fly_to_crossing``'s loop catches
+    an earlier crossing it finds) for an interior maximum of each two-way watch's value
+    above its zero band, and the sub-phase is flown again to that crossing as to any
+    other (left unflown: a binding whose margin stays inside the band and, should a step
+    hold two extrema of one watch value, a maximum the scan does not see, ``_passed_over``).
+    Which way each watch stands is kept in a ``_WatchBook``: a crossing
+    sets it, and so does a change logged at a sub-phase start, where a watch past its
+    zero band changes side (at push start for a step command already capped) and one at
+    zero or a hair past it is judged by its rate over a short look-ahead
+    (WATCH_LOOKAHEAD_REL of the push), never by rule 3's 1 ms first step, unless a
+    crossing or a change has just set its side (it is then fresh, and not judged again
+    until its value leaves its zero band below, at a sub-phase start or at a step of a
+    kept flight, ``_settle_fresh``); an event armed with its value in its band is
+    guarded (``_guarded``; one still below zero fires at its true root), so it neither
+    fires on the zero at t0 nor is disarmed with a run flag, and a watch changing side a
+    third time at one instant raises RuntimeError (``_arm_watches``). A binding two-way
+    watch arms its end, a binding one-way watch (taper_start) nothing. On a drive whose
+    push time is not exact (the linear motor) every crossing, the release included, is
+    flown again to its root as a fixed end, and to an earlier crossing that flight finds
+    (a limit that bound and was released inside one step of the first flight, should the
+    scan not have found it first) in turn (``_fly_to_crossing``), so the state the push
+    goes on from or releases at is never read off an interpolant whose step passes a
+    kink by more than the root's error; and the push releases only at the track end:
+    ``track_end`` has zero_tol 0 (never disarmed), and a sub-phase that ends short of L
+    by more than RELEASE_TIE_M (at a watch crossing just before L, or a flight a hair
+    short of the track end) flies on to it (ATOL_M for constant_accel, as in SP1).
+    Events logged on the track: push_start, ignition (when inside the push), ramp_end
+    (at a thrust kink of a lit schedule only), the drive's kink events (drive_ramp_end),
+    its watches (power_limit, power_limit_end, drive_cap, drive_cap_end, taper_start),
+    drive_limit. An event that ends a sub-phase takes its
+    state from ``event_state`` (the step's interpolant at the root, after the flight to
+    it that of a step that passes the kink by at most the root's error); the kink events
+    and a watch logged at a sub-phase start take the sub-phase's boundary state, a step
+    end; none needs dense output. For a drive that returns itself and lists no kink and
+    no watch (constant_accel) the integration (RHS, sub-phase boundaries, events, step
+    cap) is that of SP1. Output: the TrackExit, or None when the drive limit or a stall
+    stopped the run on the track (tr.status "drive_limit" or DRIVE_STALL and a flag).
+    The release map, the release event and the ascent are the planner's.
     """
     check_layout(tr, prelude.layout, "fly_track")
     stage0 = vehicle.stages[0]
     t_push_start = 0.0
-    t_push_est = assist.push_time_estimate(track)
-    if t_push_est <= 0.0:
+    exact = assist.push_time_exact
+    t_push_est = assist.push_time_estimate(track) if exact else math.nan
+    if exact and t_push_est <= 0.0:
         raise ValueError(f"assist model {assist.name!r} estimates no push (t_push <= 0)")
-    if spec.lights_at_height:
-        # Pending ignition: no time before the altitude event; the push is unlit. The
-        # schedule's ignition time is a placeholder that a failed schedule never reads.
-        t_ign, unlit = t_push_est, True
-    else:
+    if spec.lights_at_height or pending_until_release(spec, assist):
+        # Pending ignition: no time before the altitude event or, on a drive whose push
+        # time is not exact, before the flown release; the push is unlit. The schedule's
+        # ignition time is a placeholder that a failed schedule never reads.
+        t_ign, unlit = (t_push_est if exact else t_push_start), True
+    elif exact or spec.reference == "push_start":
         t_ign, unlit = spec.t_ign_abs_s(t_push_est, t_push_start), spec.fails
+    else:
+        # A failed stage referenced to the release on such a drive: never lit, so its
+        # placeholder time is never read either.
+        t_ign, unlit = t_push_start, True
     if not unlit:
         tr.t_ign_abs_s[stage0.name] = t_ign
     flag_ignored_ignition_settings(tr, stage0.name, spec)
@@ -868,55 +1037,467 @@ def fly_track(
         y[i0 : i0 + extra0.size] = extra0
     m_dry = vehicle.stack_dry_mass_kg(0)
     length = track.length_m
-    push_cap = t_push_est / settings.push_steps
-    kinks = sorted(k for k in schedule.kink_times() if k > t_push_start + ZERO_SPAN_S)
-    boundaries: list[float | None] = [*kinks, None]
     t = t_push_start
+    # The drive bound to the stack at push start (the linear motor's holding force);
+    # an existing model returns itself, so its push integrates as in SP1.
     params = track_params(assist, track, schedule, t, g_eff_mps2, p_amb_pa)
+    drive = assist.at_push_start(m_push, params.thrust_N(t), g_eff_mps2, track)
+    params = track_params(drive, track, schedule, t, g_eff_mps2, p_amb_pa)
     tr.add_event("push_start", t, ASSIST_KIND, 0, prelude.from_track(y, params))
+    stall = drive.stall_reason()
+    if stall is not None:
+        # Nothing moves: a zero-length ASSIST phase records the push-start state.
+        phase = PhaseSpec(ASSIST_KIND, 0, t, t, rhs_track, params, (), atol)
+        tr.add_phase(integrate_phase(phase, y, settings))
+        tr.status = DRIVE_STALL
+        tr.flags.append(stall)
+        return None
+    t_push_scale = t_push_est if exact else drive.push_time_estimate(track)
+    push_cap = t_push_scale / settings.push_steps
+    thrust_kinks = schedule.kink_times()
+    # The delivered thrust's clamp (T_vac = p_amb A_e inside a ramp or lag) kinks the
+    # force law's motion and the acceleration law's drive force: split on a drive whose
+    # push time is not exact only (constant_accel keeps the boundaries of SP1).
+    clamp = None if exact else thrust_clamp_time(schedule, p_amb_pa)
+    kinks = push_boundaries(thrust_kinks, drive.kink_times(), t_push_start, clamp)
+    boundaries: list[float | None] = [*kinks, None]
+    watches = drive.push_watches()
+    # A drive whose push time is not exact (the linear motor) flies every crossing again to
+    # its root as a fixed end, scans the first flight of each sub-phase for a crossing it
+    # passed over (with the dense output on, which moves no step) and releases only at
+    # the track end;
+    # constant_accel keeps the integration of SP1 (no watches, no second flight, no scan,
+    # the ATOL_M release tie, the caller's settings).
+    refine = not exact
+    flight = settings if exact else replace(settings, dense_output=True)
+    end_event = ev_track_end(length, layout, zero_tol=ATOL_M if exact else 0.0)
+    release_tie_m = ATOL_M if exact else RELEASE_TIE_M
+    crossings = {"track_end"} | {w.name for w in watches}
+    crossings |= {w.end_name for w in watches if w.end_name is not None}
+    book = _WatchBook()  # which watches bind, which were just set, their changes
+    lookahead_s = WATCH_LOOKAHEAD_REL * t_push_scale
+    short_of: str | None = None  # the crossing a second flight just fell short of
     for t_b in boundaries:
-        params = track_params(assist, track, schedule, t, g_eff_mps2, p_amb_pa)
-        if params.lit and not tr.has_event("ignition", 0):
-            tr.add_event("ignition", t, ASSIST_KIND, 0, prelude.from_track(y, params))
-        events: list[EventSpec] = [ev_track_end(length, layout), ev_propellant(m_dry, layout)]
-        if not assist.allow_negative_drive:
-            events.append(ev_drive_limit(params))
-        step = min(push_cap, max_step_cap(schedule, t, settings)) if params.lit else push_cap
-        phase = PhaseSpec(ASSIST_KIND, 0, t, t_b, rhs_track, params, tuple(events), atol, step)
-        res = tr.add_phase(integrate_phase(phase, y, settings))
-        for name, te in res.event_times:
-            if name != "track_end":
-                y_e = event_state(res, name, te)
-                tr.add_event(name, te, ASSIST_KIND, 0, prelude.from_track(y_e, params))
-        t, y = res.t_end, res.y_end
-        if res.ended_by == "drive_limit":
-            tr.status = "drive_limit"
-            tr.flags.append(
-                f"drive_limit: the drive force crossed zero at t = {t:.6g} s (the prescribed "
-                "acceleration would need the drive to brake the engine); the run stopped "
-                "on the track"
-            )
-            return None
-        if res.ended_by == "propellant":
-            raise ValueError(
-                f"stage {stage0.name!r} exhausted its propellant at t = {t:.6g} s on the track"
-            )
-        # A ramp ending at this sub-phase's boundary is logged before a release at
-        # the same instant (the flight's burn skips a ramp segment already over).
-        if t_b is not None and t >= t_b - ZERO_SPAN_S:
-            if schedule.startup.effective_kind == "ramp" and (
-                abs(t_b - (schedule.t_ign_abs_s + schedule.startup.t_ramp_s)) <= ZERO_SPAN_S
+        while True:  # once per sub-phase; again after a crossing ends one early
+            params = track_params(drive, track, schedule, t, g_eff_mps2, p_amb_pa)
+            if params.lit and not tr.has_event("ignition", 0):
+                tr.add_event("ignition", t, ASSIST_KIND, 0, prelude.from_track(y, params))
+            events: list[EventSpec] = [end_event, ev_propellant(m_dry, layout)]
+            if not drive.allow_negative_drive:
+                events.append(ev_drive_limit(params))
+            step = min(push_cap, max_step_cap(schedule, t, settings)) if params.lit else push_cap
+            phase = PhaseSpec(ASSIST_KIND, 0, t, t_b, rhs_track, params, tuple(events), atol, step)
+            if watches:
+                phase = _arm_watches(tr, prelude, phase, y, watches, book, lookahead_s, flight)
+            res = integrate_phase(phase, y, flight)
+            passed = _passed_over(phase, res, watches, lookahead_s, flight) if refine else None
+            stand_in: PhaseResult | None = None
+            if passed is not None:
+                # A stand-in for the first flight: only the crossing's name and time are
+                # read (``_fly_to_crossing`` flies to it; it is never kept).
+                res = stand_in = replace(res, ended_by=passed[0], t_end=passed[1])
+            short = False
+            if refine and (
+                passed is not None or (res.ended_by in crossings and res.ended_by != short_of)
             ):
-                tr.add_event("ramp_end", t, ASSIST_KIND, 0, prelude.from_track(y, params))
-        s_end = float(layout.get(y, "s_m"))
-        if res.ended_by == "track_end" or s_end >= length - ATOL_M:
-            return TrackExit(
-                t_release_s=t,
-                y_track=y,
-                sdot_mps=float(layout.get(y, "sdot_mps")),
-                m_kg=float(layout.get(y, "m_kg")),
-                phi_rad=track.phi(length),
-                x_exit_m=_exit_x_m(track),
-                z_exit_m=track.start_altitude_m + track.z(length),
-            )
+                res, flown_to = _fly_to_crossing(phase, res, y, flight)
+                if res is stand_in:
+                    raise RuntimeError("a passed-over crossing was not flown (planner bug)")
+                short = res.ended_by == "t_end"
+                short_of = flown_to if short else None
+            else:
+                short_of = None
+            res = tr.add_phase(res)
+            for name, te in res.event_times:
+                if name != "track_end":
+                    y_e = event_state(res, name, te)
+                    tr.add_event(name, te, ASSIST_KIND, 0, prelude.from_track(y_e, params))
+            t, y = res.t_end, res.y_end
+            _settle_fresh(res, watches, book)
+            crossed = _record_crossing(res.ended_by, watches, book, t)
+            if res.ended_by == "drive_limit":
+                tr.status = "drive_limit"
+                why = (
+                    "the prescribed acceleration would need the drive to brake the engine"
+                    if isinstance(drive, ConstantAccelAssist)
+                    else f"the {drive.name} drive would have to hold the vehicle back: its law "
+                    "asks for less force on the stack than the thrust's share (1 - f_imp) T "
+                    "supplies"
+                )
+                tr.flags.append(
+                    f"drive_limit: the drive force crossed zero at t = {t:.6g} s ({why}); the "
+                    "run stopped on the track"
+                )
+                return None
+            if res.ended_by == "propellant":
+                raise ValueError(
+                    f"stage {stage0.name!r} exhausted its propellant at t = {t:.6g} s on the track"
+                )
+            # A ramp ending at this sub-phase's boundary is logged before a release at
+            # the same instant (the flight's burn skips a ramp segment already over);
+            # only at a thrust kink of a lit schedule (an unlit one has none, so a drive
+            # kink that falls on its placeholder ramp end logs no ramp_end).
+            reached = t_b is not None and t >= t_b - ZERO_SPAN_S
+            if t_b is not None and reached:
+                if (
+                    schedule.startup.effective_kind == "ramp"
+                    and abs(t_b - (schedule.t_ign_abs_s + schedule.startup.t_ramp_s)) <= ZERO_SPAN_S
+                    and any(abs(t_b - k) <= ZERO_SPAN_S for k in thrust_kinks)
+                ):
+                    tr.add_event("ramp_end", t, ASSIST_KIND, 0, prelude.from_track(y, params))
+                for name, t_k in drive.kink_times():  # the drive's own kink (drive_ramp_end)
+                    if abs(t_b - t_k) <= ZERO_SPAN_S:
+                        tr.add_event(name, t, ASSIST_KIND, 0, prelude.from_track(y, params))
+            s_end = float(layout.get(y, "s_m"))
+            if res.ended_by == "track_end" or s_end >= length - release_tie_m:
+                return TrackExit(
+                    t_release_s=t,
+                    y_track=y,
+                    sdot_mps=float(layout.get(y, "sdot_mps")),
+                    m_kg=float(layout.get(y, "m_kg")),
+                    phi_rad=track.phi(length),
+                    x_exit_m=_exit_x_m(track),
+                    z_exit_m=track.start_altitude_m + track.z(length),
+                )
+            if reached or not (crossed or short):
+                break
     raise RuntimeError("track phase ended without reaching the track end (planner bug)")
+
+
+def _fly_to_crossing(
+    phase: PhaseSpec,
+    first: PhaseResult,
+    y0: np.ndarray,
+    settings: IntegratorSettings,
+) -> tuple[PhaseResult, str]:
+    """The track sub-phase ``phase`` flown again from y0 (its track state at phase.t0)
+    to the crossing (a drive watch or ``track_end``) that ended its first flight
+    ``first``, with that crossing's time as the fixed end; output: the flight to keep
+    and the name of the crossing it was last flown to. A crossing's time is its root on
+    the dense interpolant of a step whose stages straddle the kink it marks (at a watch
+    the kink is the crossing itself; at the track end a power corner or a cap that
+    starts binding just beyond L), less accurate than a step end (1e-8 relative at rtol
+    1e-10 at a watch on the horizontal test, 4.6e-9 at the track end, measured). The
+    flight to it stops its last step there, so no stage passes the kink by more than the
+    root's error, and: the same crossing fires again inside that step, its root and
+    state (the step's interpolant at the root) accurate to second order in that error
+    (the usual case); or the flight ends a hair short of the crossing (ended_by
+    "t_end"), and the next sub-phase starts there with the crossing a hair ahead, inside
+    the very start of its first step, where the interpolant matches the step's start
+    state and slope (``fly_track`` does not fly that crossing twice); or another
+    crossing ends it earlier. That one may lie well before the fixed end: a limit that
+    binds and is released inside one step of the first flight changes no sign at its
+    step ends, so that flight passes over it (a power cap binding for 0.28 ms across a
+    taper start, review pass 3), while the second flight, whose steps differ, finds it
+    off a step that passes its kink by up to the rest of the span (2.2e-9 s early at
+    rtol 1e-10, and 1.1e-9 relative fast at the cap's release, measured before the scan
+    for passed-over crossings, ``_passed_over``, which now finds that binding in the
+    first flight). The sub-phase is then flown again to that crossing, and so on until
+    a flight ends at the crossing it was flown to, short of it, or not earlier. The
+    events are those of the first flight, none of which fired before its end, less any
+    at zero at phase.t0 (within its zero_tol: rule 3 would judge them again with the
+    shorter span's first step; the
+    watches armed at zero are guarded, ``_guarded``, and so are kept); the first
+    flight's notes are kept. The first flight is returned as it is when its crossing
+    came within ZERO_SPAN_S of phase.t0 (an already-past event at t0 among them: no step
+    to fly) or was itself at zero at phase.t0."""
+    t0 = phase.t0
+    if first.t_end - t0 <= ZERO_SPAN_S:
+        return first, first.ended_by
+    at_zero = {ev.name for ev in phase.events if abs(float(ev.fn(t0, y0))) <= ev.zero_tol}
+    if first.ended_by in at_zero:
+        return first, first.ended_by
+    events = tuple(ev for ev in phase.events if ev.name not in at_zero)
+    target = first
+    while True:
+        flown = integrate_phase(replace(phase, t_end=target.t_end, events=events), y0, settings)
+        earlier = flown.ended_by not in ("t_end", target.ended_by)
+        if not earlier or flown.t_end >= target.t_end or flown.t_end - t0 <= ZERO_SPAN_S:
+            return replace(flown, notes=(*first.notes, *flown.notes)), target.ended_by
+        target = flown  # a crossing the earlier flight passed over: fly to it
+
+
+def _passed_over(
+    phase: PhaseSpec,
+    res: PhaseResult,
+    watches: Sequence[PushWatch],
+    lookahead_s: float,
+    settings: IntegratorSettings,
+) -> tuple[str, float] | None:
+    """The earliest crossing of a two-way drive watch that the flight ``res`` of the
+    track sub-phase ``phase`` passed over: (its event name, its time [s]), or None.
+    scipy sees an event only through a sign change at its step ends, so a limit that
+    starts binding and is released (or released and binds again) inside one step changes
+    no sign there, and the flight neither stops at it nor applies it (a power cap
+    binding for 2.8 to 7 ms inside a 90 m taper flew uncapped, the exit 1.15e-8 fast;
+    review pass 1 rerun, H1). Each two-way watch event armed in the phase is scanned
+    through the rate of its unguarded value (``ev_push_watch``): at every step end of the
+    flight, rising or not over a Heun step of lookahead_s [s] (``engine.
+    first_step_value``, as ``_arm_watches`` judges a watch at zero); a step that starts
+    rising and ends not rising holds an interior maximum, placed by bisection on the
+    same test over the flight's dense output to ZERO_SPAN_S. A maximum above the event's
+    zero band at which the event as armed (``_guarded`` or not) is positive is a
+    crossing passed over: its time is the armed event's root between the step's start
+    and the maximum, on the same interpolant at scipy's own tolerance (EVENT_ROOT_TOL),
+    which is where scipy would have put it had the sign changed at a step end. Returned:
+    the earliest, later than phase.t0 by more than ZERO_SPAN_S and before the flight's
+    end; ``fly_track`` flies the sub-phase again to it (``_fly_to_crossing``). Limits:
+    one extremum of a watch value per step is assumed (a maximum is seen only in a step
+    that starts rising, so one after a minimum in the same step is not; the values are
+    smooth inside a sub-phase, and a step at rtol <= 1e-9 resolves them); a binding whose
+    margin stays
+    inside the zero band is not reported (one way or the other it moves the push by
+    far less than the integrator's error); the one-way taper_start only rises. None
+    for a flight without dense output (``fly_track`` turns it on for this drive) or
+    with a single sample. Inputs: the sub-phase (its events as armed, params, rhs, t0),
+    its first flight, the drive's watches, the look-ahead [s] and the settings."""
+    if res.dense is None or res.t.size < 2:
+        return None
+    raw: dict[str, EventSpec] = {}
+    for watch in watches:
+        if watch.end_name is not None:
+            raw[watch.name] = ev_push_watch(phase.params, watch)
+            raw[watch.end_name] = ev_push_watch(phase.params, watch, end=True)
+    judge = replace(settings, first_step_s=lookahead_s)
+    found: tuple[str, float] | None = None
+    for armed in phase.events:
+        value = raw.get(armed.name)
+        if value is None:
+            continue
+        t_hit = _first_passed_over(phase, res, armed, value, judge)
+        if t_hit is not None and (found is None or t_hit < found[1]):
+            found = (armed.name, t_hit)
+    return found
+
+
+def _first_passed_over(
+    phase: PhaseSpec,
+    res: PhaseResult,
+    armed: EventSpec,
+    value: EventSpec,
+    judge: IntegratorSettings,
+) -> float | None:
+    """The time [s] of the first crossing of the armed watch event ``armed`` that the
+    flight ``res`` passed over inside one of its steps (``_passed_over``, which states
+    the rule), or None. value: the same watch event unguarded (its rate and maximum are
+    read from it); judge: the settings with first_step_s the look-ahead."""
+    dense = res.dense
+    if dense is None:
+        return None
+
+    def state(t: float) -> np.ndarray:
+        return np.asarray(dense(t), dtype=float)
+
+    def rising(t: float, y: np.ndarray) -> bool:
+        ahead = first_step_value(replace(phase, t0=t), value, y, judge)
+        return ahead - float(value.fn(t, y)) > 0.0
+
+    ts = [float(t) for t in res.t]
+    up = [rising(t, np.asarray(res.y[:, i], dtype=float)) for i, t in enumerate(ts)]
+    for i in range(len(ts) - 1):
+        if not up[i] or up[i + 1]:
+            continue
+        lo, hi = ts[i], ts[i + 1]
+        while hi - lo > ZERO_SPAN_S:
+            mid = 0.5 * (lo + hi)
+            if rising(mid, state(mid)):
+                lo = mid
+            else:
+                hi = mid
+        y_top = state(lo)
+        if float(value.fn(lo, y_top)) <= value.zero_tol or float(armed.fn(lo, y_top)) <= 0.0:
+            continue
+        if float(armed.fn(ts[i], state(ts[i]))) >= 0.0:
+            continue  # not passed over: scipy saw this side at the step's start
+
+        def armed_at(t: float) -> float:
+            return float(armed.fn(t, state(t)))
+
+        root = float(brentq(armed_at, ts[i], lo, xtol=EVENT_ROOT_TOL, rtol=EVENT_ROOT_TOL))
+        if root - phase.t0 > ZERO_SPAN_S and root < res.t_end:
+            return root
+    return None
+
+
+@dataclass
+class _WatchBook:
+    """The track prelude's bookkeeping of the drive watches over one push (mutable,
+    owned by ``fly_track``): binding, the watches whose limit binds (a one-way watch,
+    taper_start, once crossed); fresh, the watches whose side a crossing or a logged
+    change has set and whose next event's value has not yet left its zero band below
+    (``_arm_watches`` never judges them); last_change, per watch the time [s] of its
+    last change of side and how many changes fell within ZERO_SPAN_S of each other up to
+    it."""
+
+    binding: set[str] = field(default_factory=set)
+    fresh: set[str] = field(default_factory=set)
+    last_change: dict[str, tuple[float, int]] = field(default_factory=dict)
+
+    def set_side(self, name: str, binds: bool, t_s: float) -> None:
+        """The watch name changes side at t_s [s]: its limit binds from here (binds
+        True) or stops binding; it becomes fresh. RuntimeError (a planner bug, not
+        physics) on more than WATCH_TOGGLES_PER_INSTANT changes within ZERO_SPAN_S of
+        each other."""
+        t_last, count = self.last_change.get(name, (-math.inf, 0))
+        count = count + 1 if t_s - t_last <= ZERO_SPAN_S else 1
+        if count > WATCH_TOGGLES_PER_INSTANT:
+            raise RuntimeError(
+                f"watch {name!r} changed side {count} times at t = {t_s:.12g} s on the track "
+                "(planner bug: a watch whose side was just set is armed guarded, never judged)"
+            )
+        self.last_change[name] = (t_s, count)
+        if binds:
+            self.binding.add(name)
+        else:
+            self.binding.discard(name)
+        self.fresh.add(name)
+
+
+def _settle_fresh(res: PhaseResult, watches: Sequence[PushWatch], book: _WatchBook) -> None:
+    """Clears ``book.fresh`` of each two-way watch whose next event's value (its end's
+    while it binds, its own otherwise; ``ev_push_watch`` on the flight's params, not
+    guarded) fell below its zero band (below -zero_tol) at a step of the kept flight res:
+    as at a sub-phase start (``_arm_watches``), the value has left its band since a
+    crossing set the watch's side, so at its next zero it is judged, not armed guarded
+    (a brief binding with no sub-phase start inside it stayed fresh to its end, and its
+    end, armed guarded with its value a hair past zero, fired zero_tol/rate late: 1.7e-8
+    s for a power cap binding 7 ms inside a taper, 8e-9 relative in its logged speed).
+    Called before the flight's own crossing is recorded (``_record_crossing``), which
+    makes that watch fresh again."""
+    params = res.spec.params
+    for watch in watches:
+        if watch.end_name is None or watch.name not in book.fresh:
+            continue
+        nxt = ev_push_watch(params, watch, end=watch.name in book.binding)
+        if any(float(nxt.fn(float(t), res.y[:, i])) < -nxt.zero_tol for i, t in enumerate(res.t)):
+            book.fresh.discard(watch.name)
+
+
+def _record_crossing(
+    ended_by: str, watches: Sequence[PushWatch], book: _WatchBook, t_s: float
+) -> bool:
+    """Whether the sub-phase ended at a drive watch's crossing (ended_by, its name or
+    end name) at t_s [s], recording it in ``book`` (``_WatchBook.set_side``): a watch's
+    crossing makes its limit bind, a two-way watch's end crossing releases it. Inputs:
+    how the sub-phase ended, the drive's watches, the bookkeeping and the time."""
+    for watch in watches:
+        if ended_by == watch.name:
+            book.set_side(watch.name, True, t_s)
+            return True
+        if watch.end_name is not None and ended_by == watch.end_name:
+            book.set_side(watch.name, False, t_s)
+            return True
+    return False
+
+
+def _guarded(ev: EventSpec, g0: float) -> EventSpec:
+    """The upward watch event ev armed with its value g0 at the sub-phase start within
+    its zero band (|g0| <= ev.zero_tol), where the engine's rule 3 would judge it with
+    its own first step and could disarm it with a run flag. Its function reads a
+    constant just beyond -zero_tol (``below``), so rule 3 leaves it armed and
+    ``_fly_to_crossing`` keeps it in a second flight:
+    - g0 <= 0 (not yet crossed): while g <= 0, so it fires where g crosses zero upward,
+      the true root, and never on a value that stays at zero (the law's force equal to
+      the limit);
+    - g0 > 0 (a hair past zero, a side not taken): while |g| <= zero_tol, so the value
+      at t0 cannot fire, and the event fires once g has left the band upward, at g =
+      +zero_tol (zero_tol/rate after the root: below 1e-10 s for the two-way watches on
+      the tests' pushes, whose zero_tols are ATOL_MPS and ATOL_KG g_eff).
+    ValueError for an event that does not fire upward."""
+    if ev.direction != 1:
+        raise ValueError(f"event {ev.name!r}: only an upward watch event is guarded")
+    tol = ev.zero_tol
+    below = -math.nextafter(tol, math.inf)
+    fn = ev.fn
+
+    if g0 <= 0.0:
+
+        def guarded(t: float, y: np.ndarray) -> float:
+            g = fn(t, y)
+            return g if g > 0.0 else min(g, below)
+
+    else:
+
+        def guarded(t: float, y: np.ndarray) -> float:
+            g = fn(t, y)
+            return below if abs(g) <= tol else g
+
+    return replace(ev, fn=guarded)
+
+
+def _arm_watches(
+    tr: TraceBuilder,
+    prelude: PreludeLayout,
+    phase: PhaseSpec,
+    y: np.ndarray,
+    watches: Sequence[PushWatch],
+    book: _WatchBook,
+    lookahead_s: float,
+    settings: IntegratorSettings,
+) -> PhaseSpec:
+    """The track sub-phase ``phase`` (starting at phase.t0 [s] in the track state y)
+    with the drive's watch events that can cross in it (``ev_push_watch``, terminal,
+    upward) added to its events; ``book`` is updated in place. Each watch's next event
+    is the one that changes its side: its own event when its limit does not bind, its
+    end event when it binds (a binding one-way watch, taper_start, has none: it arms
+    nothing, and leaves ``binding`` unlogged once a sub-phase starts with its value
+    below zero). With g the next event's value at t0 and tol its zero_tol:
+    - g < -tol: the event is armed as it is, and the watch is no longer fresh;
+    - -tol <= g < 0: armed guarded (``_guarded``), so it fires at its true root;
+    - 0 <= g <= tol and the watch is fresh (a crossing or a logged change set its side,
+      and its value has not left the band below since): not judged, armed guarded, so a
+      limit that binds for less than any look-ahead is never logged as released at the
+      instant it starts;
+    - 0 <= g <= tol otherwise (a sub-phase boundary on the kink, the second of two
+      watches that cross together): judged by the change of g over a Heun step of
+      lookahead_s [s] (``engine.first_step_value`` with first_step_s = lookahead_s,
+      never rule 3's own first step): rising, the watch changes side here; falling or
+      unchanged (the law's force equal to the limit, no kink), armed guarded;
+    - g > tol: the watch changes side here (at push start, a step command already
+      capped).
+    A change of side at t0 is logged there (an ASSIST event through the prelude's view,
+    the sub-phase's start state), recorded (``_WatchBook.set_side``: the watch becomes
+    fresh) and arms the opposite event of a two-way watch (guarded when within its
+    band). Inputs: the builder, the prelude layout, the sub-phase, its start state, the
+    drive's watches, the bookkeeping, the look-ahead [s] and the settings."""
+    params = phase.params
+    t0 = phase.t0
+    judge = replace(settings, first_step_s=lookahead_s)
+    armed: list[EventSpec] = []
+
+    def value(ev: EventSpec) -> float:
+        return float(ev.fn(t0, y))
+
+    def rises(ev: EventSpec) -> bool:
+        return first_step_value(phase, ev, y, judge) - value(ev) > 0.0
+
+    def arm(ev: EventSpec) -> None:
+        g0 = value(ev)
+        armed.append(ev if g0 < -ev.zero_tol else _guarded(ev, g0))
+
+    for watch in watches:
+        on = watch.name in book.binding
+        up = ev_push_watch(params, watch)
+        other: EventSpec | None = None
+        if watch.end_name is None:  # one-way (taper_start)
+            if on:
+                if value(up) < -up.zero_tol:
+                    book.binding.discard(watch.name)
+                    book.fresh.discard(watch.name)
+                    armed.append(up)
+                continue
+            nxt = up
+        else:
+            down = ev_push_watch(params, watch, end=True)
+            nxt, other = (down, up) if on else (up, down)
+        g = value(nxt)
+        if g < -nxt.zero_tol:
+            book.fresh.discard(watch.name)
+        if g < 0.0 or (g <= nxt.zero_tol and (watch.name in book.fresh or not rises(nxt))):
+            arm(nxt)
+            continue
+        tr.add_event(nxt.name, t0, ASSIST_KIND, 0, prelude.from_track(y, params))
+        book.set_side(watch.name, not on, t0)
+        if other is not None:
+            arm(other)
+    return replace(phase, events=(*phase.events, *armed))

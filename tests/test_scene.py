@@ -124,6 +124,7 @@ RUN_PATH_MODULES = (
     "phases/vertical",
     "phases/planar",
     "structure",  # the structural sizing primitives (SP7 step S1)
+    "assist/linear_motor",  # the force- and power-limited drive (SP7 step S4)
 )
 """Modules of the run path that must never import display or scene."""
 SCENE_MODULES = ("launchsim.display", "launchsim.scene")

@@ -672,9 +672,10 @@ def test_variant_rows_insert_the_ignition_rows_and_the_flight_pair_only_when_it_
 
 
 def test_si_value_converts_by_the_yaml_suffix() -> None:
-    """The sensitivity table's SI column: tonnes, kN, degrees, km, g and kWh convert
-    through units.py by the key's suffix (a list index at the end is skipped); s, m,
-    kg and friends are SI already; no listed suffix means dimensionless."""
+    """The sensitivity table's SI column: tonnes, kN, MW (the linear motor's power
+    limit), degrees, km, g and kWh convert through units.py by the key's suffix (a list
+    index at the end is skipped); s, m, kg and friends are SI already; no listed suffix
+    means dimensionless."""
     assert sim.si_value("vehicle.stages.stage1.dry_mass_t", 28.16) == (
         pytest.approx(28160.0),
         "kg",
@@ -683,6 +684,7 @@ def test_si_value_converts_by_the_yaml_suffix() -> None:
         pytest.approx(914100.0),
         "N",
     )
+    assert sim.si_value("assist.power_max_MW", 1100.5) == (pytest.approx(1.1005e9), "W")
     assert sim.si_value("site.azimuth_deg", 90.0) == (pytest.approx(math.pi / 2), "rad")
     assert sim.si_value("track.length_km", 0.1) == (pytest.approx(100.0), "m")
     assert sim.si_value("assist.net_accel_g", 3.0) == (pytest.approx(3.0 * G0_MPS2), "m/s^2")

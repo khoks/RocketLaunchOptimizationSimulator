@@ -31,11 +31,16 @@ moves it by up to 1e-2 deg and the split by up to 1.5e-3 relative on the pad and
 silo_cold), so the split is not a convergence measure there (docs/physics.md,
 "Convergence (planar)").
 
-These are the only planar tests that fly the shipped search rtol of 1e-8 (atol x 10):
-amendment 3 requires the convergence of the shipped budget itself, so the baseline side
-of each comparison is the budget every experiment runs. Every other planar test uses
-the test budget (search rtol 1e-9, CLAUDE.md's "rtol <= 1e-9 in tests"); the
-tightened side here flies 1e-9 search and 1e-11 final.
+These tests fly the shipped search rtol of 1e-8 (atol x 10) on the baseline side of
+each comparison: amendment 3 requires the convergence of the shipped budget itself, so
+that side is the budget every experiment runs. So do the offload's convergence test
+(tests/test_offload.py) and the regression re-runs of recorded results
+(tests/test_calibration.py, tests/test_silo_screening_record.py, the slow SP1-record
+pins of tests/test_structure_pipeline.py), which must reproduce what that budget
+recorded (docs/physics.md, "Payload and gamma* search", Validation, and "Convergence
+(planar)"). Every other planar test uses the test budget (search rtol 1e-9,
+CLAUDE.md's "rtol <= 1e-9 in tests"); the tightened side here flies 1e-9 search and
+1e-11 final.
 """
 
 from __future__ import annotations

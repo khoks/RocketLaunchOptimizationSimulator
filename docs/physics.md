@@ -18,7 +18,8 @@ propellant, the payload and gamma* search, the shared budget and their convergen
 (build step 23), thrust startup, the integrator and its event
 rules, the phase state machine, loss accounting, the ignition-after-release
 loss, the assist energy identity, the silo model and its reported quantities, hot
-starts, the failed-ignition coast, the figures of merit and their convergence, and
+starts, the linear motor (SP7 step S4), the failed-ignition coast, the figures of merit
+and their convergence, and
 the planar experiment schema (the shared blocks every run of an experiment carries),
 and the first-order structural sizing of the push load (SP7 step S1: the sizing
 primitives); then every assumption the code emits, collected in one list, the display-only
@@ -2298,8 +2299,8 @@ Module: `search.py`. The algorithms act on any `SearchProblem`: a `budget`
 (`SearchBudget`), the payload P0 of the grid (`payload_kg`, the vehicle's own
 payload) and `evaluate(P, gamma*, warm, mode)`, which returns a `ResidualResult` or
 raises one of `INFEASIBLE` (a typed `GuidanceFailure`, or `PreludeFailure` when the
-prelude ends without a flight: `no_liftoff`, `drive_limit`, a failed stage-1
-ignition); any other exception is a code error and propagates. `SearchContext` is the
+prelude ends without a flight: `no_liftoff`, `drive_limit`, `drive_stall`, a failed
+stage-1 ignition); any other exception is a code error and propagates. `SearchContext` is the
 planar problem, built from a validated run by `SearchContext.from_run` (mu/r^2,
 omega_p from the site, ICAO, the assist and track with g_eff = g_ref, the
 IgnitionSpecs, the kick guidance, r_t, the run's integrator settings, the shared
@@ -3587,8 +3588,9 @@ trajectory-changing case is a full searched run, compared with the unchanged bas
 and, for a `vehicle.` parameter, with the baseline re-run under the same perturbation
 (once per distinct perturbation). A case whose `trajectory_key` (the sha256 of its run
 and vehicle dicts without the run name, the energy-only keys of its assist model,
-`compare.ENERGY_ONLY_ASSIST_KEYS`: `drive_efficiency` for constant_accel only, since a
-drive with an electrical power limit would fly differently with another efficiency,
+`compare.ENERGY_ONLY_ASSIST_KEYS`: `drive_efficiency` for constant_accel and, since SP7
+step S4, for the linear motor, whose power limit is mechanical at the carriage; a drive
+with an electrical power limit would fly differently with another efficiency,
 and without `vehicle.screening`) equals a run already flown (the nominal runs, then
 each case and perturbed baseline as it runs) reuses that trajectory and search
 (`sim.rerun_resolved`):
@@ -3951,10 +3953,13 @@ phase:
   CLAUDE.md), rtol 1e-10 by default and in tests (CLAUDE.md asks for <= 1e-9). Dense
   output is on by default (`IntegratorSettings.dense_output = True`) so callers
   resample at `sample_dt_s` (0.05 s) from it; the result carries the integrator's own
-  steps plus the event point. A search evaluation (Phase 2) turns it off: the steps,
-  the end state and the event roots are unchanged (the solver's stepping does not
-  depend on it), `PhaseResult.dense` is None, and event states come from
-  `PhaseResult.y_events` ("Event rules", rule 4). scipy then builds a step's
+  steps plus the event point. A search evaluation (Phase 2) turns it off (except the
+  push sub-phases of a drive whose push time is not exact, the linear motor, which
+  `fly_track` flies with dense output on for the scan of passed-over crossings:
+  "Linear motor", *Passed over*; those phases carry a dense output and `dense_off`
+  False): the steps, the end state and the event roots are unchanged (the solver's
+  stepping does not depend on it), `PhaseResult.dense` is None, and event states come
+  from `PhaseResult.y_events` ("Event rules", rule 4). scipy then builds a step's
   interpolant only in steps where an event is active. For DOP853, whose interpolant
   needs three extra right-hand-side evaluations per step, that saves RHS calls
   (measured on the toy burn of `test_phases_package.py`: 283 instead of 322 with two
@@ -4092,8 +4097,9 @@ lists only the events that can end it. Factories:
 | `turnaround` | v | +1 | `ATOL_MPS` 1e-9 m/s | a falling burn (next phase runs sigma = +1) |
 | `impact` | z - z_ground | -1 | `ATOL_M` 1e-6 m | a fall (status `impact`) |
 | `liftoff` | T(t) - m(t) g_eff, T = max(0, T_vac - p_amb A_e) | +1 | `ATOL_KG` g_eff [N] | a hold-down extended past t = 0 |
-| `track_end` | s - L | +1 | `ATOL_M` 1e-6 m | the push (RELEASE follows) |
+| `track_end` | s - L | +1 | `ATOL_M` 1e-6 m (0 on a drive whose push time is not exact, the linear motor: never disarmed, "Linear motor") | the push (RELEASE follows) |
 | `drive_limit` | F_drive(t, y), the assist model's drive force at the delivered thrust | -1 | `ATOL_KG` g_eff [N] | the push (status `drive_limit`); listed only when the model forbids a negative drive force |
+| `power_limit`, `power_limit_end`, `drive_cap`, `drive_cap_end`, `taper_start` (`ev_push_watch`, the drive's `push_watches`; the linear motor only, SP7 step S4) | the watch value at the delivered thrust, negated for an `_end` event (the limit stopping) ("Linear motor") | +1 | by unit: `ATOL_MPS`, `ATOL_KG` g_eff [N], `ATOL_M` | the track sub-phase only (logged; the push goes on from the crossing: "Linear motor") |
 | `ignition_height` (`ev_altitude_up(model, z, name)`, either model) | altitude - z + k min(w, 0)^2, w the altitude rate (v on 1-D, v_r planar), k = `APEX_FOLD_GAIN_S2PM` | +1 | `ATOL_M` 1e-6 m | the rising pre-ignition coast of a first stage stated by `height_method: event` (SP1 step 4): stage 1 lights at the root |
 
 The two track events read the track state (`ev_track_end`, `ev_drive_limit`; "Silo
@@ -4147,7 +4153,18 @@ which flatters the pad baseline.
    a later rising phase, and the propellant event after burnout belongs to no later
    phase. The planner therefore (a) never lists the event that ended the previous
    phase, (b) starts pad burns only after the liftoff root (the HOLD rule), and (c)
-   surfaces every "disarmed" note as a run flag. One such case can still arise from an
+   surfaces every "disarmed" note as a run flag. The track prelude's drive watches
+   (SP7 step S4, "Linear motor") keep (a) and never reach the guard: a watch event
+   with its value at zero at a sub-phase start is either logged there (its limit
+   starts, or for an `_end` event stops, binding there, judged by the value's rate
+   over a short look-ahead, never by rule 3's first step) or armed guarded
+   (`prelude._guarded`: its function reads a constant beyond -zero_tol on the zero,
+   so rule 3 never sees it at zero; "Linear motor", *Arming*); the linear motor's
+   `track_end` has zero_tol 0 and is never at zero at a sub-phase start (a push within
+   `RELEASE_TIE_M` of L has released). `engine.first_step_value`, rule 3's Heun
+   prediction, is public for that prelude (its look-ahead rate tests);
+   `engine.fires_on_first_step`, rule 3's test itself, which `integrate_phase` calls, is
+   public for its test against the guard. One such case can still arise from an
    `AscentStart` (never from a config): an unpowered falling phase that starts on the
    ground, z within ATOL_M of z_ground and moving down (a start at the ground already
    sinking, or an apex within ATOL_M of the ground, i.e. v0 < sqrt(2 g ATOL_M) =
@@ -4283,7 +4300,8 @@ monotone in LTG_BURN ("Stage 2 and insertion (planar)").
 **Planar event tolerance (build step 19).** A planar_2d recorded run locates every
 event root at `integrator.rtol`, which the config forces equal to `search.final_rtol`
 ("Integrator"): the final verification and the recorded run see the same event times.
-A search evaluation locates them at `search.search_rtol` with dense output off (rule 4).
+A search evaluation locates them at `search.search_rtol` with dense output off (rule 4;
+a linear-motor push keeps it on, "Integrator").
 
 ## Phases and events
 
@@ -4348,9 +4366,12 @@ trigger_value only record the request (for the metrics, the flag and the assumpt
 line), and their defaults ("time", None) leave every time-stated spec equal to what it
 was. First stage: t_ign_abs = t_release + t_ign_s for reference `release`,
 t_ign_abs = t_ign_s for `push_start` (t_release = sqrt(2L/a) is closed-form for the
-constant-acceleration drive, so both resolve before anything is integrated). The one
-exception is a height reached by the altitude event (`height_method: event`, trigger
-`height_event`, SP1 step 4): it has no time before the flight. Its push is unlit and
+constant-acceleration drive, so both resolve before anything is integrated). There
+are two exceptions. On a drive whose push time is not exact (the linear motor, "Linear
+motor"), a release-referenced first stage with t_ign_s >= 0 is pending through the
+unlit push and resolves at the flown release, t_ign_abs = t_release + t_ign_s (one with
+t_ign_s < 0 is refused). And a height reached by the altitude event (`height_method:
+event`, trigger `height_event`, SP1 step 4) has no time before the flight. Its push is unlit and
 writes no ignition time (a pending ignition, which nothing reads as a failed one), and
 the planner lights the stage at the root of the `ignition_height` event on the coast
 after release, which then becomes t_ign_abs ("Silo model"). Stage
@@ -4384,7 +4405,7 @@ omega_p from the single `OMEGA_P_PHASE1_RADS` = 0 it quotes in the assumptions.
 |---|---|---|---|
 | HOLD (t_ign_abs < 0; pad, or a silo with the engine lit before the push) | vehicle clamped: z, v held, mass by closed form `propellant_burned_kg` (no ODE; `hold_closed_form` subtracts only its own segment's increment of that closed form, so a lit hold split at any time after ignition, as a track prelude splitting at a startup kink does, gives the single-call mass); hold-down force m g_eff - T(t) tracked, its minimum reported (`hold_down_force_min_N`; not a tensile flag). On a silo the clamp carries the weight component along the track, m g_eff sin phi, and there is no liftoff extension: the push starts at t = 0 whatever the thrust | t = 0 | ASSIST or RELEASE |
 | HOLD extension (pad, vehicle at rest on the ground, T(0) < m g_eff) | split at the thrust kinks. Before the ignition kink the sub-phase is *unlit* (`HoldParams.lit = False`: T = 0, nothing changes, sampled directly, no events), and at the start of every lit sub-phase the balance T - m g_eff is re-evaluated with the lit schedule, so a step whose thrust exceeds the weight lifts off exactly at its kink with the mass untouched (no root search across the discontinuity; the integrator's last stage never sees the step's f(0) = 1 from the left, which would bias the mass by 5e-6 kg, above `ATOL_KG`). A lit sub-phase integrates the mass alone (`rhs_hold`), max_step as in a burn. An ignition inside the extension is logged in the HOLD | `liftoff` (T - m g_eff, +1) -> "hold extended to t = X s for liftoff (TWR < 1 at release)" in the assumptions; `propellant` -> ValueError; t_max -> status `no_liftoff` (no exception) | BURN from the liftoff root, sigma = +1 |
-| ASSIST (track) | state [s, sdot, m_v, *extra, E_drive, W_thrust, J_mass] in the track layout (`dynamics.rhs_track`, "Silo model" below); sub-phases split at the thrust kinks inside the push (ignition, ramp end); a sub-phase that ends at the ignition kink is *unlit* (T = 0 whatever the schedule says at its closing boundary, as for the HOLD); max_step = t_push/push_steps, tightened by the ramp or lag cap once lit; the ignition, ramp_end and drive_limit events are logged with the ascent-frame view of the track state (`track_to_vertical`: z = start altitude + z(s), v = sdot sin phi); a ramp that ends at the very instant of release (`silo_hot_ramp_on_track`) logs its ramp_end on the track, right before the release, and the flight's burn skips the finished segment, so the event appears once | `track_end` (s - L, +1) -> RELEASE; `drive_limit` (F_drive, -1; not listed when the model allows a negative drive force) -> status `drive_limit`, the run stops on the track (a push that starts with F_drive already negative ends at t0 by the engine's already-past rule); `propellant` -> ValueError (exhausted on the track) | RELEASE |
+| ASSIST (track) | state [s, sdot, m_v, *extra, E_drive, W_thrust, J_mass] in the track layout (`dynamics.rhs_track`, "Silo model" below); sub-phases split at the thrust kinks inside the push (ignition, ramp end) and, for the linear motor, at its own kink (the end of its rise), at the delivered thrust's clamp (`prelude.thrust_clamp_time`, where a ramp's or lag's T_vac reaches p_amb A_e; not logged) and at every crossing of its watches, each flown to a second time as a fixed end ("Linear motor"); a sub-phase that ends at the ignition kink is *unlit* (T = 0 whatever the schedule says at its closing boundary, as for the HOLD); max_step = t_push/push_steps, tightened by the ramp or lag cap once lit; the ignition, ramp_end and drive_limit events (and the linear motor's drive_ramp_end, power_limit, power_limit_end, drive_cap, drive_cap_end and taper_start) are logged with the ascent-frame view of the track state (`track_to_vertical`: z = start altitude + z(s), v = sdot sin phi); a ramp that ends at the very instant of release (`silo_hot_ramp_on_track`) logs its ramp_end on the track, right before the release, and the flight's burn skips the finished segment, so the event appears once | `track_end` (s - L, +1) -> RELEASE; `drive_limit` (F_drive, -1; not listed when the model allows a negative drive force) -> status `drive_limit`, the run stops on the track (a push that starts with F_drive already negative ends at t0 by the engine's already-past rule); `propellant` -> ValueError (exhausted on the track); a drive watch's crossing -> the next sub-phase of the push (linear motor); a linear motor that cannot start the push (`stall_reason`) -> status `drive_stall`, a zero-length phase at push start, the run stops on the track | RELEASE |
 | RELEASE (map) | pad: z = z0, v = v0 of the `AscentStart` (0, 0 for the pad; only a start at rest *on the ground* is held down, one at rest above it falls; a *moving* start lit before release is a test-only emulation of "lit on the carriage" without a track: the HOLD burns mass only and its rows keep v0, which is not a physical state but reproduces the straddle form exactly), m = m(0); track: `map_release` (z = exit altitude, v = sdot, m; a track angle other than pi/2 raises: projecting sdot onto the vertical would silently discard the downrange component, so the 1-D map is exact for a vertical track only and a tilted exit waits for the planar branch); quadratures reset; t_release recorded | | COAST_PRE_IGN or BURN |
 | COAST_PRE_IGN | T = 0, sigma = +1 | t = t_ign_abs (a ramp start stated by a closed-form height is such a time, converted before the run: the coast ends at the closed-form time, not at an altitude, so the height reached there is the flown coast's); for a first stage stated by `height_method: event` (a pending ignition, SP1 step 4) the coast is open-ended and its rising phase also lists `ignition_height` (z - (z_exit + h), +1, `ev_altitude_up`): its root is the ignition time; an apex first raises ValueError (stage 1 never lights); `apex` -> FALL_PRE_IGN (sigma = -1, `impact` listed) | BURN; impact -> status `impact` |
 | BURN k | ramp sub-phase (ends at t_ign + t_ramp, max_step t_ramp/ramp_steps) then the full burn (open-ended); lag: one burn with max_step tau/lag_steps_per_tau; step: one burn; `propellant` always listed | sigma = +1: `apex` -> same burn with sigma = -1 (`turnaround`, `impact` listed); sigma = -1: `turnaround` -> sigma = +1 (`apex` listed), `impact` -> status `impact`; `propellant` -> burnout | STAGING, or end |
@@ -4443,10 +4464,13 @@ summary item: the largest accel_felt_g over the hold, the track and the flight, 
 net or a failed ignition reports the track's a + g_eff rather than the flight's T/m);
 t_ign_rel_release_s per stage; the loss budget below; and, for a track run, the silo
 quantities of the "Silo model" section. Status (nominal, impact, no_liftoff,
-drive_limit) and flags (every disarmed-event note, no_liftoff, drive_limit,
+drive_limit, and drive_stall for a linear motor that cannot start its push, "Linear
+motor") and flags (every disarmed-event note, no_liftoff, drive_limit, drive_stall,
 interface_tensile, drive_braking) live on the Result (metrics.json adds them). A track
-run that stopped with drive_limit never released: its release items and every time
-counted from release are None ("Silo model"). The assumptions list names the gravity model and the
+run that stopped with drive_limit or drive_stall never released: its release items and
+every time counted from release are None ("Silo model"); a drive_stall run's felt-g and
+interface-force items are None too (`metrics.STALL_UNAVAILABLE_TRACK_METRICS`, "Linear
+motor", *Stall*), and it raises no interface_tensile flag. The assumptions list names the gravity model and the
 g_eff `simulate` was actually handed (`ConstantGravity` in a test is reported as such);
 `sim.run` prepends the run-model lines (mu/r^2, g_eff = mu/R_E^2 with omega_p = 0).
 
@@ -4687,13 +4711,17 @@ exactly, and the drive force is solved from the track equation at every instant:
 
 so every closed form is exact (v_exit = sqrt(2 a L), t_push = sqrt(2 L/a), s = a t^2/2)
 and a hot start changes the forces and the energy, never the exit speed; force and
-power limits are Phase 3's `linear_motor` behind the same `AssistModel` interface
-(`state_rate(t, s, sdot, extra, m_v, m_c, T, g_eff, track) -> AssistForces(sddot,
+power limits are the `linear_motor`'s (SP7 step S4, "Linear motor" below) behind the
+same `AssistModel` interface (`state_rate(t, s, sdot, extra, m_v, m_c, T, g_eff, track) -> AssistForces(sddot,
 F_drive, F_drive_normal, F_int, dissipated, extra_rate)`, `push_time_estimate(track)`,
 `braking_distance_m(v)`, `facility_length_m(track, v_exit)`: the model does not own
 the track, so the plan's `push_time_estimate()` and `facility_length_m(v)` take it as
 an argument; a registered class also provides `from_config(config, g_eff) -> (model,
-track | None)`, the `assist.base.AssistBuilder` protocol). Track state
+track | None)`, the `assist.base.AssistBuilder` protocol; since SP7 step S4 the protocol
+also has `push_time_exact`, `at_push_start`, `kink_times`, `push_watches` and
+`stall_reason`, which constant_accel answers with True, itself, (), () and None, so the
+integration of its push (RHS, sub-phase boundaries, events, step cap) is that of SP1).
+Track state
 [s_m, sdot_mps, m_kg, *extra, E_drive_J, W_thrust_J, J_mass_J]; dm/dt = -T_vac/c
 follows the vacuum thrust as in flight. The push runs from s = 0 at rest at t = 0
 (after any hold, "Phases and events") to the `track_end` root, where `map_release`
@@ -4797,8 +4825,8 @@ planner hands `fly_track`: mu/R_E^2 on vertical_1d, the site's g_ref on planar_2
 - The conversions are exact for the constant-acceleration drive, whose push is the
   prescribed s(t) = a t^2/2 whatever the thrust (a hot start changes the forces, never
   the kinematics). The resolver refuses them (ValueError) for any other assist model
-  and for a run without a track (Phase 3's force-limited drives need the push
-  integrated first); the config refuses them on a pad (`RunConfig._ignition_rules`: no
+  and for a run without a track (a force-limited drive, the linear motor since SP7
+  step S4, needs the push integrated first); the config refuses them on a pad (`RunConfig._ignition_rules`: no
   push and no mouth, as for `push_start`) and on any stage after the first
   (`config.resolve_run`). The spec build of both build sites
   (`phases.prelude.resolve_stage_ignitions`, called by `sim.ignition_specs` and
@@ -4931,7 +4959,7 @@ m_c = 0, cold, g_eff = 9.7982855 m/s^2; `sim.run` on `experiments/silo_screening
 | propellant on the track / before release (`propellant_burned_on_track_kg`, `_before_release_kg`, `dv_vac_equiv_before_release_mps`, `hold_propellant_burned_kg`) | integral mdot dt over the push / over hold plus push, and c ln(m0/m_release) | 0 (cold) |
 | energy closure (`assist_energy_residual_rel`) | "Assist energy identity" | 1e-16 |
 | geometry (`track_start_altitude_m`, `carriage_mass_kg`) | exit_altitude - L sin phi; m_c | -100 m; 0 |
-| push settings, planar_2d only (`stroke_m`, `net_accel_mps2`, `net_accel_g`; `metrics_planar.PUSH_SETTING_METRICS`) | L; the prescribed a, whichever way the config states it (a = v^2 / (2 L) for `exit_speed_mps`); a / g0 (g0 as the unit). Settings as flown, not results: no summary row, not in `PLANAR_REQUIRED_METRICS`, no `delta_` item against a pad, and not written by the 1-D `track_metrics` (the golden 1-D outputs are unchanged). Both accelerations are null for a drive that prescribes none (Phase 3) | 100 m; 29.41995 m/s^2; 3 g0 (planar `silo_cold`) |
+| push settings, planar_2d only (`stroke_m`, `net_accel_mps2`, `net_accel_g`; `metrics_planar.PUSH_SETTING_METRICS`) | L; the prescribed a, whichever way the config states it (a = v^2 / (2 L) for `exit_speed_mps`); a / g0 (g0 as the unit). Settings as flown, not results: no summary row, not in `PLANAR_REQUIRED_METRICS`, no `delta_` item against a pad, and not written by the 1-D `track_metrics` (the golden 1-D outputs are unchanged). Both accelerations are null for the linear motor (SP7 step S4: no prescribed constant; the force law has none, and the acceleration law's command a_cmd, which a cap can cut, is in resolved_config.yaml and its control line; metrics.json alone does not say which law flew) | 100 m; 29.41995 m/s^2; 3 g0 (planar `silo_cold`) |
 | ramp start, planar_2d only (`metrics_planar.RAMP_START_METRICS` and `RAMP_START_REQUEST_METRICS`; "Reporting definitions (planar)") | achieved, from the stage-1 ignition event: time after release, altitude, depth below the mouth on the track or height above it after release, abs(v_rel), phase; requested (a ramp start stated by depth, speed or height only): trigger, converted time after release (null for height_event, which is not converted; its achieved values are the altitude event root's), requested value. Not required, not written by the 1-D model (its events.csv holds the same record) | `silo_hot_ramp_on_track`: -2.0 s, -94.574 m, depth 94.574 m, 17.867 m/s, ASSIST |
 
 Where a row lists two keys for one number (`drive_energy_J` and `assist_energy_J`,
@@ -4943,12 +4971,17 @@ CLAUDE.md wording; sweep_index.csv and the findings notes read the canonical key
 
 Force peaks and minima and the felt g are read off the sampled ASSIST rows of the
 time series (every `sample_dt_s` plus both ends of every sub-phase, so the push
-start, the kinks and the release are always among them). That is exact for the
-prescribed acceleration, F_int and F_drive being monotone within a lit sub-phase, but
-the drive power P = F_drive sdot is not monotone in general: with full thrust, P(t) =
-(F_drive(0) - mdot (a + g) t) a t is a downward parabola with its vertex at t* =
-F_drive(0)/(2 mdot (a + g)), which lies inside the push for a hot push near the
-drive-limit threshold (or under a force-limited Phase 3 drive). The power extrema are
+start, the kinks and the release are always among them; for the linear motor the end
+of its rise and every watch crossing are sub-phase ends too, "Linear motor"). That is
+exact for the prescribed acceleration, F_int and F_drive being monotone within a lit
+sub-phase, and for a cold linear-motor push whose stop taper begins after its rise
+ends. A taper entered during the rise (the rising limit or command times the falling
+taper weight) can peak between samples, 2e-5 relative with t_r 4 s and a 90 m taper on
+a 100 m stroke (measured against a dense scan), and so can the felt g and F_int on a
+hot linear-motor push in its power phase (P_max/sdot falling, the thrust rising). The drive power P = F_drive sdot is not monotone in general: with full
+thrust, P(t) = (F_drive(0) - mdot (a + g) t) a t is a downward parabola with its
+vertex at t* = F_drive(0)/(2 mdot (a + g)), which lies inside the push for a hot push
+near the drive-limit threshold (or under the force-limited linear motor). The power extrema are
 therefore taken from the dense output (`losses.drive_power_extrema`: P scanned on 256
 points per sub-phase, every bracketed interior extremum refined by a bounded Brent
 search to 1e-10 s, the sub-phase ends as candidates): for every shipped variant the
@@ -5103,11 +5136,504 @@ it into delta dv_vac; see "Figures of merit in 1-D" for the definitions.
 Finding, stated plainly: at fixed exit speed and felt g a hot start converts 2.7-9.7 t
 of propellant into a 0.47-0.85 GJ drive-energy saving and a 39-40 % lower peak
 power, at a cost of 5.6-20.6 m/s at burnout against the instant-lit silo; any
-exit-speed benefit from on-track thrust needs a force-limited drive (Phase 3
-`linear_motor`). The concept-A gain over the locked pad baseline is the 76.7 m/s of
+exit-speed benefit from on-track thrust needs a force-limited drive (the
+`linear_motor`, built in SP7 step S4; this finding predates it). The concept-A gain over the locked pad baseline is the 76.7 m/s of
 exit speed, plus the 5.4 m/s hold-down credit of that baseline and a 2.2 m/s altitude
 term, less the 5-25 m/s ignition loss after release (`silo_cold`: +69.6 m/s over the
 pad, of which 61.6 m/s is exit speed less ignition loss).
+
+## Linear motor (SP7 step S4)
+
+Modules: `assist/linear_motor.py` (`LinearMotorAssist`, `PushStart`), `assist/base.py`
+(the protocol members `push_time_exact`, `at_push_start`, `kink_times`, `push_watches`,
+`stall_reason` and `PushWatch`), `config.py` (`LinearMotorConfig`, `ASSIST_UNION_TAGS`,
+`TRACK_DRIVE_CONFIGS`, the release-referenced rule of `resolve_run`),
+`phases/prelude.py` (`fly_track`, `pending_until_release`, `push_boundaries`,
+`thrust_clamp_time`, `DRIVE_STALL`, `RELEASE_TIE_M`, `WATCH_LOOKAHEAD_REL`,
+`WATCH_TOGGLES_PER_INSTANT`, `EVENT_ROOT_TOL`, `_passed_over`, `_settle_fresh`),
+`phases/engine.py` (`ev_push_watch`, `push_watch_zero_tol`, `fires_on_first_step`,
+`first_step_value`, `ev_track_end`'s zero_tol), `dynamics.py`
+(`TrackParams.watch_value`), `phases/planar.py` (`PlanarPlanner.start_track`, the
+pending ignition), `metrics.py` (`LINEAR_MOTOR_METRICS`, `linear_motor_metrics`,
+`POWER_LIMIT_TIE_REL`, `STALL_UNAVAILABLE_TRACK_METRICS`, `stall_unavailable_metrics`,
+the stall rules of `run_metrics` and `track_flags`), `metrics_planar.py`
+(`planar_track_metrics`, the stall rule of `_run_wide_felt`), `sim.py` (`planar_setup`,
+the status `drive_stall`, passed to `track_flags`), `compare.py` (`ENERGY_ONLY_ASSIST_KEYS`, the
+`_MW` suffix), `units.py` (`mw_to_w`), `appform.py` (`ASSIST_UNION_TAGS`). Tests:
+`tests/test_linear_motor.py`; the registry in `tests/test_silo.py`; the trajectory key
+in `tests/test_planar_pipeline.py`. Design: docs/phases/inputs/2026-10-08-SP7-design.md
+section 4.6 (D-SP7-24, D-SP7-25, D-SP7-12).
+
+**Config** (`assist: {model: linear_motor, ...}`, every number strict and finite as
+KI-030 requires): `stroke_m` L (> 0); `control` (`force` or `acceleration`);
+`force_max_kN` F_max (> 0); `power_max_MW` P_max (> 0, mechanical at the carriage);
+`force_rise_time_s` t_r (>= 0, required; 0 is a step); `accel_command_g` a_cmd (> 0,
+required by `acceleration`, refused by `force`); `stop_taper_m` s_taper (optional,
+>= 0 and below the stroke; 0 or absent: no taper); `carriage_mass_t` m_c (>= 0, default
+0); `brake_decel_g` a_b (> 0); `drive_efficiency` eta in (0, 1] (default 1);
+`exhaust_impingement_fraction` f_imp in [0, 1] (default 0); `shaft: vented` only (the
+sealed shaft is S5); `track`. No key of the assist family (`net_accel_g`,
+`exit_speed_mps`) and no `release_speed_mps` (S4a). An optional key given must hold a
+number (a null does not unset it), and `model_dump` leaves out the one holding None. The
+SI properties go through units.py (kN, MW, g0, t). The depth bound of a ramp start
+(`at_depth_m <= stroke_m`) applies to both track drives (`TRACK_DRIVE_CONFIGS`); a ramp
+start by depth, speed or height still converts for constant_accel only
+(`prelude.resolve_ignition` refuses it on this drive when the specs are built, the
+preflight). The app's form offers no linear motor (D-SP7-08); its
+error locations strip every tag of the union (`config.ASSIST_UNION_TAGS`, derived from
+`AssistConfig`).
+
+**Model.** The track equation of "Assist energy identity" with F_other = 0 (vented
+shaft, no friction), M = m_v + m_c, T the delivered axial thrust, T_sys = (1 - f_imp) T,
+g_a = g_eff sin phi, and t on the push clock (t = 0 at push start), r(t) = min(1,
+t/t_r) (1 for a step):
+
+    M sddot = F + T_sys - M g_a,        F_int = m_v (sddot + g_a) - T
+    force law:         F = min(F_lim(t), F_max, P_max/sdot),  F_lim = F_0 + (F_max - F_0) r(t)
+    acceleration law:  F = min(M (a_cmd r(t) w(s) + g_a) - T_sys, F_max, P_max/sdot)
+    holding force:     F_0 = max(0, M_0 g_eff sin phi(0) - (1 - f_imp) T(0))   (bound at push start)
+    taper weight:      w(s) = min(1, (L - s)/s_taper), 1 without a taper (in [0, 1] for s <= L)
+    force-law taper:   F <- F_h + (F - F_h) w(s),  F_h = M g_a - T_sys
+
+The power term applies only for sdot > 0; F_lim is F_max exactly once the rise has
+ended. The taper weight is not floored at 0: past L only the trial stages of the step
+that crosses the release read it, and the straight line continued below 0 keeps the
+force smooth there (a floor would be a kink at s = L inside that step). While a cap
+binds, the acceleration law's sddot follows from the capped F (the command is not
+flown). The force law's taper scales the force toward the holding value (sddot -> 0 at
+L); the acceleration law's scales its command (the same x'' = -(a/s_t) x, cold, while
+F_max (force law) or the uncapped command (acceleration law) holds in the taper; not
+under the power limit, which flies sddot = (P_max/sdot - M g) w/M under the force law
+and the capped force under the acceleration law). The force law's taper scales the force
+after the power cap (the brief's order, design 4.6): where P_max/sdot binds in the taper
+the flown power is F_h sdot (1 - w) + P_max w, below P_max, and `power_limit` marks the
+law's power branch on the untapered force (review pass 1 rerun, P1-m1: with the corner
+inside a 30 m taper the push reads power-limited at a peak of 0.970 P_max and exits 0.19
+m/s, 0.28 %, below the same push with the cap on the tapered force; whether the cap
+should apply to the flown force is an open design question under D-SP7-24 (TODO.md),
+left to the user; S4 keeps design 4.6's order). With thrust on the track the holding
+force is the stack's: under the force law with a rise (t_r > 0) a thrust share above the
+stack's weight ((1 - f_imp) T(0) >= M_0 g sin phi(0), so F_0 = 0) starts the interface
+in tension, F_int = -T (m_c + f_imp m_v)/M at push start (the vehicle drags the
+carriage; zero only for m_c = 0 and f_imp = 0; a step starts at F_max instead, and under
+the acceleration law with a rise the command at t = 0, M_0 g sin phi - T_sys, is
+negative for a share above the weight, so the run ends in `drive_limit` at push start;
+review pass 2 rerun, P2H-m2: the F9 at full thrust on a 20 t carriage, -0.29 MN at push
+start under the force law with t_r = 0.5 s, +42.3 MN with a step, a command of -2.74 MN
+under the acceleration law with t_r = 0.5 s and +12.9 MN with a step), and a taper that
+brings the net acceleration to zero under a thrust above the vehicle's weight puts the
+interface in tension near L, F_int -> m_v g sin phi - T (under either law reached
+without a `drive_limit` only while F_h = M g sin phi - (1 - f_imp) T stays non-negative:
+a large f_imp or a heavy carriage; review pass 3 rerun, P3H-m2: the F9 at full thrust
+from push start, a step and a 20 m taper end in `drive_limit` under both laws with f_imp
+0 and no carriage, and release with F_int near L of -2.98 MN (force law) and -3.01 MN
+(acceleration law) with f_imp 0.5, or with f_imp 0 on a 400 t carriage). Both are the
+laws' own, reported as the `interface_tensile` run flag (the vehicle would have to be
+held back on the carriage), not errors (P1-m3). `at_push_start(m_v, T(0), g_eff, track)`
+binds M_0 = m_v + m_c, T(0), g_eff sin phi(0) and F_0 (`PushStart`); `fly_track` calls
+it with the vehicle mass after any hold and the delivered thrust at t = 0, and flies the
+bound copy. (The design names the member `at_push_start(m_vehicle, thrust)`; it also
+takes g_eff and the track so that F_0 is fixed once from the planner's own g_eff and
+phi(0).) constant_accel and none return themselves, list no kink and no watch and never
+stall, so the integration of their pushes (RHS, sub-phase boundaries, events, step cap)
+is that of SP1 (the exact 1-D golden tier, the planar digests and capture unchanged).
+
+**Push time and ignition** (D-SP7-25). `push_time_exact` is True for constant_accel and
+none, False here: the push time is a result of the flown push (mass, thrust, limits).
+A release-referenced stage-1 ignition with t_ign_s >= 0 on such a drive is pending
+through the unlit push (`pending_until_release`) and lights at the flown release,
+t_release + t_ign_s, in both planners (the 1-D `ascend` resolves it; the planar
+`start_track` writes it before the flight starts); nothing is flagged. A
+release-referenced t_ign_s < 0 (lit on the track) is refused when the run resolves
+(`resolve_run`, one line: state it from `push_start`) and by the prelude for an injected
+spec; a failed stage is not refused. The bound model's `push_time_estimate` serves the
+step cap t_push/push_steps and the watch look-ahead (`WATCH_LOOKAHEAD_REL` of it), never
+an ignition time: the jerk-limited profile from rest with the plateau a_p
+= (F_max + (1 - f_imp) T(0))/M_0 - g_eff sin phi(0) (the smaller of that and a_cmd for
+the acceleration law), t = t_r/2 + sqrt(2 a_p L - a_p^2 t_r^2/12)/a_p (the rise ending
+inside the stroke; (6 L t_r/a_p)^(1/3) otherwise; sqrt(2 L/a_p) for a step); it leaves
+out the power limit, the caps, the taper and the burn, so it is not the push time
+(exact whenever the net acceleration is a_p r(t) throughout: the uncapped, untapered
+acceleration law, where the test asserts it, and a cold, untapered force-law push that
+the power limit never reaches).
+The unbound model has no estimate (ValueError); the planar ramp-start items read none
+for this drive.
+
+**Sub-phases and events.** `kink_times` gives (`drive_ramp_end`, t_r) for t_r > 0: a
+sub-phase boundary (`push_boundaries` merges it with the thrust kinks, once within
+ZERO_SPAN_S of one) and a logged event, since the force (or command) is C0 there. The
+other kinks of the drive force are where F = min(law, F_max, P_max/sdot) changes branch
+and where the taper begins; the drive watches them (`push_watches`, `ev_push_watch`),
+each event terminal for the track sub-phase and firing upward:
+
+| Event | Watched value | Unit (zero_tol) | Meaning |
+|---|---|---|---|
+| `power_limit` | (F_pre sdot - P_max)/F_max, F_pre the law's force before the power term (min(F_lim, F_max), or min(command, F_max)) | m/s (`ATOL_MPS`) | the power limit starts binding; after the force law's rise it is sdot - P_max/F_max (the corner); under the force law's taper F_pre is the untapered force, so it marks the law's power branch while the flown power stays below P_max (Model) |
+| `power_limit_end` | minus the same | m/s (`ATOL_MPS`) | the power limit stops binding (the acceleration law's command falling in the taper or under a rising thrust) |
+| `drive_cap` (acceleration law) | command - min(F_max, P_max/sdot) | N (`ATOL_KG` g_eff) | a cap starts binding (the command is no longer flown) |
+| `drive_cap_end` (acceleration law) | minus the same | N (`ATOL_KG` g_eff) | the cap stops binding (the command back below it) |
+| `taper_start` (with a taper) | s - (L - s_taper) | m (`ATOL_M`) | the push enters the stop taper (one-way) |
+
+With the end of the rise, the thrust kinks and the delivered thrust's clamp (below)
+these are every kink of the drive force short of the release: the law changes branch
+only where `power_limit` or `drive_cap` crosses zero, either way. The clamp is a kink of
+the thrust itself: the delivered thrust T = max(0, T_vac - p_amb A_e) leaves its clamp
+at zero where a ramp's or lag's T_vac reaches p_amb A_e (`prelude.thrust_clamp_time`:
+t_ign + t_ramp p_amb A_e/T_full, or t_ign - tau ln(1 - p_amb A_e/T_full); 0.151 s into
+the F9's 2 s ramp at sea level, where p_amb A_e = 0.62 MN of 8.23 MN), a kink of the
+force law's motion (sddot = (F + T_sys)/M - g_a; in its taper of its drive force too,
+through F_h) and of the acceleration law's drive force (its command M (a + g_a) -
+T_sys). `push_boundaries` makes it a sub-phase boundary on this drive, not logged
+(review pass 2 rerun, P2-m1: unsplit, the test's pushes, lit on the track at sea level,
+the planar track's pressure, released 3.5e-12 to 2.3e-10 relative late against the
+closed form at rtol 1e-11 and 1e-10, and a planar prelude's 2e-11 off the split push;
+split, within 7.4e-15 of the closed form). `ThrustSchedule.kink_times` and
+constant_accel's boundaries are unchanged (its motion is prescribed). This goes beyond
+design 4.6, which lists three events (`drive_ramp_end`, `power_limit` non-terminal and
+logged, `drive_cap`) and allows a split only where a closed-form test at 1e-9 needs it:
+after review passes 1 to 3, S4 makes every watch terminal for its sub-phase, adds
+`taper_start` (the brief) and the end events `power_limit_end` and `drive_cap_end`,
+flies every crossing and the release again (*Second flight*), releases with the
+`RELEASE_TIE_M` tie and arms the watches by the rules of *Arming*; the drive's track
+events are the seven `drive_ramp_end`, `power_limit`, `power_limit_end`, `drive_cap`,
+`drive_cap_end`, `taper_start` and `drive_limit` (for S4a's readers). A crossing ends
+the sub-phase, is logged, and the push goes on from it to the same boundary
+(`fly_track`): every kink is a sub-phase end, split for the integrator and among the
+sampled rows the track peaks are read from (the felt g, F_int and F_drive peak at the
+power corner when it falls inside the rise), including a crossing a flight passed over
+inside one of its steps (*Passed over*) and the thrust clamp; the kinks left unsplit are
+a binding whose margin never leaves its watch's zero band and, should a step ever hold
+two extrema of one watch value, a maximum the scan does not see (*Passed over*, Limits).
+Under the acceleration law's power cap `power_limit` and `drive_cap` mark the same kink
+(their ends too): both are logged, the second at the restart (judged rising, *Arming*)
+or a hair after it (armed guarded: at its own root, or up to about 1e-12 s late at the
+edge of its zero band when its binding is about the look-ahead).
+
+*Second flight.* A crossing's time is the root scipy finds on the dense interpolant of
+the step whose stages straddle the kink, which is less accurate than a step end (1e-8
+relative at rtol 1e-10 on the horizontal test, measured). On this drive the sub-phase is
+therefore flown a second time from its start to that time as a fixed end
+(`prelude._fly_to_crossing`, with the same events less any at zero at its start): no
+stage passes the kink by more than the first root's error, and either the crossing
+fires again inside the last step (its root and state from that step's interpolant,
+accurate to second order in that error, or to the watch's zero band in time where that
+is coarser: a first root 1.83e-7 s late left the end of the scipy-found binding of
+*Passed over* logged 5.0e-11 s early, inside its band) or the flight stops a hair short,
+and the next
+sub-phase starts there with the crossing inside the very start of its first step, where
+the interpolant matches the step's start state and slope (that crossing is not flown a
+third time). A flight to a crossing can end at an earlier one: a limit that binds and
+is released inside one step of the first flight changes no sign at the step's ends, so
+that flight passes over it (a power cap binding for 0.28 ms across a taper start, review
+pass 3), while the flight to the later crossing, whose steps differ, finds it off a step
+that passes its kink by up to the rest of the span (2.2e-9 s early at rtol 1e-10; the
+push then ran 1.1e-9 relative fast at the cap's release and 8.3e-10 at the exit,
+measured before the scan of *Passed over*, which now finds that binding in the first
+flight; this loop stays for one the scan does not report). The sub-phase is then flown
+again to that crossing, and so on, until a flight ends at the crossing it was flown to,
+a hair short of it, or no earlier. The release is flown the same way: the track-end root also comes off a
+step whose trial stages pass L, where a power corner or a cap just beyond the exit
+speed (a stack slightly heavier than the drive's sizing) is a kink (4.6e-9 relative at
+rtol 1e-10 without the second flight). The unfloored taper weight puts no kink at L (a
+floor at w = 0, without the second flight, missed the release by up to 5.6e-8 at rtol
+1e-10). The push releases only
+at the track end: `track_end` has zero_tol 0 on this drive (never disarmed), and a
+sub-phase that ends short of L by more than `prelude.RELEASE_TIE_M` = 1e-9 m (a watch
+crossing just before L, or a second flight a rounding error short of it) flies on to
+the root (with an ATOL_M tie a corner 0.9e-6 m short of L released there, 4.5e-9
+relative slow at rtol 1e-10); released within RELEASE_TIE_M, the exit speed is off by
+sddot/sdot x 1e-9 m, below 1e-11 relative here. constant_accel keeps the integration of
+SP1 (no watch, no second flight, no scan, the ATOL_M tie, the caller's settings).
+
+*Passed over* (`prelude._passed_over`; review pass 1 rerun, H1). scipy tests an event's
+sign only at its step ends, so a limit that binds and is released inside one step of
+every flight of its sub-phase changed no sign there and was neither split, logged nor
+flown. The reviewer's probe: an acceleration-law power cap (a = 3 g0, F_max = 2 M (a +
+g), cold) set (1 + delta) times the peak of the need M (a w + g) v, which lies inside a
+90 m taper (at s = 36.93 m), bound for 2.8 to 7.0 ms (delta = -1e-6 to -6e-6) with no
+event, `push_power_limited` False, and the exit 7.8e-10 to 1.15e-8 fast, while the
+dense power scan read P_max. The first flight of each sub-phase of this drive is now
+scanned (a second flight covers part of an interval already scanned, and the loop of
+*Second flight* catches what the scan does not report), with the dense output on
+(`fly_track` turns it on for this drive, a planar search's evaluations included,
+"Integrator"; it moves no step). For every two-way watch event armed in the sub-phase the
+scan reads whether its unguarded value is rising at each step end, over a Heun step of
+the look-ahead (as *Arming* judges a watch at zero). A step that starts rising and ends
+not rising holds an interior maximum, placed by bisection on the same test over the
+step's interpolant to ZERO_SPAN_S. A maximum above the zero band at which the event as
+armed (guarded or not) is positive is a crossing passed over, timed at the armed
+event's root between the step's start and the maximum, on the same interpolant at
+scipy's own tolerance (`prelude.EVENT_ROOT_TOL`, 4 machine epsilons), where scipy would
+have put it. The earliest one ends the sub-phase like a crossing scipy found: the
+sub-phase is flown again to it (*Second flight*), and the push goes on from there.
+Limits: one extremum of a watch value per step is assumed (a maximum is seen only in a
+step that starts rising, so one after a minimum in the same step is not; the values are
+smooth inside a sub-phase, and a step at rtol <= 1e-9 resolves them); a binding whose margin stays
+inside the zero band (ATOL_MPS = 1e-9 m/s for the power limit, ATOL_KG g_eff for a cap)
+is neither flown nor logged, a change of the push far below the integrator's error
+(the probe's exit error scales as (-delta)^1.5: about 4e-16 at the band's edge, where
+-delta = ATOL_MPS F_max/P = 6e-11);
+the one-way `taper_start` only rises; `drive_limit` is not a watch and is not scanned.
+On the probe (delta = -1e-6 to -1e-4, rtol 1e-11, 1e-10 and 1e-9) every run now logs
+both ends of the binding and releases within 2.6e-13 of the closed form, the exit
+within 1.6e-15 at delta = -1e-6 and -6e-6 (the test's two cases, whose events are
+logged within 7.8e-13 of their closed forms); the probe's scipy-found binding at delta
+= -1e-5 logs its ends 2.4e-11 relative early at every rtol, against the closed form,
+with the exit at 1.2e-13. Its cause is the push's own, not the closed form's (an
+independent reference agrees with the closed form to 2.8e-12 at both ends; review pass
+2 rerun, P2-m3): the first flight of the binding sub-phase put drive_cap_end 1.83e-7 s
+late, a root off a step whose stages straddle the kink where the cap lets go; the second
+flight to
+that time fired inside its last step, whose interpolated state there read the margin
++1.9e-9 N, inside its zero band of 9.8e-6 N, 5.0e-11 s before the true crossing; a
+third flight to that root ended short, and the restart judged the value in the band
+rising and logged the end there: an offset inside the watch's zero band in time
+(zero_tol/rate, about 1e-10 s), 40 times under 1e-9. The cost is two RHS calls per step
+end and armed two-way watch, a bisection only at an interior maximum and, in a search
+evaluation, the dense output of the push (three extra RHS calls per DOP853 step,
+"Integrator"); the file's 129 earlier tests: 3.4 s, against 3.1 s in review pass 1
+rerun.
+
+*Arming* (`_arm_watches`, at every sub-phase start; the bookkeeping is
+`prelude._WatchBook`). A watch's next event is the one that changes its side: its own
+while its limit does not bind, its end while it binds. With g that event's value at t0
+and tol its zero_tol: g < -tol arms it as it is; -tol <= g < 0 arms it guarded (below),
+so it fires at its true root; 0 <= g <= tol is judged by the change of g over a Heun
+step of `WATCH_LOOKAHEAD_REL` = 1e-9 of the push-time estimate (2.9e-9 s on the tests'
+pushes; `engine.first_step_value`, a rate test): rising, the limit starts (or stops)
+binding at the boundary, where the event is logged (at t_r for a corner exactly at the
+end of the rise; the second of `power_limit` and `drive_cap` where they cross together),
+falling or unchanged (the law's force equal to the limit, no kink), the event is armed
+guarded; g > tol changes side at the boundary too (at push start for a step command
+already capped). A watch whose side a crossing or such a change has just set is fresh:
+it is not judged again while its value stays in its zero band, and its next event is
+armed guarded. It stops being fresh once that value is below its band at a sub-phase
+start or at any step of a kept flight (`prelude._settle_fresh`; review pass 1 rerun:
+before, a binding with no sub-phase start inside it stayed fresh to its end, and its
+end, armed guarded a hair past zero, fired zero_tol/rate late, 1.7e-8 s on a 7 ms power
+cap inside a taper, 8e-9 relative in its logged speed, while the drive_cap_end of the
+same kink was on time). A change at the boundary arms the opposite event of a two-way
+watch; a binding `taper_start` arms nothing. A guarded event (`prelude._guarded`) reads a
+constant just beyond -zero_tol while g <= 0 (armed with g(t0) <= 0: it fires at the true
+root) or while |g| <= zero_tol (armed with g(t0) > 0: it fires at g = +zero_tol,
+zero_tol/rate late, below 1e-10 s for the two-way watches on the tests' pushes, longer
+where a value crosses zero slowly), so the engine's rule 3
+never disarms it with a run flag, the zero at t0 never fires it, and a value held at
+zero never does. Review pass 3 (P3-M1) found the earlier rule, which judged a watch at
+zero by rule 3's own prediction after the first step (first_step_s, 1 ms), looping the
+planner (RuntimeError after 200 phases) when a limit bound for less than that step (an
+acceleration-law power cap 1e-4 below its need at a 20 m taper's start binds for 0.28
+ms), and, for offsets from 1e-6 to 2e-4, logging the end at the instant of its start. A
+watch now changes side at most twice at one instant (`WATCH_TOGGLES_PER_INSTANT`: a
+touch, the limit starting and stopping within ZERO_SPAN_S); a third change raises
+RuntimeError (a planner bug, measured only with the fresh rule removed, where bindings
+shorter than the look-ahead, 0.03 ns, raise it). `drive_limit` stays listed (a negative
+force: the force law's taper toward a negative holding force under a thrust above the
+weight, the acceleration law's command below the thrust); its flag names the drive
+("would have to hold the vehicle back: its law asks for less force on the stack than the
+thrust's share (1 - f_imp) T supplies"), constant_accel's text unchanged. A `ramp_end`
+is logged only at a thrust kink of a lit schedule, so a `drive_ramp_end` that falls on
+an unlit push's placeholder ramp end logs none.
+
+**Stall.** A bound drive with F_max + (1 - f_imp) T(0) <= M_0 g_eff sin phi(0) cannot
+lift the stack (`stall_reason`: the drive at F_max and the thrust together cannot): the
+run ends on the track at push start with status `drive_stall` (`prelude.DRIVE_STALL`), a
+flag naming F_max, T(0), f_imp, M_0 and both sides, the push_start event and one
+zero-length ASSIST phase holding the push-start state (so the track metrics exist; every
+release item is None). Both laws, both planners (the planar start returns status
+`drive_stall`; a search reads it as a prelude failure). That phase's one row is the
+drive at F_max with no support reaction: its sddot = (F_max + T_sys)/M_0 - g_eff sin phi
+is not positive (zero only at the equality, which stalls too), so its felt g and
+interface force are at most the loads the stack at rest on its supports sees, and are
+not reported (review pass 1 rerun, P1-m2: cold on a 20 t carriage with F_max = 0.9 m0
+g, felt 0.8673 for a stack that feels 1.0 at rest, and F_int = (m_v/M) F_max = 4.6 MN
+against m_v g = 5.3 MN). `metrics.STALL_UNAVAILABLE_TRACK_METRICS` (the felt-g peak with
+its time and mass, the interface force's peak, minimum and alias) are therefore None,
+the run-wide `peak_felt_axial_g` leaves the row out (None when nothing else is sampled,
+as on a cold stall), and `brake_force_N` is None (the carriage never moved); the drive
+force F_max (the drive at its limit), the zero drive power and energy and the normal
+loads (m g_eff cos phi, which sddot does not enter) stay. The flag says so; the time
+series keeps the row as the model evaluates it. No `interface_tensile` flag is read
+from that row (`metrics.track_flags(..., stalled=True)`, which `sim` passes for a
+`drive_stall` run, 1-D and planar; review pass 2 rerun, P2-m2 and P2H-m1): on a hot
+stall its F_int = (m_v/M_0) F_max - (m_c + f_imp m_v) T(0)/M_0 can be negative (-1.09 MN
+in 1-D lit 0.5 s before push start, f_imp 1, F_max 1 MN, a 20 t carriage) while the
+vehicle at rest on its supports presses with m_v g_eff sin phi - T(0) > 0 (+3.26 MN
+there). That
+at-rest interface force is not reported either.
+
+**Energy and power.** The assist energy identity is unchanged (dissipated 0; no state
+added). P_max is mechanical at the carriage, so the efficiency moves no trajectory:
+`electrical_energy_J` = positive drive work/eta and `electrical_power_peak_W` = peak
+mechanical power/eta (no regeneration), and `compare.ENERGY_ONLY_ASSIST_KEYS` lists
+`drive_efficiency` for this drive (an efficiency sensitivity case reuses the nominal
+trajectory).
+
+**Braking** (D-SP7-12; closed forms at the constant total deceleration a_b =
+brake_decel_g g0, no braking phase in the trace, B-007): distance v^2/(2 a_b), time
+v/a_b, the brake's force on the carriage m_c (a_b - g_eff sin phi) (negative would mean
+gravity alone decelerates it faster), brake energy (1/2) m_c v^2 (1 - g_eff sin phi/a_b)
+= force x distance (0 for m_c = 0), facility max(L, s_release + d_brake) with s_release
+= L in S4.
+
+**Metrics** (`LINEAR_MOTOR_METRICS`, after every key a constant_accel run writes; 1-D
+and planar; `net_accel_*` stay None on planar): `push_force_max_N` F_max,
+`push_power_max_W` P_max, `push_rise_time_s` t_r, `push_corner_speed_mps` P_max/F_max
+(settings, not results: the two limits, the rise time and the speed where the limits
+meet; the flown peaks are `drive_force_peak_N` and `drive_power_peak_W`; under the
+acceleration law the power cap binds at P_max/(M (a + g) - (1 - f_imp) T)
+(P_max/(M (a + g)) cold), above the corner when the command is below F_max),
+`push_power_limited` (a `power_limit` event on the push earlier than the release by more
+than `POWER_LIMIT_TIE_REL` = 1e-6 of the push time: a limit whose start speed P_max/F_pre
+(the corner P_max/F_max after the force law's rise, P_max/F_lim(t) inside it,
+P_max/(M (a + g) - (1 - f_imp) T) under the acceleration law) is the exit speed to
+within about 1e-6 is a tie at the release that does not count; on the force plateau,
+with k = P_max/(F_max v_e) (the design's r, not the rise fraction r(t)), measured on the
+cold force law, k = 1 logs no event and 1 - k = 1e-9 logs one 9.1e-10 of the push time
+before the release; any such event when the push did not release. The event marks the
+law's power branch on its force before the power term, so under the force law's taper,
+where that force is the untapered one, a push reads power-limited with the flown power
+below P_max (Model). A binding inside one integrator step is logged (*Passed over*)
+unless its margin stays inside the watch's zero band or, should a step hold two extrema
+of the margin, the scan does not see its maximum; such a binding is not logged and does
+not make the push power-limited), `push_accel_mean_mps2` = v_exit/t_push (a mean, not a
+held acceleration), `push_felt_g_plateau` (the felt axial acceleration at the end of the
+rise, t = t_r, from the flown state; at push start for a step: the value at t_r, not one
+held after it, since the burn on a hot push and a power limit or the taper beginning
+later move it, and `felt_g_track_peak` is the peak; None when the push ended before t_r
+or stalled, and when the power limit or the taper began before t_r, as then the rise
+reaches no plateau), `release_position_m` (L), `release_trigger` (`track_end`),
+`electrical_power_peak_W`, `braking_time_s`, `brake_force_N`, `brake_energy_J` (release
+items None without a release; `brake_force_N` always but on a stall). The omega_p of the
+planar site is quoted in the drive's track g_eff line, as for constant_accel
+(`sim.planar_setup`).
+
+**Assumption lines** (`LinearMotorAssist.assumptions`, ten, prefixed `linear_motor:`):
+the control law with F_max, P_max and the rise (or a_cmd and the caps), and that the
+drive never pulls back (a negative drive force ends the run, `drive_limit`); P_max
+mechanical and the efficiency energy-only; the release at L with or without the taper
+(no taper: the force drops to zero in a step at release; with one: at L the drive force
+is the holding force M g_eff sin phi - (1 - f_imp) T, zero net acceleration (for the
+acceleration law unless a cap binds there), and it drops to zero in a step at release);
+the carriage mass; braking as closed forms at a constant total deceleration, no braking
+phase; the impingement; the vented shaft and no friction, and the neglected air drag on
+the vehicle in the shaft (under the force law it would lower the exit speed, which is
+therefore biased high, and raise the interface force, by D m_c/M at a given drive force
+(zero then without a carriage mass) and in the power phase also through P_max/sdot at
+the lower speed, and the drive work, with more of the stroke at F_max after the rise and
+a longer push at P_max, both therefore biased low, while the peak drive power when P_max
+is not reached, the felt g and the mean acceleration are biased high; under the
+acceleration law the drive would absorb it while no cap binds, so the drive work, the
+peak drive power and the interface force are biased low, as for constant_accel, and
+while a cap binds it would lower the exit speed, biased high, and drag can make a cap
+bind that the drag-free push never reaches); the track g_eff with omega_p and Coriolis
+neglected; the clamp during any hold; the release-referenced ignition rule (a
+release-referenced t_ign_s < 0 on a stage that lights refused). The shared planar line on the vented shaft states the
+constant_accel consequence only; the drive's own line states this drive's.
+
+**Closed forms the tests use** (F9 1-D, the push alone through `fly_track` or the run
+through `sim.simulate`, g = mu/R_E^2, cold unless stated, M = m0 + m_c):
+
+- Force law, vertical, rising from F_0 = M g: constant jerk j = (F_max - F_0)/(M t_r),
+  sddot = j t, v = j t^2/2, s = j t^3/6; the force phase a_f = F_max/M - g; the power
+  phase from v_c = P/F_max (survey 01 section 9) with v_inf = P/(M g):
+  t - t_c = [(v_c - v) + v_inf ln((v_inf - v_c)/(v_inf - v))]/g and
+  s - s_c = [(v_c^2 - v^2)/2 + v_inf (v_c - v) + v_inf^2 ln((v_inf - v_c)/(v_inf - v))]/g.
+- Force law, horizontal (phi = 0, F_0 = 0): the same with g = 0, then v^3 = v_c^3 +
+  3 P (s - s_c)/M and v^2 = v_c^2 + 2 P (t - t_c)/M; the normal load m g.
+- Acceleration law: v = a t^2/(2 t_r), s = a t^3/(6 t_r), then v = a (t - t_r/2), s =
+  a (t - t_r/2)^2/2 + a t_r^2/24, so v_e^2 = 2 a L - a^2 t_r^2/12 and t_push = t_r/2 +
+  v_e/a; a force cap M (a_F + g) binding at t_1 = t_r a_F/a_cmd, then sddot = a_F; a
+  power cap binding at v_p = P/(M (a + g)), then the power phase from v_p; a step
+  command capped from push start: v_e = sqrt(2 a_F L).
+- Taper (position form): x = L - s, x'' = -(a/s_t) x for both laws (cold, while F_max
+  (force law) or the uncapped command (acceleration law) holds in the taper; not under
+  the power limit), v^2 = v_0^2 + (a/s_t)(s_t^2 - x^2), v_e^2 = v_0^2 + a s_t, s(t) = L -
+  [s_t cos Omega u - (v_0/Omega) sin Omega u], Omega = sqrt(a/s_t) (the taper weight is
+  w(s)), time to L atan(s_t Omega/v_0)/Omega; at s_t = 20, 23.30677966101695 and
+  10.195 m and at L - a t_r^2/6 (the taper starting at the very end of the rise).
+- A force cap released in the taper (acceleration law, a_cmd = 4 g0 capped by F_max =
+  M (a_F + g), a_F = 3 g0, s_t = 20 m): capped at a_F from t_1 = t_r a_F/a_cmd until
+  a_cmd w = a_F, x_1 = (a_F/a_cmd) s_t, with v_1^2 = v(t_1)^2 + 2 a_F (L - x_1 - s(t_1));
+  then x'' = -(a_cmd/s_t) x, so v_e^2 = v_1^2 + (a_cmd/s_t) x_1^2 and the time to L
+  atan(Omega x_1/v_1)/Omega, Omega = sqrt(a_cmd/s_t).
+- A power cap binding briefly across the taper start (acceleration law, a = 3 g0, F_max
+  = 2 M (a + g), P = (1 + delta) M (a + g) v_0 with v_0 the uncapped speed at s_0 = L -
+  s_t, delta < 0): power_limit and drive_cap at v_p = (1 + delta) v_0, t_p = t_r/2 +
+  v_p/a; the vertical power phase from v_p (v_inf = P/(M g)) into the taper (taper_start
+  at s_0); the cap released where M (a w(s) + g) v = P on that phase (v_1, s_1, both
+  ends); then x'' = -(a/s_t) x from x_1 = L - s_1, so v_e^2 = v_1^2 + Omega^2 x_1^2 and
+  t_e = t_1 + atan(Omega x_1/v_1)/Omega.
+- Power corners at the release (force law, cold, vertical): the corner at s_c = L -
+  0.5e-6 m (v_c on the force phase, P = F_max v_c, then the power phase over the last
+  0.5e-6 m); a corner beyond the exit speed, P = (1 + e) F_max v_e (e = 1e-7, 3.1e-4,
+  1e-2), never reached: v_e^2 = v_r^2 + 2 a_f (L - s_r), t_e = t_r + (v_e - v_r)/a_f.
+- Hot interface force on the force plateau: F_int = (m_v/M) F_max - T (m_c + f_imp
+  m_v)/M, felt (F_max + (1 - f_imp) T)/M.
+- Cold energy: E_drive = M (v_e^2/2 + g L).
+- Hot holding force: F_0 = M_0 g - (1 - f_imp) T with M_0 = m0 - mdot t_ramp/2 + m_c
+  (the ramp burned on the clamp), so sddot(0) = 0 and F = F_0 + (F_max - F_0) t/t_r in
+  the rise.
+- Power corner inside the rise (cold): t_p the root of F_lim(t) j t^2/2 = P_max; the
+  peaks are the corner's, F_drive = F_lim(t_p), F_int = (m_v/M) F_lim(t_p), felt
+  F_lim(t_p)/(M g0) at t_p.
+
+**Measured** (the tests' cases at the integrator's own steps, relative to L, v_e and
+t_e; scratch probes, not run by the suite). With every kink split and every crossing and
+the release flown to as a fixed end, the states meet the closed forms at rtol 1e-11 to
+2.3e-14 or better: the power corner inside the rise to 2.3e-14 (its time and the peaks,
+1.6e-14), every other case to 1.02e-14 or better (the cold cases, measured at rtol
+1e-10, 1e-11 and 1e-12: the corner 0.5e-6 m short of L at 1.02e-14, the vertical power
+phase's 9.4e-15 the closed form's own logarithms, the taper at its four lengths 1e-15,
+the cap released in the taper 8e-16; the 20 t carriage 9.5e-15; the step command, the
+hot interface force and the hot rise 4e-16 or better; the brief power cap 7e-15; a ramp
+lit on the track at sea level across the thrust clamp, its release time and exit speed
+7.4e-15 at rtol 1e-11 and 1e-10), with
+three offsets: the corner at the end of the rise is asserted against the unperturbed t_r
+and v(t_r), which its P = (1 +- 1e-12) F_max v(t_r) moves by up to 1e-12 (the event is
+logged at its own root); the brief power cap at delta = -1e-9 logs drive_cap 4.6e-13
+late (armed guarded at the restart, it fires at the edge of its zero band); and the
+brief power cap inside the taper (*Passed over*; delta = -1e-6 and -6e-6) logs its
+events within 7.8e-13 of their closed forms, at rtol 1e-11, 1e-10 and 1e-9 (crossings
+near tangency, whose margin's rate scales with sqrt(-delta); its exit is within
+1.6e-15). At rtol 1e-10 the horizontal power phase reaches 6e-12 and, of the cases the
+tests run there, the corners beyond the exit speed 6e-13 and the brief power cap across
+the taper start 4.6e-13. The tests run at rtol 1e-11 (the taper, the corners at the
+release, the cap released in the taper, both brief power caps and the thrust clamp at
+1e-10 too) and assert 1e-9 relative: a margin above 4e4 at rtol 1e-11 (1e3, 2e3 and 1e3
+for the three offsets) and above 1e3 at 1e-10; the thrust clamp's release time and exit
+speed are asserted to 1e-12 (`CLAMP_REL`), a margin of about 135 at both rtols. Without
+these measures the misses were: the taper with a floor at w = 0 and no second flight at
+the release, 1.4e-12 to 1.2e-9 at rtol 1e-11 and up to 5.6e-8 at 1e-10 (the four
+lengths); a corner just beyond the exit speed, up to 4.6e-9 at rtol 1e-10; a corner
+within ATOL_M short of L under the ATOL_M tie, 4.5e-9 slow at rtol 1e-10; the power cap
+released unsplit in a 30 m taper, 1.0e-9 at rtol 1e-10; a watch crossing restarted from
+its interpolated state, 1e-8 at rtol 1e-10 (the horizontal case); the brief power cap
+(delta = -1e-4) with one second flight kept whatever ended it, 1.1e-9 at rtol 1e-10
+(before the scan, which now finds that binding in the first flight); a power cap binding
+2.8 to 7 ms inside a 90 m taper, unscanned, never split or flown, 7.8e-10 to 1.15e-8 at
+rtol 1e-11 and 1e-10, and its end logged 1.7e-8 s late at rtol 1e-10 without
+`_settle_fresh`; the thrust clamp unsplit (that ramp lit on the track), the release time
+3.5e-12 to 2.3e-10 late at rtol 1e-11 and 1e-10; and before any split the worst step was
+8.5e-11 at rtol 1e-11 (the force cap crossed inside the rise). The identity residual is
+below 1.1e-15 (the force law cold 6.2e-16, hot 1.0e-15, ramped 6.6e-16; the acceleration
+law cold 0). The sampled track peaks equal the dense-output maxima (scanned at 20,001 to
+40,001 points, rtol 1e-10) to 3e-16 on five pushes: the corner inside the rise (cold),
+at the release (k = 1, cold and hot), a hot power-limited push on a 20 t carriage and a
+hot step command capped by F_max from push start; before the split they missed by up to
+2.4e-2 (the corner inside a 1 s rise). A cold push whose taper begins during the rise
+misses by 2e-5 ("Silo model").
+
+**Stays out of S4:** friction; air drag on the vehicle in the vented shaft (stated in
+the drive's shaft line: under the force law the exit speed, the peak drive power short
+of P_max, the felt g and the mean acceleration are biased high and the interface force
+and the drive work low; under the acceleration law, while no cap binds, the drive work,
+the peak drive power and the interface force are biased low, and while a cap binds (or
+drag makes one bind) the exit speed is biased high); the sealed shaft and its air column (S5); the
+release at a target speed and a release before L (S4a, `release_speed_mps`); a braking
+phase in the trace (B-007); the readers (replay, scene, app) and the summary rows of the
+drive (S4a); the drive in the app's form (B-016); the structural transform on a flown
+push (S4b).
 
 ## Failed-ignition coast
 
@@ -5378,8 +5904,8 @@ nominal; `silo_hot_full`: 564-579 kg against 572), the one of the unchanged delt
 mostly the vehicle change (+3085 kg for +10 % Isp on `silo_cold`) and is labelled as
 such. The
 perturbed value is printed in SI (`value_si` with `value_si_unit`, converted from the
-key's YAML suffix through units.py by `compare.si_value`: `_t` to kg, `_kN` to N, `_deg`
-to rad, `_g` to m/s^2; a key without a unit suffix is dimensionless) and, beside it,
+key's YAML suffix through units.py by `compare.si_value`: `_t` to kg, `_kN` to N, `_MW`
+to W (the linear motor's power limit), `_deg` to rad, `_g` to m/s^2; a key without a unit suffix is dimensionless) and, beside it,
 as it stands in the config (`value_yaml_units`: t, s, a fraction), the one column of
 the table and key of the record that is not in SI, kept so the case can be
 reproduced from the file. One C_D row per run that has cases reads "n/a: no drag in
@@ -5566,6 +6092,26 @@ the shipped planar experiments state it is enforced by
 shipped thresholds are by `::test_shipped_blocks_state_every_threshold`, not by
 validation: a new planar experiment that leaves it out validates and takes the 2 s
 default (still one shared value), so a new experiment must be added to that test.
+
+**Strict numbers (KI-030; SP7 step S4, D-SP7-28).** Every number of the assist block
+(`ConstantAccelConfig` and its `track`; `LinearMotorConfig`, built strict from the start,
+"Linear motor"), of an ignition (`IgnitionConfig` and its
+`startup` override) and of the offload block (`OffloadFixedConfig`, the two masses of
+`OffloadCaseConfig`) is a strict, finite number, set per field: a bool, a numeric string
+(`"100"`, or `1e3`, which YAML reads as a string), NaN and inf are refused, never coerced,
+while a YAML integer is a number (`stroke_m: 100` holds 100.0). The bools
+`allow_negative_drive_force`, `fails`, `paired_pad` and `pad_control` are strict (`1` and
+`"yes"` refused). Two ranges are named in constants.py (the design's file table,
+section 4.1) and applied by config.py: `t_ign_s` within +/-
+`T_IGN_LIMIT_S` = 3600 s of its reference and `exit_altitude_m` within +/-
+`EXIT_ALTITUDE_LIMIT_M` = 500 m of the pad datum (both inclusive; every shipped value and
+the -30 m mouth of `test_failed_ignition.py` lie inside). Strictness is never set on the
+base model or on the shared blocks, whose tuple fields are written as YAML lists (that
+would refuse every planar file). The resolved dicts are the raw merged YAML, so no
+shipped digest moves: all nine shipped experiment files resolve to the same 288 run and
+vehicle dicts as before the step (measured), the planar digest pin and the 1-D golden
+compare them, and the app's request parser already took only real booleans and finite
+bounded numbers (D-SP2-31).
 
 **Search skip (amendment 4).** A planar run with `end: impact` (which every failed
 ignition already requires) skips the search: `RunConfig.search_skip_reason` names why
@@ -5805,7 +6351,8 @@ both scoped by key name within one dict level and both declared once in `config.
   refused, a null never unsets a key, and `at_height_m` and `height_method` come
   together. The run-level rules: a ramp start by depth, speed or height needs an
   assist model (`RunConfig`, as `push_start` does) and a depth no deeper than
-  `stroke_m`; it is for the first stage only (`resolve_run`); a request the push cannot
+  `stroke_m` (on either track drive, `TRACK_DRIVE_CONFIGS`, since SP7 step S4); it is
+  for the first stage only (`resolve_run`); a request the push cannot
   reach (a speed above the exit speed, a height at or above the drag-free apex, by
   either height method) is refused when the specs are built, which the preflight
   `sim.check_resolved` does for every run before a results directory is made; a height
@@ -7925,6 +8472,69 @@ assumption in Phase 1, and `NoAssist` emits nothing):
 - constant_accel: infinite jerk at push start and release.
 - constant_accel: vehicle clamped to the carriage during any hold before the push.
 
+The `linear_motor` drive (`LinearMotorAssist.assumptions`, SP7 step S4; "Linear motor"),
+ten lines in this order, every one prefixed `linear_motor:`; <rise> is "rising linearly
+over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a step:
+
+- the control law, by law:
+  - force law: linear_motor: force law F = min(F_lim(t), F_max, P_max / sdot), F_max =
+    <F> kN and P_max = <P> MW (assumed), the limit F_lim <rise> from the holding force
+    F_0 = max(0, M_0 g_eff sin phi - (1 - f_imp) T(0)) fixed at push start; the drive
+    never pulls back: a negative drive force (holding the vehicle back) ends the run
+    (drive_limit).
+  - acceleration law: linear_motor: acceleration law, net acceleration command a_cmd =
+    <a> g0 (assumed) <rise>; the drive force M (a + g_eff sin phi) - (1 - f_imp) T,
+    capped by F_max = <F> kN and P_max / sdot with P_max = <P> MW (assumed); while a cap
+    binds the acceleration follows from the capped force; the drive never pulls back: a
+    negative drive force (holding the vehicle back) ends the run (drive_limit).
+- linear_motor: P_max is the mechanical power at the carriage (F sdot); the electricity
+  is the positive drive work / efficiency and the electrical power peak the mechanical
+  peak / efficiency, drive efficiency <eta> (assumed), which moves no trajectory.
+- the release, one of:
+  - linear_motor: release at the track end (s = L) with no stop taper: the drive force
+    drops to zero in a step at release.
+  - force law with a taper: linear_motor: release at the track end (s = L) after a stop
+    taper over the last <s_taper> m: the force is scaled toward the holding force M g_eff
+    sin phi - (1 - f_imp) T by min(1, (L - s) / s_taper); at L the drive force is the
+    holding force M g_eff sin phi - (1 - f_imp) T (zero net acceleration), and it drops
+    to zero in a step at release.
+  - acceleration law with a taper: linear_motor: release at the track end (s = L) after
+    a stop taper over the last <s_taper> m: the acceleration command is scaled by min(1,
+    (L - s) / s_taper); at L the drive force is the holding force M g_eff sin phi - (1 -
+    f_imp) T (zero net acceleration) unless a cap binds there, and it drops to zero in a
+    step at release.
+- linear_motor: carriage mass <m_c> t (assumed).
+- linear_motor: carriage braking in closed form at a constant total deceleration a_b =
+  <a_b> g0 (assumed): distance v^2 / (2 a_b), time v / a_b, brake force m_c (a_b - g_eff
+  sin phi), brake energy (1/2) m_c v^2 (1 - g_eff sin phi / a_b); no braking phase in the
+  trace.
+- linear_motor: exhaust impingement fraction <f_imp> (assumed); the system keeps (1 -
+  f_imp) T of the on-track thrust.
+- the shaft: linear_motor: shaft vented (no air column), no friction; air drag on the
+  vehicle in the shaft is neglected: <drag>, by law:
+  - force law: under the force law it would lower the exit speed (the exit speed is
+    biased high) and raise the interface force (by D m_c / M at a given drive force,
+    zero then without a carriage mass, and in the power phase also through P_max / sdot
+    at the lower speed) and the drive work (more of the stroke at F_max after the rise,
+    a longer push at P_max): both are biased low; the peak drive power when P_max is not
+    reached, the felt g and the mean acceleration are biased high.
+  - acceleration law: under the acceleration law the drive force would absorb it while
+    no cap binds (the drive work, the peak drive power and the interface force are
+    biased low, as for constant_accel), and while a cap binds it would lower the exit
+    speed (biased high; drag can also make a cap bind that the drag-free push never
+    reaches).
+- the track gravity (`LinearMotorAssist.track_gravity_assumption`, the form of
+  constant_accel's): linear_motor: constant g_eff = <value> m/s^2 on the track, omega_p
+  = 0, Coriolis neglected (every 1-D run); on a planar run linear_motor: constant g_eff =
+  <value> m/s^2 on the track (mu/R_E^2 - omega_p^2 R_E with omega_p = <omega_p> rad/s,
+  the planar rotation rate of the site), flat 1-DOF track frame, Coriolis neglected
+  (`sim.planar_setup` quotes both; a model built without a g_eff reads "constant g_eff =
+  mu/R_E^2 - omega_p^2 R_E on the track").
+- linear_motor: vehicle clamped to the carriage during any hold before the push.
+- linear_motor: a release-referenced stage-1 ignition lights at the flown release plus
+  t_ign_s (the push time is a result of the push); one lit on the track must be stated
+  from push_start (a release-referenced t_ign_s < 0 on a stage that lights is refused).
+
 The atmosphere module ("Atmosphere"): these three, plus the in-flight floor clamp,
 are exported as the `ATMOSPHERE_ASSUMPTIONS` tuple (exact texts in "Atmosphere,
 drag and back-pressure in flight"). No 1-D result carries them, because no 1-D run
@@ -8102,11 +8712,11 @@ level (TWR 1.55 against 1.43 real) and its screening Isp (the ideal yardstick on
 that a thrust schedule is not capped by the propellant on board (every burn ends at
 the `propellant` event), that staging is instantaneous and impulse-free, that the
 config accepts a vertical track only and no rotation (Phase 2 gates), and that a
-`drive_limit` run stops on the track without releasing. The run flags (disarmed-event
-notes, `no_liftoff`, `drive_limit`, `interface_tensile`, `drive_braking`,
-`ignition_failed ... ignored`, the mouth-not-at-ground flag, `end apex`, `FALL starts
-on the ground`) are listed under "Result content"; they mark what a run did, not what
-it assumes.
+`drive_limit` or `drive_stall` run stops on the track without releasing. The run flags
+(disarmed-event notes, `no_liftoff`, `drive_limit`, `drive_stall`, `interface_tensile`,
+`drive_braking`, `ignition_failed ... ignored`, the mouth-not-at-ground flag, `end
+apex`, `FALL starts on the ground`) are listed under "Result content"; they mark what a
+run did, not what it assumes.
 
 ## Calibration notes (build step 26)
 
@@ -8529,13 +9139,13 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_scaffold.py::test_package_imports_and_version` | the package imports; `__version__` | exact |
 | `test_scaffold.py::test_earth_constants_only_in_constants_py` | mu, R_E, omega_E, g0 (and 9.81) appear only in `constants.py` ("Frames and datum", "Gravity") | exact (grep of `src/`) |
 | `test_scaffold.py::test_every_file_open_declares_encoding` | every `open`/`read_text`/`write_text` passes `encoding=` | exact |
-| `test_scaffold.py::test_public_physics_functions_have_docstrings` | a docstring exists on every public function, class and public method of the modules listed in `PHYSICS_MODULES` (atmosphere, dynamics, losses, the six phases package files, vehicle, units, offload, structure, the four assist modules, display); a listed path that does not exist fails; what the docstrings state (inputs, outputs, units, frame) is checked by review, not by this test | exact |
+| `test_scaffold.py::test_public_physics_functions_have_docstrings` | a docstring exists on every public function, class and public method of the modules listed in `PHYSICS_MODULES` (atmosphere, dynamics, losses, the six phases package files, vehicle, units, offload, structure, the five assist modules (linear_motor since SP7 step S4), display); a listed path that does not exist fails; what the docstrings state (inputs, outputs, units, frame) is checked by review, not by this test | exact |
 | `test_scaffold.py::test_pyproject_dev_tooling_installable_both_ways` | dev extra is a subset of the dev group | exact |
-| `test_constants.py::test_literals_are_the_documented_values` | the `constants.py` values | exact |
+| `test_constants.py::test_literals_are_the_documented_values` | the `constants.py` values, the KI-030 bounds `T_IGN_LIMIT_S` 3600 s and `EXIT_ALTITUDE_LIMIT_M` 500 m among them ("Experiment schema (planar)", strict numbers) | exact |
 | `test_constants.py::test_surface_gravity_and_equatorial_rotation_speed` | mu/R_E^2 = 9.7982855 m/s^2, omega_E R_E = 465.101 m/s ("Frames and datum") | 1e-7 and 1e-5 relative (the quoted digits) |
 | `test_constants.py::test_sp8007_knockdown_constants`; `test_structure.py::test_published_constants_and_rows` | SP8007_KNOCKDOWN_A = 0.901 and SP8007_PHI_DIVISOR = 16 (SP-8007 1968 Eq. 5, 2020 Eq. 9-10); the four Gerard Table 2 rows (6.48 and 5.93 at 3/5, 7.14 and 6.01 at 7/11); MONOCOQUE_XTOL_M = 1e-12 m; MONOCOQUE_RTOL = 4 machine epsilons (scipy's default); MONOCOQUE_BRACKET_MARGIN = 1e-6; DLF 1 and 2; the axis-ratio cap sqrt(2); POISSON_RATIO_MAX = 0.5; RING_PADS_MIN = 3; a Gerard pair with C <= 0 or n outside (0, 1] refused ("Structural sizing of the push load") | exact |
-| `test_units.py::test_scalar_round_trips` | every conversion inverts its partner (`units.py`) | 1e-12 relative |
-| `test_units.py::test_documented_factors` | 1000, 9.80665, pi/180, 3.6e6 as documented | 1e-15 relative (pi/180); exact for 1000, g0 and 3.6e6 |
+| `test_units.py::test_scalar_round_trips` | every conversion inverts its partner (`units.py`; MW and W since SP7 step S4) | 1e-12 relative |
+| `test_units.py::test_documented_factors` | 1000, 9.80665, pi/180, 3.6e6 and (SP7 step S4) 1e6 W per MW as documented | 1e-15 relative (pi/180); exact for 1000, g0, 3.6e6 and 1e6 |
 | `test_units.py::test_array_inputs` | conversions accept arrays | exact |
 | `test_units.py::test_structure_file_units` | GPa = 1e9 Pa, MPa = 1e6 Pa, bar = 1e5 Pa, mm = 1e-3 m, kg/MN = 1e-6 kg/N, kg/kN = 1e-3 kg/N and their inverses (`units.py`) | exact factors; 1e-12 relative round trips |
 | `test_atmosphere.py::test_icao_table_points` | ICAO layer closed forms at the table rows 0 to 80 km geopotential, converted with h = r0 H/(r0 - H) ("ICAO range") | 1e-4 relative p, rho; 1e-6 K abs; 1e-5 relative a |
@@ -8567,10 +9177,11 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_config.py::test_dict_valued_path_replaces_its_dict_whole_while_a_variant_merges`, `::test_an_explicit_null_counts_as_a_given_key` | "Experiment schema (planar)", merge rule, the two override forms and a null: over a stage-1 dict with `t_ign_s`, `reference`, `startup` and `fails`, a variant and a single-key path keep every key the family rule does not displace (same family: all four; `at_depth_m`: `startup` and `fails`), while the same dict given as the value of the path `ignition.stage1` replaces the dict there whole (only the given key left, the inherited `startup` and `fails` gone); a two-key family given as two paths keeps the rest; the other stage and the base untouched. A key given as null counts as given: a null of another family displaces the base's family and stays in the dict, in a variant and as a path alike (`at_depth_m: null` over the time keys, `exit_speed_mps: null` over `net_accel_g`); a null of the family in use replaces in place and keeps its partner; a null of one family next to a key of another is refused, in `merge_run_dicts` and as two paths | exact (literal dicts written out in the test) / raises ExclusiveKeysError |
 | `test_config.py::test_two_families_given_together_raise_in_merge`, `::test_two_families_given_together_raise_in_overrides`, `::test_mixed_families_name_the_variant_or_the_sweep` | keys of two families of one group given together: in an override dict at any depth (also one the merge would take wholesale), as two paths with one parent, in a dict value, or a path meeting a dict value; two keys of one family, different groups, the same group in different dicts and vehicle paths are accepted; through `resolve_experiment` the error names the sweep and run or the variant, and the dict | raises ExclusiveKeysError (a ValueError) |
 | `test_config.py::test_constant_accel_exit_speed_derives_the_acceleration` | "Silo model", two ways to state the push: a = v^2 / (2 L) from `exit_speed_mps` (v = 76.71 m/s, L = 200 m: 14.71106025 m/s^2 as a hand number; half the stroke, twice a); `net_accel_g` = v^2 / (2 g0 L) gives the same a; on the `net_accel_g` path a = `net_accel_g` x g0 exactly, as before the option | 1e-15 relative (hand number 1e-9); exact (`==`) on the `net_accel_g` path |
-| `test_config.py::test_constant_accel_needs_exactly_one_push_key`, `::test_constant_accel_push_keys_are_the_assist_family_table`, `::test_constant_accel_dump_states_the_push_by_its_one_key` | "Silo model", rules of the config: exactly one of the two keys, a null counting as given (both, neither, a null of either, both null are refused, alone and through RunConfig); > 0, the exit speed finite, the derived v^2 / (2 L) finite and > 0 (v = 1e200, 1e-200 and an infinite stroke refused); the push keys are the assist group of `ASSIST_KEY_FAMILIES`; `model_dump` (python and json) holds only the key in use and validates again to an equal model, alone and in a RunConfig, and the `net_accel_g` dump has the pre-option key list (written out) | raises / exact |
+| `test_config.py::test_constant_accel_needs_exactly_one_push_key`, `::test_constant_accel_push_keys_are_the_assist_family_table`, `::test_constant_accel_dump_states_the_push_by_its_one_key` | "Silo model", rules of the config: exactly one of the two keys, a null counting as given (both, neither, a null of either, both null are refused, alone and through RunConfig); > 0, the exit speed finite, the derived v^2 / (2 L) finite and > 0 (v = 1e200 and 1e-200 refused; an infinite stroke refused by its own field since KI-030 closed, SP7 step S4); the push keys are the assist group of `ASSIST_KEY_FAMILIES`; `model_dump` (python and json) holds only the key in use and validates again to an equal model, alone and in a RunConfig, and the `net_accel_g` dump has the pre-option key list (written out) | raises / exact |
 | `test_config.py::test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone`, `::test_exit_speed_variant_over_a_silo_baseline_resolves_to_the_exit_speed_alone` | "Experiment schema (planar)", merge rule with the fields in place: a sweep axis `assist.exit_speed_mps` (with `assist.stroke_m`) over the shipped silo_cold of silo_screening_1d and silo_screening_2d, and a variant `{assist: {exit_speed_mps: v}}` (stroke inherited and its own) over a baseline silo stated by `net_accel_g`, resolve to a ConstantAccelConfig with only the exit speed (not in the run dict, not in `model_fields_set`) and a = v^2 / (2 L) computed in the test, the rest of the parent's block inherited; back the other way, a `net_accel_g` axis over an exit-speed parent; a +/-10 % sensitivity case perturbs v (read as m/s), a following as (1 +/- 0.1)^2; a variant restating `net_accel_g` beside the exit speed raises ExclusiveKeysError, a baseline writing both the validator's error | 1e-15 relative; 1e-12 (sensitivity) / raises |
 | `test_config.py::test_ignition_states_its_ramp_start_one_way`, `::test_ignition_ramp_start_refusals`, `::test_ramp_start_refused_on_a_pad_and_on_a_later_stage`, `::test_depth_deeper_than_the_stroke_is_refused` | "Experiment schema (planar)" and "Silo model", ramp-start conversions, rules of the config: each family of the ignition group validates alone and `ramp_start` gives its trigger and value (height_closed_form or height_event by `height_method`, SP1 step 4) (the time family when none is given, its defaults not counting as given); two families, a null, a height without its method or the reverse (either method), a negative depth or speed, a zero height and a non-finite value are refused, alone and through RunConfig; a depth, speed or height is refused on a pad and on stage2, a depth deeper than `stroke_m` refused (0 and the stroke accepted) | raises / exact |
 | `test_config.py::test_ignition_dump_states_the_ramp_start_by_its_one_family`, `::test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone` | "Experiment schema (planar)", the dump and the merge rule with the ignition fields in place: `model_dump` (python and json) holds the keys of the one family in use and validates again to an equal model with the same trigger, alone and in a RunConfig (the time-family key list written out, as before the step); a sweep axis `ignition.stage1.at_depth_m` over the shipped silo_hot_ramp_on_track (t_ign_s -2.0, reference release) and silo_cold (t_ign_s 0.5, the reference inherited from the baseline) of silo_screening_1d and silo_screening_2d gives points stated by the depth alone (run dict and `model_fields_set`), stage2 untouched; a variant `{at_speed_mps: 30}` the speed alone | exact |
+| `test_config.py::test_ki030_inputs_are_refused` (16 cases), `::test_ki030_same_validators_refuse_the_further_inputs` (19 cases), `::test_ki030_bounds_are_named_inclusive_and_integers_stay_numbers`, `::test_ki030_shipped_files_resolve_with_every_value_as_written` | "Experiment schema (planar)", strict numbers (KI-030 closed, SP7 step S4): each of KI-030's sixteen inputs (`stroke_m` true, "100" and inf; `fixed.stage1_fraction` "0.05"; `paired_pad` "yes"; `net_accel_g`, `brake_decel_g`, `carriage_mass_t` inf; `t_ign_s` NaN, inf, 1e9, -1e9; `exit_altitude_m` NaN, -1000, 5000; `startup.t_ramp_s` inf) edited into silo_offload_2d (sweeps and sensitivity dropped) is refused by `resolve_experiment` with one pydantic error of the expected type (`float_type`, `bool_type`, `finite_number`, `less_than_equal`, `greater_than_equal`) at the field, the unedited base accepted; nineteen further inputs of survey 02 section 4.2 refused the same way; the bounds are `T_IGN_LIMIT_S` 3600 s and `EXIT_ALTITUDE_LIMIT_M` 500 m, inclusive (the next double refused; -30 m accepted); YAML integers held as floats, a bool, "100" and "1e3" refused; every shipped experiment file loads through `cli.load_experiment` and every resolved run holds its assist and ignition blocks, and the offload block its values, exactly as written (numbers from YAML int or float, bools from YAML bools); the four pinned planar files match their digests | raises (type and location) / exact |
 | `test_config_planar.py::test_shipped_planar_resolved_dicts_match_the_pinned_digests`, `::test_pinned_digest_is_the_sha256_of_the_json_text` | "Experiment schema (planar)", regression pins: every run and vehicle dict of the four Phase 2 planar experiments (`PINNED_EXPERIMENTS`; the offload experiments of SP1 step 8 are not pinned) has the sha256 of its `json.dumps` text captured before SP1 step 1; the number of pinned dicts equals the count the YAML declares (1 + variants + grid points, twice when paired, + 2 per sensitivity run and parameter + bound re-runs and their baselines + cases: 16, 60, 4, 10); the digest equals hashlib's of the literal JSON text and moves with a value, an added key or the key order | exact (sha256) |
 | `test_config_planar.py::test_offload_experiments_fly_the_screened_runs` (2 cases), `::test_silo_cold_200m_releases_at_the_exit_speed_of_silo_cold`, `::test_offload_sweeps_stay_inside_the_push_and_below_the_coast_apex`, `::test_offload_energy_inputs_close_on_the_gate_vehicle_and_its_sources`, `::test_offload_block_cases_arms_and_derived_names`, `::test_offload_bridge_is_the_headline_case_on_the_readme_loads_fork` | the pre-registered offload experiments of SP1 step 8 ("Experiment schema (planar)", the shipped experiments; docs/phases/inputs/2026-10-03-sp1-preregistration.md): their pad and silo runs are silo_screening_2d's (silo_bridge_2d_readme's) resolved dicts, key order included; silo_cold_200m's exit speed is the double sqrt(2 a g0 L) of silo_cold's own a and L, both built pushes release at it, and its acceleration is half of silo_cold's (1.5 g0); every sweep names the stage-1 case on its own variant, rebuilt on the point's run; depths within the stroke, converted to sqrt(2 (L - d) / a) after push start (0 m at release); heights at least 100 m below v_e^2 / (2 g_eff), g_eff = mu/R_E^2 - (omega_E cos(lat) sin(az))^2 R_E, a closed-form height converted to 2 h / (v_e + sqrt(v_e^2 - 2 g_eff h)) and also an event height; the fixed-exit-speed points at a_cold L_cold / L; each stage's RP-1 and its LOX (287.4 and 75.2 t, copied into the test) are the split "<LOX> LOX + <RP-1> RP-1" written in the vehicle file's propellant source and quoted in the fuel's source, and RP-1 + LOX = each stage's load, the heating value 18,500 Btu/lb x 2.326 kJ/kg per Btu/lb rounded to 0.01 MJ/kg and not above it, both sourced; pad controls of three modes, the paired pad on the headline only, penalty rows m_d1 + dm restated assumed, fixed cases at their fraction of m_p1, two arms per headline-sensitivity parameter, `sensitivity.of` empty; every derived run name valid within MAX_NAME_LEN; the bridge is the headline case alone on the README-loads fork, without an energy block | exact; 1e-15 relative; 1e-12 relative (conversions, energy sums) |
 | `test_planar_pipeline.py::test_written_outputs_keep_the_captured_structure`, `::test_summary_matches_the_capture_in_the_capture_environment`, `::test_capture_helpers_see_added_keys_columns_and_files`, `::test_output_capture_records_the_git_state_it_was_taken_in`, `::test_recorded_silo_payloads_carry_their_provenance` | regression pins: the fast experiment writes the captured files, metrics.json key paths, resolved_config.yaml keys and CSV columns (the planar column constants); its provenance-free summary.md has the captured sha256 (capture environment only; skipped elsewhere, failed with LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) and the tracked text is the one that digest belongs to; the helpers on hand-written records (key paths in first-seen order, an added key, a removed column, a reordered list, a new file); output_capture.json carries `captured_at` (keys `git`, `dirty`, `launchsim_from_checkout`, the hash not `no-git`) and no `reference_commit`, which only resolved_digests.json holds (c587a08, the helper's `REFERENCE_COMMIT`), and `capture_provenance` returns `no-git`, not dirty, not from the checkout for a directory outside any checkout and the hash and dirty flag of `results_io.git_info` for this one; the recorded silo_screening_2d P* (silo_cold 27,553.227114190096 kg as the phase file quotes it; the pad's equal to the calibration record's amended re-run) round to the cells of the tracked summary.md, within half its last printed decimal (0.05 kg), and equal the untracked metrics.json where it is on disk | exact / 0.05 kg against the printed cells |
@@ -8639,6 +9250,34 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_assist_energy.py::test_hot_full_thrust_energy_closed_forms` | E_drive + W_thrust = (a + g) a [M0 t_p^2/2 - mdot t_p^3/3], W_thrust = (1 - f_imp) T L, delta_mech = M_exit (a + g) L, massflow = mdot (a + g) a t_p^3/6, f_imp in {0, 0.5, 1}, both omega_p | 1e-10 relative; residual_rel < 1e-9 |
 | `test_assist_energy.py::test_planar_prelude_closes_with_rotation` | the planar planner's track prelude with the site's omega_p (g_eff = g_ref = mu/R_E^2 - omega_p^2 R_E written here, the on-track thrust T_vac - p(0) A_e) meets the hot closed forms | 1e-10 relative; residual_rel < 1e-9 |
 | `test_assist_energy.py::test_ramp_straddling_the_push_closes` | closure only for a ramp lit inside the push; release at t_push | residual_rel < 1e-9; abs(s - L) < 1e-9 m |
+| `test_linear_motor.py::test_force_law_vertical_rise_force_and_power_phases` (m_c 0 and 20 t) | "Linear motor", force law, vertical, cold: at every integrator step of the push the rise from F_0 = M g (v = j t^2/2, s = j t^3/6, j = (F_max - M g)/(M t_r)), the force phase (a_f = F_max/M - g) and the power phase from v_c = 50 m/s (t(v), s(v) with v_inf = P/(M g)); the drive force on its closed form at every step; drive_ramp_end at t_r exactly with (s_r, v_r), power_limit at (t_c, s_c, v_c), the release at (t_e, v_e) of s(v_e) = L | 1e-9 relative (steps relative to L, v_e, t_e) |
+| `test_linear_motor.py::test_force_law_horizontal_on_an_injected_track` | "Linear motor", force law on an injected StraightTrack at phi = 0: F_0 = 0, j = F_max/(M t_r), a = F_max/M, then v^3 = v_c^3 + 3 P (s - s_c)/M and v^2 = v_c^2 + 2 P (t - t_c)/M at every step and at the release; N/m = g | 1e-9 relative; normal load 1e-15 |
+| `test_linear_motor.py::test_acceleration_law_jerk_ramp_and_plateau`, `::test_acceleration_law_force_cap_binds`, `::test_acceleration_law_power_cap_binds`, `::test_step_command_capped_from_push_start_logs_drive_cap_at_t0` | "Linear motor", acceleration law: the jerk ramp v = a t^2/(2 t_r), s = a t^3/(6 t_r) and the plateau v = a (t - t_r/2), s = a (t - t_r/2)^2/2 + a t_r^2/24 at every step, v_e^2 = 2 a L - a^2 t_r^2/12, t_push = t_r/2 + v_e/a, equal to the bound model's estimate, felt (a + g)/g0 on the plateau, no cap event; a force cap binding at t_1 = t_r a_F/a_cmd (drive_cap there), then sddot = a_F and F = F_max; a power cap at v_p = P/(M (a + g)) (drive_cap and power_limit at t_p = t_r/2 + v_p/a), then the power phase; a step command capped from push start logs drive_cap at t = 0 and flies sqrt(2 a_F L) in sqrt(2 L/a_F) | 1e-9 relative; estimate and felt 1e-12 |
+| `test_linear_motor.py::test_stop_taper_position_form` (both laws; s_t = 20, 23.30677966101695, 10.195 m and L - a t_r^2/6, `TAPER_LENGTHS_M`; rtol 1e-11 and 1e-10) | "Linear motor", the stop taper over the last s_t metres (the unfloored taper weight and the second flight to the release: with a floor at w = 0 and without that flight 23.30677966101695 m missed the release by 1.2e-9 at rtol 1e-11, 10.195 m by 2.3e-10 at rtol 1e-10 and L - a t_r^2/6, the taper starting at the end of the rise, by 5.6e-8 at rtol 1e-10): taper_start at s_0 = L - s_t with v_0^2 = 2 a s_0 - a^2 t_r^2/12 and t_0 = t_r/2 + v_0/a; in the taper v^2 = v_0^2 + (a/s_t)(s_t^2 - (L - s)^2) and s(t) = L - [s_t cos Omega u - (v_0/Omega) sin Omega u], Omega = sqrt(a/s_t), at every step; v_e^2 = v_0^2 + a s_t, t_e = t_0 + atan(s_t Omega/v_0)/Omega | 1e-9 relative |
+| `test_linear_motor.py::test_force_and_power_never_exceed_their_limits` (six pushes) | "Linear motor": F <= F_max and F sdot <= P_max (1 + 1e-12) at every integrator step and every sampled ASSIST row, cold, hot (f_imp 0 and 1), ramped, both laws, and the binding limit reached | 1e-12 relative |
+| `test_linear_motor.py::test_assist_energy_identity_cold_hot_and_ramped` | "Assist energy identity" with the linear motor injected through `sim.simulate`: the residual recomputed from the budget's fields, cold, hot and ramped, both laws; cold E_drive = M (v_e^2/2 + g L), W_thrust = massflow = 0 | residual < 1e-9 (CLAUDE.md 1e-6; measured below 1.1e-15: force law cold 6.2e-16, hot 1.0e-15, ramped 6.6e-16, acceleration law cold 0); E_drive 1e-9 |
+| `test_linear_motor.py::test_hot_interface_force_on_the_force_plateau` (f_imp 0, 0.5, 1) | "Linear motor": hot with full thrust on a 20 t carriage, at every step after the rise F = F_max, F_int = (m_v/M) F_max - T (m_c + f_imp m_v)/M and felt (F_max + (1 - f_imp) T)/M | 1e-9 relative |
+| `test_linear_motor.py::test_hot_push_rises_from_the_holding_force` | "Linear motor", the holding force on a flown hot push (full thrust from push start, f_imp 0.5, 20 t carriage, 0 < (1 - f_imp) T < M_0 g): the bound F_0 = M_0 g - (1 - f_imp) T with M_0 = m0 - mdot t_ramp/2 + m_c, sddot(0) = 0, and F = F_0 + (F_max - F_0) t/t_r at every step of the rise | 1e-12 relative; sddot(0) 1e-12 g0 |
+| `test_linear_motor.py::test_track_peaks_sit_at_the_power_corner_inside_the_rise` | "Linear motor", sub-phases and the sampled peaks: cold force law, t_r = 1 s, the corner inside the rise (P = F_max 10 m/s, 20 t carriage); t_p the root of F_lim(t) j t^2/2 = P; drive_force_peak_N = F_lim(t_p), interface_force_peak_N = (m_v/M) F_lim(t_p), felt_g_track_peak = F_lim(t_p)/(M g0) at t_p - t_push, the power_limit event at t_p; power limited, no plateau (None); no flag | 1e-9 relative; peak time 1e-9 s |
+| `test_linear_motor.py::test_a_power_corner_at_the_rise_end_is_logged_once_without_a_flag` (P = F_max v(t_r) (1, 1 + 1e-12, 1 - 1e-12)) | "Linear motor", watch arming: the power_limit watch at zero at the drive_ramp_end boundary starts binding there: one power_limit event (ASSIST) at t_r with v(t_r) = j t_r^2/2, no disarmed-event flag, power limited | 1e-9 relative; exact |
+| `test_linear_motor.py::test_a_drive_kink_on_the_placeholder_ramp_end_logs_no_ramp_end` | "Linear motor", sub-phases and events: no ramp_end on an unlit push whose drive_ramp_end falls on the placeholder ramp end (a pending ignition with t_r = t_ramp = 2 s: the run's one ramp_end is after the release; a failed push_start stage at t_ign_s = t_r - t_ramp) | exact |
+| `test_linear_motor.py::test_a_ramp_lit_on_the_track_splits_the_thrust_clamp` (lit 0 and 0.1 s before push start; rtol 1e-11 and 1e-10) | "Linear motor", sub-phases and events, the thrust clamp (review pass 2 rerun, P2-m1): the F9's 2 s ramp at sea-level pressure (p_amb A_e = 0.62 MN), a step force law F = F_max = 3 m0 g, f_imp 0, no carriage, a 30 m silo released inside the ramp; with tau the time since ignition, M = M_i (1 - q^2 tau^2), q^2 = T_full/(2 c t_ramp M_i), A = atanh(q tau)/(q M_i), B = int A, Lambda = int ln(M/M_i): before tau_c = t_ramp p_amb A_e/T_full v = F dA - g dtau, s = F (dB - A_0 dtau) - g dtau^2/2; after it the thrust adds -c ln(M/M_c) to v and -c (dLambda - ln(M_c/M_i) dtau) to s, with F - p_amb A_e for F; every step on the closed form, the release time and exit speed, a sub-phase starting at tau_c; fails without the split (`prelude.thrust_clamp_time`: release time 3.5e-12 to 2.3e-10 late); measured 7.4e-15 | 1e-9 relative (steps); 1e-12 relative (release time and exit speed) |
+| `test_linear_motor.py::test_a_power_corner_just_short_of_the_track_end_still_releases_at_l` (rtol 1e-11 and 1e-10) | "Linear motor", the release tie: cold force law, the power corner 0.5e-6 m before L (within ATOL_M, beyond `RELEASE_TIE_M`); the push flies on from the power_limit crossing to the track end: the release state at s = L, its speed and time on the power phase's closed form over the last 0.5e-6 m, one power_limit 0.5e-6 m before L (to 1e-10 m) at t_c and v_c; fails with an ATOL_M tie | 1e-12 L (position); 1e-9 relative |
+| `test_linear_motor.py::test_a_power_corner_just_beyond_the_release_leaves_the_exit_exact` (P = (1 + e) F_max v_e, e = 1e-7, 3.1e-4, 1e-2; rtol 1e-11 and 1e-10) | "Linear motor", the second flight to the release: a corner never reached but inside the release step's trial stages; the exit speed and time of the force phase, v_e^2 = v_r^2 + 2 a_f (L - s_r), t_e = t_r + (v_e - v_r)/a_f, no power_limit, F = F_max after the rise; fails at e = 3.1e-4, rtol 1e-10, without the second flight | 1e-9 relative; exact (force) |
+| `test_linear_motor.py::test_a_force_cap_released_in_the_taper_is_split_and_logged` (rtol 1e-11 and 1e-10) | "Linear motor", the two-way watch: acceleration law, a_cmd = 4 g0 capped by F_max = M (3 g0 + g), a 20 m taper; events drive_cap, drive_ramp_end, taper_start, drive_cap_end in that order, drive_cap_end at x_1 = (a_F/a_cmd) s_t with its closed-form t and v; F = F_max while capped, M (a_cmd w(s) + g) < F_max after, where v^2 = v_1^2 + (a_cmd/s_t)(x_1^2 - x^2) at every step; the release v_e^2 = v_1^2 + (a_cmd/s_t) x_1^2, t_e = t_1 + atan(Omega x_1/v_1)/Omega, Omega = sqrt(a_cmd/s_t); fails with one-way watches | 1e-9 relative; exact (force while capped), 1e-12 relative (after) |
+| `test_linear_motor.py::test_a_power_cap_binding_briefly_across_the_taper_start_is_split` (s_t 20 and 38.5 m; delta = -1e-4, -1e-5, -1e-9, -1e-11, `BRIEF_CAP_OFFSETS`; rtol 1e-11 and 1e-10) | "Linear motor", *Arming* and *Second flight* (review pass 3, P3-M1): acceleration law, a = 3 g0, F_max = 2 M (a + g), cold, P = (1 + delta) M (a + g) v_0 with v_0 the uncapped speed at the taper start s_0 = L - s_t, a binding of about 0.3 ms down to 0.03 ns: power_limit and drive_cap at v_p = (1 + delta) v_0, t_p = t_r/2 + v_p/a; the vertical power phase into the taper (taper_start at s_0); both ends where M (a w(s) + g) v = P on that phase; then x'' = -(a/s_t) x to v_e^2 = v_1^2 + Omega^2 x_1^2, t_e = t_1 + atan(Omega x_1/v_1)/Omega; the run releases with no flag and logs each event once, in that order, at its closed-form t, s and v (no end at the instant of its start); fails with the earlier arming (the planner loops at delta = -1e-4, rtol 1e-10, and every case fails) and without the fresh rule (RuntimeError at delta = -1e-11); with one second flight kept whatever ended it it failed at delta = -1e-4, rtol 1e-10 (1.1e-9) until the scan for passed-over crossings (`prelude._passed_over`, review pass 1 rerun), which now finds that binding in the first flight; measured worst 4.6e-13 (delta = -1e-9: drive_cap armed guarded), the others 7e-15 | 1e-9 relative (positions relative to L) |
+| `test_linear_motor.py::test_a_power_cap_binding_briefly_inside_the_taper_is_found_and_flown` (delta = -1e-6 and -6e-6, `INSIDE_CAP_OFFSETS`; rtol 1e-11 and 1e-10) | "Linear motor", *Passed over* and *Arming* (review pass 1 rerun, H1): acceleration law, a = 3 g0, F_max = 2 M (a + g), cold, a 90 m taper, P = (1 + delta) times the peak of the need M (a x/s_t + g) v on the harmonic taper (v^2 = v_0^2 + Omega^2 (s_t^2 - x^2), x = L - s, at s = 36.9 m), a binding of 2.8 and 7.0 ms inside one integrator step: taper_start at (t_0, s_0, v_0); power_limit and drive_cap where the need first reaches P (x_b, t_b = t_0 + (acos(x_b/R) - phi_0)/Omega); the vertical power phase (v_inf = P/(M g)) while it binds; both ends where M (a w(s) + g) v = P on that phase; then x'' = -(a/s_t) x to v_e^2 = v_1^2 + Omega^2 x_1^2, t_e = t_1 + atan(Omega x_1/v_1)/Omega; the release with no flag, each event once in order at its closed-form t, s and v; through `sim.simulate` push_power_limited True and the peak drive power P; fails without the scan (`prelude._passed_over`: no event, the exit 7.8e-10 and 1.15e-8 fast) and, at delta = -6e-6 and rtol 1e-10, without `prelude._settle_fresh` (power_limit_end 1.7e-8 s late); measured worst 7.8e-13 (events), the exit 1.6e-15 | 1e-9 relative (positions relative to L); peak power 1e-12 |
+| `test_linear_motor.py::test_a_watch_changing_side_a_third_time_at_one_instant_raises` | "Linear motor", *Arming*, the no-progress guard: `prelude._WatchBook.set_side` allows two changes of one watch within ZERO_SPAN_S (a touch), each making it fresh, and raises RuntimeError naming the watch on the third; changes 2 ZERO_SPAN_S apart count anew | raises / exact |
+| `test_linear_motor.py::test_stall_at_push_start_ends_the_run_on_the_track` (both laws), `::test_stall_condition_is_the_bound_closed_form` | "Linear motor", the stall: F_max = 0.9 M g cold gives status drive_stall, the flag written out, only push_start, one zero-length ASSIST phase, no release items, 1-D and planar; `metrics.STALL_UNAVAILABLE_TRACK_METRICS`, the run-wide felt peak and brake_force_N None (the push-start row is the drive at F_max with no support reaction; review pass 1 rerun, P1-m2), the drive force F_max, zero drive power and energy and the normal loads kept, 1-D and in the planar track metrics; the bound condition F_max + (1 - f_imp) T(0) <= M_0 g sin phi stalls at equality and not 1e-9 above, never on a horizontal track; the bound PushStart and F_0 = max(0, M_0 g - (1 - f_imp) T(0)) | exact |
+| `test_linear_motor.py::test_a_hot_stall_raises_no_interface_tensile_flag` | "Linear motor", *Stall* (review pass 2 rerun, P2-m2 and P2H-m1): lit 0.5 s before push start (T_vac(0) = T_full/4), f_imp 1, F_max 1 MN, a 20 t carriage, with F_max <= M_0 g and m_v g - T(0) > 0 (vacuum and sea-level thrust); the stall row's F_int = (m_v/M_0) F_max - T(0) (1-D, its closed form) is negative and `track_flags` without stalled reads it as tension, while `sim.simulate` (1-D) and `sim.simulate_planar` (the planar prelude) raise the drive_stall flag alone; fails when `track_flags` ignores stalled | 1e-9 relative; exact |
+| `test_linear_motor.py::test_release_referenced_on_track_ignition_is_refused`, `::test_pending_ignition_lights_at_the_flown_release` (t_ign_s 0 and 0.5) | "Linear motor", push time and ignition (D-SP7-25): a release-referenced t_ign_s < 0 refused by `resolve_run` (the line written out) and by the prelude, accepted from push_start, at t_ign_s >= 0, with fails, and on constant_accel; `pending_until_release` by case; the pending ignition lights at t_release + t_ign_s exactly in 1-D (ignition event) and planar (`FlightStart.t_ign1_s`, `t_ign_abs_s`, the ignition event of `to_kick`), the push unlit, nothing burned on the track, no flag | exact |
+| `test_linear_motor.py::test_a_taper_toward_a_negative_holding_force_ends_in_drive_limit` | "Linear motor": hot, the force law's taper toward F_h = M g - T < 0 ends in drive_limit after taper_start with the drive's own flag (written out) | exact |
+| `test_linear_motor.py::test_braking_closed_forms` (m_c 0 and 22 t) | "Linear motor", braking: d = v^2/(2 a_b), t = v/a_b, F = m_c (a_b - g sin phi) (vertical and horizontal), E = (1/2) m_c v^2 (1 - g sin phi/a_b) = F d, all 0 for m_c = 0, facility L + d; a run's braking metrics at its exit speed | 1e-15 relative (F d 1e-14) |
+| `test_linear_motor.py::test_linear_motor_metrics_and_assumption_lines`, `::test_planar_track_metrics_of_a_linear_motor_push` | "Linear motor", metrics: LINEAR_MOTOR_METRICS last, in order (1-D; planar right after the push settings, net_accel_* None); the settings, push_power_limited (True power-limited, False with the corner never reached and at the tie k = P_max/(F_max v_e) = 1 with v_e = sqrt(2 a_f L - a_f^2 t_r^2/12), True at k = 0.999), v_e/t_push, the felt plateau F_max/M/g0, L and track_end, the peak power P_max and the electrical peak P_max/eta (0 for a negative power); a constant_accel run has none of the keys; the ten assumption lines, four written out (the shaft line with its biases both ways, the ignition line) and the acceleration law's taper and shaft lines | exact; 1e-12 relative (plateau, peak) |
+| `test_linear_motor.py::test_linear_motor_config_si_properties_and_build`, `::test_linear_motor_config_refusals` (39 cases), `::test_linear_motor_dump_states_the_given_keys`, `::test_depth_bound_applies_to_every_track_drive`, `::test_union_tags_and_the_app_form` | "Linear motor", config: both blocks validate, YAML integers held as floats, the SI properties (kN, MW, g0, t), `build_assist` through `ASSIST_MODELS` (the unbound model, the buried track); refused: the law's keys, the taper at the stroke, a null optional key, strict finite numbers (a bool and a numeric string for each of the ten numbers, NaN, inf), the bounds (zero force, power and command; a negative rise and taper; an efficiency above 1, a negative impingement), a sealed shaft, an assist-family key and release_speed_mps; the model's `CONTROL_LAWS` equal `config.ControlLaw`; the dump leaves out None keys and validates again (python and json); the depth bound on both drives (`TRACK_DRIVE_CONFIGS`), a depth within it refused where the specs are built; `ASSIST_UNION_TAGS` derived from the union, `PLANNED_MODELS == ("cable_winch",)`, the app form's tags, its site choices and a request naming the drive refused | raises (message or type) / exact |
+| `test_linear_motor.py::test_fires_on_first_step_is_the_guards_own_test` (x' = +-1 from x = 0, direction +-1) | "Event rules", the disarm guard: `engine.fires_on_first_step` is True exactly when `integrate_phase` disarms the event at zero with a note (moving into its direction), False when it moves away | exact |
+| `test_linear_motor.py::test_push_boundaries_merge_the_drive_kinks`, `::test_thrust_clamp_time_is_where_t_vac_reaches_the_back_pressure`, `::test_existing_models_keep_their_push` | "Linear motor", the protocol seam: without a drive kink the boundaries are the thrust kinks as before; a drive kink or the thrust clamp merged once (dropped at or before push start); `prelude.thrust_clamp_time` at t_ign + t_ramp share (ramp) and t_ign - tau ln(1 - share) (lag), share = p_amb A_e/T_full, where T_vac = p_amb A_e (1e-12) and the delivered thrust leaves zero, None for a step, a failed schedule, vacuum and share >= 1; constant_accel and none exact, returning themselves, no kink, no watch, no stall; the linear motor's kink at t_r (none for a step), its watches by law and taper, no estimate unbound | exact |
+| `test_planar_pipeline.py::test_trajectory_key_drops_the_efficiency_for_constant_accel_and_the_linear_motor` | "Reporting definitions (planar)", the sensitivity reuse: the drive efficiency is energy-only (one trajectory key at 0.5 and 0.6) for constant_accel and, since SP7 step S4, the linear motor (P_max mechanical at the carriage), and trajectory-relevant for another model (cable_winch); the two drives' keys differ | exact |
 | `test_silo.py::test_cold_push_kinematics_and_drive_force` | v_exit = sqrt(2 a L), t = sqrt(2L/a), s = a t^2/2, F_drive = M (a + g_eff), m_c in {0, 20 t} ("Silo model") | 1e-10 relative |
 | `test_silo.py::test_vertical_track_carries_no_normal_load`, `::test_horizontal_track_unit_level` | N = m (kappa sdot^2 + g_eff cos phi): 0 at phi = pi/2, m g_eff at phi = 0 (unit level), sddot = a unchanged | abs(N) < 1e-6 N; 1e-10 relative |
 | `test_silo.py::test_cold_felt_acceleration_and_interface_force`, `::test_peak_felt_axial_g_folds_in_the_track` | felt = a + g_eff = 39.2182 m/s^2 = 3.9991 g0; F_int = m_v (a + g_eff) = 21.2786 MN; run-wide peak = max(track, flight) with its phase (5 g0 push: ASSIST) | 1e-10 relative (hand numbers to 1e-4 as a cross-check) |
@@ -8646,7 +9285,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_silo.py::test_interface_tensile_flag_for_a_slow_hot_push` | 0.5 g0 hot with f_imp = 1: F_drive > 0, F_int < 0 -> `interface_tensile` | sign / flag |
 | `test_silo.py::test_drive_limit_when_a_ramp_crosses_zero_drive_force`, `::test_drive_force_negative_at_push_start_ends_at_t0` | `drive_limit` at the root of m(t)(a + g) = T(t) (the quadratic solved in the test); already negative at t0 -> ends at t0, release items None; `allow_negative_drive_force` completes with `drive_braking`, work_in equals the drive_limit run's net E_drive at the root | root 1e-9 relative; work 1e-9 relative |
 | `test_silo.py::test_ramp_ending_at_the_track_end_is_logged_once` | `ramp_end` logged once, at release or inside the push | exact (event list) |
-| `test_silo.py::test_assist_registry_builds_every_config_model` | `build_assist` through `ASSIST_MODELS`; unregistered key raises | exact / raises |
+| `test_silo.py::test_assist_registry_builds_every_config_model` | `build_assist` through `ASSIST_MODELS` (none, constant_accel and, since SP7 step S4, linear_motor: the registry's keys are the buildable configs' tags); unregistered key raises | exact / raises |
 | `test_silo.py::test_cold_energy_power_and_facility` | E_drive = M (a + g) L, P_peak = F v_exit, d_brake = v^2/(2 a_brake) = L a/a_brake = 60 m, facility 160 m | 1e-10 relative |
 | `test_silo.py::test_hot_full_thrust_energy_and_peak_power` | E_drive = (a + g) a [M0 t_p^2/2 - mdot t_p^3/3] - T L, W_thrust = T L, P(f_imp = 1)/P_cold = (M0 - mdot t_p)/m0, P(f_imp = 0) = ((M0 - mdot t_p)(a + g) - T) v_exit; P_hot at least 35 % below P_cold | 1e-10 relative |
 | `test_silo.py::test_hot_push_peak_power_from_the_dense_output` | 0.6 g0 hot: vertex value F_drive(0)^2 a/(4 mdot (a + g)) at t* = F_drive(0)/(2 mdot (a + g)) inside the push; braking minimum at release | 1e-9 relative (t* to 1e-6 s abs; the sampled maximum within 1e-3; measured 3e-14) |
@@ -8674,7 +9313,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_convergence.py::test_tight_settings_are_actually_tighter` | every tightened run has > 4x the rows and the settings are 10x / 2x | exact |
 | `test_readme_numbers.py` (18 tests) | README hand numbers through `sim.run` on the shipped experiment, labelled calibration-flavoured: 76.71 m/s, 2.607 s, 3.999 g0, 21.5 MN, 2.2 GJ, 1.65 GW, 1.2 MWh, 60 m, failed apex 300.3 m / 7.83 s, burnout deltas +85/+70/+79/+64 m/s, hot-full 1.28 / 2.10 GJ and 0.97 / 1.60 GW, P_hot at least 35 % below P_cold; exact checks: silo_instant - variant = d J_grav at identical dv_vac with g_eff (t_d + t_r/2) and g_eff (t_d + tau) from constants, identity line, unexplained gain | the plan's tolerances (0.01 m/s, 0.001 s, 0.001 g0, 2-4 % on the hand numbers, +/- 0.8 and +/- 2 m/s); 1e-6 m/s on d J_grav; residual < 0.01 m/s |
 | `test_results_io.py::test_compare_identity_line_closes_on_the_tiny_experiment` | the identity line d(speed) = d(release) + d(dv_vac) - d(gravity, duration) - d(gravity, altitude) - ... ("Figures of merit"); `payload_equiv_kg` both signs against the two-stage rocket equation written in the test | residual < 0.01 m/s; 1e-9 relative |
-| `test_results_io.py::test_sensitivity_rows_compare_against_both_baselines_and_table_shape`, `::test_run_experiment_writes_sensitivity_and_the_no_sensitivity_switch`, `::test_si_value_converts_by_the_yaml_suffix`, `::test_variant_rows_insert_the_ignition_rows_and_the_flight_pair_only_when_it_differs`, `::test_summary_formatting_prints_rounding_noise_as_zero`, `::test_sweep_index_frame_has_the_curated_columns_and_rejects_axis_collisions`, `::test_write_plots_curated_panels_with_safe_names` | sensitivity semantics, SI conversion of the perturbed value, the summary table, display snapping, the sweep index, the plotted panels ("Figures of merit", Files) | structural / 1e-12 relative |
+| `test_results_io.py::test_sensitivity_rows_compare_against_both_baselines_and_table_shape`, `::test_run_experiment_writes_sensitivity_and_the_no_sensitivity_switch`, `::test_si_value_converts_by_the_yaml_suffix`, `::test_variant_rows_insert_the_ignition_rows_and_the_flight_pair_only_when_it_differs`, `::test_summary_formatting_prints_rounding_noise_as_zero`, `::test_sweep_index_frame_has_the_curated_columns_and_rejects_axis_collisions`, `::test_write_plots_curated_panels_with_safe_names` | sensitivity semantics, SI conversion of the perturbed value (`_MW` to W among the suffixes: `assist.power_max_MW` 1100.5 gives 1.1005e9 W), the summary table, display snapping, the sweep index, the plotted panels ("Figures of merit", Files) | structural / 1e-12 relative |
 | `test_results_io.py::test_preflight_refuses_a_bad_ramp_start_before_any_directory`, `::test_preflight_visits_every_resolved_run_and_passes_the_shipped_experiments` | "Silo model", ramp-start conversions, the preflight: on the tiny experiment's 1 g0, 20 m silo (v_exit = sqrt(2 g0 20) = 19.8 m/s, apex 20.0 m) a variant at 25 m/s, a sweep point at 25 m and a sensitivity run whose -10 % acceleration puts 19 m/s above its exit speed (sqrt(0.9) x 19.8 m/s) are refused by `sim.check_resolved`, naming the run, before `run_experiment` or `run_sweep` writes anything (no directory, no run started); `sim.every_resolved_run` lists the runs of the planar pin's inventory in its order, and the preflight passes on every shipped experiment | raises / exact |
 | `test_results_io.py` (every other test) | results directories, metrics.json round trip without NaN, summary encoding in a cp1252 subprocess, `git_info` states, name safety, failure markers | structural |
 | `test_cli.py::test_full_experiment_writes_identity_lines_and_sensitivity`, `::test_full_sweep_writes_every_point_and_index`, `::test_full_experiment_plots_for_one_variant` | the shipped experiment end to end: every identity line closes, the bound lines, the yardstick lines, the 16 sensitivity cases, 12 + 9 + 3 sweep points, the curated plots | residual < 0.01 m/s; structural |
@@ -8881,4 +9520,4 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_structure_reporting.py::test_uncharged_cases_leave_out_structural_penalty_and_unpushed_cases` | fix round 3, S3A-NUM-03: `results_io.offload_uncharged_cases` keeps the plain and linear_motor cases and leaves out the structural case, the penalty row and the case of a variant without a push (drive `OFFLOAD_NO_ASSIST_MODEL`), which the drive item names as flying without a push; the structure item built from it never names that case | exact |
 | `test_structure_reporting.py::test_block_caveats_and_case_cells_of_a_structural_pass` | through `planar_offload` on fake runs: a pass with a structural case, a penalty row, a plain case, a payload case and structural arms writes block caveats naming the structural case's and payload case's runs with their mass and layer and set, the arms counted, the plain case as charging none and the penalty row with its assumed mass (fix round 2), the tanks item with the penalty row's exception, the basis line, the "assumed ... added" cells (`STRUCTURE_INSTEAD_OF_PENALTY_CELL`, the penalty's tonnes, 0), no imposed sub-section, the banner's push caveat; the same pass without a structure block keeps SP1's caveats word for word and names the penalty row | exact text |
 | `test_golden_dump_fields.py::test_dataclasses_dumped_field_by_field_keep_their_fields`, `::test_dataclasses_reached_by_attribute_keep_their_fields`, `::test_pinned_budget_fields_are_the_recorded_golden_keys` | D-SP7-27: the field lists of every dataclass the 1-D golden dump reaches (LossBudget and AssistEnergyBudget, converted field by field, and frozen; Result, RunResult, ResolvedRun, SweepPoint, SensitivityRow, ExperimentResult, SweepResult, read by attribute) pinned in order; the two budgets' lists equal the keys of every non-null budget in the golden objects.json files | exact |
-| `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |
+| `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` and `assist/linear_motor` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |

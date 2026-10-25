@@ -305,9 +305,15 @@ class VerticalPlanner:
         ``propellant`` (ValueError) events. At release the state maps into the ascent
         frame (``map_release``), t_release is the track-end root, and ``ascend`` runs
         the flight. Events logged on the track: push_start, ignition (when inside the
-        push), ramp_end, drive_limit, release. A first stage stated by
-        ``height_method: event`` flies the push unlit and is lit by ``ascend`` at the
-        altitude event z_exit + h after the release (a pending ignition).
+        push), ramp_end, the drive's kink and watch events (the linear motor's
+        drive_ramp_end, power_limit, power_limit_end, drive_cap, drive_cap_end,
+        taper_start), drive_limit, release; a
+        drive that cannot start the push ends the run at once (status drive_stall). A
+        first stage stated by ``height_method: event`` flies the push unlit and is lit by
+        ``ascend`` at the altitude event z_exit + h after the release (a pending
+        ignition); one referenced to the release on a drive whose push time is not
+        exact (the linear motor) flies it unlit and is lit by ``ascend`` at t_release +
+        t_ign_s.
         """
         stage0 = self.vehicle.stages[0]
         spec = self.ignition[stage0.name]

@@ -53,6 +53,7 @@ from launchsim.assist import build_assist
 from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.atmosphere import ambient_scalar
 from launchsim.compare import ANCHOR_NAMES
+from launchsim.config import ASSIST_UNION_TAGS as CONFIG_ASSIST_UNION_TAGS
 from launchsim.config import (
     EXPLORATORY_LABEL,
     HEIGHT_METHOD_CLOSED_FORM,
@@ -61,7 +62,6 @@ from launchsim.config import (
     OFFLOAD_FIXED_KEYS,
     OFFLOAD_FIXED_MODES,
     OFFLOAD_GROSS_MODES,
-    PLANNED_MODELS,
     SEARCHED_FIGURES,
     SHARED_KEYS,
     ResolvedExperiment,
@@ -184,9 +184,12 @@ FIXED_KEY_WORDS: dict[str, tuple[str, str]] = {
 }
 """An imposed offload's key in a form's one-line description (``describe``): the tanks it
 is taken from, and the word before 'load' for a fraction (its load, each load)."""
-ASSIST_UNION_TAGS = frozenset({"none", "constant_accel", *PLANNED_MODELS})
+ASSIST_UNION_TAGS = frozenset(CONFIG_ASSIST_UNION_TAGS)
 """Discriminator tags pydantic puts into an error location after ``assist``; dropped
-from the location a refusal names."""
+from the location a refusal names: every tag of ``config.AssistConfig``
+(``config.ASSIST_UNION_TAGS``, derived from the union, so ``linear_motor`` stays in it
+after leaving PLANNED_MODELS in SP7 step S4; the form itself offers no linear motor,
+D-SP7-08)."""
 
 # ------------------------------------------------------------------ the form's fields
 

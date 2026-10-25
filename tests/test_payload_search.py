@@ -77,7 +77,10 @@ beyond m_p2 in the search)."""
 GAMMA_20_RAD = math.radians(20.0)
 TEST_SEARCH_RTOL = 1.0e-9
 """Search-mode rtol of the planar tests (CLAUDE.md: rtol <= 1e-9 in tests); the
-convergence tests alone fly the shipped 1e-8 (amendment 3)."""
+shipped 1e-8 is flown by the convergence tests (amendment 3: tests/test_convergence_2d.py
+and the convergence test of tests/test_offload.py) and by the regression re-runs of
+recorded results, which must reproduce what that budget recorded (docs/physics.md,
+"Payload and gamma* search", Validation)."""
 SHORT_BY_KG = 3_000.0
 """How far [kg] above the payload root at 20 deg the short-of-orbit test flies."""
 STAGE2_EXTRA_DRY_KG = 32_000.0

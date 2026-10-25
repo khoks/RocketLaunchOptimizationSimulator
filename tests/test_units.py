@@ -18,6 +18,7 @@ def test_scalar_round_trips() -> None:
         (units.t_to_kg, units.kg_to_t, 25.6),
         (units.from_g, units.to_g, 3.0),
         (units.kwh_to_j, units.j_to_kwh, 1.2e3),
+        (units.mw_to_w, units.w_to_mw, 1100.5),  # the linear motor's power (SP7 step S4)
     ]
     for forward, back, value in pairs:
         assert math.isclose(back(forward(value)), value, rel_tol=1e-12)
@@ -30,6 +31,7 @@ def test_documented_factors() -> None:
     assert units.t_to_kg(1.0) == 1000.0
     assert units.from_g(1.0) == G0_MPS2
     assert units.kwh_to_j(1.0) == J_PER_KWH
+    assert units.mw_to_w(1.0) == 1.0e6 and units.w_to_mw(1.0e6) == 1.0
 
 
 def test_array_inputs() -> None:

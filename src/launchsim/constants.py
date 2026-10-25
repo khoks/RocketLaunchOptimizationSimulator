@@ -7,6 +7,8 @@ NASA SP-8007 (the knockdown of an unstiffened cylinder in axial compression, 196
 and 2020 Eq. 9-10), each with its source in its docstring; structure.py uses them. A
 published table whose rows are used whole (Gerard & Lakshmikantham's Table 2) lives with
 its module instead.
+The KI-030 bounds on an ignition time and a track exit altitude (validation ranges
+that config.py applies) are named here too.
 """
 
 MU_EARTH_M3S2: float = 3.986004418e14
@@ -55,6 +57,19 @@ compression, gamma = 1 - 0.901 (1 - exp(-phi)), phi = sqrt(r/t)/16: NASA SP-8007
 SP8007_PHI_DIVISOR: float = 16.0
 """Divisor [-] of sqrt(r/t) in the SP-8007 knockdown exponent phi = sqrt(r/t)/16 (the
 1/16 of NASA SP-8007 (1968) Eq. 5 and NASA/SP-8007-2020/REV 2 Eq. 10)."""
+
+# The KI-030 bounds (D-SP7-28; design 4.1's file table): validation ranges that
+# config.py applies to a run's numbers, not physics.
+
+T_IGN_LIMIT_S: float = 3600.0
+"""Bound on an ignition's ``t_ign_s`` [s]: it lies within +/- this of its reference
+(KI-030, D-SP7-28). An hour either way holds every shipped value (stage 1 at -2, 0, 0.5
+or 1 s, later stages at 0 s) with room to spare; a time beyond it is a typo, not a
+launch."""
+EXIT_ALTITUDE_LIMIT_M: float = 500.0
+"""Bound on a track's ``exit_altitude_m`` [m]: it lies within +/- this of the pad datum
+z = 0 (KI-030, D-SP7-28). The shipped files use 0 m; a test flies a mouth 30 m below the
+datum (tests/test_failed_ignition.py), which the bound keeps."""
 
 # Recorded SP1 values the SP7 structural model places on (results of the model, not physical
 # constants: kept here because structure.py is pure and the project allows numbers only here

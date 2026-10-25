@@ -55,7 +55,16 @@ from launchsim.dynamics import PLANAR_LAYOUT, PlanarDynamics2D
 from launchsim.losses import LossBudget, loss_budget, rocket_equation_closure
 from launchsim.metrics import metrics_record
 from launchsim.phases import ASCENT_KINDS, ZERO_SPAN_S, PhaseResult, RunTrace
-from launchsim.units import deg_to_rad, from_g, j_to_kwh, km_to_m, kn_to_n, kwh_to_j, t_to_kg
+from launchsim.units import (
+    deg_to_rad,
+    from_g,
+    j_to_kwh,
+    km_to_m,
+    kn_to_n,
+    kwh_to_j,
+    mw_to_w,
+    t_to_kg,
+)
 from launchsim.vehicle import (
     Vehicle,
     ideal_dv_mps,
@@ -86,6 +95,7 @@ COMPARISON_BASIS = (
 SI_SUFFIX_CONVERSIONS: dict[str, tuple[Callable[[float], float], str]] = {
     "t": (t_to_kg, "kg"),
     "kN": (kn_to_n, "N"),
+    "MW": (mw_to_w, "W"),
     "deg": (deg_to_rad, "rad"),
     "km": (km_to_m, "m"),
     "g": (from_g, "m/s^2"),
@@ -358,8 +368,9 @@ def perturbed_value(case_run: ResolvedRun, param: str) -> float | None:
 def si_value(param: str, value_yaml: float | None) -> tuple[float | None, str]:
     """A dotted config parameter's value in SI: (value, unit). The unit follows the
     key's YAML suffix (SI_SUFFIX_CONVERSIONS: ``_t`` -> kg through units.t_to_kg,
-    ``_kN`` -> N, ``_deg`` -> rad, ``_km`` -> m, ``_g`` -> m/s^2, ``_kWh`` -> J; ``_s``,
-    ``_m``, ``_kg`` ... unchanged), read off the last non-index segment of the path
+    ``_kN`` -> N, ``_MW`` -> W (the linear motor's power limit), ``_deg`` -> rad,
+    ``_km`` -> m, ``_g`` -> m/s^2, ``_kWh`` -> J; ``_s``, ``_m``, ``_kg`` ...
+    unchanged), read off the last non-index segment of the path
     (``vehicle.screening.stage_isp_eff_s.0`` -> ``stage_isp_eff_s`` -> s). A key with
     no listed suffix (``assist.drive_efficiency``) is dimensionless: unchanged, unit
     DIMENSIONLESS_UNIT. None stays None."""
@@ -1747,11 +1758,16 @@ def offload_energy(
 TRAJECTORY_FREE_RUN_KEYS: tuple[tuple[str, ...], ...] = (("name",),)
 """Run-dict paths that do not change a planar trajectory for any assist model (the
 run's name)."""
-ENERGY_ONLY_ASSIST_KEYS: dict[str, tuple[str, ...]] = {"constant_accel": ("drive_efficiency",)}
+ENERGY_ONLY_ASSIST_KEYS: dict[str, tuple[str, ...]] = {
+    "constant_accel": ("drive_efficiency",),
+    "linear_motor": ("drive_efficiency",),
+}
 """Per assist model, the ``assist`` keys that enter only the energy bookkeeping, not the
-trajectory: constant_accel prescribes the net acceleration, so its drive efficiency
-enters only electrical_energy = work / efficiency. A model not listed has none (a
-linear motor with an electrical power limit would fly differently with another
+trajectory: constant_accel prescribes the net acceleration, and the linear motor's power
+limit P_max is mechanical at the carriage (SP7 step S4, design 4.6), so for both the
+drive efficiency enters only electrical_energy = work / efficiency (and, for the linear
+motor, electrical_power_peak_W = mechanical peak / efficiency). A model not listed has
+none (a drive with an electrical power limit would fly differently with another
 efficiency), so every key of it changes the trajectory key."""
 TRAJECTORY_FREE_VEHICLE_KEYS: tuple[tuple[str, ...], ...] = (("screening",),)
 """Vehicle-dict paths that do not change a planar trajectory (the screening Isp, the

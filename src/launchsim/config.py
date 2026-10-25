@@ -39,9 +39,22 @@ file (``resolve_structure_settings``, ``ResolvedStructureCase``).
 
 Limits enforced as validation errors: Earth rotation only on planar_2d runs (the 1-D
 model keeps omega_p = 0: "a Phase 2 feature"), vertical tracks only ("a Phase 3
-feature"), only the ``none`` and ``constant_accel`` assist models (``linear_motor`` and
-``cable_winch`` are "planned for Phase 3"), no heating-rule fairing on a vertical_1d run
-("a planar_2d feature"), and ``end: insertion`` only on planar_2d runs.
+feature"), only the ``none``, ``constant_accel`` and ``linear_motor`` assist models
+(``linear_motor`` since SP7 step S4; ``cable_winch`` is "planned for Phase 3"), no
+heating-rule fairing on a vertical_1d run ("a planar_2d feature"), and ``end:
+insertion`` only on planar_2d runs. On a ``linear_motor`` run stage 1 never lights on
+the track by a release-referenced ``t_ign_s < 0`` (``resolve_run``: the push time is the
+flown push's, not known before it; such an ignition is stated from ``push_start``).
+
+Strict numbers (KI-030, D-SP7-28): every number of ConstantAccelConfig, TrackConfig,
+StartupOverride, IgnitionConfig, OffloadFixedConfig and OffloadCaseConfig is strict and
+finite per field (and every number of LinearMotorConfig, built strict in SP7 step S4),
+and their bools and OffloadConfig's ``pad_control`` are strict bools, so a bool, a
+numeric string, NaN or inf is refused instead of coerced (a YAML integer is still a
+number); ``t_ign_s`` lies within +/- T_IGN_LIMIT_S and ``exit_altitude_m``
+within +/- EXIT_ALTITUDE_LIMIT_M (both named in constants.py). Strictness is set per
+field, never on ``_Model`` or the shared blocks, whose tuple fields are written as YAML
+lists.
 """
 
 from __future__ import annotations
@@ -69,7 +82,13 @@ from pydantic import (
 )
 
 from launchsim import structure, units
-from launchsim.constants import OMEGA_EARTH_RADS, P_SEA_LEVEL_PA, R_EARTH_M
+from launchsim.constants import (
+    EXIT_ALTITUDE_LIMIT_M,
+    OMEGA_EARTH_RADS,
+    P_SEA_LEVEL_PA,
+    R_EARTH_M,
+    T_IGN_LIMIT_S,
+)
 from launchsim.vehicle import (
     HEATING_TRIGGER,
     OFFLOAD_MODES,
@@ -90,9 +109,21 @@ from launchsim.vehicle import (
 
 VEHICLE_PREFIX = "vehicle."
 OVERRIDE_NOTE = "override"
-PlannedModel = Literal["linear_motor", "cable_winch"]
+PlannedModel = Literal["cable_winch"]
 PLANNED_MODELS: tuple[str, ...] = get_args(PlannedModel)
-"""Assist models the README names that are not implemented yet (one source of truth)."""
+"""Assist models the README names that are not implemented yet (one source of truth;
+``linear_motor`` left the list in SP7 step S4)."""
+ControlLaw = Literal["force", "acceleration"]
+"""How a ``linear_motor`` drives the push (docs/physics.md, "Linear motor"): ``force``,
+the force rising from the holding force to F_max over t_r, under the power limit: F =
+min(F_lim(t), F_max, P_max / sdot); ``acceleration``, a jerk-limited net acceleration
+command a(t) = a_cmd min(1, t / t_r) capped by F_max and P_max / sdot. The model's
+``assist.linear_motor.ControlLaw`` is the same set (a test keeps them equal)."""
+CONTROL_FORCE: ControlLaw = "force"
+CONTROL_ACCELERATION: ControlLaw = "acceleration"
+LINEAR_MOTOR_OPTIONAL_KEYS = ("accel_command_g", "stop_taper_m")
+"""The optional keys of a ``linear_motor`` block: a key given must hold a number (a null
+does not unset it), and ``model_dump`` leaves out the one holding None."""
 SWITCH_KEYS = ("model", "kind")
 """Discriminator keys: a dict whose value for one of these differs from the base's
 replaces the base dict wholesale when merging, so no stale keys of the old choice
@@ -603,10 +634,18 @@ def planar_site(site: dict[str, Any]) -> PlanarSiteConfig:
 
 class TrackConfig(_Model):
     """Straight track: angle above horizontal [deg] (90 only until Phase 3) and the
-    altitude of its exit [m] relative to the pad datum z = 0."""
+    altitude of its exit [m] relative to the pad datum z = 0, within +/-
+    EXIT_ALTITUDE_LIMIT_M. Both are strict finite numbers (KI-030): a bool, a numeric
+    string, NaN or inf is refused, never coerced; a YAML integer is accepted."""
 
-    angle_deg: float = VERTICAL_TRACK_DEG
-    exit_altitude_m: float = 0.0
+    angle_deg: float = Field(default=VERTICAL_TRACK_DEG, strict=True, allow_inf_nan=False)
+    exit_altitude_m: float = Field(
+        default=0.0,
+        ge=-EXIT_ALTITUDE_LIMIT_M,
+        le=EXIT_ALTITUDE_LIMIT_M,
+        strict=True,
+        allow_inf_nan=False,
+    )
 
     @field_validator("angle_deg")
     @classmethod
@@ -637,8 +676,8 @@ class ConstantAccelConfig(_Model):
     ways (ASSIST_KEY_FAMILIES; docs/physics.md, "Silo model"): ``net_accel_g``, the net
     acceleration a in units of g0, or ``exit_speed_mps``, the speed v [m/s] along the
     track at its exit, from which the acceleration is derived, a = v^2 / (2 L) (a push
-    from rest at constant acceleration; push time 2 L / v). Both must be > 0 and the
-    exit speed finite, and so must the derived acceleration. A key counts as given when
+    from rest at constant acceleration; push time 2 L / v). Both must be > 0, and so
+    must the derived acceleration, which must be finite too. A key counts as given when
     it is present, an explicit null included (pydantic's ``model_fields_set``; the merge
     rule of EXCLUSIVE_KEY_FAMILIES counts it the same way): both keys present is refused
     whatever their values, neither present is refused, and the one key present must
@@ -646,27 +685,34 @@ class ConstantAccelConfig(_Model):
     therefore left out of ``model_dump`` (``_dump_one_push_key``): a dump states the
     push by its one key, as the input did, and validates again to an equal model.
 
+    Every number of the block is strict and finite and ``allow_negative_drive_force`` a
+    strict bool (KI-030): a bool, a numeric string, NaN or inf is refused, never
+    coerced, and a YAML integer is accepted (``stroke_m: 100`` holds 100.0).
+
     The ``_g`` and ``_t`` fields hold the YAML-side units and exist only for the file
     boundary and reporting; dynamics and the assist model must use the SI properties
     net_accel_mps2, carriage_mass_kg and brake_decel_mps2."""
 
     model: Literal["constant_accel"]
-    net_accel_g: float | None = Field(default=None, gt=0.0)
-    exit_speed_mps: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    stroke_m: float = Field(gt=0.0)
-    carriage_mass_t: float = Field(default=0.0, ge=0.0)
-    brake_decel_g: float = Field(gt=0.0)
-    drive_efficiency: float = Field(default=1.0, gt=0.0, le=1.0)
-    exhaust_impingement_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    net_accel_g: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    exit_speed_mps: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    stroke_m: float = Field(gt=0.0, strict=True, allow_inf_nan=False)
+    carriage_mass_t: float = Field(default=0.0, ge=0.0, strict=True, allow_inf_nan=False)
+    brake_decel_g: float = Field(gt=0.0, strict=True, allow_inf_nan=False)
+    drive_efficiency: float = Field(default=1.0, gt=0.0, le=1.0, strict=True, allow_inf_nan=False)
+    exhaust_impingement_fraction: float = Field(
+        default=0.0, ge=0.0, le=1.0, strict=True, allow_inf_nan=False
+    )
     shaft: Literal["vented"] = "vented"
-    allow_negative_drive_force: bool = False
+    allow_negative_drive_force: bool = Field(default=False, strict=True)
     track: TrackConfig = TrackConfig()
 
     @model_validator(mode="after")
     def _one_push_parameterisation(self) -> ConstantAccelConfig:
         """Exactly one push key given (present, a null counting as given), holding a
         number; on the exit-speed path the derived a = v^2 / (2 L) [m/s^2] finite and
-        > 0 (an overflow or underflow of absurd inputs, or an infinite stroke)."""
+        > 0 (an overflow or underflow of absurd inputs; an infinite stroke is refused
+        by its field first, KI-030)."""
         keys = [key for family in ASSIST_KEY_FAMILIES for key in family]
         given = [key for key in keys if key in self.model_fields_set]
         if len(given) != 1:
@@ -725,6 +771,121 @@ class ConstantAccelConfig(_Model):
         return units.from_g(self.brake_decel_g)
 
 
+class LinearMotorConfig(_Model):
+    """A force- and power-limited linear motor along a straight track (SP7 step S4;
+    docs/physics.md, "Linear motor"; design D-SP7-24).
+
+    ``stroke_m`` is the track length L [m] (> 0); ``control`` the law (ControlLaw):
+    ``force`` (F = min(F_lim(t), F_max, P_max / sdot), the force rising linearly from the
+    holding force over the rise time) or ``acceleration`` (a net acceleration command
+    a(t) = a_cmd min(1, t / t_r), the force solved from the track equation and capped by
+    F_max and P_max / sdot); ``force_max_kN`` the force limit F_max [kN] (> 0);
+    ``power_max_MW`` the mechanical power limit P_max [MW] at the carriage (> 0; the
+    electricity is the drive work over ``drive_efficiency``, which moves no trajectory);
+    ``force_rise_time_s`` the rise time t_r [s] (>= 0; 0 is a step); ``accel_command_g``
+    the command a_cmd [g0] (> 0; required by ``acceleration``, refused by ``force``);
+    ``stop_taper_m`` the length s_taper [m] of the stop taper over the end of the stroke
+    (>= 0 and below the stroke; optional, None or 0 for none); ``carriage_mass_t`` [t]
+    (>= 0); ``brake_decel_g`` the carriage's constant total braking deceleration after
+    release [g0] (> 0); ``drive_efficiency`` in (0, 1]; ``exhaust_impingement_fraction``
+    in [0, 1]; ``shaft`` vented only (the sealed shaft is S5); ``track`` the straight
+    track. No key of the assist family (ASSIST_KEY_FAMILIES): the push is stated by its
+    limits, not by an acceleration or an exit speed.
+
+    Every number is strict and finite (KI-030's rule): a bool, a numeric string, NaN or
+    inf is refused, a YAML integer accepted. An optional key given must hold a number (a
+    null does not unset it, as for ConstantAccelConfig), and ``model_dump`` leaves out
+    the optional key that holds None (``_dump_given_keys``), so a dump validates again to
+    an equal model. The ``_kN``, ``_MW``, ``_g`` and ``_t`` fields hold the YAML-side
+    units; the model uses the SI properties (units.py)."""
+
+    model: Literal["linear_motor"]
+    stroke_m: float = Field(gt=0.0, strict=True, allow_inf_nan=False)
+    control: ControlLaw
+    force_max_kN: float = Field(gt=0.0, strict=True, allow_inf_nan=False)
+    power_max_MW: float = Field(gt=0.0, strict=True, allow_inf_nan=False)
+    force_rise_time_s: float = Field(ge=0.0, strict=True, allow_inf_nan=False)
+    accel_command_g: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    stop_taper_m: float | None = Field(default=None, ge=0.0, strict=True, allow_inf_nan=False)
+    carriage_mass_t: float = Field(default=0.0, ge=0.0, strict=True, allow_inf_nan=False)
+    brake_decel_g: float = Field(gt=0.0, strict=True, allow_inf_nan=False)
+    drive_efficiency: float = Field(default=1.0, gt=0.0, le=1.0, strict=True, allow_inf_nan=False)
+    exhaust_impingement_fraction: float = Field(
+        default=0.0, ge=0.0, le=1.0, strict=True, allow_inf_nan=False
+    )
+    shaft: Literal["vented"] = "vented"
+    track: TrackConfig = TrackConfig()
+
+    @model_validator(mode="after")
+    def _control_keys(self) -> LinearMotorConfig:
+        """An optional key given holds a number; ``accel_command_g`` given exactly when
+        the law is ``acceleration``; the stop taper shorter than the stroke."""
+        for key in LINEAR_MOTOR_OPTIONAL_KEYS:
+            if key in self.model_fields_set and getattr(self, key) is None:
+                raise ValueError(
+                    f"linear_motor {key} is null: a key given must hold a number (a null "
+                    "does not unset a key)"
+                )
+        if self.control == CONTROL_ACCELERATION and self.accel_command_g is None:
+            raise ValueError("linear_motor control acceleration needs accel_command_g")
+        if self.control == CONTROL_FORCE and self.accel_command_g is not None:
+            raise ValueError(
+                "linear_motor control force takes no accel_command_g (the force law flies "
+                "its limits; the command is the acceleration law's)"
+            )
+        if self.stop_taper_m is not None and not self.stop_taper_m < self.stroke_m:
+            raise ValueError(
+                f"linear_motor stop_taper_m {self.stop_taper_m:g} m must be shorter than the "
+                f"stroke ({self.stroke_m:g} m)"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _dump_given_keys(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The default dump without the optional keys that hold None
+        (LINEAR_MOTOR_OPTIONAL_KEYS), so ``model_validate`` of a dump gives an equal
+        model (a dumped null would be refused)."""
+        out: dict[str, Any] = handler(self)
+        for key in LINEAR_MOTOR_OPTIONAL_KEYS:
+            if key in out and getattr(self, key) is None:
+                del out[key]
+        return out
+
+    @property
+    def force_max_N(self) -> float:
+        """Force limit F_max [N]."""
+        return units.kn_to_n(self.force_max_kN)
+
+    @property
+    def power_max_W(self) -> float:
+        """Mechanical power limit P_max [W] at the carriage."""
+        return units.mw_to_w(self.power_max_MW)
+
+    @property
+    def accel_command_mps2(self) -> float | None:
+        """Net acceleration command a_cmd [m/s^2] of the acceleration law (None for the
+        force law)."""
+        return None if self.accel_command_g is None else units.from_g(self.accel_command_g)
+
+    @property
+    def carriage_mass_kg(self) -> float:
+        """Carriage mass [kg]."""
+        return units.t_to_kg(self.carriage_mass_t)
+
+    @property
+    def brake_decel_mps2(self) -> float:
+        """Carriage braking deceleration [m/s^2] (total, gravity included)."""
+        return units.from_g(self.brake_decel_g)
+
+
+TRACK_DRIVE_CONFIGS: tuple[type[ConstantAccelConfig], type[LinearMotorConfig]] = (
+    ConstantAccelConfig,
+    LinearMotorConfig,
+)
+"""The assist configs that drive a track of ``stroke_m`` metres (the depth-bound check of
+``RunConfig._ignition_rules`` applies to each)."""
+
+
 class PlannedAssistConfig(_Model):
     """Placeholder for drives that exist in the README but not yet in the code. Extra keys
     are allowed so that the "planned for Phase 3" message wins over an extra-key error."""
@@ -739,16 +900,26 @@ class PlannedAssistConfig(_Model):
 
 
 AssistConfig = Annotated[
-    NoAssistConfig | ConstantAccelConfig | PlannedAssistConfig, Field(discriminator="model")
+    NoAssistConfig | ConstantAccelConfig | LinearMotorConfig | PlannedAssistConfig,
+    Field(discriminator="model"),
 ]
+ASSIST_UNION_TAGS: tuple[str, ...] = tuple(
+    tag
+    for member in get_args(get_args(AssistConfig)[0])
+    for tag in get_args(member.model_fields["model"].annotation)
+)
+"""Every ``model`` discriminator tag of the AssistConfig union, in union order (the
+buildable models and the planned ones): one tuple, derived from the union, that the
+app's error locations strip (``appform.ASSIST_UNION_TAGS``)."""
 
 
 class StartupOverride(_Model):
-    """Experiment-side startup override (bare numbers); unset fields keep the vehicle's."""
+    """Experiment-side startup override (bare numbers, strict and finite, KI-030); unset
+    fields keep the vehicle's."""
 
     kind: StartupKind | None = None
-    t_ramp_s: float | None = Field(default=None, ge=0.0)
-    tau_s: float | None = Field(default=None, ge=0.0)
+    t_ramp_s: float | None = Field(default=None, ge=0.0, strict=True, allow_inf_nan=False)
+    tau_s: float | None = Field(default=None, ge=0.0, strict=True, allow_inf_nan=False)
 
     def resolve(self, base: Startup) -> Startup:
         """Merge this override over the vehicle's Startup.
@@ -805,16 +976,26 @@ class IgnitionConfig(_Model):
     ``model_dump`` leaves out the keys of the families not in use
     (``_dump_one_ramp_start``), so a dump states the ramp start as the input did and
     validates again to an equal model; a time-family dump is the dict it was before
-    the other families existed."""
+    the other families existed.
 
-    t_ign_s: float = 0.0
+    Every number is strict and finite and ``fails`` a strict bool (KI-030): a bool, a
+    numeric string, NaN or inf is refused, never coerced, and a YAML integer is
+    accepted; ``t_ign_s`` lies within +/- T_IGN_LIMIT_S of its reference."""
+
+    t_ign_s: float = Field(
+        default=0.0,
+        ge=-T_IGN_LIMIT_S,
+        le=T_IGN_LIMIT_S,
+        strict=True,
+        allow_inf_nan=False,
+    )
     reference: Literal["release", "push_start"] = "release"
-    at_depth_m: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
-    at_speed_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
-    at_height_m: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    at_depth_m: float | None = Field(default=None, ge=0.0, strict=True, allow_inf_nan=False)
+    at_speed_mps: float | None = Field(default=None, ge=0.0, strict=True, allow_inf_nan=False)
+    at_height_m: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
     height_method: HeightMethod | None = None
     startup: StartupOverride | None = None
-    fails: bool = False
+    fails: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def _one_ramp_start(self) -> IgnitionConfig:
@@ -1425,8 +1606,11 @@ class RunConfig(_Model):
     def _ignition_rules(self) -> RunConfig:
         """``fails`` needs ``end: impact``; ``push_start`` and a ramp start stated by
         depth, speed or height need an assist model (a pad has no push and no track
-        exit); a depth no deeper than the stroke (``at_depth_m <= stroke_m``). The
-        first-stage-only rule needs the vehicle's stage order (``resolve_run``)."""
+        exit); a depth no deeper than the stroke (``at_depth_m <= stroke_m``) on any
+        track drive (TRACK_DRIVE_CONFIGS; generalised from constant_accel in SP7 step
+        S4: the preflight still converts a depth for constant_accel only). The
+        first-stage-only rule and the linear motor's release-referenced rule need the
+        vehicle's stage order (``resolve_run``)."""
         if any(ign.fails for ign in self.ignition.values()) and self.end != "impact":
             raise ValueError("ignition fails: true requires end: impact")
         pushed = [n for n, ign in self.ignition.items() if ign.reference == "push_start"]
@@ -1445,7 +1629,7 @@ class RunConfig(_Model):
                     "(a pad run has no push and no track exit)"
                 )
             depth = ign.at_depth_m
-            if isinstance(self.assist, ConstantAccelConfig) and depth is not None:
+            if isinstance(self.assist, TRACK_DRIVE_CONFIGS) and depth is not None:
                 if depth > self.assist.stroke_m:
                     raise ValueError(
                         f"ignition {name}: at_depth_m {depth:g} m is deeper than the "
@@ -1584,13 +1768,20 @@ class OffloadFixedConfig(_Model):
     1) of each stage's load (``both_fraction``, mode both). A key counts as given when it
     is present, a null included (as the exclusive families count it), so a null is
     refused, never ignored. A mass at or beyond the stage's load is refused when the
-    experiment is resolved against its vehicle."""
+    experiment is resolved against its vehicle. Every key is a strict finite number
+    (KI-030): a bool, a numeric string, NaN or inf is refused, never coerced."""
 
-    stage1_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    stage1_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
-    stage2_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    stage2_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
-    both_fraction: float | None = Field(default=None, gt=0.0, lt=1.0)
+    stage1_t: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    stage1_fraction: float | None = Field(
+        default=None, gt=0.0, lt=1.0, strict=True, allow_inf_nan=False
+    )
+    stage2_t: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    stage2_fraction: float | None = Field(
+        default=None, gt=0.0, lt=1.0, strict=True, allow_inf_nan=False
+    )
+    both_fraction: float | None = Field(
+        default=None, gt=0.0, lt=1.0, strict=True, allow_inf_nan=False
+    )
 
     @model_validator(mode="after")
     def _exactly_one(self) -> OffloadFixedConfig:
@@ -1751,15 +1942,19 @@ class OffloadCaseConfig(_Model):
     ``structure`` (SP7 step S3, StructureCaseConfig: the assisted run carries the modelled
     structural mass of its push, a structural case; a stage-1 solve only, never with the
     assumed penalty, paired_pad or stage2_offload_t; the experiment needs a ``structure``
-    block naming the file)."""
+    block naming the file). The two masses are strict finite numbers and ``paired_pad`` a
+    strict bool (KI-030): a bool, a numeric string, NaN or inf is refused, never
+    coerced."""
 
     name: str
     of: str
     solve: OffloadMode | None = None
     fixed: OffloadFixedConfig | None = None
-    stage2_offload_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    stage1_dry_mass_added_t: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    paired_pad: bool = False
+    stage2_offload_t: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    stage1_dry_mass_added_t: float | None = Field(
+        default=None, gt=0.0, strict=True, allow_inf_nan=False
+    )
+    paired_pad: bool = Field(default=False, strict=True)
     structure: StructureCaseConfig | None = None
 
     @model_validator(mode="after")
@@ -1889,11 +2084,12 @@ class OffloadConfig(_Model):
     alias): ``reference`` is a key of the ignition time family (IGNITION_KEY_FAMILIES),
     which no other config model may use as a field name (the exclusive-family rule is by
     key name; tests/test_config.py checks it). The block is not a run dict, so the YAML
-    key itself is never merged by that rule."""
+    key itself is never merged by that rule. ``pad_control`` is a strict bool (KI-030):
+    1 or "yes" is refused, never read as true."""
 
     reference_run: str = Field(alias="reference")
     cases: list[OffloadCaseConfig] = Field(min_length=1)
-    pad_control: bool = False
+    pad_control: bool = Field(default=False, strict=True)
     sensitivity_of: list[str] = Field(default_factory=list)
     energy: OffloadEnergyConfig | None = None
 
@@ -2805,7 +3001,11 @@ def _check_planar_vehicle(name: str, run: RunConfig, vehicle: VehicleConfig) -> 
 def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any]) -> ResolvedRun:
     """Validate one run dict and its vehicle dict together (vertical_1d: no heating-rule
     fairing; planar_2d: see _check_planar_vehicle; every stage after the first ignites
-    by time, release-referenced and at t_ign_s >= 0, never by depth, speed or height)."""
+    by time, release-referenced and at t_ign_s >= 0, never by depth, speed or height; on
+    a ``linear_motor`` run the first stage is not lit on the track by a
+    release-referenced t_ign_s < 0: the drive's push time is a result of the flown push
+    (``push_time_exact`` False), so such an ignition cannot be placed before the push
+    and is stated from ``push_start`` instead; D-SP7-25)."""
     run_dict = {**copy.deepcopy(run_dict), "name": name}
     run = RunConfig.model_validate(run_dict)
     vehicle = VehicleConfig.model_validate(vehicle_dict)
@@ -2822,6 +3022,20 @@ def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any
         raise ValueError(f"run {name!r}: ignition names unknown stages {sorted(unknown)}")
     for i, stage in enumerate(vehicle.stages):
         ignition = run.ignition_for(stage.name)
+        if (
+            i == 0
+            and isinstance(run.assist, LinearMotorConfig)
+            and ignition.ramp_start_keys == IGNITION_KEY_FAMILIES[0]
+            and ignition.reference == "release"
+            and ignition.t_ign_s < 0.0
+            and not ignition.fails
+        ):
+            raise ValueError(
+                f"run {name!r}, ignition {stage.name}: a release-referenced t_ign_s "
+                f"{ignition.t_ign_s:g} s (lit on the track) is refused on the linear_motor, "
+                "whose push time is known only once the push is flown; state it with "
+                "reference push_start"
+            )
         if i > 0 and ignition.reference == "push_start":
             raise ValueError(
                 f"run {name!r}, ignition {stage.name}: reference push_start is only for "
