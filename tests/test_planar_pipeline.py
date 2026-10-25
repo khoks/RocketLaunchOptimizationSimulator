@@ -985,16 +985,20 @@ def test_fixed_guidance_failure_is_a_typed_status(repo_root: Path, tmp_path: Pat
     assert "guidance_failed" in (out / "summary.md").read_text(encoding="utf-8")
 
 
-def test_trajectory_key_drops_the_efficiency_only_for_constant_accel() -> None:
-    """The drive efficiency is energy-only for constant_accel (the same trajectory key
-    at two efficiencies) and trajectory-relevant for any other assist model."""
+def test_trajectory_key_drops_the_efficiency_for_constant_accel_and_the_linear_motor() -> None:
+    """The drive efficiency is energy-only for constant_accel and, since SP7 step S4,
+    for the linear_motor, whose power limit is mechanical at the carriage (the same
+    trajectory key at two efficiencies), and trajectory-relevant for any other assist
+    model (the planned cable_winch here)."""
 
     def key(model: str, efficiency: float) -> str:
         run = {"name": "x", "assist": {"model": model, "drive_efficiency": efficiency}}
         return compare.trajectory_key(SimpleNamespace(run_dict=run, vehicle_dict={}))
 
     assert key("constant_accel", 0.5) == key("constant_accel", 0.6)
-    assert key("linear_motor", 0.5) != key("linear_motor", 0.6)
+    assert key("linear_motor", 0.5) == key("linear_motor", 0.6)
+    assert key("cable_winch", 0.5) != key("cable_winch", 0.6)
+    assert key("linear_motor", 0.5) != key("constant_accel", 0.5)
 
 
 def test_unconstrained_kick_labels_the_dp_star(fast_run: tuple[Any, Path]) -> None:

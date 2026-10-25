@@ -5,12 +5,14 @@ from __future__ import annotations
 import math
 
 from launchsim.constants import (
+    EXIT_ALTITUDE_LIMIT_M,
     G0_MPS2,
     MU_EARTH_M3S2,
     OMEGA_EARTH_RADS,
     R_EARTH_M,
     SP8007_KNOCKDOWN_A,
     SP8007_PHI_DIVISOR,
+    T_IGN_LIMIT_S,
 )
 
 
@@ -19,6 +21,9 @@ def test_literals_are_the_documented_values() -> None:
     assert R_EARTH_M == 6_378_137.0
     assert OMEGA_EARTH_RADS == 7.2921150e-5
     assert G0_MPS2 == 9.80665
+    # the KI-030 bounds (SP7 step S4, D-SP7-28), which config.py applies
+    assert T_IGN_LIMIT_S == 3600.0
+    assert EXIT_ALTITUDE_LIMIT_M == 500.0
 
 
 def test_surface_gravity_and_equatorial_rotation_speed() -> None:

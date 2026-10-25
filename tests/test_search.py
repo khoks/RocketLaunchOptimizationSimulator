@@ -71,7 +71,10 @@ G0_DEG = 22.3
 """Toy optimum gamma* [deg], between grid points."""
 TEST_SEARCH_RTOL = 1.0e-9
 """Search-mode rtol of the planar tests (CLAUDE.md: rtol <= 1e-9 in tests); the
-convergence tests alone fly the shipped 1e-8 (amendment 3)."""
+shipped 1e-8 is flown by the convergence tests (amendment 3: tests/test_convergence_2d.py
+and the convergence test of tests/test_offload.py) and by the regression re-runs of
+recorded results, which must reproduce what that budget recorded (docs/physics.md,
+"Payload and gamma* search", Validation)."""
 SMALL_GRID = {"gamma_grid_deg": (18.0, 26.0, 4.0), "gamma_refine_maxiter": 6}
 """A three-point gamma* grid (18, 22, 26 deg) and a short refine for whole planar
 searches in tests."""

@@ -41,6 +41,7 @@ from scipy.optimize import minimize_scalar
 
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.assist.linear_motor import LinearMotorAssist
 from launchsim.config import (
     RAMP_START_DEPTH,
     RAMP_START_HEIGHT_CLOSED_FORM,
@@ -64,6 +65,8 @@ from launchsim.metrics import (
     _phase_samples,
     _rel_release,
     _track_rows,
+    linear_motor_metrics,
+    stall_unavailable_metrics,
 )
 from launchsim.orbit import orbit_elements
 from launchsim.phases import (
@@ -85,6 +88,7 @@ from launchsim.phases.planar import (
     VERTICAL_RISE,
     PlanarView,
 )
+from launchsim.phases.prelude import DRIVE_STALL
 from launchsim.units import j_to_kwh, to_g
 from launchsim.vehicle import Vehicle
 
@@ -743,9 +747,12 @@ def _peak_items(
 def _run_wide_felt(frame: pd.DataFrame, flight: Peak | None, trace: RunTrace) -> dict[str, Any]:
     """The run-wide peak felt axial acceleration [g0] (the CLAUDE.md item): the largest of
     the sampled hold and track rows of the frame and the flight scan peak, with its time
-    after release [s], the mass there [kg] and the phase kind."""
+    after release [s], the mass there [kg] and the phase kind (a ``drive_stall`` run's
+    push-start row left out, ``metrics.STALL_UNAVAILABLE_TRACK_METRICS``)."""
     best: tuple[float, float | None, float, str] | None = None
     rows = frame[~frame["phase"].isin(PLANAR_ASCENT_KINDS)]
+    if trace.status == DRIVE_STALL:
+        rows = rows[rows["phase"] != ASSIST_KIND]
     if not rows.empty:
         i = int(rows["felt_axial_g"].to_numpy(dtype=float).argmax())
         row = rows.iloc[i]
@@ -937,9 +944,11 @@ PLANAR_REQUIRED_METRICS, and the 1-D ``metrics.track_metrics`` does not write th
 
 
 def prescribed_accel_mps2(assist: AssistModel) -> float | None:
-    """The net acceleration [m/s^2] along the track that a drive prescribes
-    (``ConstantAccelAssist.net_accel_mps2``), or None for a drive that prescribes none
-    (a force- or power-limited drive, whose acceleration is a result, not a setting)."""
+    """The net acceleration [m/s^2] along the track that a drive prescribes as a
+    constant it flies (``ConstantAccelAssist.net_accel_mps2``), or None for the linear
+    motor: its force law prescribes no acceleration, and its acceleration law's command
+    a_cmd, which a cap can cut, is not the acceleration flown (it is in
+    resolved_config.yaml and the drive's control assumption line)."""
     if isinstance(assist, ConstantAccelAssist):
         return float(assist.net_accel_mps2)
     return None
@@ -950,8 +959,9 @@ def push_setting_metrics(assist: AssistModel, track: TrackGeometry) -> dict[str,
     ``net_accel_mps2``, the prescribed net acceleration a along the track [m/s^2],
     whichever way the config stated it (``net_accel_g``, or ``exit_speed_mps`` with a =
     v^2 / (2 L)); and ``net_accel_g`` = a / g0 (g0 the unit, never a gravity model).
-    Both accelerations are None for a drive that prescribes none. Frame: along the
-    track tangent."""
+    Both accelerations are None for the linear motor (no prescribed constant: the force
+    law has none; the acceleration law's command a_cmd, which a cap can cut, is in
+    resolved_config.yaml and its control line). Frame: along the track tangent."""
     accel = prescribed_accel_mps2(assist)
     return {
         "stroke_m": float(track.length_m),
@@ -973,8 +983,11 @@ def planar_track_metrics(
     ASSIST rows (felt_axial_g), plus the planar-only PUSH_SETTING_METRICS (the stroke
     and the net acceleration the push flew, so a reader of metrics.json has them when
     the config states the push by its exit speed). The TRACK_METRIC_ALIASES are written
-    beside their canonical keys, and peak_track_normal_g = max(vehicle, carriage).
-    Frame: the flat track frame with constant g_eff."""
+    beside their canonical keys, and peak_track_normal_g = max(vehicle, carriage). A
+    linear-motor push adds ``metrics.LINEAR_MOTOR_METRICS`` after the push settings
+    (``metrics.linear_motor_metrics``; its net_accel_* stay None); no other drive gains
+    a key. A ``drive_stall`` run writes ``metrics.STALL_UNAVAILABLE_TRACK_METRICS`` as
+    None. Frame: the flat track frame with constant g_eff."""
     rows = frame[frame["phase"] == ASSIST_KIND]
     phases = trace.assist_phases()
     y_rel = trace.y_release
@@ -1022,7 +1035,10 @@ def planar_track_metrics(
         "peak_track_normal_g": max(n_v, n_c),
     }
     out.update({alias: out[canonical] for alias, canonical in TRACK_METRIC_ALIASES.items()})
+    out.update(stall_unavailable_metrics(trace))
     out.update(push_setting_metrics(assist, track))
+    if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
+        out.update(linear_motor_metrics(trace, assist, track, v_exit, max(0.0, p_max)))
     return out
 
 
@@ -1072,7 +1088,9 @@ def ramp_start_metrics(
     Inputs: the RunTrace; stage_name, the first stage's name; spec, its IgnitionSpec
     (``phases.prelude.resolve_ignition``); z_exit_m [m], the altitude of the track exit
     (the silo mouth) in the datum frame, None for a pad; t_push_s [s], the push time the
-    ignition time resolved against (``push_time_estimate``), None for a pad. Output:
+    ignition time resolved against (``push_time_estimate``), None for a pad and for a
+    drive whose push time is not exact (the linear motor, on which no ramp start is
+    converted). Output:
     RAMP_START_METRICS from the stage-1 ``ignition`` event record, every one None when
     stage 1 never lit (a failed ignition): the time after release [s], the altitude
     [m] (negative in the shaft), the depth below the exit z_exit - alt [m] when the

@@ -43,6 +43,7 @@ from launchsim.dynamics import (
 from launchsim.vehicle import ThrustSchedule
 
 if TYPE_CHECKING:
+    from launchsim.assist.base import PushWatch
     from launchsim.config import IntegratorConfig
 
 EventFn = Callable[[float, np.ndarray], float]
@@ -113,9 +114,11 @@ class IntegratorSettings:
     [s] on open-ended phases; sample_dt_s: the output resampling interval [s] (the
     caller's job, from the dense output); dense_output: whether solve_ivp builds the
     dense output (``PhaseResult.dense``; off only for search evaluations, which read
-    event states from ``PhaseResult.y_events`` through ``event_state``; a recorded run
-    needs it on: ``VerticalPlanner`` refuses it off, and ``RunTrace.require_dense``
-    is the check for the reporting path); atol_scale: a
+    event states from ``PhaseResult.y_events`` through ``event_state``, except the push
+    sub-phases of a drive whose push time is not exact, the linear motor, which
+    ``prelude.fly_track`` flies with it on for its scan of passed-over crossings; a
+    recorded run needs it on: ``VerticalPlanner`` refuses it off, and
+    ``RunTrace.require_dense`` is the check for the reporting path); atol_scale: a
     factor (> 0) on every per-state absolute tolerance of a phase (1.0 leaves the
     ``atol_for`` values untouched; a search uses a looser value). dense_output and
     atol_scale are code-level settings with no YAML key.
@@ -370,6 +373,39 @@ def _predict_state(spec: PhaseSpec, t0: float, y0: np.ndarray, h: float) -> np.n
     return y0 + 0.5 * h * (f0 + f1)
 
 
+def first_step_value(
+    spec: PhaseSpec, ev: EventSpec, y0: np.ndarray, settings: IntegratorSettings
+) -> float:
+    """Rule 3's prediction: the event ev's value after one Heun step (``_predict_state``)
+    of first_step = min(first_step_s, span/2) from y0 at spec.t0 (span = t_end - t0,
+    t_end = t0 + t_max_s when open-ended). Inputs: the phase (its t0, t_end, rhs and
+    params), the event, the state y0 and the settings. Output: g at t0 + first_step [the
+    event's unit]. The track prelude also calls it with first_step_s set to a short
+    look-ahead, to take a drive watch's change from t0 (``prelude._arm_watches``) and, with
+    spec.t0 moved to a step end of a flight, to read whether a watch's value is rising
+    there (``prelude._passed_over``)."""
+    t0 = spec.t0
+    t_end = t0 + settings.t_max_s if spec.t_end is None else spec.t_end
+    first_step = min(settings.first_step_s, 0.5 * (t_end - t0))
+    y_pred = _predict_state(spec, t0, np.asarray(y0, dtype=float), first_step)
+    return float(ev.fn(t0 + first_step, y_pred))
+
+
+def fires_on_first_step(
+    spec: PhaseSpec, ev: EventSpec, y0: np.ndarray, settings: IntegratorSettings
+) -> bool:
+    """Whether ``integrate_phase`` would judge the event ev, at zero at (spec.t0, y0), to
+    fire on its first step: rule 3's test itself, which ``integrate_phase`` calls (the
+    event's value after a Heun step of first_step = min(first_step_s, span/2) from y0,
+    against scipy's sign-change test for ev.direction); public so that a test can check
+    it against the disarm guard (the track prelude reads ``first_step_value`` instead,
+    with its own look-ahead, and never asks rule 3). Inputs: the phase (its t0, t_end,
+    rhs and params; its events are not read), the event, the state y0 at t0 and the
+    settings. Meaningful only when |g(t0)| <= ev.zero_tol; the value of g at t0 is not
+    checked here."""
+    return _would_fire(ev.direction, first_step_value(spec, ev, y0, settings))
+
+
 def _pass_through(
     spec: PhaseSpec,
     y0: np.ndarray,
@@ -453,14 +489,11 @@ def integrate_phase(spec: PhaseSpec, y0: np.ndarray, settings: IntegratorSetting
     first_step = min(settings.first_step_s, 0.5 * span)
 
     callables: list[EventFn] = []
-    y_pred: np.ndarray | None = None
     for ev in spec.events:
         g0 = float(ev.fn(t0, y0))
         if abs(g0) <= ev.zero_tol:
-            if y_pred is None:
-                y_pred = _predict_state(spec, t0, y0, first_step)
-            g_pred = float(ev.fn(t0 + first_step, y_pred))
-            if _would_fire(ev.direction, g_pred):
+            if fires_on_first_step(spec, ev, y0, settings):
+                g_pred = first_step_value(spec, ev, y0, settings)
                 callables.append(_event_callable(ev, _guard_value(ev.direction, g_pred)))
                 notes.append(
                     f"event {ev.name} is at zero at t0 = {t0:.6g} s (g = {g0:.3g}, tolerance "
@@ -671,18 +704,21 @@ def ev_liftoff(
     return EventSpec("liftoff", fn, terminal=True, direction=+1, zero_tol=ATOL_KG * g_eff_mps2)
 
 
-def ev_track_end(length_m: float, layout: StateLayout) -> EventSpec:
+def ev_track_end(length_m: float, layout: StateLayout, zero_tol: float = ATOL_M) -> EventSpec:
     """Track end: s - L crosses zero upward (terminal); the vehicle releases there.
 
-    Inputs: the track length L [m]; the track state layout (needs ``s_m``).
-    zero_tol = ATOL_M.
+    Inputs: the track length L [m]; the track state layout (needs ``s_m``); zero_tol
+    [m], ATOL_M by default (a push that stops within ATOL_M of L releases there,
+    ``prelude.fly_track``). The track prelude passes 0 for a drive whose push time is
+    not exact (the linear motor): it releases only at L, so a sub-phase that starts a
+    hair short of L must keep the event armed, not disarmed by rule 3.
     """
     i_s = layout.index("s_m")
 
     def fn(t: float, y: np.ndarray) -> float:
         return y[i_s] - length_m
 
-    return EventSpec("track_end", fn, terminal=True, direction=+1, zero_tol=ATOL_M)
+    return EventSpec("track_end", fn, terminal=True, direction=+1, zero_tol=zero_tol)
 
 
 def ev_drive_limit(params: TrackParams) -> EventSpec:
@@ -701,6 +737,44 @@ def ev_drive_limit(params: TrackParams) -> EventSpec:
 
     return EventSpec(
         "drive_limit", fn, terminal=True, direction=-1, zero_tol=ATOL_KG * params.g_eff_mps2
+    )
+
+
+def push_watch_zero_tol(watch: PushWatch, g_eff_mps2: float) -> float:
+    """The zero tolerance of a drive's PushWatch event by its unit: ATOL_M [m] for a
+    length, ATOL_MPS [m/s] for a speed, ATOL_KG g_eff [N] (the weight of one mass
+    tolerance, as ``ev_drive_limit``) for a force, with g_eff [m/s^2] the track's."""
+    if watch.unit == "m":
+        return ATOL_M
+    if watch.unit == "mps":
+        return ATOL_MPS
+    return ATOL_KG * g_eff_mps2
+
+
+def ev_push_watch(params: TrackParams, watch: PushWatch, *, end: bool = False) -> EventSpec:
+    """A drive's watched crossing (``AssistModel.push_watches``, SP7 step S4): the watch
+    value (``TrackParams.watch_value``, the thrust from the phase's schedule) crossing
+    zero upward (the limit starts binding; the event is watch.name) or, with end True,
+    downward (the limit stops binding; the event is watch.end_name and its function the
+    negated value, so it too fires upward), terminal for the sub-phase: the track
+    prelude logs it, ends the sub-phase there (so the kink is split and its state is a
+    sampled row) and goes on with the push. Inputs: the TrackParams of the sub-phase,
+    the PushWatch and end. zero_tol from the watch's unit (``push_watch_zero_tol``).
+    ValueError for end on a one-way watch (end_name None)."""
+    if end and watch.end_name is None:
+        raise ValueError(f"watch {watch.name!r} is one-way: it has no end event")
+    name = watch.end_name if end and watch.end_name is not None else watch.name
+    sign = -1.0 if end else 1.0
+
+    def fn(t: float, y: np.ndarray) -> float:
+        return sign * params.watch_value(watch, t, y)
+
+    return EventSpec(
+        name,
+        fn,
+        terminal=True,
+        direction=+1,
+        zero_tol=push_watch_zero_tol(watch, params.g_eff_mps2),
     )
 
 

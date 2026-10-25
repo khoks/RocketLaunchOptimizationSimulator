@@ -15,22 +15,59 @@ Along the track the system (vehicle m_v plus carriage m_c, M = m_v + m_c) obeys
 with T_sys = (1 - f_imp) T the part of the vehicle's thrust the system keeps once the
 exhaust impinging on the carriage (fraction f_imp, an amendment to the CLAUDE.md track
 equation stated in docs/physics.md) is taken out, and F_other the model's friction,
-piston and cable terms (zero for the screening drive). The interface force between
-vehicle and carriage is F_int = m_v (sddot + g_eff sin phi) - T (positive: the
-carriage pushes the vehicle).
+piston and cable terms (zero for the screening drive and the linear motor of SP7 step
+S4). The interface force between vehicle and carriage is F_int = m_v (sddot + g_eff sin
+phi) - T (positive: the carriage pushes the vehicle).
+
+The protocol members the force-limited drive needs (SP7 step S4, design D-SP7-24 and
+D-SP7-25) are backward compatible: ``push_time_exact`` (True for the existing models),
+``at_push_start`` (they return themselves), ``kink_times``, ``push_watches`` (both
+empty for them) and ``stall_reason`` (None for them), so for an existing model the
+integration of the push (RHS, sub-phase boundaries, events, step cap) is that of
+SP1.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Protocol
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
 
 import numpy as np
 
 if TYPE_CHECKING:
     from launchsim.config import AssistConfig
+
+type TrackFn = Callable[
+    [float, float, float, np.ndarray, float, float, float, float, TrackGeometry], float
+]
+"""A function of one instant of the push with ``AssistModel.state_rate``'s arguments (t
+[s], s [m], sdot [m/s], the extra states, m_vehicle [kg], m_carriage [kg], the delivered
+thrust [N], g_eff [m/s^2], the track) returning a float in the watch's unit."""
+WatchUnit = Literal["m", "mps", "N"]
+"""Unit of a PushWatch value: a length [m], a speed [m/s] or a force [N]; it sets the
+event's zero tolerance (``phases.engine.ev_push_watch``)."""
+
+
+@dataclass(frozen=True)
+class PushWatch:
+    """A crossing during a push that the planner logs as an event (SP7 step S4):
+    ``name`` is the event name, ``fn`` the watched value (TrackFn) in ``unit``
+    (WatchUnit), and the event fires when the value crosses zero upward (the limit
+    starts binding); the crossing ends the track sub-phase (the kink it marks is split)
+    and the push goes on. A value already past zero at a sub-phase start (at push
+    start, say) is logged there. ``end_name``, for a two-way watch, is the event logged
+    when the value crosses zero downward again (the limit stops binding; also a
+    sub-phase end); None for a one-way watch, which is not watched again once it binds.
+    Used for the linear motor's ``power_limit`` and ``drive_cap`` (two-way, ending in
+    ``power_limit_end`` and ``drive_cap_end``) and ``taper_start`` (one-way); the
+    existing models have none."""
+
+    name: str
+    fn: TrackFn
+    unit: WatchUnit
+    end_name: str | None = None
 
 
 class TrackGeometry(Protocol):
@@ -97,11 +134,25 @@ class AssistModel(Protocol):
     in (0, 1] (electrical energy = drive work / efficiency); carriage_mass_kg: the
     carriage that rides with the vehicle [kg]; allow_negative_drive: whether the drive
     may pull back (a negative drive force) instead of ending the run with status
-    ``drive_limit``; state_rate: the forces at one instant; push_time_estimate: the
-    push duration the planner uses to resolve ``push_start`` ignition times and to cap
-    the step; braking_distance_m and facility_length_m: what the carriage needs after
-    release; assumptions: the strings every summary lists.
+    ``drive_limit``; state_rate: the forces at one instant; push_time_exact: whether
+    push_time_estimate is the exact push time before the push is flown (True for a
+    prescribed acceleration; False for a force-limited drive, whose release-referenced
+    ignition the planner resolves at the flown release); push_time_estimate: the push
+    duration the planner uses to resolve a release-referenced ignition time when it is
+    exact, to cap the step (t_push / push_steps) and, for a drive whose push time is not
+    exact, to scale the watch look-ahead (``prelude.WATCH_LOOKAHEAD_REL`` of it; never an
+    ignition time there); at_push_start: the model bound to the stack at push
+    start (a force-limited drive's holding force; the others return themselves);
+    kink_times: (event name, time) kinks of the drive force inside the push, which the
+    planner makes sub-phase boundaries and logs; push_watches: the crossings the
+    planner logs and splits the push at (``PushWatch``); stall_reason: why the bound
+    drive cannot start the push (None when it can); braking_distance_m and
+    facility_length_m: what the carriage needs after release; assumptions: the strings
+    every summary lists.
     """
+
+    push_time_exact: ClassVar[bool]
+    """Whether ``push_time_estimate`` is the exact push time (class constant)."""
 
     @property
     def name(self) -> str:
@@ -156,7 +207,36 @@ class AssistModel(Protocol):
 
     def push_time_estimate(self, track: TrackGeometry) -> float:
         """Expected push duration [s] from s = 0 at rest to s = L (exact for a
-        prescribed acceleration; an estimate for a force-limited drive)."""
+        prescribed acceleration; an estimate for a force-limited drive, which needs the
+        model bound by ``at_push_start``)."""
+        ...
+
+    def at_push_start(
+        self,
+        m_vehicle_kg: float,
+        thrust_axial_N: float,
+        g_eff_mps2: float,
+        track: TrackGeometry,
+    ) -> AssistModel:
+        """The model bound to the push start: the vehicle mass m_vehicle_kg [kg] and its
+        delivered axial thrust thrust_axial_N [N] at t = 0, the track's g_eff [m/s^2]
+        and the track (whose angle at s = 0 sets the weight component). A model with
+        nothing to bind returns itself."""
+        ...
+
+    def kink_times(self) -> tuple[tuple[str, float], ...]:
+        """(event name, absolute time [s] on the push clock, t = 0 at push start) of
+        each kink of the drive force inside the push; empty for a model without any."""
+        ...
+
+    def push_watches(self) -> tuple[PushWatch, ...]:
+        """The crossings the planner logs during the push, each ending a track
+        sub-phase there (``PushWatch``; empty for a model without any)."""
+        ...
+
+    def stall_reason(self) -> str | None:
+        """Why the bound drive cannot start the push (the drive and the thrust cannot
+        lift the stack at push start), naming the numbers; None when it can."""
         ...
 
     def braking_distance_m(self, v_mps: float) -> float:

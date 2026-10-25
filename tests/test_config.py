@@ -7,7 +7,9 @@ base's parameterisation; two given together raise), the silo push stated by exac
 one of net_accel_g and exit_speed_mps (SP1 step 2), and the stage-1 ramp start stated
 by time, depth, speed or closed-form height (SP1 step 3: one family at most, refused on
 a pad, on a later stage and deeper than the stroke; the dump round trip; the family
-rule through resolve_experiment)."""
+rule through resolve_experiment), and KI-030's strict and finite numbers (SP7 step S4,
+D-SP7-28: its sixteen inputs and further ones of the same kind refused, the named
+bounds, YAML integers still numbers, every shipped file resolving as written)."""
 
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import copy
 import itertools
 import math
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -216,8 +219,8 @@ def test_config_models_are_frozen(f9_vehicle_dict: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         vehicle.stages[0].dry_mass_t.value = 1.0  # type: ignore[misc]
     with pytest.raises(ValidationError):
-        RunConfig.model_validate({"name": "x", "assist": {"model": "linear_motor"}})
-    assert PLANNED_MODELS == ("linear_motor", "cable_winch")
+        RunConfig.model_validate({"name": "x", "assist": {"model": "cable_winch"}})
+    assert PLANNED_MODELS == ("cable_winch",)  # linear_motor left it in SP7 step S4
 
 
 def test_engine_exit_area_rules(f9_vehicle_dict: dict[str, Any]) -> None:
@@ -280,8 +283,10 @@ def test_tilted_track_is_phase_2() -> None:
         TrackConfig(angle_deg=45)
 
 
-@pytest.mark.parametrize("model", ["linear_motor", "cable_winch"])
+@pytest.mark.parametrize("model", ["cable_winch"])
 def test_other_drives_are_phase_3(model: str) -> None:
+    """The planned drive (cable_winch; linear_motor is built since SP7 step S4) is
+    refused with the phase message, also with keys of its own."""
     with pytest.raises(ValidationError, match="Phase 3"):
         RunConfig.model_validate({"name": "x", "assist": {"model": model}})
     # a realistic Phase 3 block with its own keys gets the phase message, not "extra"
@@ -382,22 +387,22 @@ def test_constant_accel_exit_speed_derives_the_acceleration() -> None:
         ({"exit_speed_mps": math.inf}, "finite number"),
         ({"exit_speed_mps": math.nan}, "finite number"),
         ({"net_accel_g": 0.0}, "greater than 0"),
-        # v^2 overflows to inf; v^2 underflows to 0; an infinite stroke gives a = 0
+        # v^2 overflows to inf; v^2 underflows to 0
         ({"exit_speed_mps": 1e200}, r"v\^2 / \(2 L\) = inf m/s\^2, which must be finite"),
         ({"exit_speed_mps": 1e-200}, r"v\^2 / \(2 L\) = 0 m/s\^2, which must be finite"),
-        (
-            {"exit_speed_mps": 76.71, "stroke_m": math.inf},
-            r"v\^2 / \(2 L\) = 0 m/s\^2, which must be finite",
-        ),
+        # an infinite stroke (a = 0) is refused by its field first since KI-030 closed
+        ({"exit_speed_mps": 76.71, "stroke_m": math.inf}, "finite number"),
     ],
 )
 def test_constant_accel_needs_exactly_one_push_key(push: dict[str, Any], message: str) -> None:
     """Exactly one of ``net_accel_g`` and ``exit_speed_mps`` states the push. A key
     counts as given when it is present, an explicit null included (the rule of the
     merge, EXCLUSIVE_KEY_FAMILIES): both present is refused whatever the values, neither
-    is refused, and the one key present must hold a positive (for the exit speed also
-    finite) number, so a null never unsets a key. The acceleration derived from an exit
-    speed, v^2 / (2 L), must be finite and > 0 too. The same through RunConfig."""
+    is refused, and the one key present must hold a positive finite number, so a null
+    never unsets a key. The acceleration derived from an exit speed, v^2 / (2 L), must be
+    finite and > 0 too; an infinite stroke, which gave a = 0 here, is refused by its own
+    field since SP7 step S4 (KI-030: every number of the block strict and finite). The
+    same through RunConfig."""
     with pytest.raises(ValidationError, match=message):
         ConstantAccelConfig.model_validate({**PUSH_BASE, **push})
     with pytest.raises(ValidationError, match=message):
@@ -684,8 +689,9 @@ def test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name() -> Non
         users = {m.__name__ for m in models if group_keys & set(m.model_fields)}
         assert users == {owner.__name__}
     # the assist group has both families as fields since step 2
-    # (test_constant_accel_push_keys_are_the_assist_family_table); the ignition group's
-    # other families arrive in step 3; the defaults test_run_defaults pins are untouched
+    # (test_constant_accel_push_keys_are_the_assist_family_table) and the ignition group
+    # all four since step 3 (test_ignition_states_its_ramp_start_one_way); the defaults
+    # test_run_defaults pins are untouched
     assert set(ASSIST_FAMILIES[0]) <= set(ConstantAccelConfig.model_fields)
     assert set(IGNITION_FAMILIES[0]) <= set(IgnitionConfig.model_fields)
 
@@ -950,8 +956,8 @@ def test_sweep_axis_exit_speed_over_a_net_accel_parent(
     inherited t_ign_s and reference. (Written in SP1 step 1, before the fields existed,
     so the points are built here with apply_overrides, as resolve_experiment does, and
     not validated; the exit speed is resolved and validated end to end since step 2 in
-    test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone, the depth arrives in
-    step 3.)"""
+    test_exit_speed_sweep_axis_resolves_to_the_exit_speed_alone, the depth since step 3
+    in test_depth_sweep_axis_over_a_timed_parent_resolves_to_the_depth_alone.)"""
     parent = resolve_experiment(experiment_dict, f9_vehicle_dict).variants["silo_cold"]
     assert parent.run_dict["assist"]["net_accel_g"] == 3.0
     assert parent.run_dict["ignition"]["stage1"] == {"t_ign_s": 0.5, "reference": "release"}
@@ -1468,3 +1474,360 @@ def test_sweep_points_are_numbered_from_one(repo_root: Path) -> None:
         assert [p.sweep_index for p in points] == [k] * len(points)
         assert [p.point_index for p in points] == list(range(1, len(points) + 1))
         assert all(p.run.name == f"run_{p.point_index:04d}" for p in points)
+
+
+# ------------------------------------------- KI-030: strict and finite numbers (SP7 S4)
+
+KI030_EXPERIMENT = "silo_offload_2d"
+"""The probe base of KI-030's measurement (docs/phases/inputs/2026-10-08-SP7-survey/
+02-config-and-validators.md, section 4.1): a shipped planar experiment with a silo
+variant and every offload key KI-030 names. Its sweeps, sensitivity and offload arms are
+dropped (no key the probes edit lives only there), so a probe resolves in milliseconds."""
+KI030_SILO = ("variants", "silo_cold")
+KI030_STAGE1 = (*KI030_SILO, "ignition", "stage1")
+KI030_ASSIST = (*KI030_SILO, "assist")
+KI030_CASE = "case:"
+"""Path prefix of an offload case named in a probe path (``case:<name>``)."""
+INF, NAN = math.inf, math.nan
+KI030_INPUTS: tuple[tuple[str, tuple[str, ...], Any, str, tuple[str, ...]], ...] = (
+    # (label, path in the experiment dict, value, pydantic error type, end of its loc)
+    ("stroke_m true", (*KI030_ASSIST, "stroke_m"), True, "float_type", ("stroke_m",)),
+    ("stroke_m '100'", (*KI030_ASSIST, "stroke_m"), "100", "float_type", ("stroke_m",)),
+    (
+        "fixed.stage1_fraction '0.05'",
+        ("offload", "case:silo_cold_fix5pct", "fixed", "stage1_fraction"),
+        "0.05",
+        "float_type",
+        ("fixed", "stage1_fraction"),
+    ),
+    (
+        "paired_pad 'yes'",
+        ("offload", "case:silo_cold_s1", "paired_pad"),
+        "yes",
+        "bool_type",
+        ("paired_pad",),
+    ),
+    ("stroke_m inf", (*KI030_ASSIST, "stroke_m"), INF, "finite_number", ("stroke_m",)),
+    ("net_accel_g inf", (*KI030_ASSIST, "net_accel_g"), INF, "finite_number", ("net_accel_g",)),
+    (
+        "brake_decel_g inf",
+        (*KI030_ASSIST, "brake_decel_g"),
+        INF,
+        "finite_number",
+        ("brake_decel_g",),
+    ),
+    (
+        "carriage_mass_t inf",
+        (*KI030_ASSIST, "carriage_mass_t"),
+        INF,
+        "finite_number",
+        ("carriage_mass_t",),
+    ),
+    ("t_ign_s nan", (*KI030_STAGE1, "t_ign_s"), NAN, "finite_number", ("stage1", "t_ign_s")),
+    ("t_ign_s inf", (*KI030_STAGE1, "t_ign_s"), INF, "finite_number", ("stage1", "t_ign_s")),
+    ("t_ign_s 1e9", (*KI030_STAGE1, "t_ign_s"), 1e9, "less_than_equal", ("stage1", "t_ign_s")),
+    (
+        "t_ign_s -1e9",
+        (*KI030_STAGE1, "t_ign_s"),
+        -1e9,
+        "greater_than_equal",
+        ("stage1", "t_ign_s"),
+    ),
+    (
+        "track.exit_altitude_m nan",
+        (*KI030_ASSIST, "track", "exit_altitude_m"),
+        NAN,
+        "finite_number",
+        ("track", "exit_altitude_m"),
+    ),
+    (
+        "track.exit_altitude_m -1000",
+        (*KI030_ASSIST, "track", "exit_altitude_m"),
+        -1000,
+        "greater_than_equal",
+        ("track", "exit_altitude_m"),
+    ),
+    (
+        "track.exit_altitude_m 5000",
+        (*KI030_ASSIST, "track", "exit_altitude_m"),
+        5000,
+        "less_than_equal",
+        ("track", "exit_altitude_m"),
+    ),
+    (
+        "startup.t_ramp_s inf",
+        (*KI030_STAGE1, "startup"),
+        {"t_ramp_s": INF},
+        "finite_number",
+        ("startup", "t_ramp_s"),
+    ),
+)
+"""KI-030's sixteen inputs (TODO.md), in its order: each was accepted before SP7 step S4."""
+KI030_MORE: tuple[tuple[str, tuple[str, ...], Any, str, tuple[str, ...]], ...] = (
+    ("net_accel_g '3'", (*KI030_ASSIST, "net_accel_g"), "3", "float_type", ("net_accel_g",)),
+    (
+        "exit_speed_mps true",
+        ("variants", "silo_cold_200m", "assist", "exit_speed_mps"),
+        True,
+        "float_type",
+        ("exit_speed_mps",),
+    ),
+    (
+        "drive_efficiency '0.5'",
+        (*KI030_ASSIST, "drive_efficiency"),
+        "0.5",
+        "float_type",
+        ("drive_efficiency",),
+    ),
+    (
+        "exhaust_impingement_fraction true",
+        (*KI030_ASSIST, "exhaust_impingement_fraction"),
+        True,
+        "float_type",
+        ("exhaust_impingement_fraction",),
+    ),
+    (
+        "allow_negative_drive_force 'yes'",
+        (*KI030_ASSIST, "allow_negative_drive_force"),
+        "yes",
+        "bool_type",
+        ("allow_negative_drive_force",),
+    ),
+    (
+        "allow_negative_drive_force 1",
+        (*KI030_ASSIST, "allow_negative_drive_force"),
+        1,
+        "bool_type",
+        ("allow_negative_drive_force",),
+    ),
+    (
+        "track.angle_deg '90'",
+        (*KI030_ASSIST, "track", "angle_deg"),
+        "90",
+        "float_type",
+        ("angle_deg",),
+    ),
+    ("t_ign_s '0.5'", (*KI030_STAGE1, "t_ign_s"), "0.5", "float_type", ("t_ign_s",)),
+    ("t_ign_s true", (*KI030_STAGE1, "t_ign_s"), True, "float_type", ("t_ign_s",)),
+    ("at_depth_m true", KI030_STAGE1, {"at_depth_m": True}, "float_type", ("at_depth_m",)),
+    ("at_speed_mps '30'", KI030_STAGE1, {"at_speed_mps": "30"}, "float_type", ("at_speed_mps",)),
+    ("fails 0", (*KI030_STAGE1, "fails"), 0, "bool_type", ("fails",)),
+    ("fails 'no'", (*KI030_STAGE1, "fails"), "no", "bool_type", ("fails",)),
+    (
+        "startup lag tau_s inf",
+        (*KI030_STAGE1, "startup"),
+        {"kind": "lag", "tau_s": INF},
+        "finite_number",
+        ("startup", "tau_s"),
+    ),
+    (
+        "stage1_dry_mass_added_t '2'",
+        ("offload", "case:silo_cold_s1_dry+2t", "stage1_dry_mass_added_t"),
+        "2",
+        "float_type",
+        ("stage1_dry_mass_added_t",),
+    ),
+    (
+        "stage2_offload_t true",
+        ("offload", "case:silo_cold_s1_s2pre2t", "stage2_offload_t"),
+        True,
+        "float_type",
+        ("stage2_offload_t",),
+    ),
+    (
+        "fixed.stage1_t '5'",
+        ("offload", "case:silo_cold_fix5pct", "fixed"),
+        {"stage1_t": "5"},
+        "float_type",
+        ("fixed", "stage1_t"),
+    ),
+    (
+        "fixed.stage1_fraction nan",
+        ("offload", "case:silo_cold_fix5pct", "fixed", "stage1_fraction"),
+        NAN,
+        "finite_number",
+        ("fixed", "stage1_fraction"),
+    ),
+    ("pad_control 'yes'", ("offload", "pad_control"), "yes", "bool_type", ("pad_control",)),
+)
+"""Further inputs of the same kind that the same per-field validators refuse (survey 02
+section 4.2): other number and bool fields of the seven models given a bool, a
+numeric string or a non-finite value."""
+
+
+@pytest.fixture(scope="module")
+def ki030_base(repo_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """(experiment dict, vehicle dict) of KI030_EXPERIMENT without its sweeps,
+    sensitivity and offload arms."""
+    raw = _load(repo_root / "experiments" / f"{KI030_EXPERIMENT}.yaml")
+    vehicle = _load(repo_root / raw["vehicle"])
+    base = {k: v for k, v in raw.items() if k not in ("sweeps", "sensitivity")}
+    base["offload"] = {**base["offload"], "sensitivity_of": []}
+    return base, vehicle
+
+
+def _ki030_with(base: dict[str, Any], path: tuple[str, ...], value: Any) -> dict[str, Any]:
+    """A deep copy of ``base`` with ``value`` at ``path`` (a ``case:<name>`` element
+    picks the offload case of that name; the parent of the last key must exist)."""
+    out = copy.deepcopy(base)
+    node: Any = out
+    for key in path[:-1]:
+        if key.startswith(KI030_CASE):
+            name = key.removeprefix(KI030_CASE)
+            node = next(case for case in node["cases"] if case["name"] == name)
+        else:
+            node = node[key]
+    node[path[-1]] = value
+    return out
+
+
+def _ki030_params(
+    inputs: tuple[tuple[str, tuple[str, ...], Any, str, tuple[str, ...]], ...],
+) -> list[Any]:
+    """pytest params (path, value, error type, loc end) with the label as the id."""
+    return [pytest.param(*rest, id=label) for label, *rest in inputs]
+
+
+def _assert_refused_once(
+    base: dict[str, Any],
+    vehicle: dict[str, Any],
+    path: tuple[str, ...],
+    value: Any,
+    error_type: str,
+    loc_end: tuple[str, ...],
+) -> None:
+    """resolve_experiment refuses ``value`` at ``path`` with exactly one pydantic error,
+    of ``error_type``, whose location ends with ``loc_end``."""
+    with pytest.raises(ValidationError) as caught:
+        resolve_experiment(_ki030_with(base, path, value), vehicle)
+    (error,) = caught.value.errors()
+    assert error["type"] == error_type
+    assert tuple(str(part) for part in error["loc"][-len(loc_end) :]) == loc_end
+
+
+@pytest.mark.parametrize(("path", "value", "error_type", "loc_end"), _ki030_params(KI030_INPUTS))
+def test_ki030_inputs_are_refused(
+    ki030_base: tuple[dict[str, Any], dict[str, Any]],
+    path: tuple[str, ...],
+    value: Any,
+    error_type: str,
+    loc_end: tuple[str, ...],
+) -> None:
+    """KI-030 closed (SP7 step S4, D-SP7-28): each of its sixteen inputs, accepted before
+    the step (a bool or a numeric string read as a number, a string read as a bool,
+    NaN and inf, a t_ign_s of +/-1e9 s and an exit altitude of -1000 or 5000 m), is
+    refused by resolve_experiment with one pydantic error of the expected type at the
+    field: per-field strict and finite numbers, strict bools, and the named bounds
+    T_IGN_LIMIT_S and EXIT_ALTITUDE_LIMIT_M. The unedited base resolves, and the shipped
+    files keep their digests (test_ki030_shipped_files_resolve_with_every_value_as_written,
+    and the pins of test_config_planar.py and test_golden_1d.py)."""
+    base, vehicle = ki030_base
+    _assert_refused_once(base, vehicle, path, value, error_type, loc_end)
+    resolve_experiment(copy.deepcopy(base), vehicle)  # the unedited base is accepted
+
+
+@pytest.mark.parametrize(("path", "value", "error_type", "loc_end"), _ki030_params(KI030_MORE))
+def test_ki030_same_validators_refuse_the_further_inputs(
+    ki030_base: tuple[dict[str, Any], dict[str, Any]],
+    path: tuple[str, ...],
+    value: Any,
+    error_type: str,
+    loc_end: tuple[str, ...],
+) -> None:
+    """KI-030 closed (SP7 step S4): the other number and bool fields of the seven models
+    (ConstantAccelConfig, TrackConfig, StartupOverride, IgnitionConfig,
+    OffloadFixedConfig, OffloadCaseConfig, OffloadConfig) refuse a bool, a numeric string
+    or a non-finite value the same way (survey 02 section 4.2's further inputs)."""
+    base, vehicle = ki030_base
+    _assert_refused_once(base, vehicle, path, value, error_type, loc_end)
+
+
+def test_ki030_bounds_are_named_inclusive_and_integers_stay_numbers() -> None:
+    """D-SP7-28's bounds are the named constants (an hour either side of the reference;
+    500 m either side of the pad datum) and inclusive: +/-3600 s and +/-500 m are
+    accepted, the next double beyond refused; the -30 m mouth of the failed-ignition
+    test and every shipped t_ign_s are inside. A YAML integer is a number: strict
+    fields take ``stroke_m: 100`` as the float 100.0 (and ``t_ign_s: 0``,
+    ``exit_altitude_m: 0``), while a bool and a string are refused."""
+    assert config.T_IGN_LIMIT_S == 3600.0 and config.EXIT_ALTITUDE_LIMIT_M == 500.0
+    for t_s in (-config.T_IGN_LIMIT_S, -2, 0, 0.5, 1.0, 3600):
+        assert IgnitionConfig(t_ign_s=t_s).t_ign_s == t_s
+    for z_m in (-config.EXIT_ALTITUDE_LIMIT_M, -30.0, 0, 500):
+        assert TrackConfig(exit_altitude_m=z_m).exit_altitude_m == z_m
+    beyond_t = math.nextafter(config.T_IGN_LIMIT_S, math.inf)
+    beyond_z = math.nextafter(config.EXIT_ALTITUDE_LIMIT_M, math.inf)
+    for bad_t in (beyond_t, -beyond_t):
+        with pytest.raises(ValidationError, match="than or equal to"):
+            IgnitionConfig(t_ign_s=bad_t)
+    for bad_z in (beyond_z, -beyond_z):
+        with pytest.raises(ValidationError, match="than or equal to"):
+            TrackConfig(exit_altitude_m=bad_z)
+    cfg = ConstantAccelConfig.model_validate({**PUSH_BASE, "stroke_m": 100, "net_accel_g": 3})
+    assert type(cfg.stroke_m) is float and cfg.stroke_m == 100.0
+    assert type(cfg.net_accel_g) is float and cfg.net_accel_mps2 == 3 * G0_MPS2
+    ign = IgnitionConfig.model_validate({"t_ign_s": 0})
+    assert type(ign.t_ign_s) is float and ign.t_ign_s == 0.0
+    assert type(TrackConfig.model_validate({"exit_altitude_m": 0}).exit_altitude_m) is float
+    for bad in (True, "100", "1e3"):
+        with pytest.raises(ValidationError, match="valid number"):
+            ConstantAccelConfig.model_validate({**PUSH_BASE, "stroke_m": bad, "net_accel_g": 3})
+
+
+def _held_as_written(model: BaseModel, raw: dict[str, Any], where: str) -> list[str]:
+    """Paths under ``where`` at which a validated model does not hold its raw YAML dict
+    as written: a number field must hold the number the file gives, from a YAML int or
+    float (never a bool or a string); a bool field a YAML bool; any other field the value
+    itself. Nested models, lists and dicts of models are walked; a field alias
+    (OffloadConfig's ``reference``) is followed."""
+    out: list[str] = []
+    names = {(info.alias or name): name for name, info in type(model).model_fields.items()}
+    for key, value in raw.items():
+        held = getattr(model, names[key])
+        here = f"{where}.{key}"
+        if isinstance(held, BaseModel):
+            out += _held_as_written(held, value, here)
+        elif isinstance(held, list) and held and isinstance(held[0], BaseModel):
+            for i, (item, item_raw) in enumerate(zip(held, value, strict=True)):
+                out += _held_as_written(item, item_raw, f"{here}.{i}")
+        elif isinstance(held, dict) and held and isinstance(next(iter(held.values())), BaseModel):
+            assert list(held) == list(value), here
+            for name, item in held.items():
+                out += _held_as_written(item, value[name], f"{here}.{name}")
+        elif isinstance(held, bool):
+            out += [] if type(value) is bool and held == value else [here]
+        elif isinstance(held, float):
+            out += [] if type(value) in (int, float) and held == value else [here]
+        elif held != value:
+            out.append(here)
+    return out
+
+
+def test_ki030_shipped_files_resolve_with_every_value_as_written(
+    repo_root: Path, planar_pins: ModuleType
+) -> None:
+    """KI-030 closed (SP7 step S4): every shipped experiment still loads the CLI's way
+    (cli.load_experiment: resolve_experiment, the result-name check and the preflight),
+    and every run it resolves (variants, sweep points, sensitivity, bounds, cases and
+    offload starts) holds its assist and ignition blocks exactly as written, as does
+    the offload block: YAML integers (stroke_m 100, exit_altitude_m 0, t_ign_s 0) are
+    numbers and nothing is coerced. The resolved dicts are the raw merged YAML, which no
+    validator changes; the four pinned planar files still match their digests here (and
+    in test_config_planar.py; the 1-D file in test_golden_1d.py)."""
+    from launchsim import cli
+
+    pinned = planar_pins.read_json(planar_pins.DIGESTS_FILE)["experiments"]
+    files = sorted((repo_root / "experiments").glob("*.yaml"))
+    assert len(files) >= 9  # the seven of 22c62e9 and SP7's two structure files
+    for path in files:
+        resolved = cli.load_experiment(path)
+        runs = planar_pins.resolved_runs(resolved)
+        for label, run in runs.items():
+            blocks = {k: run.run_dict[k] for k in ("assist", "ignition") if k in run.run_dict}
+            assert _held_as_written(run.run, blocks, f"{path.stem} {label}") == []
+        offload = _load(path).get("offload")
+        if offload is not None:
+            assert resolved.experiment.offload is not None
+            assert _held_as_written(resolved.experiment.offload, offload, path.stem) == []
+        if path.stem in pinned:
+            actual = planar_pins.resolved_digests(resolved)
+            assert planar_pins.compare_digests(actual, pinned[path.stem]) == [], path.stem

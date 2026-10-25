@@ -4,10 +4,11 @@
 YAML) to the model class that builds itself from that config through its
 ``from_config(config, g_eff_mps2) -> (model, track | None)`` classmethod;
 ``build_assist`` is the only place a validated config becomes an ``AssistModel`` and
-its ``TrackGeometry``, and it dispatches through the registry alone, so a Phase 3
-model becomes buildable by registering its class here (and its config in
-``config.AssistConfig``). The units are already SI on the config's properties. The
-models themselves (``none``, ``constant_accel``) are pure.
+its ``TrackGeometry``, and it dispatches through the registry alone, so a new model
+becomes buildable by registering its class here (and its config in
+``config.AssistConfig``), as ``linear_motor`` was in SP7 step S4. The units are already
+SI on the config's properties. The models themselves (``none``, ``constant_accel``,
+``linear_motor``) are pure.
 """
 
 from __future__ import annotations
@@ -16,10 +17,12 @@ from launchsim.assist.base import (
     AssistBuilder,
     AssistForces,
     AssistModel,
+    PushWatch,
     TrackGeometry,
     normal_load_N,
 )
 from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.assist.linear_motor import LinearMotorAssist
 from launchsim.assist.none import NoAssist
 from launchsim.assist.track import VERTICAL, StraightTrack
 from launchsim.config import AssistConfig
@@ -27,6 +30,7 @@ from launchsim.config import AssistConfig
 ASSIST_MODELS: dict[str, type[AssistBuilder]] = {
     NoAssist.name: NoAssist,
     ConstantAccelAssist.name: ConstantAccelAssist,
+    LinearMotorAssist.name: LinearMotorAssist,
 }
 """Registry key (the ``model`` discriminator of ``config.AssistConfig``, equal to the
 class's ``name``) -> model class satisfying ``assist.base.AssistBuilder`` (a
@@ -38,9 +42,10 @@ def build_assist(
 ) -> tuple[AssistModel, TrackGeometry | None]:
     """The assist model and its track for a validated assist config.
 
-    Inputs: the config (``NoAssistConfig`` or ``ConstantAccelConfig``; the planned
-    Phase 3 models are rejected at validation); g_eff_mps2, the track's effective
-    gravity [m/s^2], quoted in the model's assumptions. Output: (model, track), the
+    Inputs: the config (``NoAssistConfig``, ``ConstantAccelConfig`` or
+    ``LinearMotorConfig``; the planned ``cable_winch`` is rejected at validation);
+    g_eff_mps2, the track's effective gravity [m/s^2], quoted in the model's
+    assumptions. Output: (model, track), the
     track None for the pad, from ``ASSIST_MODELS[config.model].from_config``. A
     registered class without ``from_config`` raises TypeError.
     """
@@ -59,7 +64,9 @@ __all__ = [
     "AssistForces",
     "AssistModel",
     "ConstantAccelAssist",
+    "LinearMotorAssist",
     "NoAssist",
+    "PushWatch",
     "StraightTrack",
     "TrackGeometry",
     "build_assist",

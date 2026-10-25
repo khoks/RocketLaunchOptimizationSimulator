@@ -32,7 +32,7 @@ exact and the tests assert them at 1e-10 relative:
   start by depth, speed or height is refused where the specs are built.
 
 The F9 numbers (542,570 kg, 3 g0, L = 100 m, g_eff = mu/R_E^2): 76.70717 m/s,
-2.60732 s, 3.9992 g0 felt, F_int 21.2786 MN, E 2.1279 GJ, P 1.6322 GW, braking 60 m.
+2.60732 s, 3.9991 g0 felt, F_int 21.2786 MN, E 2.1279 GJ, P 1.6322 GW, braking 60 m.
 """
 
 from __future__ import annotations
@@ -247,14 +247,14 @@ def test_horizontal_track_unit_level() -> None:
 def test_cold_felt_acceleration_and_interface_force(
     m_c: float, f9_vehicle: Vehicle, tight_settings: IntegratorSettings
 ) -> None:
-    """A full stack pushed at 3 g0 net feels a + g_eff = 39.2182 m/s^2 = 3.9992 g0;
+    """A full stack pushed at 3 g0 net feels a + g_eff = 39.2182 m/s^2 = 3.9991 g0;
     F_int = m_v (a + g_eff) = 21.2786 MN whatever the carriage mass (the carriage
     is behind the vehicle)."""
     result = _silo(f9_vehicle, COLD, tight_settings, assist=_assist(m_c=m_c))
     rows = _track_rows(result)
     m0 = f9_vehicle.liftoff_mass_kg()
     a_felt = A + G_EFF
-    assert abs(a_felt - 39.2182) < 1e-4 and abs(a_felt / G0_MPS2 - 3.9992) < 1e-4
+    assert abs(a_felt - 39.2182) < 1e-4 and abs(a_felt / G0_MPS2 - 3.9991) < 1e-4
     np.testing.assert_allclose(rows["accel_felt_g"].to_numpy(), a_felt / G0_MPS2, rtol=REL)
     np.testing.assert_allclose(rows["interface_force_N"].to_numpy(), m0 * a_felt, rtol=REL)
     m = result.metrics
@@ -509,13 +509,13 @@ def test_assist_registry_builds_every_config_model() -> None:
     from typing import get_args
 
     from launchsim.assist import ASSIST_MODELS, build_assist
-    from launchsim.config import ConstantAccelConfig, NoAssistConfig
+    from launchsim.config import ConstantAccelConfig, LinearMotorConfig, NoAssistConfig
 
     keys = {
         get_args(cls.model_fields["model"].annotation)[0]
-        for cls in (NoAssistConfig, ConstantAccelConfig)
+        for cls in (NoAssistConfig, ConstantAccelConfig, LinearMotorConfig)
     }
-    assert set(ASSIST_MODELS) == keys == {"none", "constant_accel"}
+    assert set(ASSIST_MODELS) == keys == {"none", "constant_accel", "linear_motor"}
     assert all(cls.name == key for key, cls in ASSIST_MODELS.items())
     model, track = build_assist(NoAssistConfig(), G_EFF)
     assert model.name == "none" and track is None

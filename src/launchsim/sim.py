@@ -102,6 +102,7 @@ from launchsim import structure
 from launchsim.assist import NoAssist, build_assist
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.assist.linear_motor import LinearMotorAssist
 from launchsim.atmosphere import ATMOSPHERE_ASSUMPTIONS, ambient_scalar
 from launchsim.compare import (  # re-exported
     ATTRIBUTION_TERMS,
@@ -252,7 +253,7 @@ from launchsim.phases.planar import (
     PlanarEnvironment,
     PlanarPlanner,
 )
-from launchsim.phases.prelude import resolve_stage_ignitions
+from launchsim.phases.prelude import DRIVE_STALL, resolve_stage_ignitions
 from launchsim.plots import (  # re-exported
     PLANAR_PLOT_PANELS,
     PLOT_ABSCISSA,
@@ -695,6 +696,7 @@ Status = Literal[
     "impact",
     "no_liftoff",
     "drive_limit",
+    "drive_stall",
     "inserted",
     "off_target",
     "short_of_orbit",
@@ -702,7 +704,8 @@ Status = Literal[
     "guidance_failed",
     "bug_suspect",
 ]
-"""Run statuses: the 1-D ones (nominal, impact, no_liftoff, drive_limit); a planar
+"""Run statuses: the 1-D ones (nominal, impact, no_liftoff, drive_limit, and since SP7
+step S4 drive_stall: a linear motor that cannot start the push); a planar
 recorded run's inserted (the energy cutoff inside the LTG acceptance), off_target (the
 cutoff outside it), short_of_orbit (stage 2 burned out first); search_failed (no
 recorded run); guidance_failed (a run flown at fixed guidance whose guidance raised a
@@ -751,7 +754,7 @@ class Result:
     assist_budget: the AssistEnergyBudget of the push (None for a pad).
     assumptions: attributed assumption strings for the summary.
     phases: the PhaseResult list of the run.
-    status: a Status (1-D: nominal, impact, no_liftoff or drive_limit).
+    status: a Status (1-D: nominal, impact, no_liftoff, drive_limit or drive_stall).
     flags: warnings such as interface_tensile, drive_braking or a disarmed event.
     model: the dynamics model (vertical_1d; planar_2d for ``simulate_planar``, whose
     time series has PLANAR_TIMESERIES_COLUMNS and events PLANAR_EVENT_COLUMNS).
@@ -867,9 +870,9 @@ def simulate(
     the default); end, one of phases.END_KINDS; settings, the IntegratorSettings.
     Output: a Result with the sampled time series, the events, the metrics, the
     LossBudget from release onward, the AssistEnergyBudget of the push (None for a
-    pad), the run's status (nominal, impact, no_liftoff, drive_limit) and flags
-    (``interface_tensile`` is evaluated over the ASSIST rows only; ``drive_braking``
-    when the drive did negative work). A run in which a stage's ignition failed
+    pad), the run's status (nominal, impact, no_liftoff, drive_limit, drive_stall) and
+    flags (``interface_tensile`` is evaluated over the ASSIST rows only;
+    ``drive_braking`` when the drive did negative work). A run in which a stage's ignition failed
     (``IgnitionSpec.fails``) carries the ``failed_*`` metrics
     (``failed_ignition_metrics``), the ``failed_ignition_flags`` (a track mouth not at
     the ground) and, when its fall-back coast actually ran (``t_fail_s`` set: not a
@@ -913,7 +916,9 @@ def simulate(
             g_eff_mps2,
         )
         metrics.update(track_metrics(trace, assist, track, assist_budget, frame))
-        flags += track_flags(frame, metrics["drive_work_out_J"])
+        flags += track_flags(
+            frame, metrics["drive_work_out_J"], stalled=trace.status == DRIVE_STALL
+        )
         assumptions += [
             *TRACK_ASSUMPTIONS,
             f"track: straight, L = {track.length_m:.6g} m at {track.phi(0.0):.6g} rad above "
@@ -1225,7 +1230,7 @@ def planar_setup(run_config: RunConfig, vehicle: Vehicle) -> PlanarSetup:
         InverseSquareGravity(MU_EARTH_M3S2), run_config.site.omega_p_rads, ambient_scalar
     )
     assist, track = build_assist(run_config.assist, env.g_ref_mps2)
-    if isinstance(assist, ConstantAccelAssist):
+    if isinstance(assist, ConstantAccelAssist | LinearMotorAssist):
         assist = replace(assist, omega_p_rads=env.omega_p_rads)
     target = planar.target_orbit
     return PlanarSetup(
@@ -1394,8 +1399,9 @@ def simulate_planar(
     ``run_checks_failed``), the loss budget from the flight start (|v_rel| speed), the
     push's AssistEnergyBudget, the rocket-equation closure (None without a stage-2 burn)
     and the attributed assumptions. status is the trace's (inserted, off_target,
-    short_of_orbit, impact, nominal, no_liftoff, drive_limit), or bug_suspect when a
-    per-run check fails (closure, identity, insertion e; flagged). Frame: planar ECI.
+    short_of_orbit, impact, nominal, no_liftoff, drive_limit, drive_stall), or
+    bug_suspect when a per-run check fails (closure, identity, insertion e; flagged).
+    Frame: planar ECI.
     """
     trace.require_dense("simulate_planar")
     env, assist, track, checks = setup.env, setup.assist, setup.track, setup.checks
@@ -1421,7 +1427,9 @@ def simulate_planar(
             phases, phases[0].spec.params.layout, assist.carriage_mass_kg, env.g_ref_mps2
         )
         metrics.update(planar_track_metrics(trace, assist, track, assist_budget, frame))
-        flags += track_flags(frame, metrics["drive_work_out_J"])
+        flags += track_flags(
+            frame, metrics["drive_work_out_J"], stalled=trace.status == DRIVE_STALL
+        )
     if trace.failed_stage is not None:
         metrics["failed_stage"] = trace.failed_stage
     assumptions = planar_assumption_list(trace, setup, run_assumptions)
@@ -1496,12 +1504,18 @@ def planar_ramp_start_items(
     trace: RunTrace, vehicle: Vehicle, setup: PlanarSetup
 ) -> dict[str, Any]:
     """The requested and achieved stage-1 ramp start of a recorded planar run
-    (``metrics_planar.ramp_start_metrics``) with the track exit's altitude [m] and the
-    push time [s] the ignition time resolved against (``push_time_estimate``), both None
-    for a pad."""
+    (``metrics_planar.ramp_start_metrics``) with the track exit's altitude [m] (None
+    for a pad) and the push time [s] the ignition time resolved against
+    (``push_time_estimate``; None for a pad and for a drive whose push time is not
+    exact, the linear motor, whose estimate needs the flown stack and on which no ramp
+    start is converted)."""
     track = setup.track
     z_exit = None if track is None else track.start_altitude_m + track.z(track.length_m)
-    t_push = None if track is None else setup.assist.push_time_estimate(track)
+    t_push = (
+        None
+        if track is None or not setup.assist.push_time_exact
+        else setup.assist.push_time_estimate(track)
+    )
     stage0 = vehicle.stages[0]
     return ramp_start_metrics(trace, stage0.name, setup.ignition[stage0.name], z_exit, t_push)
 

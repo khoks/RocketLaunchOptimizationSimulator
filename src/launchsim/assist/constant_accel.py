@@ -7,8 +7,9 @@ t_push = sqrt(2 L / a), s = a t^2 / 2) and a hot start changes only the forces a
 energy, never the exit speed. The acceleration is either the configured one or derived
 from a configured exit speed v over the stroke L, a = v^2 / (2 L), in which case
 t_push = 2 L / v (``config.ConstantAccelConfig``; the model below is the same either
-way and only its assumptions say which was the input). Force and power limits are
-Phase 3's ``linear_motor`` behind the same interface. SI, radians, pure.
+way and only its assumptions say which was the input). Force and power limits are the
+``linear_motor``'s (assist/linear_motor.py, SP7 step S4) behind the same interface.
+SI, radians, pure.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import TYPE_CHECKING, ClassVar
 import numpy as np
 
 from launchsim import units
-from launchsim.assist.base import AssistForces, TrackGeometry
+from launchsim.assist.base import AssistForces, PushWatch, TrackGeometry
 from launchsim.assist.track import StraightTrack
 
 if TYPE_CHECKING:
@@ -44,19 +45,23 @@ class ConstantAccelAssist:
     planar pipeline sets the site's value); exit_speed_input_mps: the configured exit
     speed v [m/s] when net_accel_mps2 was derived from it (a = v^2 / (2 L), L the track
     length), None when the acceleration itself is the input; quoted in the assumptions
-    only (the dynamics use net_accel_mps2 alone). name and
-    extra_state_names are class constants (the registry key and the track state layout
-    cannot change per instance). At each instant, with M = m_v + m_c and T the
-    vehicle's delivered thrust along the track,
+    only (the dynamics use net_accel_mps2 alone). name, extra_state_names and
+    push_time_exact (True: sqrt(2 L / a) is the push time before the push is flown)
+    are class constants (the registry key and the track state layout cannot change per
+    instance). At each instant, with M = m_v + m_c and T the vehicle's delivered thrust
+    along the track,
 
         F_drive = M (a + g_eff sin phi) - (1 - f_imp) T
         F_int   = m_v (a + g_eff sin phi) - T
 
-    (drive_normal = 0, dissipated = 0).
+    (drive_normal = 0, dissipated = 0). The SP7 protocol members leave the push as it
+    was: ``at_push_start`` returns the model itself, ``kink_times`` and
+    ``push_watches`` are empty and ``stall_reason`` is None.
     """
 
     name: ClassVar[str] = "constant_accel"
     extra_state_names: ClassVar[tuple[str, ...]] = ()
+    push_time_exact: ClassVar[bool] = True
 
     net_accel_mps2: float
     carriage_mass_kg: float
@@ -162,6 +167,30 @@ class ConstantAccelAssist:
     def push_time_estimate(self, track: TrackGeometry) -> float:
         """Exact push duration [s] for the track: sqrt(2 L / a)."""
         return self.push_time_s(track.length_m)
+
+    def at_push_start(
+        self,
+        m_vehicle_kg: float,
+        thrust_axial_N: float,
+        g_eff_mps2: float,
+        track: TrackGeometry,
+    ) -> ConstantAccelAssist:
+        """The prescribed acceleration binds nothing at push start: the model itself
+        (inputs as in ``AssistModel.at_push_start``, unused)."""
+        return self
+
+    def kink_times(self) -> tuple[tuple[str, float], ...]:
+        """No kink of its own inside the push: empty."""
+        return ()
+
+    def push_watches(self) -> tuple[PushWatch, ...]:
+        """No watched crossing: empty."""
+        return ()
+
+    def stall_reason(self) -> str | None:
+        """None: the prescribed acceleration always starts (a drive force that would
+        have to be negative is the ``drive_limit`` event's)."""
+        return None
 
     def braking_distance_m(self, v_mps: float) -> float:
         """Carriage braking distance [m] from v_mps [m/s]: v^2 / (2 a_brake)."""

@@ -143,10 +143,11 @@ JOINT_M_SCALE_KG = 1.0e3
 
 
 class PreludeFailure(RuntimeError):
-    """The prelude of an evaluation ended without a flight (kind ``no_liftoff`` or
-    ``drive_limit``, the planner's status) or stage 1 does not light (``ignition``): the
-    payload or the configuration cannot fly. All arguments go to RuntimeError, so the
-    exception pickles; a search treats it like a GuidanceFailure."""
+    """The prelude of an evaluation ended without a flight (kind ``no_liftoff``,
+    ``drive_limit`` or ``drive_stall``, the planner's status) or stage 1 does not light
+    (``ignition``): the payload or the configuration cannot fly. All arguments go to
+    RuntimeError, so the exception pickles; a search treats it like a
+    GuidanceFailure."""
 
     def __init__(self, kind: str, message: str = "") -> None:
         super().__init__(kind, message)

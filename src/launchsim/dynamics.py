@@ -40,7 +40,7 @@ from launchsim.constants import MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M, V_RE
 from launchsim.units import to_g
 
 if TYPE_CHECKING:
-    from launchsim.assist.base import AssistForces, AssistModel, TrackGeometry
+    from launchsim.assist.base import AssistForces, AssistModel, PushWatch, TrackGeometry
     from launchsim.vehicle import DragModel, ThrustSchedule
 
 
@@ -432,6 +432,25 @@ class TrackParams:
             self.thrust_N(t) if thrust_N is None else thrust_N,
             self.g_eff_mps2,
             self.track,
+        )
+
+    def watch_value(self, watch: PushWatch, t: float, y: np.ndarray) -> float:
+        """The value of a drive's PushWatch (``AssistModel.push_watches``) at time t [s]
+        for the track state y, with the delivered thrust from the schedule (in the
+        watch's unit: m, m/s or N)."""
+        lay = self.layout
+        return float(
+            watch.fn(
+                t,
+                float(lay.get(y, "s_m")),
+                float(lay.get(y, "sdot_mps")),
+                self.extra(y),
+                float(lay.get(y, "m_kg")),
+                self.carriage_mass_kg,
+                self.thrust_N(t),
+                self.g_eff_mps2,
+                self.track,
+            )
         )
 
 

@@ -40,6 +40,7 @@ PHYSICS_MODULES = [
     "structure",  # the structural sizing primitives (SP7 step S1)
     "assist/base",
     "assist/constant_accel",
+    "assist/linear_motor",  # the force- and power-limited drive (SP7 step S4)
     "assist/none",
     "assist/track",
     "display",  # the scene's display-only reconstructions (SP2 step A2, design 4.1)

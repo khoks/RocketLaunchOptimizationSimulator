@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 
-from launchsim.assist.base import AssistForces, TrackGeometry
+from launchsim.assist.base import AssistForces, PushWatch, TrackGeometry
 
 if TYPE_CHECKING:
     from launchsim.config import NoAssistConfig
@@ -18,11 +18,14 @@ class NoAssist:
     """A pad launch. name is the registry key ``none``; there are no extra states, no
     impingement (f_imp = 0), a unit efficiency, a zero push time and a zero facility
     length; ``state_rate`` is never called because the planner issues no track phase
-    for this model (calling it raises). name and extra_state_names are class constants
-    (the registry key and the track state layout cannot change per instance)."""
+    for this model (calling it raises). name, extra_state_names and push_time_exact
+    (True: no push, exactly) are class constants (the registry key and the track state
+    layout cannot change per instance); the SP7 protocol members bind nothing
+    (``at_push_start`` returns the model), list nothing and never stall."""
 
     name: ClassVar[str] = "none"
     extra_state_names: ClassVar[tuple[str, ...]] = ()
+    push_time_exact: ClassVar[bool] = True
     f_imp: float = 0.0
     efficiency: float = 1.0
     carriage_mass_kg: float = 0.0
@@ -56,6 +59,28 @@ class NoAssist:
     def push_time_estimate(self, track: TrackGeometry) -> float:
         """No push: 0 s."""
         return 0.0
+
+    def at_push_start(
+        self,
+        m_vehicle_kg: float,
+        thrust_axial_N: float,
+        g_eff_mps2: float,
+        track: TrackGeometry,
+    ) -> NoAssist:
+        """Nothing to bind: the model itself (inputs unused)."""
+        return self
+
+    def kink_times(self) -> tuple[tuple[str, float], ...]:
+        """No push, no kink: empty."""
+        return ()
+
+    def push_watches(self) -> tuple[PushWatch, ...]:
+        """No push, no watched crossing: empty."""
+        return ()
+
+    def stall_reason(self) -> str | None:
+        """No push to stall: None."""
+        return None
 
     def braking_distance_m(self, v_mps: float) -> float:
         """No carriage: 0 m."""

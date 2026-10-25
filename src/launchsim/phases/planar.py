@@ -556,7 +556,8 @@ class FlightStart:
 
     prefix: the trace so far (HOLD and ASSIST phases, the release and liftoff events;
     view bound to t_fs once the flight starts); status: "nominal", or the prelude's
-    "no_liftoff" / "drive_limit" (no flight follows); t_fs_s [s] and y_fs (planar
+    "no_liftoff" / "drive_limit" / "drive_stall" (no flight follows); t_fs_s [s] and
+    y_fs (planar
     state, theta = 0): the flight start (release, or the liftoff root of an extended
     hold), None without a flight; t_ign1_s [s]: stage 1's absolute ignition time, None
     when its ignition fails or when it lights at an altitude; ign1_alt_m [m]: the
@@ -909,10 +910,13 @@ class PlanarPlanner:
         PLANAR_LAYOUT with the track's constant g_eff = g_ref and the constant ambient
         pressure p(z_exit), then ``map_release_planar`` (vertical tracks only in Phase 2)
         at the track-end root; the flight starts at release (t_fs = t_release, theta =
-        0). A drive-limit stop on the track ends the start with status drive_limit. A
-        first stage stated by ``height_method: event`` flies the push unlit and starts
-        the flight with a pending ignition at the altitude z_exit + h
-        (``FlightStart.ign1_alt_m``), which ``_fly_to_kick`` resolves."""
+        0). A drive-limit or stall stop on the track ends the start with status
+        drive_limit or drive_stall. A first stage stated by ``height_method: event``
+        flies the push unlit and starts the flight with a pending ignition at the
+        altitude z_exit + h (``FlightStart.ign1_alt_m``), which ``_fly_to_kick``
+        resolves; one referenced to the release on a drive whose push time is not exact
+        (the linear motor) flies the push unlit and lights at t_release + t_ign_s, the
+        time written here (D-SP7-25)."""
         stage0 = self.vehicle.stages[0]
         spec = self.ignition[stage0.name]
         tr = self.new_builder()
@@ -936,6 +940,12 @@ class PlanarPlanner:
         tr.y_release = y_rel.copy()
         tr.add_event("release", t, ASSIST_KIND, 0, y_rel)
         t_ign = tr.t_ign_abs_s.get(stage0.name)
+        if t_ign is None and not spec.lights_at_height and not spec.fails:
+            # A release-referenced ignition pending through the push (a drive whose
+            # push time is not exact: ``prelude.pending_until_release``) lights at the
+            # flown release plus t_ign_s (D-SP7-25), as the 1-D ``ascend`` resolves it.
+            t_ign = spec.t_ign_abs_s(t)
+            tr.t_ign_abs_s[stage0.name] = t_ign
         ign_alt = None
         if spec.lights_at_height and not spec.fails and spec.trigger_value is not None:
             ign_alt = exit_.z_exit_m + spec.trigger_value

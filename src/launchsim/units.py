@@ -1,8 +1,9 @@
 """Unit conversions at the YAML and plot boundary.
 
-Internally everything is SI and radians. Degrees, km, kN, tonnes, g, kWh and MJ appear
-only in configuration files, plot labels and reports and are converted here, as are the
-structure file's units (GPa, MPa, bar, mm, kg/MN and kg/kN; SP7 step S1). Nothing else
+Internally everything is SI and radians. Degrees, km, kN, MW, tonnes, g, kWh and MJ
+appear only in configuration files, plot labels and reports and are converted here, as
+are the structure file's units (GPa, MPa, bar, mm, kg/MN and kg/kN; SP7 step S1) and the
+linear motor's power limit in MW (SP7 step S4). Nothing else
 in the package multiplies by 1000, 1e5, 1e6, 1e9, pi/180 or g0. Percent is a reporting
 format, not covered by that rule: the offload reports and the calibration footnote in
 plots.py use ``to_percent``, other labels Python's ``%`` format spec or a factor 100 of
@@ -60,6 +61,16 @@ def mn_to_n(force_mn: Quantity) -> Quantity:
 def n_to_mn(force_n: Quantity) -> Quantity:
     """Newtons to meganewtons (reports, such as a peak interface force; SP7 step S3b)."""
     return force_n / 1.0e6
+
+
+def mw_to_w(power_mw: Quantity) -> Quantity:
+    """Megawatts to watts (the linear motor's ``power_max_MW``; SP7 step S4)."""
+    return power_mw * 1.0e6
+
+
+def w_to_mw(power_w: Quantity) -> Quantity:
+    """Watts to megawatts (reports)."""
+    return power_w / 1.0e6
 
 
 def t_to_kg(mass_t: Quantity) -> Quantity:

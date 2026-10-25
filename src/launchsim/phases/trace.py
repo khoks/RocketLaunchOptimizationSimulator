@@ -238,12 +238,14 @@ class RunTrace:
     it into a Result).
 
     phases: every PhaseResult in order; events: EventRecords in time order; status:
-    "nominal", "impact", "no_liftoff" or "drive_limit"; flags: run flags (every
+    "nominal", "impact", "no_liftoff", "drive_limit" or "drive_stall" (a linear motor
+    that cannot start its push, SP7 step S4); flags: run flags (every
     disarmed-event note, no_liftoff, ...); assumptions: run-specific assumption strings
     (hold extension); t_release_s: absolute release time [s] (0 on a pad, the track-end
     root on a track); y_release: the ascent state at release (the model's layout;
     quadratures zero): on a pad the state at the hold-down release t = 0, which always
-    happens; None when a track run stopped before the track end (drive_limit);
+    happens; None when a track run stopped before the track end (drive_limit,
+    drive_stall);
     t_flight_start_s and y_flight_start: when and in what state the free flight (the
     loss accounting) began: release, or the liftoff root of an extended hold; None when
     it never began; hold: the HoldSummary or None; t_ign_abs_s: absolute ignition time
