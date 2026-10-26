@@ -472,7 +472,9 @@ def rhs_track(t: float, y: np.ndarray, p: TrackParams) -> np.ndarray:
         dJ_mass/dt   = (dM/dt) (sdot^2/2 + g_eff z(s))   dM/dt = dm/dt <= 0
 
     so the assist energy identity reads E_drive + W_thrust = delta(M sdot^2/2 +
-    M g_eff z) - J_mass + dissipated with M = m + m_carriage.
+    M g_eff z) - J_mass + dissipated with M = m + m_carriage, plus, with a linear motor
+    in a sealed shaft (SP7 step S5), the work done against the trapped column, the
+    model's extra state W_piston_J (``losses.PistonWork``).
     """
     lay = p.layout
     s = float(lay.get(y, "s_m"))

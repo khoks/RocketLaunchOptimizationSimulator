@@ -47,9 +47,12 @@ from launchsim.dynamics import (
 from launchsim.losses import (
     AssistEnergyBudget,
     LossBudget,
+    PistonWork,
+    assist_identity_residual_rel,
     drive_power_extrema,
     drive_work_split,
     ignition_loss_analytic_mps,
+    piston_work,
 )
 from launchsim.phases import (
     ASCENT_KINDS,
@@ -504,7 +507,11 @@ def track_metrics(
     (assist_energy_J/kWh, peak_drive_power_W, peak_interface_force_N) are written
     beside them with the same numbers, and peak_track_normal_g = max(vehicle, carriage).
     A linear-motor push adds LINEAR_MOTOR_METRICS (``linear_motor_metrics``) after
-    them; no other drive gains a key. A ``drive_stall`` run writes
+    them, and in a sealed shaft (SP7 step S5) SEALED_SHAFT_METRICS after those
+    (``sealed_shaft_metrics``); no other drive gains a key. assist_energy_residual_rel is
+    ``losses.assist_identity_residual_rel``: the budget's residual_rel() (bit for bit as
+    before) without a sealed shaft, and with one the residual of the identity with the
+    work done against the column (``losses.PistonWork``). A ``drive_stall`` run writes
     STALL_UNAVAILABLE_TRACK_METRICS as None (``stall_unavailable_metrics``).
     """
     rows = frame[frame["phase"] == ASSIST_KIND]
@@ -521,6 +528,7 @@ def track_metrics(
     electrical = work_in / assist.efficiency
     p_max, t_p_max, p_min, _t_p_min = drive_power_extrema(assist_phases, track_layout)
     p_peak = max(0.0, p_max)
+    piston = sealed_shaft_piston(trace, assist)
     felt_peak, felt_t, felt_m, _phase = _peak_felt(frame, {ASSIST_KIND})
     n_v = float(rows["track_normal_g_vehicle"].max())
     n_c = float(rows["track_normal_g_carriage"].max())
@@ -547,7 +555,7 @@ def track_metrics(
         "propellant_burned_on_track_kg": m_start - m_end,
         "track_normal_g_vehicle_peak": n_v,
         "track_normal_g_carriage_peak": n_c,
-        "assist_energy_residual_rel": budget.residual_rel(),
+        "assist_energy_residual_rel": assist_identity_residual_rel(budget, piston),
         "track_start_altitude_m": track.start_altitude_m,
         "carriage_mass_kg": assist.carriage_mass_kg,
         # CLAUDE.md summary item: the track value overwrites the pad's zero.
@@ -561,7 +569,62 @@ def track_metrics(
     if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
         out.update(linear_motor_metrics(trace, assist, track, v_exit, p_peak))
         out["facility_length_m"] = linear_motor_facility_m(trace, assist, track, v_exit)
+        if piston is not None:  # SP7 step S5: a sealed shaft only
+            out.update(sealed_shaft_metrics(trace, assist, piston))
     return out
+
+
+SEALED_SHAFT_METRICS: tuple[str, ...] = (
+    "piston_work_J",
+    "piston_force_peak_N",
+    "bore_pressure_release_pa",
+)
+"""The track metrics written for a linear-motor push in a sealed shaft only (SP7 step S5;
+``sealed_shaft_metrics``), after LINEAR_MOTOR_METRICS: a vented linear-motor run and a
+constant_accel run gain none of them (their outputs stay as they were)."""
+
+
+def sealed_shaft_piston(trace: RunTrace, assist: AssistModel) -> PistonWork | None:
+    """The PistonWork of a linear-motor push in a sealed shaft (SP7 step S5;
+    ``losses.piston_work`` over the trace's ASSIST phases, in their track layout, with
+    the drive's SealedShaft); None for the vented shaft, any other drive and a trace
+    without ASSIST phases."""
+    if not isinstance(assist, LinearMotorAssist) or assist.shaft is None:
+        return None
+    phases = trace.assist_phases()
+    if not phases:
+        return None
+    return piston_work(phases, phases[0].spec.params.layout, assist.shaft)
+
+
+def sealed_shaft_metrics(
+    trace: RunTrace, assist: LinearMotorAssist, piston: PistonWork
+) -> dict[str, Any]:
+    """SEALED_SHAFT_METRICS of a sealed-shaft push (SI; docs/physics.md, "The sealed
+    shaft"; SP7 step S5).
+
+    Inputs: the RunTrace; the drive (its SealedShaft); the push's PistonWork. Output:
+    piston_work_J, the work done against the column W_p = int F_p sdot dt [J] (the
+    quadrature, PistonWork.work_J; its closed form is in the record); piston_force_peak_N, the
+    largest column force on the push [N], F_p at the largest position s the push's states
+    reach (F_p rises with s: the release position for a push that released; below p_0
+    A_bore; 0 for a push that never moved); bore_pressure_release_pa, the column's
+    pressure p(s) = p_0 (h_0/(h_0 + s))^gamma at the release state [Pa] (the flown
+    release position), None when the run never released. Frame: arc length along the
+    track."""
+    shaft = assist.shaft
+    if shaft is None:
+        raise ValueError("sealed_shaft_metrics needs a drive with a sealed shaft")
+    phases = trace.assist_phases()
+    layout = phases[0].spec.params.layout
+    s_max = max(float(np.max(np.asarray(layout.get(res.y, "s_m")))) for res in phases)
+    released = trace.y_release is not None
+    s_release = float(layout.get(phases[-1].y_end, "s_m"))
+    return {
+        "piston_work_J": piston.work_J,
+        "piston_force_peak_N": shaft.force_N(s_max),
+        "bore_pressure_release_pa": shaft.pressure_pa(s_release) if released else None,
+    }
 
 
 STALL_UNAVAILABLE_TRACK_METRICS: tuple[str, ...] = (
@@ -621,7 +684,8 @@ POWER_LIMIT_TIE_REL = 1e-6
 the push time] is a tie at the release, not a power-limited push: the speed where the
 power limit starts binding, P_max/F_pre (F_pre the law's force before the power term:
 the corner P_max/F_max after the force law's rise, P_max/F_lim(t) inside it, P_max/(M
-(a + g) - (1 - f_imp) T) under the acceleration law), equals the exit speed to within
+(a + g) - (1 - f_imp) T) under the acceleration law, P_max/(M (a + g) - (1 - f_imp) T +
+F_p(s)) with a sealed shaft), equals the exit speed to within
 about 1e-6 (on the force plateau k = P_max/(F_max v_e) = 1, the design's r = 1 point;
 not the rise fraction r(t)), a limit the push reaches only in its last instant (k = 1
 itself logs no event; 1 - k = 1e-9 logs one 9.1e-10 of the push time before the

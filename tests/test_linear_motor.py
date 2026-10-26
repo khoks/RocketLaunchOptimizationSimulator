@@ -1531,7 +1531,8 @@ def test_linear_motor_config_si_properties_and_build() -> None:
         ({"exhaust_impingement_fraction": -0.1}, "greater_than_equal"),
         ({"carriage_mass_t": "22"}, "float_type"),
         ({"brake_decel_g": math.inf}, "finite_number"),
-        ({"shaft": "sealed"}, "literal_error"),
+        ({"shaft": "sealed"}, "shaft sealed needs shaft_bore_m, shaft_gap_m, shaft_gamma"),
+        ({"shaft": "closed"}, "literal_error"),
         ({"control": "speed"}, "literal_error"),
         ({"net_accel_g": 3.0}, "extra_forbidden"),
         ({"release_speed_mps": 76.7, "stop_taper_m": 10.0}, "refused together with stop_taper_m"),
@@ -1566,9 +1567,11 @@ def test_linear_motor_config_si_properties_and_build() -> None:
 def test_linear_motor_config_refusals(edit: dict[str, Any], match: str) -> None:
     """Each refused block: the control-law keys, the taper, a null optional key, strict
     finite numbers (KI-030's rule: a bool and a numeric string for each of the eleven
-    numbers, NaN, inf), the bounds, the vented shaft only, no assist-family key, and
-    (SP7 step S4a) a release speed together with a stop taper (any stop_taper_m given,
-    0 included: the taper is a release-at-L device, design 4.6)."""
+    numbers, NaN, inf), the bounds, a shaft other than vented or sealed (and, since SP7
+    step S5, a sealed shaft without its three keys: tests/test_sealed_shaft.py has the
+    rest), no assist-family key, and (SP7 step S4a) a release speed together with a stop
+    taper (any stop_taper_m given, 0 included: the taper is a release-at-L device, design
+    4.6)."""
     block = {**LM_BLOCK, **edit}
     with pytest.raises(ValidationError) as info:
         LinearMotorConfig.model_validate(block)

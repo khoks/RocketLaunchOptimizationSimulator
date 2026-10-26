@@ -106,6 +106,10 @@ _H_BASE_LIST_M: tuple[float, ...] = tuple(_H_BASE_M.tolist())
 _R0_ICAO_M = float(_ICAO.r)
 _G0_ICAO_MPS2 = float(_ICAO.g_0)
 _KAPPA_AIR = float(_ICAO.kappa)
+KAPPA_AIR = _KAPPA_AIR
+"""The ratio of specific heats of air in the ICAO standard atmosphere (ambiance's kappa,
+1.4), the reference a sealed shaft's stated gamma is quoted against (SP7 step S5,
+``assist.linear_motor.LinearMotorAssist.sealed_assumptions``)."""
 
 
 @dataclass(frozen=True)

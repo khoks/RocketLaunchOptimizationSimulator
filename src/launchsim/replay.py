@@ -1360,10 +1360,12 @@ def carriage_mass_kg(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float |
 
 
 def is_vented(assist: Mapping[str, Any]) -> bool:
-    """True when a run's shaft is vented (assist.shaft; the only setting the config
-    takes today, so the air column is never modelled on the push). No metric records
-    it. A linear-motor block that leaves the key out is vented (SP7 step S4a: its
-    config's default and only shaft until S5); for any other drive a missing key reads as
+    """True when a run's shaft is vented (assist.shaft). No metric records it, though a
+    sealed shaft's run (SP7 step S5, a linear motor's ``shaft: sealed``) writes
+    ``piston_work_J``; this reads a sealed block as not vented, and the page does not yet
+    name the sealed shaft's trapped column (open for a later step). A linear-motor
+    block that leaves the key out is vented (SP7 step S4a: its config's default, and
+    its only shaft until S5); for any other drive a missing key reads as
     before (not stated). After a release below the mouth the planar flight computes drag,
     q and Mach in the rest of the shaft (``closeup_notes``)."""
     default = VENTED_SHAFT if assist.get("model") == LINEAR_MOTOR_MODEL else None

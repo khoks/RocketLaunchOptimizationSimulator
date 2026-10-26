@@ -1647,6 +1647,96 @@ def test_the_flown_push_assumption_line(
     )
 
 
+# ------------------------------------------------- the sealed shaft (SP7 step S5)
+
+
+SEALED = {"shaft": "sealed", "shaft_bore_m": 3.7, "shaft_gap_m": 5.0, "shaft_gamma": 1.4}
+"""A sealed shaft (sources section 10: the 3.7 m bore, a 5 m gap, gamma 1.4)."""
+
+
+def _column_N(s_m: float, p0_pa: float) -> float:
+    """The trapped column's force (p_0 - p_0 (h_0/(h_0 + s))^gamma) pi d^2/4 [N] of SEALED
+    at s_m [m], p_0 = p0_pa [Pa] (the test's own formula)."""
+    h0, gamma, bore = SEALED["shaft_gap_m"], SEALED["shaft_gamma"], SEALED["shaft_bore_m"]
+    return (p0_pa - p0_pa * (h0 / (h0 + s_m)) ** gamma) * math.pi * bore**2 / 4.0
+
+
+def test_a_sealed_push_lowers_the_flown_interface_peak_by_the_column_share() -> None:
+    """SP7 step S5 (the brief's note from S4b): a cold force-law push (LM, 30 m, F_max 22
+    MN) on a 20 t carriage, sealed and vented, flown alone and reduced by
+    ``sim.linear_motor_push_load`` (no sealed branch on that path). Both pushes' max-F_int
+    case is the end of the rise t_r (after it the vented F_int is flat at (m_v/M) F_max and
+    the sealed one falls as the column's force grows); there the sealed F_int is the
+    vented peak less (m_v/M) F_p(s*), with s* the sealed push's position at t_r and F_p
+    from the closed form at p_0 = p_atm(-30 m) (the track start), at 1e-9, and equals the
+    vented drive evaluated at the sealed state less the same share; the max-n case is
+    lower by F_p(s*)/(M g0) the same way (cold: n = (F - F_p)/(M g0))."""
+    from launchsim.atmosphere import ambient_scalar
+    from launchsim.phases.engine import ZERO_SPAN_S
+
+    lm = {**LM, "carriage_mass_t": CARRIAGE_T}
+    vented, sealed = _fly(lm), _fly({**lm, **SEALED})
+    assert sealed.assist.shaft is not None and vented.assist.shaft is None
+    p0 = ambient_scalar(-30.0)[0]
+    assert sealed.assist.shaft.p0_pa == p0
+    m_v = vented.vehicle.liftoff_mass_kg()
+    total = m_v + t_to_kg(CARRIAGE_T)
+    share = m_v / total
+    peak_v, peak_s = _case(vented.push, "max F_int"), _case(sealed.push, "max F_int")
+    assert peak_v.t_s == peak_s.t_s == T_R_S
+    assert _close(peak_v.interface_force_N or 0.0, share * F_MAX_N)
+    (res,) = [r for r in sealed.trace.assist_phases() if abs(r.t_end - T_R_S) <= ZERO_SPAN_S]
+    params = res.spec.params
+    y = np.asarray(res.y_end, dtype=float)
+    s_star = float(params.layout.get(y, "s_m"))
+    assert 0.5 < s_star < 2.0
+    column = _column_N(s_star, p0)
+    expected = (peak_v.interface_force_N or 0.0) - share * column
+    assert _close(peak_s.interface_force_N or 0.0, expected)
+    open_drive = dataclasses.replace(params.assist, shaft=None)
+    at_state = open_drive.state_rate(
+        T_R_S,
+        s_star,
+        float(params.layout.get(y, "sdot_mps")),
+        np.zeros(0),
+        float(params.layout.get(y, "m_kg")),
+        params.carriage_mass_kg,
+        params.thrust_N(T_R_S),
+        params.g_eff_mps2,
+        params.track,
+    )
+    assert _close(peak_s.interface_force_N or 0.0, at_state.interface_force_N - share * column)
+    n_v, n_s = _case(vented.push, "max n"), _case(sealed.push, "max n")
+    assert n_v.t_s == n_s.t_s == T_R_S
+    assert _close(n_s.n_g, n_v.n_g - column / (total * G0_MPS2))
+
+
+def test_a_sealed_shaft_does_not_raise_the_structural_mass(
+    lm_transform: sim.StructureTransform, request: pytest.FixtureRequest
+) -> None:
+    """SP7 step S5: the structural transform of SHORT in a sealed shaft on the synthetic
+    file (the flown push carries the column's lower interface force and felt load into
+    the sizing through the S4b path, no new branch): its record's keys are
+    STRUCTURE_RECORD_KEYS (no new key), and at x = 20 t its quasi-static n_q, its charged
+    n_peak and F_peak are below the vented push's (``lm_transform``) and its dm is not
+    larger (a smaller interface force and felt load need no more structure)."""
+    sealed = _transform({**SHORT, **SEALED})
+    x = 20_000.0
+    at_s, at_v = sealed.sizing_at(x), lm_transform.sizing_at(x)
+    rec = sim.structure_record(sealed, at_s, sealed.sizing_at(0.0))
+    assert tuple(rec) == sim.STRUCTURE_RECORD_KEYS
+    req_s, req_v = at_s.increment.requirement, at_v.increment.requirement
+    assert req_s.n_quasi_g < req_v.n_quasi_g
+    assert req_s.n_peak_g < req_v.n_peak_g and req_s.f_peak_N < req_v.f_peak_N
+    assert at_s.total_kg <= at_v.total_kg
+    request.node.user_properties.extend(
+        [
+            ("dm_sealed_kg_synthetic_not_a_finding", at_s.total_kg),
+            ("dm_vented_kg_synthetic_not_a_finding", at_v.total_kg),
+        ]
+    )
+
+
 # --------------------------------------------------------------------- slow: the solve
 
 

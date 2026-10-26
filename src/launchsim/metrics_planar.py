@@ -55,6 +55,7 @@ from launchsim.losses import (
     AssistEnergyBudget,
     ClosureTerms,
     LossBudget,
+    assist_identity_residual_rel,
     drive_power_extrema,
     drive_work_split,
 )
@@ -68,6 +69,8 @@ from launchsim.metrics import (
     linear_motor_facility_m,
     linear_motor_metrics,
     linear_motor_track_peaks,
+    sealed_shaft_metrics,
+    sealed_shaft_piston,
     stall_unavailable_metrics,
 )
 from launchsim.orbit import orbit_elements
@@ -988,9 +991,13 @@ def planar_track_metrics(
     beside their canonical keys, and peak_track_normal_g = max(vehicle, carriage). A
     linear-motor push adds ``metrics.LINEAR_MOTOR_METRICS`` after the push settings
     (``metrics.linear_motor_metrics``; its net_accel_* stay None; its facility length
-    from its release position, ``metrics.linear_motor_facility_m``); no other drive
-    gains a key. On a linear-motor push that did not stall the felt-g and interface-force
-    peaks come from the dense output instead of the sampled rows
+    from its release position, ``metrics.linear_motor_facility_m``), and in a sealed
+    shaft (SP7 step S5) ``metrics.SEALED_SHAFT_METRICS`` after those
+    (``metrics.sealed_shaft_metrics``); no other drive gains a key.
+    assist_energy_residual_rel is ``losses.assist_identity_residual_rel``: residual_rel()
+    without a sealed shaft, with one the identity with the work done against the column.
+    On a linear-motor push that did not stall the felt-g and interface-force peaks come
+    from the dense output instead of the sampled rows
     (``metrics.linear_motor_track_peaks``, SP7 step S4b, KI-046; the keys and their order
     unchanged). A ``drive_stall`` run writes ``metrics.STALL_UNAVAILABLE_TRACK_METRICS`` as
     None. Frame: the flat track frame with constant g_eff."""
@@ -1006,6 +1013,7 @@ def planar_track_metrics(
     work_in, work_out = drive_work_split(phases, layout)
     electrical = work_in / assist.efficiency
     p_max, t_p_max, p_min, _t_min = drive_power_extrema(phases, layout)
+    piston = sealed_shaft_piston(trace, assist)
     felt = rows["felt_axial_g"].to_numpy(dtype=float)
     i = int(felt.argmax())
     n_v = float(rows["track_normal_g_vehicle"].max())
@@ -1035,7 +1043,7 @@ def planar_track_metrics(
         "propellant_burned_on_track_kg": m_start - m_end,
         "track_normal_g_vehicle_peak": n_v,
         "track_normal_g_carriage_peak": n_c,
-        "assist_energy_residual_rel": budget.residual_rel(),
+        "assist_energy_residual_rel": assist_identity_residual_rel(budget, piston),
         "track_start_altitude_m": track.start_altitude_m,
         "carriage_mass_kg": assist.carriage_mass_kg,
         "peak_track_normal_g": max(n_v, n_c),
@@ -1048,6 +1056,8 @@ def planar_track_metrics(
     if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
         out.update(linear_motor_metrics(trace, assist, track, v_exit, max(0.0, p_max)))
         out["facility_length_m"] = linear_motor_facility_m(trace, assist, track, v_exit)
+        if piston is not None:  # SP7 step S5: a sealed shaft only
+            out.update(sealed_shaft_metrics(trace, assist, piston))
     return out
 
 

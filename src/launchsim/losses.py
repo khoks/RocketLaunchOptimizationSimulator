@@ -27,6 +27,7 @@ import numpy as np
 from scipy.optimize import brentq, minimize_scalar
 from scipy.special import lambertw
 
+from launchsim.assist.linear_motor import WORK_STATE, SealedShaft
 from launchsim.constants import V_REL_EPS_MPS
 from launchsim.dynamics import (
     PLANAR_LAYOUT,
@@ -106,7 +107,10 @@ class AssistEnergyBudget:
     damping (0 for the screening drive). Built by ``assist_energy_budget`` from the
     quadrature states of the ASSIST phases; the identity is work_drive + work_thrust =
     delta_mech + massflow_term + dissipated (docs/physics.md, "Assist energy
-    identity").
+    identity"), plus, with a sealed shaft (SP7 step S5), the work done against the
+    trapped column, ``PistonWork.work_J`` (the state W_piston_J), which is not one of
+    these fields: ``residual_J`` is then that work, and the identity's residual is
+    ``assist_identity_residual_rel``'s.
     """
 
     work_drive: float
@@ -122,7 +126,9 @@ class AssistEnergyBudget:
 
     def residual_rel(self) -> float:
         """|lhs - rhs| / max(|lhs|, 1 J) with lhs the supplied work (work_drive +
-        work_thrust) and rhs the explained energy; tests require < 1e-6."""
+        work_thrust) and rhs the explained energy; tests require < 1e-6. With a sealed
+        shaft (SP7 step S5) it is not the identity's residual (it holds W_p / lhs, about
+        5% on the pushes measured): ``assist_identity_residual_rel`` is."""
         lhs = self.work_drive + self.work_thrust
         return abs(self.residual_J()) / max(abs(lhs), RESIDUAL_FLOOR_J)
 
@@ -142,7 +148,9 @@ def assist_energy_budget(
     the first phase's start to the last phase's end, massflow_term = -(summed increment
     of J_mass), dissipated 0 (the screening drive dissipates nothing; a dissipative
     drive of Phase 3 must add its own quadrature). An empty sequence gives an all-zero
-    budget.
+    budget. A sealed shaft's column work (SP7 step S5) is not in these fields: it is
+    ``PistonWork``'s, and the budget's own ``residual_J`` is then that work
+    (``assist_identity_residual_rel`` closes the identity with it).
     """
     if not phases:
         return AssistEnergyBudget(0.0, 0.0, 0.0, 0.0, 0.0)
@@ -167,6 +175,79 @@ def assist_energy_budget(
         massflow_term=-sums["J_mass_J"],
         dissipated=0.0,
     )
+
+
+@dataclass(frozen=True)
+class PistonWork:
+    """The work done against the trapped column over a sealed-shaft push (SP7 step S5;
+    docs/physics.md, "The sealed shaft"), in J: a record of its own, outside
+    ``AssistEnergyBudget``'s fields (D-SP7-26, D-SP7-27: the 1-D golden dump compares
+    that dataclass's field list).
+
+    work_J: W_p = integral of F_p sdot dt, the summed per-phase increments of the drive's
+    extra state ``W_piston_J`` over the ASSIST phases (the integrator's quadrature);
+    closed_form_J: the closed form W_p(s_end) - W_p(s_start) (``assist.linear_motor.
+    SealedShaft.work_J``) between the first phase's start position and the last phase's
+    end position (F_p depends on s alone, so dW_p/dt = d W_p(s)/dt and the two agree on
+    any push to the integrator's error). W_p is the work done against the column's net
+    force F_p (whose own work on the carriage is -W_p): drive work the stack does not
+    receive, p_0 dV done on the atmosphere above less the internal energy the expanding
+    gas gives up, not dissipated; the assist energy identity with the column reads
+    work_drive + work_thrust = delta_mech + massflow_term + dissipated + work_J
+    (``identity_residual_J``).
+    """
+
+    work_J: float
+    closed_form_J: float
+
+    def closed_form_residual_rel(self) -> float:
+        """|work_J - closed_form_J| / max(|closed_form_J|, 1 J): the quadrature against
+        the closed form."""
+        return abs(self.work_J - self.closed_form_J) / max(
+            abs(self.closed_form_J), RESIDUAL_FLOOR_J
+        )
+
+    def identity_residual_J(self, budget: AssistEnergyBudget) -> float:
+        """work_drive + work_thrust - delta_mech - massflow_term - dissipated - work_J
+        [J] of the push's AssistEnergyBudget with the column's work."""
+        return budget.residual_J() - self.work_J
+
+    def identity_residual_rel(self, budget: AssistEnergyBudget) -> float:
+        """|identity_residual_J| / max(|work_drive + work_thrust|, 1 J) (the scale of
+        ``AssistEnergyBudget.residual_rel``); tests require < 1e-6, assert < 1e-9."""
+        lhs = budget.work_drive + budget.work_thrust
+        return abs(self.identity_residual_J(budget)) / max(abs(lhs), RESIDUAL_FLOOR_J)
+
+
+def piston_work(
+    phases: Sequence[PhaseResult], layout: StateLayout, shaft: SealedShaft
+) -> PistonWork:
+    """The PistonWork of a sealed-shaft push (SP7 step S5).
+
+    Inputs: the ASSIST PhaseResults in time order, whose states (``layout``, the track
+    layout of a sealed-shaft drive) carry ``s_m`` and WORK_STATE (``W_piston_J``); the
+    drive's SealedShaft. Output: work_J, the summed increments of W_piston_J [J], and
+    closed_form_J, W_p(s at the last phase's end) - W_p(s at the first phase's start)
+    [J]; an empty sequence gives a zero record. Frame: arc length along the track."""
+    if not phases:
+        return PistonWork(0.0, 0.0)
+    work = 0.0
+    for res in phases:
+        y0 = np.asarray(res.y[:, 0], dtype=float)
+        work += float(layout.get(res.y_end, WORK_STATE)) - float(layout.get(y0, WORK_STATE))
+    s_start = float(layout.get(np.asarray(phases[0].y[:, 0], dtype=float), "s_m"))
+    s_end = float(layout.get(phases[-1].y_end, "s_m"))
+    return PistonWork(work, shaft.work_J(s_end) - shaft.work_J(s_start))
+
+
+def assist_identity_residual_rel(budget: AssistEnergyBudget, piston: PistonWork | None) -> float:
+    """The relative residual of the assist energy identity of a push (the metric
+    ``assist_energy_residual_rel``): ``budget.residual_rel()`` without a sealed shaft
+    (piston None: the S4 value, bit for bit), and with one the identity with the
+    column's work, ``piston.identity_residual_rel(budget)`` (SP7 step S5)."""
+    if piston is None:
+        return budget.residual_rel()
+    return piston.identity_residual_rel(budget)
 
 
 def _drive_scan(

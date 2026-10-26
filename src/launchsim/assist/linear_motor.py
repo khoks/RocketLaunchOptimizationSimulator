@@ -2,9 +2,18 @@
 S4; docs/physics.md, "Linear motor"; design section 4.6, D-SP7-24, D-SP7-25, D-SP7-12).
 
 Track equation (``assist/base.py``), with M = m_v + m_c, T the vehicle's delivered axial
-thrust, T_sys = (1 - f_imp) T and F_other = 0 (vented shaft, no friction):
+thrust, T_sys = (1 - f_imp) T and F_other = F_p(s), the trapped column's force on the
+carriage (0 for the vented shaft; no friction):
 
-    M sddot = F + T_sys - M g_eff sin phi,      F_int = m_v (sddot + g_eff sin phi) - T
+    M sddot = F + T_sys - M g_eff sin phi - F_p,      F_int = m_v (sddot + g_eff sin phi) - T
+
+The sealed shaft (SP7 step S5; ``SealedShaft``; design 4.8, D-SP7-26): the carriage seals
+the bore above a gap h_0 of air trapped at the push-start pressure p_0 = p_atm(z_start),
+which expands adiabatically as the carriage rises, F_p(s) = max(0, p_0 - p_0 (h_0/(h_0 +
+s))^gamma) A_bore <= p_0 A_bore, against the motion, on the carriage. Under the force law
+the drive's force is unchanged and the stack slows (F_int lower by (m_v/M) F_p); under the
+acceleration law the drive supplies F_p too (then capped as below). The work done against
+it, W_p = int F_p sdot dt, is the model's extra state ``W_piston_J`` (WORK_STATE).
 
 Two control laws (t on the push clock, t = 0 at push start; r(t) = min(1, t / t_r), 1
 for a step t_r = 0):
@@ -13,21 +22,22 @@ for a step t_r = 0):
   the power term only for sdot > 0, F_0 = max(0, M_0 g_eff sin phi_0 - T_sys(0)) the
   holding force fixed at push start (``at_push_start``);
 - ``acceleration``: a net acceleration command a(t) = a_cmd r(t), F = M (a(t) + g_eff
-  sin phi) - T_sys, then capped by F_max and P_max / sdot; while a cap binds sddot
-  follows from the capped F.
+  sin phi) - T_sys + F_p(s), then capped by F_max and P_max / sdot; while a cap binds
+  sddot follows from the capped F.
 
 The stop taper (release at L) over the last s_taper metres scales, by w(s) = min(1,
 (L - s) / s_taper), the acceleration law's command, or the force law's force limit toward
 the holding value F_h = M g_eff sin phi - T_sys, and the power cap applies to the force
 that is flown (D-SP7-50, SP7 step S4a): F = min(F_h + (min(F_lim(t), F_max) - F_h) w(s),
-P_max / sdot) under the force law, so F sdot <= P_max on every branch. The push releases
-at the track end, or (S4a, ``release_speed_mps``) where sdot reaches the release speed
-v_release before it (``phases.prelude.fly_track``; refused with a taper, a release-at-L
-device). P_max is the mechanical power at the carriage; the electricity is the drive work
-over the efficiency, which moves no trajectory. The carriage brakes after release in
-closed form at the constant total deceleration a_b, from the release point (facility
-max(L, s_release + d_brake): within the stroke left, or past the track end). SI, radians,
-pure.
+P_max / sdot) under the force law, so F sdot <= P_max on every branch (the force law's
+taper is refused with a sealed shaft, whose column its holding value leaves out: S5).
+The push releases at the track end, or (S4a, ``release_speed_mps``) where sdot reaches
+the release speed v_release before it (``phases.prelude.fly_track``; refused with a
+taper, a release-at-L device). P_max is the mechanical power at the carriage; the
+electricity is the drive work over the efficiency, which moves no trajectory. The
+carriage brakes after release in closed form at the constant total deceleration a_b,
+from the release point (facility max(L, s_release + d_brake): within the stroke left, or
+past the track end). SI, radians, pure.
 """
 
 from __future__ import annotations
@@ -41,6 +51,7 @@ import numpy as np
 from launchsim import units
 from launchsim.assist.base import AssistForces, PushWatch, TrackGeometry
 from launchsim.assist.track import StraightTrack
+from launchsim.atmosphere import KAPPA_AIR, standard_atmosphere
 
 if TYPE_CHECKING:
     from launchsim.config import LinearMotorConfig
@@ -81,6 +92,104 @@ RELEASE_TRIGGER_TARGET_SPEED = "target_speed"
 ``phases.engine.ev_release_speed``, whose name it is)."""
 RELEASE_TRIGGERS: tuple[str, ...] = (RELEASE_TRIGGER_TRACK_END, RELEASE_TRIGGER_TARGET_SPEED)
 """The values of the ``release_trigger`` metric of a run that released."""
+ShaftKind = Literal["vented", "sealed"]
+"""The shaft below the carriage (SP7 step S5): ``vented`` (no air column) or ``sealed``
+(the carriage seals a trapped column, ``SealedShaft``); ``config.ShaftKind`` states the
+same set at the YAML boundary (a test keeps the two equal)."""
+SHAFT_SEALED: ShaftKind = "sealed"
+"""The sealed shaft's ShaftKind (``from_config`` builds a SealedShaft for it)."""
+WORK_STATE = "W_piston_J"
+"""The extra track state of a sealed-shaft push: W_p = int F_p sdot dt [J], the work done
+against the trapped column's net force F_p on the carriage, drive work the stack does
+not receive (``SealedShaft``; the ``_J`` suffix gives it its atol,
+``phases.engine.atol_for``)."""
+SEALED_TAPER_REFUSAL = (
+    "a sealed shaft is refused with a stop taper under the force law: the taper scales the "
+    "force toward the open shaft's holding value M g_eff sin phi - (1 - f_imp) T, so the "
+    "trapped column would decelerate the stack at the track end and could stop it in the "
+    "shaft; leave one of them out (the acceleration law's taper flies its command, the "
+    "column included)"
+)
+"""Why ``LinearMotorAssist`` and ``config.LinearMotorConfig`` refuse a sealed shaft with
+the force law's stop taper (SP7 step S5)."""
+
+
+@dataclass(frozen=True)
+class SealedShaft:
+    """The trapped air column of a sealed shaft (SP7 step S5; design 4.8, D-SP7-26;
+    docs/physics.md, "The sealed shaft").
+
+    The carriage seals the bore (diameter bore_m [m], area A = pi bore^2 / 4) above a gap
+    gap_m = h_0 [m] of air trapped at the push-start pressure p0_pa = p_0 [Pa] (p_atm at
+    the track start, ``LinearMotorAssist.from_config``); as the carriage rises s [m] along
+    the track the column expands adiabatically with the ratio of specific heats gamma (>
+    1), uniformly and quasi-statically:
+
+        p(s)   = p_0 (h_0 / (h_0 + s))^gamma                          [Pa]
+        F_p(s) = max(0, p_0 - p(s)) A        (0 <= F_p < p_0 A)      [N]
+        W_p(s) = p_0 A s - p_0 V_0 [1 - (V_0 / V)^(gamma - 1)] / (gamma - 1)   [J]
+
+    with V_0 = A h_0 and V = A (h_0 + s): the open shaft above the carriage (p_0, the
+    vehicle in the air above it) against the column below, the net force on the carriage
+    against the motion, and the work done against it from s = 0 (the integral of F_p ds;
+    the net force's own work on the carriage is -W_p). Valid for s >= 0
+    (F_p = W_p = 0 for s <= 0, where the column would be compressed, which a push from
+    rest never does). Near the end of a small-gap stroke the cooled gas expands
+    non-uniformly and unsteadily, so the uniform, quasi-static adiabat is first order
+    there; the bound p_0 A holds regardless. SI, pure."""
+
+    bore_m: float
+    gap_m: float
+    gamma: float
+    p0_pa: float
+
+    def __post_init__(self) -> None:
+        """Refuse (ValueError) a bore, gap or p_0 not finite and > 0, and a gamma not
+        finite and > 1 (the work's closed form divides by gamma - 1)."""
+        for label, value in (
+            ("bore_m", self.bore_m),
+            ("gap_m", self.gap_m),
+            ("p0_pa", self.p0_pa),
+        ):
+            if not (math.isfinite(value) and value > 0.0):
+                raise ValueError(f"sealed shaft {label} must be finite and > 0")
+        if not (math.isfinite(self.gamma) and self.gamma > 1.0):
+            raise ValueError("sealed shaft gamma must be finite and > 1")
+
+    @property
+    def area_m2(self) -> float:
+        """The bore's cross-section A = pi bore^2 / 4 [m^2]."""
+        return math.pi * self.bore_m * self.bore_m / 4.0
+
+    @property
+    def force_bound_N(self) -> float:
+        """The bound p_0 A [N] that F_p never reaches (the column at zero pressure)."""
+        return self.p0_pa * self.area_m2
+
+    def pressure_pa(self, s_m: float) -> float:
+        """The column's pressure p(s) = p_0 (h_0 / (h_0 + s))^gamma [Pa] at the carriage
+        position s_m [m] along the track (p_0 for s <= 0)."""
+        if s_m <= 0.0:
+            return self.p0_pa
+        return self.p0_pa * (self.gap_m / (self.gap_m + s_m)) ** self.gamma
+
+    def force_N(self, s_m: float) -> float:
+        """The column's net force on the carriage F_p(s) = max(0, p_0 - p(s)) A [N],
+        against the motion, at s_m [m] (0 for s <= 0); written p_0 A (1 - (h_0 / (h_0 +
+        s))^gamma) through expm1 and log1p so the difference keeps its digits near s =
+        0."""
+        if s_m <= 0.0:
+            return 0.0
+        return -self.force_bound_N * math.expm1(-self.gamma * math.log1p(s_m / self.gap_m))
+
+    def work_J(self, s_m: float) -> float:
+        """The work done against the column W_p(s) = int_0^s F_p ds' = p_0 A s - p_0 V_0
+        [1 - (V_0 / V)^(gamma - 1)] / (gamma - 1) [J] from s = 0 to s_m [m] (V_0 = A h_0,
+        V = A (h_0 + s); 0 for s <= 0)."""
+        if s_m <= 0.0:
+            return 0.0
+        v0_frac = -math.expm1(-(self.gamma - 1.0) * math.log1p(s_m / self.gap_m))
+        return self.force_bound_N * (s_m - self.gap_m * v0_frac / (self.gamma - 1.0))
 
 
 @dataclass(frozen=True)
@@ -91,13 +200,16 @@ class PushStart:
     thrust at t = 0 [N] (before impingement); g_axial_mps2: g_eff sin phi(0) [m/s^2],
     the weight component per unit mass along the track at its start; holding_force_N:
     F_0 = max(0, M_0 g_axial - (1 - f_imp) T(0)) [N], the drive force that holds the
-    stack at rest (0 when the thrust alone lifts it).
+    stack at rest (0 when the thrust alone lifts it); column_end_N: a sealed shaft's
+    column force at the track end F_p(L) [N], its largest on the stroke (0 for the vented
+    shaft; SP7 step S5, ``LinearMotorAssist.stall_reason``).
     """
 
     m_total_kg: float
     thrust_N: float
     g_axial_mps2: float
     holding_force_N: float
+    column_end_N: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -117,15 +229,18 @@ class LinearMotorAssist:
     ``push_time_estimate``, ``push_watches`` and ``stall_reason`` need it);
     release_speed_mps: v_release [m/s], the speed along the track at which the push
     releases before the track end (SP7 step S4a; ``phases.prelude.fly_track`` watches
-    sdot - v_release; None: release at the track end; refused with a stop taper). name,
-    extra_state_names, push_time_exact (False: the push time is a result of the flown
-    push) and allow_negative_drive (False: a negative drive force ends the run with
-    ``drive_limit``) are class constants. Forces of one instant: see the module
-    docstring (drive_normal = 0, dissipated = 0).
+    sdot - v_release; None: release at the track end; refused with a stop taper);
+    shaft: the SealedShaft below the carriage (SP7 step S5), None for the vented shaft
+    (refused with a stop taper under the force law: ``__post_init__``). name,
+    push_time_exact (False: the push time is a result of the flown push) and
+    allow_negative_drive (False: a negative drive force ends the run with
+    ``drive_limit``) are class constants; extra_state_names is () for the vented shaft
+    and (WORK_STATE,) for a sealed one. Forces of one instant: see the module docstring
+    (drive_normal = 0, dissipated = 0: the work done against the column is held in its
+    own state, not dissipated).
     """
 
     name: ClassVar[str] = "linear_motor"
-    extra_state_names: ClassVar[tuple[str, ...]] = ()
     push_time_exact: ClassVar[bool] = False
     allow_negative_drive: ClassVar[bool] = False
 
@@ -143,6 +258,7 @@ class LinearMotorAssist:
     omega_p_rads: float = 0.0
     push_start: PushStart | None = None
     release_speed_mps: float | None = None
+    shaft: SealedShaft | None = None
 
     @classmethod
     def from_config(
@@ -152,13 +268,32 @@ class LinearMotorAssist:
         (``assist.build_assist``): the config's SI properties feed the model, g_eff_mps2
         [m/s^2] is quoted in its assumptions, and the track starts at exit_altitude -
         L sin phi so that its exit sits at the configured altitude (a buried silo starts
-        at -L)."""
+        at -L). A sealed shaft (SP7 step S5) traps its column at p_0 = p_atm(z_start), the
+        ICAO standard atmosphere's pressure at the track start's altitude
+        (``atmosphere.standard_atmosphere``, which raises ValueError for a track start
+        below its floor ALT_AMBIANCE_MIN_M, -5,004 m, never clamping it; the config
+        refuses such a sealed track first), whatever the flight model's own
+        atmosphere."""
         phi = config.track.phi_rad
         track = StraightTrack(
             length_m=config.stroke_m,
             phi_rad=phi,
             start_altitude_m=config.track.exit_altitude_m - config.stroke_m * math.sin(phi),
         )
+        shaft = None
+        if config.shaft == SHAFT_SEALED:
+            if (
+                config.shaft_bore_m is None
+                or config.shaft_gap_m is None
+                or config.shaft_gamma is None
+            ):
+                raise ValueError("a sealed shaft needs shaft_bore_m, shaft_gap_m and shaft_gamma")
+            shaft = SealedShaft(
+                bore_m=config.shaft_bore_m,
+                gap_m=config.shaft_gap_m,
+                gamma=config.shaft_gamma,
+                p0_pa=float(standard_atmosphere(track.start_altitude_m).p_pa),
+            )
         model = cls(
             control=config.control,
             force_max_N=config.force_max_N,
@@ -172,6 +307,7 @@ class LinearMotorAssist:
             f_imp=config.exhaust_impingement_fraction,
             g_eff_mps2=g_eff_mps2,
             release_speed_mps=config.release_speed_mps,
+            shaft=shaft,
         )
         return model, track
 
@@ -180,9 +316,13 @@ class LinearMotorAssist:
         finite and > 0; t_r not finite and >= 0; a_cmd given for the force law, missing
         for the acceleration law, or not finite and > 0; a taper, carriage mass or brake
         deceleration out of range; an efficiency outside (0, 1]; f_imp outside [0, 1];
-        omega_p not finite; and (SP7 step S4a) a release speed not finite and > 0, or set
+        omega_p not finite; (SP7 step S4a) a release speed not finite and > 0, or set
         together with a stop taper longer than 0 m (``tapered``: the taper is a
-        release-at-L device)."""
+        release-at-L device); and (SP7 step S5) a shaft that is not a SealedShaft or None,
+        or a sealed shaft under the force law with a stop taper (the taper scales the
+        force toward the open shaft's holding value M g_eff sin phi - (1 - f_imp) T, so
+        the column would decelerate the stack at the track end and could stop it in the
+        shaft)."""
         if self.control not in CONTROL_LAWS:
             raise ValueError(f"control must be one of {CONTROL_LAWS}, got {self.control!r}")
         for label, value in (("force_max_N", self.force_max_N), ("power_max_W", self.power_max_W)):
@@ -217,6 +357,28 @@ class LinearMotorAssist:
                     "release_speed_mps is refused with a stop taper (the taper is a "
                     "release-at-L device)"
                 )
+        if self.shaft is not None and not isinstance(self.shaft, SealedShaft):
+            raise ValueError("shaft must be a SealedShaft or None (vented)")
+        if self.shaft is not None and self.control == CONTROL_FORCE and self.tapered:
+            raise ValueError(SEALED_TAPER_REFUSAL)
+
+    # ------------------------------------------------------------------ the shaft
+
+    @property
+    def extra_state_names(self) -> tuple[str, ...]:
+        """The extra track states: () for the vented shaft, (WORK_STATE,) for a sealed
+        one (the column's work W_p [J])."""
+        return () if self.shaft is None else (WORK_STATE,)
+
+    @property
+    def sealed(self) -> bool:
+        """Whether the shaft below the carriage is sealed (``shaft`` set)."""
+        return self.shaft is not None
+
+    def piston_force_N(self, s_m: float) -> float:
+        """The trapped column's force F_p(s) [N] on the carriage, against the motion, at
+        s_m [m] along the track (``SealedShaft.force_N``); 0 for the vented shaft."""
+        return 0.0 if self.shaft is None else self.shaft.force_N(s_m)
 
     # ------------------------------------------------------------------ the force laws
 
@@ -278,10 +440,13 @@ class LinearMotorAssist:
         """The acceleration law's uncapped force M (a(t) w(s) + g_axial) - T_sys [N]:
         a(t) = a_cmd r(t) at push-clock time t [s], w(s) the taper weight at s_m [m] on a
         track of length_m [m], M = m_total_kg [kg], T_sys = thrust_sys_N [N] and g_axial
-        = g_eff sin phi [m/s^2]."""
+        = g_eff sin phi [m/s^2]; with a sealed shaft plus the column's force F_p(s) (SP7
+        step S5: the drive supplies it to fly the command)."""
         a_cmd = self.accel_command_mps2 if self.accel_command_mps2 is not None else 0.0
         a = a_cmd * self.rise_fraction(t) * self.taper_weight(s_m, length_m)
-        return m_total_kg * (a + g_axial_mps2) - thrust_sys_N
+        if self.shaft is None:
+            return m_total_kg * (a + g_axial_mps2) - thrust_sys_N
+        return m_total_kg * (a + g_axial_mps2) - thrust_sys_N + self.shaft.force_N(s_m)
 
     def pre_power_force_N(
         self,
@@ -347,28 +512,38 @@ class LinearMotorAssist:
         g_eff_mps2: float,
         track: TrackGeometry,
     ) -> AssistForces:
-        """sddot = (F + T_sys)/M - g_eff sin phi with F from ``drive_force_N``; F_int =
-        m_v (sddot + g_eff sin phi) - T; no normal drive force, no dissipation. Inputs as
-        in ``AssistModel.state_rate`` (SI, track frame, t on the push clock); the model
-        must be bound (``at_push_start``)."""
+        """sddot = (F + T_sys - F_p)/M - g_eff sin phi with F from ``drive_force_N`` and
+        F_p the sealed shaft's column force on the carriage (0 vented); F_int = m_v
+        (sddot + g_eff sin phi) - T, so under the force law a sealed shaft lowers it by
+        (m_v/M) F_p (the column pulls the carriage, which carries the vehicle); no
+        normal drive force, no dissipation; the extra state's rate dW_p/dt = F_p sdot
+        with a sealed shaft (none vented). Inputs as in ``AssistModel.state_rate`` (SI,
+        track frame, t on the push clock); the model must be bound (``at_push_start``)."""
         self._bound()
         g_axial = g_eff_mps2 * math.sin(track.phi(s_m))
         total = m_vehicle_kg + m_carriage_kg
         t_sys = (1.0 - self.f_imp) * thrust_axial_N
         force = self.drive_force_N(t, s_m, sdot_mps, total, t_sys, g_axial, track.length_m)
-        sddot = (force + t_sys) / total - g_axial
+        if self.shaft is None:
+            sddot = (force + t_sys) / total - g_axial
+            rate = np.zeros(0)
+        else:
+            piston = self.shaft.force_N(s_m)
+            sddot = (force + t_sys - piston) / total - g_axial
+            rate = np.array([piston * sdot_mps])
         return AssistForces(
             sddot_mps2=sddot,
             drive_force_N=force,
             drive_normal_N=0.0,
             interface_force_N=m_vehicle_kg * (sddot + g_axial) - thrust_axial_N,
             dissipated_W=0.0,
-            extra_rate=np.zeros(0),
+            extra_rate=rate,
         )
 
     def initial_extra(self) -> np.ndarray:
-        """No extra states."""
-        return np.zeros(0)
+        """The extra states at push start: none for the vented shaft, W_p = 0 J for a
+        sealed one."""
+        return np.zeros(len(self.extra_state_names))
 
     # ------------------------------------------------------------- the push protocol
 
@@ -380,22 +555,62 @@ class LinearMotorAssist:
         track: TrackGeometry,
     ) -> LinearMotorAssist:
         """A copy bound to the push start: M_0 = m_vehicle_kg + m_c [kg], T(0) =
-        thrust_axial_N [N], g_axial = g_eff_mps2 sin phi(0) [m/s^2] and the holding
-        force F_0 = max(0, M_0 g_axial - (1 - f_imp) T(0)) [N] (``PushStart``)."""
+        thrust_axial_N [N], g_axial = g_eff_mps2 sin phi(0) [m/s^2], the holding
+        force F_0 = max(0, M_0 g_axial - (1 - f_imp) T(0)) [N] and a sealed shaft's
+        column force at the track end F_p(L) [N] (``PushStart``; 0 vented). A push starts
+        at s = 0, where F_p = 0, so the column does not enter F_0."""
         total = m_vehicle_kg + self.carriage_mass_kg
         g_axial = g_eff_mps2 * math.sin(track.phi(0.0))
         hold = max(0.0, total * g_axial - (1.0 - self.f_imp) * thrust_axial_N)
-        return replace(self, push_start=PushStart(total, thrust_axial_N, g_axial, hold))
+        if self.shaft is None:
+            return replace(self, push_start=PushStart(total, thrust_axial_N, g_axial, hold))
+        column = self.shaft.force_N(track.length_m)
+        start = PushStart(total, thrust_axial_N, g_axial, hold, column)
+        return replace(self, push_start=start)
 
     def stall_reason(self) -> str | None:
         """The stall at push start (D-SP7-24): F_max + (1 - f_imp) T(0) <= M_0 g_eff sin
-        phi_0, the drive at its limit and the thrust cannot lift the stack; the one-line
-        reason with the numbers, None when the push can start. Needs the bound model."""
+        phi_0, the drive at its limit and the thrust cannot lift the stack; with a sealed
+        shaft (SP7 step S5) also F_max + (1 - f_imp) T(0) <= M_0 g_eff sin phi_0 + F_p(L),
+        the drive at its limit and the push-start thrust do not outweigh the weight and
+        the column at the track end, where the column is largest. A conservative guard
+        for every push: beyond the point where F_p(s) = F_max + (1 - f_imp) T - M g_eff
+        sin phi the column outweighs the drive and the thrust, and the speed falls from
+        its peak there; a cold step push (the power cap never reached) then stops before
+        L (and swings about that point, with no event to end the run, which would reach
+        t_max_s and the planner's RuntimeError) only when (F_max + (1 - f_imp) T - M g_eff
+        sin phi) L <= W_p(L), and between W_p(L)/L and F_p(L) it would still reach L,
+        slowly, on its momentum, which the rule refuses too. Not credited: the stack's
+        momentum, a rising thrust and a falling mass, and with a release speed a release
+        at that speed before the track end, where the column is below F_p(L) (the flag
+        says so). The one-line reason with the numbers, None when the push can start.
+        Needs the bound model."""
         b = self._bound()
         lift = self.force_max_N + (1.0 - self.f_imp) * b.thrust_N
         weight = b.m_total_kg * b.g_axial_mps2
         if lift > weight:
-            return None
+            if self.shaft is None or lift > weight + b.column_end_N:
+                return None
+            credited = (
+                "the stack's momentum, a rising thrust and a falling mass are not credited"
+                if self.release_speed_mps is None
+                else (
+                    "the stack's momentum, a rising thrust, a falling mass and a release at "
+                    "the release speed before the track end, where the column is below "
+                    "F_p(L), are not credited"
+                )
+            )
+            return (
+                f"drive_stall: the drive at F_max and the thrust at push start cannot hold "
+                f"the stack against the sealed shaft's trapped column at the track end: F_max "
+                f"+ (1 - f_imp) T(0) = {lift:.6g} N <= M_0 g_eff sin phi + F_p(L) = "
+                f"{weight + b.column_end_N:.6g} N (F_max = {self.force_max_N:.6g} N, T(0) = "
+                f"{b.thrust_N:.6g} N, f_imp = {self.f_imp:g}, M_0 = {b.m_total_kg:.6g} kg, "
+                f"F_p(L) = {b.column_end_N:.6g} N of the bound p_0 A = "
+                f"{self.shaft.force_bound_N:.6g} N); the push could stop in the shaft "
+                f"({credited}), so the run stopped on the track at push start (nothing "
+                "moved; the felt g and interface-force metrics are None)"
+            )
         return (
             f"drive_stall: the drive at F_max and the thrust together cannot lift the stack "
             f"at push start: F_max + "
@@ -417,11 +632,12 @@ class LinearMotorAssist:
         a_cmd for the acceleration law; t = t_r / 2 + sqrt(2 a_p L - a_p^2 t_r^2 / 12) /
         a_p when the rise ends inside the stroke (a_p t_r^2 / 6 < L), (6 L t_r /
         a_p)^(1/3) otherwise, sqrt(2 L / a_p) for a step.
-        It leaves out the power limit, the caps, the taper and the burn, so it is not
-        the push time; it is exact whenever the net acceleration is a_p r(t) throughout
-        (the uncapped, untapered acceleration law; a cold, untapered force-law push that
-        the power limit never reaches). Needs the bound model; ValueError when a_p <= 0
-        (a stall)."""
+        It leaves out the power limit, the caps, the taper, the burn and a sealed
+        shaft's column (SP7 step S5), so it is not the push time; it is exact whenever
+        the net acceleration is a_p r(t) throughout (the uncapped, untapered acceleration
+        law, the column included, since that law supplies F_p; a cold, untapered
+        force-law push in a vented shaft that the power limit never reaches). Needs the
+        bound model; ValueError when a_p <= 0 (a stall)."""
         b = self._bound()
         lift = self.force_max_N + (1.0 - self.f_imp) * b.thrust_N
         a_p = lift / b.m_total_kg - b.g_axial_mps2
@@ -601,7 +817,9 @@ class LinearMotorAssist:
         )
 
     def control_assumption(self) -> str:
-        """The control-law line: the law, its limits, its rise and the no-pull rule."""
+        """The control-law line: the law, its limits, its rise and the no-pull rule (the
+        acceleration law's force with a sealed shaft's column F_p(s), SP7 step S5; the
+        vented line unchanged)."""
         f_kn = units.n_to_kn(self.force_max_N)
         p_mw = units.w_to_mw(self.power_max_W)
         rise = (
@@ -621,9 +839,14 @@ class LinearMotorAssist:
                 f"at push start{never_pulls}"
             )
         a_g = units.to_g(self.accel_command_mps2 if self.accel_command_mps2 else 0.0)
+        force = (
+            "M (a + g_eff sin phi) - (1 - f_imp) T,"
+            if self.shaft is None
+            else "M (a + g_eff sin phi) - (1 - f_imp) T + F_p(s) (the sealed shaft's column),"
+        )
         return (
             f"linear_motor: acceleration law, net acceleration command a_cmd = {a_g:g} g0 "
-            f"(assumed) {rise}; the drive force M (a + g_eff sin phi) - (1 - f_imp) T, capped "
+            f"(assumed) {rise}; the drive force {force} capped "
             f"by F_max = {f_kn:g} kN and P_max / sdot with P_max = {p_mw:g} MW (assumed); "
             f"while a cap binds the acceleration follows from the capped force{never_pulls}"
         )
@@ -647,13 +870,17 @@ class LinearMotorAssist:
 
     def taper_assumption(self) -> str:
         """The release line of a push released at the track end: the stop taper, or a
-        step release."""
+        step release (the acceleration law's holding force at L with a sealed shaft's
+        column F_p(L), SP7 step S5; the force law's taper is refused with a sealed shaft;
+        the vented line unchanged)."""
         if not self.tapered:
             return (
                 "linear_motor: release at the track end (s = L) with no stop taper: the drive "
                 "force drops to zero in a step at release"
             )
         hold = "the holding force M g_eff sin phi - (1 - f_imp) T"
+        if self.shaft is not None:
+            hold += " plus the sealed shaft's column force F_p(L) at the track end"
         if self.control == CONTROL_FORCE:
             what = (
                 f"the force limit is scaled toward {hold} by min(1, (L - s) / s_taper), and "
@@ -675,7 +902,10 @@ class LinearMotorAssist:
         )
 
     def shaft_assumption(self) -> str:
-        """The shaft line: vented, no friction, and what the neglected air drag on the
+        """The shaft line: vented (or, SP7 step S5, sealed below the carriage, its column
+        in ``sealed_assumptions``, and the vented shaft that a planar run's track-push
+        line names, and with a release speed an early-release line, read as the shaft
+        open above the carriage), no friction, and what the neglected air drag on the
         vehicle in the shaft during the push would do under this control law (with a
         release speed, SP7 step S4a: what it would do to where the push reaches that
         speed, and to the speed of a push that releases at the track end without reaching
@@ -722,23 +952,189 @@ class LinearMotorAssist:
                 "the exit speed (biased high; drag can also make a cap bind that the "
                 "drag-free push never reaches)"
             )
+        if self.shaft is None:
+            shaft = "shaft vented (no air column)"
+        else:
+            named = (
+                "the track-push line of a planar run"
+                if self.release_speed_mps is None
+                else (
+                    "the track-push line of a planar run and the early-release line of a "
+                    "release before the track end"
+                )
+            )
+            shaft = (
+                "shaft sealed below the carriage (its trapped air column: the three lines "
+                "that start 'linear_motor: sealed shaft'; above the carriage the shaft is "
+                f"open at the mouth: the vented shaft named by {named} is, for this run, that "
+                "open shaft above the carriage)"
+            )
         if self.release_speed_mps is not None:
             return (
-                "linear_motor: shaft vented (no air column), no friction; air drag on the "
+                f"linear_motor: {shaft}, no friction; air drag on the "
                 "vehicle in the shaft is neglected during the push (after a release before "
                 "the track end the flight model flies on in the shaft after it, as the run's "
                 f"early-release line says): {drag}"
             )
         return (
-            "linear_motor: shaft vented (no air column), no friction; air drag on the "
-            f"vehicle in the shaft is neglected: {drag}"
+            f"linear_motor: {shaft}, no friction; air drag on the vehicle in the shaft is "
+            f"neglected: {drag}"
+        )
+
+    def sealed_assumptions(self) -> tuple[str, ...]:
+        """The sealed shaft's three lines (SP7 step S5; none for the vented shaft): the
+        column model (bore, gap, p_0, gamma, assumed when it differs from the ICAO air's
+        KAPPA_AIR, the pressure law, the force on the carriage and its bound, what it does
+        under this control law, the work done against it); what is not modelled on the
+        push, with the direction of each bias (the air pushed out of the mouth ahead of
+        the vehicle, the open shaft's hydrostatic drop, the non-uniform, unsteady
+        expansion of the cooled gas near the end of a small-gap stroke, the exhaust of an
+        engine lit on the track); and what is not modelled after the release or in the
+        geometry (the column after the release and the braking metrics it bounds, the
+        bore checked against the run's A_ref section only, the vent area a vented shaft
+        needs). Under the force law the column line's comparison with a vented shaft
+        names the exit speed, or with a release speed the release position and the push
+        time. With a release speed, under either law, the column line adds that the
+        sealed push's speed can peak and fall inside the track, so that a release speed
+        just below the peak can be passed over inside one integrator step (the push then
+        releases at the track end with the flag release_speed_not_reached), and the third
+        line adds what a release before the track end leaves out: the cavity under the
+        departing vehicle, closed below by the braking carriage, and the exhaust of a
+        stage lit in it. The reference numbers are the surveys' cases, labelled as such,
+        not this run's."""
+        sh = self.shaft
+        if sh is None:
+            return ()
+        measured = (
+            "on every push S5's tests and probes measured (docs/physics.md, \"The sealed "
+            'shaft"; not guaranteed: a rising force or thrust and a falling mass give the '
+            "slower sealed stack more force per metre)"
+        )
+        if self.control == CONTROL_FORCE:
+            same_state = (
+                "under the force law the drive's force is unchanged, so the stack slows: the "
+                "interface force is lower by (m_v / M) F_p and the felt g by F_p / (M g0) "
+                "than in a vented shaft at the same state (on a cold push's F_max plateau "
+                "the felt g falls as F_p grows, so the felt g at the end of the rise is the "
+                "plateau's largest, not a value held on it)"
+            )
+            if self.release_speed_mps is None:
+                law = f"{same_state}, and the exit speed is lower {measured}"
+            else:
+                law = (
+                    f"{same_state}; with the release speed the stack reaches it later along "
+                    "the track: the release position and the push time are larger than in "
+                    f"a vented shaft {measured}; the speed at release stays the release "
+                    "speed while the push still reaches it before the track end, and is "
+                    "below it when the push reaches the track end first (flag "
+                    "release_speed_not_reached)"
+                )
+        else:
+            law = (
+                "under the acceleration law the drive supplies F_p too: while no cap binds "
+                "the drive force and power rise by F_p and F_p sdot and the interface force "
+                "is unchanged, and while no cap binds on the whole push the drive work rises "
+                "by W_p and the electricity by W_p / efficiency; a cap that binds leaves the "
+                "stack to slow as under the force law"
+            )
+        after_release = (
+            "(the carriage brakes by its own closed form with no column force on it, and the "
+            "vehicle above it sees the shaft open at the mouth, flown as the vented shaft's "
+            "flight model flies it)"
+        )
+        if self.release_speed_mps is not None:
+            law = (
+                f"{law}; the speed of a sealed push can peak inside the track and then fall, "
+                "where the drive's force and the thrust's share fall below the weight and "
+                "the column (under a power cap once P_max / sdot drops below M g_eff sin phi "
+                "+ F_p(s) - (1 - f_imp) T; under the force law also in a slow rise against a "
+                "gap far below the sources' 1 to 20 m), and a release speed just below such "
+                "a peak can be passed over inside one integrator step (up to 2e-5 m/s below "
+                "it on the pushes measured): the push then releases at the track end with "
+                "the flag release_speed_not_reached although it reached the release speed "
+                '(docs/physics.md, "The sealed shaft")'
+            )
+            after_release = (
+                "(the carriage brakes by its own closed form with no column force on it, and "
+                "the vehicle above it is flown as the vented shaft's flight model flies it: "
+                "in the shaft open at the mouth after a release at the track end, while "
+                "after a release before the track end the braking carriage still seals the "
+                "bore below the departing vehicle, and the cavity that opens between the "
+                "vehicle's base and the carriage, fed only through the annulus between the "
+                "bore and the vehicle, is left out: a suction on the vehicle's base section "
+                "A_body of up to about p_0 A_body (inferred; the vehicle's speed in the "
+                "shaft after the release is biased high), and the exhaust of a stage lit "
+                "before its base clears the mouth, trapped in that cavity (inferred; the "
+                "other way))"
+            )
+        if sh.gamma == KAPPA_AIR:
+            stated = (
+                "the bore and the gap assumed; gamma that of air in the ICAO standard atmosphere"
+            )
+        else:
+            stated = (
+                "the bore, the gap and gamma assumed; air in the ICAO standard atmosphere has "
+                f"{KAPPA_AIR:g}"
+            )
+        return (
+            f"linear_motor: sealed shaft: the carriage seals the {sh.bore_m:g} m bore (A = "
+            f"{sh.area_m2:.6g} m^2) above a {sh.gap_m:g} m gap of air trapped at p_0 = "
+            f"{sh.p0_pa:.6g} Pa (the ICAO standard atmosphere at the track start), which "
+            f"expands adiabatically with gamma = {sh.gamma:g} ({stated}) as the carriage "
+            "rises, uniform and quasi-static: p(s) = p_0 (h_0 / (h_0 + s))^gamma; its force "
+            "F_p(s) = (p_0 - p(s)) A acts on the carriage against the motion, below its "
+            f"bound p_0 A = {sh.force_bound_N:.6g} N, from push start to the release; {law}; "
+            "W_p = int F_p sdot dt = p_0 A s - p_0 V_0 [1 - (V_0 / V)^(gamma - 1)] / (gamma "
+            "- 1) is the work done against the column, drive work the stack does not "
+            "receive (p_0 dV done on the atmosphere above, less the internal energy the "
+            "expanding gas gives up), booked beside the assist energy identity's terms, not "
+            "as dissipated; p_0 A and W_p scale with the bore's area",
+            "linear_motor: sealed shaft, not modelled on the push: the air ahead of the "
+            "vehicle pushed out of the mouth by the rising stack (a momentum flux of the "
+            "order of rho v^2 A_bore at the exit; survey 08's reference case, 76.7 m/s in a "
+            "3.7 m bore: about 77 kN, plus 4 to 23 kN at 3 g0 to accelerate the air pushed "
+            "out, 0.4% to 0.5% of a 20.81 MN interface force), which acts on the vehicle as "
+            "the neglected shaft drag does; the open shaft's hydrostatic drop over the "
+            "stroke (the open side is held at p_0, so F_p is biased high by up to rho g s "
+            "sin phi A: about 13 kN, 1.2% of F_p(L), for a 3.7 m bore, a 5 m gap and a 100 "
+            "m vertical stroke); the non-uniform, unsteady expansion near the end of a "
+            "small-gap stroke (survey 08's case: the gas has cooled to 35 to 110 K, from "
+            "about 288 K, for 0.5 to 10 m gaps, and its sound speed, 118 to 211 m/s, is only "
+            "1.5 to 3 times the carriage's 76.7 m/s), so the uniform, quasi-static adiabat "
+            "is first order there: the face pressure would be lower and F_p nearer "
+            "its bound, so F_p is biased low there (inferred; heat from the walls would act "
+            "the other way; the bound p_0 A holds regardless); and, for an engine lit on "
+            "the track, its exhaust, which the sealing carriage leaves only the annulus "
+            "between the bore and the vehicle to escape by (0.231 m^2, 2.15% of a 3.7 m "
+            "bore around a 3.66 m body: survey 07's case): the pressure it would build "
+            "above the carriage, which would dominate the push (inferred, not computed), is "
+            "left out (the thrust and the impingement are those of the open shaft)",
+            "linear_motor: sealed shaft, not modelled after the release and in the "
+            f"geometry: the trapped column after the release {after_release}; the "
+            f"column's pull, up to p_0 A = {sh.force_bound_N:.6g} N, would add to the "
+            "brake's m_c (a_b - g_eff sin phi) (0.78 MN for a 5 g0 brake on a 20 t carriage "
+            "on a vertical track), so the brake force, the brake energy and the facility "
+            "length are upper bounds, a massless carriage leaves the column no mass to act "
+            "on, and a stopped carriage is pulled back down by about p_0 A + m_c g_eff sin "
+            "phi, which the brake would have to hold; the bore is checked against the "
+            "diameter sqrt(4 A_ref / pi) of the run's A_ref only (the main-body section in "
+            "the vehicle files), not the vehicle's largest section, so a wider fairing that "
+            "starts below the mouth is not checked (the F9 class's 5.2 m fairing, 30.0 to "
+            "43.1 m below the mouth of a 100 m silo, would not pass a 3.7 m bore, and a bore "
+            "that clears it has more than (5.2 / 3.7)^2 = 1.975 times the area (3.58 times "
+            "for the 7.0 m shaft the 2-D scene draws), so more than 1.975 times p_0 A and "
+            "W_p at the same gap); and a vented shaft, the alternative, needs vents of about "
+            "the bore area (inferred, survey 07's case: a 3.7 m bore around a 3.66 m body is "
+            "choked)",
         )
 
     def assumptions(self) -> tuple[str, ...]:
         """The drive's assumption lines: the control law, its limits and the no-pull
         rule, the power limit's meaning, the release and taper, the carriage, the
         braking closed forms, the impingement, the shaft and the neglected shaft air
-        drag, the track gravity, the clamp and the ignition rule of the drive."""
+        drag, a sealed shaft's three lines (``sealed_assumptions``, SP7 step S5; none for the
+        vented shaft, whose ten lines are S4a's), the track gravity, the clamp and the
+        ignition rule of the drive."""
         return (
             self.control_assumption(),
             "linear_motor: P_max is the mechanical power at the carriage (F sdot); the "
@@ -754,6 +1150,7 @@ class LinearMotorAssist:
             f"linear_motor: exhaust impingement fraction {self.f_imp:g} (assumed); the "
             "system keeps (1 - f_imp) T of the on-track thrust",
             self.shaft_assumption(),
+            *self.sealed_assumptions(),
             self.track_gravity_assumption(),
             "linear_motor: vehicle clamped to the carriage during any hold before the push",
             "linear_motor: a release-referenced stage-1 ignition lights at the flown release "

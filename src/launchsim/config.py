@@ -83,6 +83,7 @@ from pydantic import (
 
 from launchsim import structure, units
 from launchsim.constants import (
+    ALT_AMBIANCE_MIN_M,
     EXIT_ALTITUDE_LIMIT_M,
     OMEGA_EARTH_RADS,
     P_SEA_LEVEL_PA,
@@ -121,9 +122,25 @@ command a(t) = a_cmd min(1, t / t_r) capped by F_max and P_max / sdot. The model
 ``assist.linear_motor.ControlLaw`` is the same set (a test keeps them equal)."""
 CONTROL_FORCE: ControlLaw = "force"
 CONTROL_ACCELERATION: ControlLaw = "acceleration"
-LINEAR_MOTOR_OPTIONAL_KEYS = ("accel_command_g", "stop_taper_m", "release_speed_mps")
+ShaftKind = Literal["vented", "sealed"]
+"""The shaft below a ``linear_motor``'s carriage (SP7 step S5; docs/physics.md, "The
+sealed shaft"): ``vented`` (no air column) or ``sealed`` (the carriage seals a trapped
+air column, stated by ``shaft_bore_m``, ``shaft_gap_m`` and ``shaft_gamma``). The model's
+``assist.linear_motor.ShaftKind`` is the same set (a test keeps them equal)."""
+SHAFT_SEALED: ShaftKind = "sealed"
+"""The sealed shaft's ShaftKind (its keys SEALED_SHAFT_KEYS; ``_check_sealed_bore``)."""
+SEALED_SHAFT_KEYS = ("shaft_bore_m", "shaft_gap_m", "shaft_gamma")
+"""The keys of a sealed shaft (SP7 step S5): required with ``shaft: sealed``, refused with
+``vented`` (given at all, a null included)."""
+LINEAR_MOTOR_OPTIONAL_KEYS = (
+    "accel_command_g",
+    "stop_taper_m",
+    "release_speed_mps",
+    *SEALED_SHAFT_KEYS,
+)
 """The optional keys of a ``linear_motor`` block: a key given must hold a number (a null
-does not unset it), and ``model_dump`` leaves out the one holding None."""
+does not unset it), and ``model_dump`` leaves out the one holding None (the sealed shaft's
+keys since SP7 step S5, so a vented block dumps as before)."""
 SWITCH_KEYS = ("model", "kind")
 """Discriminator keys: a dict whose value for one of these differs from the base's
 replaces the base dict wholesale when merging, so no stale keys of the old choice
@@ -788,7 +805,17 @@ class LinearMotorConfig(_Model):
     (>= 0 and below the stroke; optional, None or 0 for none); ``carriage_mass_t`` [t]
     (>= 0); ``brake_decel_g`` the carriage's constant total braking deceleration after
     release [g0] (> 0); ``drive_efficiency`` in (0, 1]; ``exhaust_impingement_fraction``
-    in [0, 1]; ``shaft`` vented only (the sealed shaft is S5); ``track`` the straight
+    in [0, 1]; ``shaft`` (ShaftKind, SP7 step S5): ``vented`` (the default; no air
+    column) or ``sealed``, which needs ``shaft_bore_m`` (the bore's diameter [m], > 0;
+    ``resolve_run`` refuses it at or below the diameter sqrt(4 A_ref / pi) of the run's
+    A_ref, ``body_diameter_m``: the main-body section in the vehicle files),
+    ``shaft_gap_m`` (the gap h_0 [m] of trapped air below the carriage, > 0) and
+    ``shaft_gamma`` (the ratio of specific heats, > 1), all three refused with
+    ``vented`` (given at all, a null included), and is refused with a stop taper (> 0 m)
+    under the force law (the model's ``SEALED_TAPER_REFUSAL`` says why) and with a track
+    start, exit_altitude_m - stroke_m sin(angle), below the ICAO atmosphere's floor
+    ALT_AMBIANCE_MIN_M (-5,004 m), where the column's p_0 = p_atm(z_start) is not
+    defined; ``track`` the straight
     track; ``release_speed_mps`` the release speed v_release [m/s] along the track (> 0;
     optional, SP7 step S4a): the push releases where sdot reaches it before the track end
     (at the track end, with the flag release_speed_not_reached, when it does not), and
@@ -817,15 +844,22 @@ class LinearMotorConfig(_Model):
     exhaust_impingement_fraction: float = Field(
         default=0.0, ge=0.0, le=1.0, strict=True, allow_inf_nan=False
     )
-    shaft: Literal["vented"] = "vented"
+    shaft: ShaftKind = "vented"
     track: TrackConfig = TrackConfig()
     release_speed_mps: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    shaft_bore_m: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    shaft_gap_m: float | None = Field(default=None, gt=0.0, strict=True, allow_inf_nan=False)
+    shaft_gamma: float | None = Field(default=None, gt=1.0, strict=True, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _control_keys(self) -> LinearMotorConfig:
         """An optional key given holds a number; ``accel_command_g`` given exactly when
         the law is ``acceleration``; the stop taper shorter than the stroke; a release
-        speed never together with a stop taper."""
+        speed never together with a stop taper; the sealed shaft's keys given exactly
+        when the shaft is sealed, and a sealed shaft never with the force law's stop
+        taper nor with a track start below ALT_AMBIANCE_MIN_M (SP7 step S5: its column is
+        trapped at p_atm(z_start), z_start = exit_altitude_m - stroke_m sin phi, as
+        ``LinearMotorAssist.from_config`` places the track)."""
         for key in LINEAR_MOTOR_OPTIONAL_KEYS:
             if key in self.model_fields_set and getattr(self, key) is None:
                 raise ValueError(
@@ -849,6 +883,35 @@ class LinearMotorConfig(_Model):
                 "linear_motor release_speed_mps is refused together with stop_taper_m: the "
                 "stop taper brings the push to its holding force at the track end, a "
                 "release-at-L device (design 4.6); leave one of them out"
+            )
+        given = [key for key in SEALED_SHAFT_KEYS if key in self.model_fields_set]
+        if self.shaft == SHAFT_SEALED:
+            missing = [key for key in SEALED_SHAFT_KEYS if key not in given]
+            if missing:
+                raise ValueError(
+                    f"linear_motor shaft sealed needs {', '.join(SEALED_SHAFT_KEYS)} (missing: "
+                    f"{', '.join(missing)})"
+                )
+            if self.control == CONTROL_FORCE and (self.stop_taper_m or 0.0) > 0.0:
+                raise ValueError(
+                    "linear_motor shaft sealed is refused together with stop_taper_m under "
+                    "the force law: the taper scales the force toward the open shaft's "
+                    "holding value, so the trapped column would decelerate the stack at the "
+                    "track end and could stop it in the shaft; leave one of them out"
+                )
+            z_start = self.track.exit_altitude_m - self.stroke_m * math.sin(self.track.phi_rad)
+            if z_start < ALT_AMBIANCE_MIN_M:
+                raise ValueError(
+                    "linear_motor shaft sealed is refused with its track start below the ICAO "
+                    f"atmosphere's floor of {ALT_AMBIANCE_MIN_M:g} m: exit_altitude_m - "
+                    f"stroke_m sin(angle_deg) = {z_start:g} m, where the column's p_0 = "
+                    "p_atm(z_start) is not defined (the atmosphere is not extended below its "
+                    "floor)"
+                )
+        elif given:
+            raise ValueError(
+                f"linear_motor shaft {self.shaft} takes no {', '.join(given)}: the bore, gap "
+                "and gamma state a sealed shaft's trapped column (shaft: sealed)"
             )
         return self
 
@@ -3010,6 +3073,56 @@ def _check_planar_vehicle(name: str, run: RunConfig, vehicle: VehicleConfig) -> 
         )
 
 
+def _diameter_of_section_m(area_m2: float) -> float:
+    """The diameter d = sqrt(4 A / pi) [m] of a circular section of area area_m2 [m^2]."""
+    return math.sqrt(4.0 * area_m2 / math.pi)
+
+
+def body_diameter_m(vehicle: VehicleConfig) -> float | None:
+    """The vehicle's body diameter d = sqrt(4 A_ref / pi) [m] from its aerodynamic
+    reference area A_ref [m^2] (the main-body section, the vehicle files' convention; from
+    ``resolve_run``, the run's A_ref after its overrides, so an arm that sets A_ref to the
+    fairing's section gives that section's diameter); None for a vehicle without an aero
+    block. Derived from A_ref as given, so it can sit a little below the rounded diameter
+    of A_ref's source (3.65985 m for 10.52 m^2, the "3.66 m body")."""
+    if vehicle.aero is None:
+        return None
+    return _diameter_of_section_m(vehicle.aero.reference_area_m2.value)
+
+
+def _check_sealed_bore(name: str, run: RunConfig, vehicle: VehicleConfig) -> None:
+    """A sealed shaft's bore must exceed the diameter sqrt(4 A_ref / pi) of the run's
+    A_ref (``body_diameter_m``: the main-body section in the vehicle files, or the
+    section an override sets; SP7 step S5; design 4.8): ValueError at or below it, and
+    for a vehicle without an aero block, whose section is not known. Nothing for any
+    other run. The check sees that one section only: a section wider than it elsewhere
+    on the vehicle, such as a fairing wider than the main body that starts below the
+    mouth, is not checked (docs/physics.md, "The sealed shaft", Config). An arm that sets
+    A_ref to the 5.2 m fairing's section (silo_screening_2d's aero_bound) refuses a
+    sealed variant with a bore at or below 5.2 m, and with it the whole experiment."""
+    assist = run.assist
+    if not isinstance(assist, LinearMotorConfig) or assist.shaft != SHAFT_SEALED:
+        return
+    aero, body = vehicle.aero, body_diameter_m(vehicle)
+    if aero is None or body is None:
+        raise ValueError(
+            f"run {name!r}: a sealed shaft needs the vehicle's body diameter to check its "
+            "bore against, and the vehicle has no aero block (its reference area)"
+        )
+    area = aero.reference_area_m2.value
+    bore = assist.shaft_bore_m
+    if bore is None or not bore > body:
+        raise ValueError(
+            f"run {name!r}: the sealed shaft's bore {bore!r} m must exceed the diameter "
+            f"sqrt(4 A_ref / pi) = {body:.6g} m of the run's A_ref = {area:g} m^2 (the "
+            "main-body section in the vehicle files, or the section an override sets): a "
+            "bore at or below that section leaves the vehicle no room in the shaft (the "
+            "check sees that section only, derived from A_ref as given: a section wider "
+            "than it elsewhere on the vehicle, such as a fairing wider than the main body, "
+            "is not checked)"
+        )
+
+
 def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any]) -> ResolvedRun:
     """Validate one run dict and its vehicle dict together (vertical_1d: no heating-rule
     fairing; planar_2d: see _check_planar_vehicle; every stage after the first ignites
@@ -3017,10 +3130,13 @@ def resolve_run(name: str, run_dict: dict[str, Any], vehicle_dict: dict[str, Any
     a ``linear_motor`` run the first stage is not lit on the track by a
     release-referenced t_ign_s < 0: the drive's push time is a result of the flown push
     (``push_time_exact`` False), so such an ignition cannot be placed before the push
-    and is stated from ``push_start`` instead; D-SP7-25)."""
+    and is stated from ``push_start`` instead; D-SP7-25; a sealed shaft's bore above the
+    diameter sqrt(4 A_ref / pi) of the run's A_ref, ``body_diameter_m``: the main-body
+    section in the vehicle files, ``_check_sealed_bore``, SP7 step S5)."""
     run_dict = {**copy.deepcopy(run_dict), "name": name}
     run = RunConfig.model_validate(run_dict)
     vehicle = VehicleConfig.model_validate(vehicle_dict)
+    _check_sealed_bore(name, run, vehicle)
     heating = vehicle.to_vehicle().fairing_rule.trigger == HEATING_TRIGGER
     if run.dynamics == VERTICAL_1D and heating:
         raise ValueError(

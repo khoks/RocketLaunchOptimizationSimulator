@@ -4649,8 +4649,10 @@ carriage costs speed; it adds none.
 
 ## Assist energy identity
 
-Module: `losses.py` (`AssistEnergyBudget`, `assist_energy_budget`); the quadrature
-states are in `dynamics.rhs_track`. Test: `tests/test_assist_energy.py`.
+Module: `losses.py` (`AssistEnergyBudget`, `assist_energy_budget`; since SP7 step S5
+`PistonWork`, `piston_work`, `assist_identity_residual_rel`); the quadrature states are in
+`dynamics.rhs_track`. Tests: `tests/test_assist_energy.py`; the column's in
+`tests/test_sealed_shaft.py`.
 
 Along the track (CLAUDE.md, phase 2) the system riding it, M = m_v + m_c, obeys
 
@@ -4701,6 +4703,23 @@ work from W_thrust to E_drive), W_thrust = (1 - f_imp) T L, delta_mech =
 M_exit (a + g) L, massflow_term = mdot (a + g) a t_p^3/6, all at 1e-10 relative
 (DOP853 integrates these polynomials exactly); and a ramp lit inside the push
 (`silo_hot_ramp_on_track`), where only the closure is asserted.
+
+**The sealed shaft's column** (SP7 step S5; "The sealed shaft"). A linear motor in a
+sealed shaft has F_other = F_p(s), the trapped column's net force on the carriage,
+against the motion. The work done against it, W_p = integral F_p sdot dt (the force's own
+work on the carriage is -W_p), is drive work the stack does not receive: p_0 dV done on
+the atmosphere above, less the internal energy the expanding gas gives up; it is not
+dissipated. It is the drive's extra state `W_piston_J` and a record of its own,
+`losses.PistonWork(work_J, closed_form_J)`, outside `AssistEnergyBudget`'s five fields
+(D-SP7-26, D-SP7-27: the 1-D golden dump converts that dataclass field by field), so the
+identity reads
+
+    work_drive + work_thrust = delta_mech + massflow_term + dissipated + W_p
+
+(`PistonWork.identity_residual_J`); the budget's own `residual_J()` is then W_p, and
+`assist_energy_residual_rel` reports the identity with the column
+(`losses.assist_identity_residual_rel`; for every other push `residual_rel()` as before,
+bit for bit). Measured below 1.7e-15 cold and hot, both laws (asserted < 1e-9).
 
 ## Silo model (constant_accel, vertical) and every reported quantity
 
@@ -5199,8 +5218,9 @@ KI-030 requires): `stroke_m` L (> 0); `control` (`force` or `acceleration`);
 required by `acceleration`, refused by `force`); `stop_taper_m` s_taper (optional,
 >= 0 and below the stroke; 0 or absent: no taper); `carriage_mass_t` m_c (>= 0, default
 0); `brake_decel_g` a_b (> 0); `drive_efficiency` eta in (0, 1] (default 1);
-`exhaust_impingement_fraction` f_imp in [0, 1] (default 0); `shaft: vented` only (the
-sealed shaft is S5); `track`; `release_speed_mps` (optional, since S4a: "Linear motor:
+`exhaust_impingement_fraction` f_imp in [0, 1] (default 0); `shaft: vented` (the
+default; `sealed` with its three keys since S5: "The sealed shaft"); `track`;
+`release_speed_mps` (optional, since S4a: "Linear motor:
 the flown power cap, the release at a target speed and the readers (SP7 step S4a)").
 No key of the assist family (`net_accel_g`, `exit_speed_mps`). An optional key given must hold a
 number (a null does not unset it), and `model_dump` leaves out the one holding None. The
@@ -5213,7 +5233,8 @@ error locations strip every tag of the union (`config.ASSIST_UNION_TAGS`, derive
 `AssistConfig`).
 
 **Model.** The track equation of "Assist energy identity" with F_other = 0 (vented
-shaft, no friction), M = m_v + m_c, T the delivered axial thrust, T_sys = (1 - f_imp) T,
+shaft, no friction; a sealed shaft's column F_p(s) since S5, "The sealed shaft"),
+M = m_v + m_c, T the delivered axial thrust, T_sys = (1 - f_imp) T,
 g_a = g_eff sin phi, and t on the push clock (t = 0 at push start), r(t) = min(1,
 t/t_r) (1 for a step):
 
@@ -5675,7 +5696,8 @@ the drive's shaft line: under the force law the exit speed, the peak drive power
 of P_max, the felt g and the mean acceleration are biased high and the interface force
 and the drive work low; under the acceleration law, while no cap binds, the drive work,
 the peak drive power and the interface force are biased low, and while a cap binds (or
-drag makes one bind) the exit speed is biased high); the sealed shaft and its air column (S5); the
+drag makes one bind) the exit speed is biased high); the sealed shaft and its air column (S5,
+done: "The sealed shaft"); the
 release at a target speed and a release before L (S4a, `release_speed_mps`, done); a braking
 phase in the trace (B-007); the readers (replay, scene, app) and the summary rows of the
 drive (S4a, done); the drive in the app's form (B-016); the structural transform on a flown
@@ -6317,11 +6339,502 @@ relative at 50 m/s). The tests assert 1e-9: margins above 1e5, and 200 at the ti
 the vehicle against the shaft wall after a kick that begins in the shaft (the offset at
 the mouth is reported, not checked); the scene's carriage braking from s_release (the
 frozen template; stated in the scene's caveat and frame caveat instead); a `target_speed`
-crossing passed over inside one
-integrator step (sdot is monotone on every push a config builds: the drive force is never
-below the holding force before a cap and the cap never below it on a straight track; the
-scan of *Passed over* reads the two-way watches only); the structural transform on a
-flown push (S4b, done: "The flown push of a linear motor").
+crossing passed over inside one integrator step (sdot is monotone on every vented push a
+config builds: the drive force is never below the holding force before a cap and the cap
+never below it on a straight track; the scan of *Passed over* reads the two-way watches
+only; a sealed push's sdot is not monotone (S5), and there a release speed up to 2e-5
+m/s below its speed peak was passed over on the pushes measured, the push releasing at L
+with a `release_speed_not_reached` flag that misstates it: "The sealed shaft", Speed
+along the stroke); the structural transform on a flown push (S4b, done: "The flown push
+of a linear motor").
+
+## The sealed shaft (SP7 step S5)
+
+Modules: `assist/linear_motor.py` (`SealedShaft`, `ShaftKind`, `SHAFT_SEALED`,
+`WORK_STATE`, `SEALED_TAPER_REFUSAL`; `LinearMotorAssist.shaft`, `extra_state_names`,
+`piston_force_N`, `command_force_N`, `state_rate`, `at_push_start` with
+`PushStart.column_end_N`, `stall_reason`, `control_assumption`, `taper_assumption`,
+`shaft_assumption`, `sealed_assumptions`), `atmosphere.py` (`KAPPA_AIR`), `config.py`
+(`ShaftKind`, `SHAFT_SEALED`, `SEALED_SHAFT_KEYS`, `LinearMotorConfig`'s shaft keys,
+`body_diameter_m`, `_check_sealed_bore` in `resolve_run`), `losses.py` (`PistonWork`,
+`piston_work`, `assist_identity_residual_rel`), `metrics.py` (`SEALED_SHAFT_METRICS`,
+`sealed_shaft_piston`, `sealed_shaft_metrics`, `track_metrics`), `metrics_planar.py`
+(`planar_track_metrics`), `summary.py` (`SEALED_SHAFT_ROWS`). Tests:
+`tests/test_sealed_shaft.py`; two in `tests/test_structure_linear_motor.py`; the pins of
+`tests/vented_pins_support.py` (`tests/data/vented_pins.json`). Design 4.8, D-SP7-26,
+D-SP7-27, the S5 row of section 5; docs/phases/inputs/2026-10-08-SP7-sources.md section
+10 (`shaft_bore_m` 3.7, `shaft_gap_m` 5.0 (1.0 to 20.0), `shaft_gamma` 1.4, all assumed
+but gamma, the ICAO adiabatic index); surveys 01 (sections 6, 7.5 and 9), 07 (section 9)
+and 08 (A3).
+
+**Config.** `shaft: vented | sealed` on `linear_motor` (`ShaftKind`; vented the default,
+so every vented block validates and dumps as before). `sealed` needs `shaft_bore_m` d (>
+0), `shaft_gap_m` h_0 (> 0) and `shaft_gamma` gamma (> 1, the work's closed form divides
+by gamma - 1), strict and finite (KI-030's rule); the three are refused with `vented`
+(given at all, a null included) and left out of the dump while None. `resolve_run`, where
+the run and its vehicle meet, refuses a bore at or below the diameter d = sqrt(4
+A_ref/pi) of the run's A_ref (`body_diameter_m`, which the check calls: the vehicle's
+aero block after the run's overrides, the main-body section in the vehicle files or the
+section an override sets; 3.6598 m for A_ref = 10.52 m^2: the 3.7 m bore passes, and so
+does 3.66 m, the nominal body that A_ref's source rounds, since the check uses the
+diameter derived from A_ref as given), and a sealed shaft on a vehicle without an aero
+block (no diameter to check against; the 1-D generic F9 has none). The message names
+that section, never "the body diameter" of a fairing's area. A sealed shaft with the
+force law's stop taper (> 0 m) is refused by the config and the model: that taper scales
+the force toward the open shaft's holding value M g sin phi - (1 - f_imp) T, so at L the
+column would decelerate the stack by F_p(L)/M instead of holding it, and a slow stack
+could stop in the shaft; the acceleration law's taper flies its command, the column
+included, and is accepted. constant_accel keeps `shaft: Literal["vented"]` and its line
+(D-SP7-26: the sealed shaft on `linear_motor` only).
+
+**The bore and the vehicle's largest section** (reported plainly, since it undercuts the
+sealed variant's geometry). The check sees the run's A_ref section only (the main body in
+the vehicle files), not the vehicle's largest section. The F9 class's fairing is 5.2 m
+across and 13.1 m tall on a 70 m stack (configs/display/f9_class.yaml, sourced to the
+spacex.com Falcon 9 page; display-only geometry, which the model does not read): in a
+100 m silo it starts 30.0 to 43.1 m below the mouth, inside the bore, and would not pass
+the 3.7 m bore of sources section 10 (the README's first-order row). A bore that clears
+it has more than (5.2/3.7)^2 = 1.975 times the area (3.58 times for the 7.0 m shaft the
+scene draws), and p_0 A and W_p scale with the area at a fixed gap. At p_0 =
+p_atm(-100 m) and a 5 m gap (scratch probe):
+
+| Bore | p_0 A | F_p(L) | W_p(L) |
+|---|---|---|---|
+| 3.7 m (pre-registered) | 1.10 MN | 1.087 MN | 100.5 MJ |
+| 5.2 m (equal to the fairing: the lower limit; refused by the code's own rule for a body) | 2.18 MN | 2.147 MN | 198.6 MJ |
+| 7.0 m (the shaft the scene draws) | 3.95 MN | 3.890 MN | 359.9 MJ |
+
+The interface-force drop and the exit-speed loss grow with them, and the choking
+argument of the vented alternative changes (a 7.0 m bore around the 5.2 m fairing leaves
+(7.0^2 - 5.2^2)/7.0^2 = 45% of the bore open, above the 37.8% Kantrowitz minimum). The
+30 m pushes of the S4b tests keep the fairing above the mouth (the stack top at +40 m),
+where the body is the right check. The code keeps the pre-registered 3.7 m and states
+the gap in the run's lines; which bore lm_fixed_sealed (S6b) flies, or a check against a
+stated largest diameter, is the user's decision before S6b. The check already bites in
+the project's drag bound: an arm that sets A_ref to the fairing's section, such as
+`aero_bound` of experiments/silo_screening_2d.yaml (21.24 m^2, d = 5.20035 m), makes the
+check see that section, so a sealed variant with a bore at or below 5.2 m cannot be in
+its `of`: `resolve_experiment` then refuses the whole experiment (review probe; the
+refusal is physically right, since such a bore does not pass the fairing).
+
+**The column.** The carriage seals the bore above a gap h_0 of air trapped at the
+push-start pressure p_0 = p_atm(z_start): the ICAO standard atmosphere at the track
+start's altitude (`LinearMotorAssist.from_config`; 102,532 Pa at -100 m, a 100 m silo
+whose mouth is at the ground), whatever the flight model's atmosphere (the 1-D model has
+none). It is read through `atmosphere.standard_atmosphere`, never through the clamp of
+the right-hand side's `ambient_scalar` (review pass 3, C3-m1): a sealed track whose start
+exit_altitude_m - L sin phi lies below the ICAO floor `ALT_AMBIANCE_MIN_M` (-5,004 m),
+where p_0 is not defined, is refused by the config with a one-line reason, and the model
+raises there too. As the carriage rises s along the track the column expands adiabatically,
+uniformly and quasi-statically (the push ramps over about 2.6 s against a 0.29 s
+acoustic transit of 100 m, survey 07 section 9.2; that transit is the ambient air's, and
+the premise weakens near the end of a small-gap stroke, where the gas has cooled to 35
+to 110 K and its sound speed, 118 to 211 m/s, is only 1.5 to 3 times the carriage's
+76.7 m/s in survey 08's case: the run's not-modelled line, "Assumption lines"):
+
+    p(s)   = p_0 (h_0/(h_0 + s))^gamma
+    F_p(s) = max(0, p_0 - p(s)) A,          A = pi d^2/4,     0 <= F_p < p_0 A
+    W_p(s) = integral_0^s F_p ds' = p_0 A s - p_0 V_0 [1 - (V_0/V)^(gamma - 1)]/(gamma - 1)
+
+with V_0 = A h_0 and V = A (h_0 + s) (integral_0^s p ds' = p_0 h_0^gamma [(h_0 +
+s)^(1 - gamma) - h_0^(1 - gamma)]/(1 - gamma) = p_0 h_0 [1 - (h_0/(h_0 + s))^(gamma -
+1)]/(gamma - 1)). Above the carriage the vehicle sits in the shaft open at the mouth, held
+at p_0: the open shaft's own hydrostatic drop over the stroke, rho g s sin phi, is left
+out with the rest of the air above (about 1.2 kPa over 100 m, 1.2% of p_0), so F_p is
+biased high by up to rho g L sin phi A (13 kN, 1.2% of F_p(L), for the 3.7 m bore and the
+5 m gap). F_p is the net pressure force on the carriage deck, the open side less the
+column, against the motion. Since p > 0, F_p < p_0 A whatever the gas does: 1.0895 MN at
+sea level for the 3.7 m bore (the README's 1.1 MN), 1.1024 MN at p_0 = p_atm(-100 m); at
+L = 100 m the 5 m gap's column pulls 1.0869 MN, 98.6% of its bound (1.088, 1.074 and
+1.001 MN at sea level for 1, 5 and 20 m gaps: survey 07). The code writes F_p = -p_0 A
+expm1(-gamma log1p(s/h_0)) and W_p through the same functions, so F_p keeps its digits at
+s << h_0; W_p's difference cancels to s/h_0 relative there (its absolute error stays
+below 1e-15 p_0 A s). F_p = W_p = 0 at and below s = 0 (the column is never compressed;
+a push from rest never goes there).
+
+**Where it acts.** On the carriage, which seals the bore: F_other of the track equation
+(`state_rate`),
+
+    M sddot = F + T_sys - M g sin phi - F_p(s),        F_int = m_v (sddot + g sin phi) - T
+
+so the vehicle's free body is unchanged (m_v sddot = F_int + T - m_v g sin phi) and the
+carriage's reads m_c sddot = F - F_int - f_imp T - m_c g sin phi - F_p. Hence:
+
+- force law: the drive's force is its law's (min(F_lim(t), F_max, P_max/sdot); F_0 is
+  unchanged since F_p(0) = 0); the stack slows, and F_int = [m_v (F - F_p) - T (m_c +
+  f_imp m_v)]/M is lower than the vented push's at the same state by (m_v/M) F_p (survey
+  01 section 9), the felt g by F_p/(M g0). On a cold push's F_max plateau the felt g
+  falls as F_p grows (3.806 g0 at t_r to 3.660 g0 at the release on a 20 t carriage
+  with no power phase, against 3.857 g0 held vented; scratch probe), so
+  `push_felt_g_plateau`, the felt g at the end of the rise, is the plateau's largest,
+  not a value held on it. Released at the track end, the exit speed is lower on every
+  push S5's tests and probes measured. With a release speed the speed at release is
+  that speed in both shafts while the push reaches it before L (below it, flag
+  `release_speed_not_reached`, when the push reaches L first), and the sealed stack
+  reaches it later along the track: the release position and the push time are larger
+  on every push measured ("Measured"). Both are measured results, not properties of the
+  model: the force law's rise r(t), a hot push's T(t) and the falling M(t) give the
+  slower sealed stack more force per metre;
+- acceleration law: the command F = M (a(t) w(s) + g sin phi) - T_sys + F_p(s) (the
+  drive supplies the column too: while no cap binds its force and power rise by F_p and
+  F_p sdot, and while no cap binds on the whole push its work rises by W_p and the
+  electricity by W_p/eta), then capped as S4 caps it (F_max, P_max/sdot); while no cap
+  binds F_int is unchanged; where the vented command already reaches the cap both sit at
+  it, the drive force is the same and the stack slows as under the force law, F_int
+  lower by (m_v/M) F_p; between the two (the vented command below the cap, the sealed
+  one above it) the drive force is the cap and F_int is lower than the vented push's by
+  less than (m_v/M) F_p; the `drive_cap` and `power_limit` watches read the command with
+  F_p;
+- had it acted on the vehicle, F_int would rise by (m_c/M) F_p and the felt-g observable
+  would be wrong by F_p/m_v (survey 01 section 9); it does not.
+
+The structural transform (S4b, "The flown push of a linear motor") reads n and F_int from
+the flown push through `sim.flown_push_trace` and `sim.linear_motor_push_load`, so the
+column's lower F_int and n reach the sizing with no new branch. The push-time estimate
+(the step cap and the watch look-ahead only) leaves the column out; it stays exact for
+the uncapped acceleration law, which flies its command.
+
+**Push only.** F_p acts from push start to the release, whichever trigger (the track end
+or the release speed). After the release the trapped column is not modelled: the carriage
+brakes by its own closed form, with no column force on it, and the vehicle above it is
+flown as the vented shaft's flight model flies it (the planar model in the open
+atmosphere at its altitude, no walls). After a release at the track end the vehicle's
+base is at the mouth and sees the shaft open there. After a release before the track end
+(a release speed) the braking carriage still seals the bore below the departing vehicle
+(review pass 3, P3-m2): the cavity that opens between the vehicle's base and the carriage
+deck is closed below and fills only from above, through the bore-body annulus (0.231 m^2,
+2.15% of a 3.7 m bore around a 3.66 m body). Left out, each with its direction: a suction
+on the vehicle's base section A_body of up to about p_0 A_body (inferred: the vehicle's
+speed in the shaft after the release is biased high), and the exhaust of a stage lit
+before its base clears the mouth, trapped in that cavity (inferred: the other way). A
+review probe (an isothermal cavity with orifice or choked inflow from the open shaft, the
+vehicle unlit: an order of magnitude, not a model) for the smoke's release at 60 m/s at s
+= 64.75 m, 35.25 m below the mouth: the inflow chokes about 0.1 s after the release, the
+suction peaks at about 0.73 MN against p_0 A_body = 1.07 MN (about ten times the 77 kN of
+the air pushed out of the mouth, "Assumption lines"), and the vehicle reaches the mouth
+0.52 m/s slower (53.42 against 53.93 m/s, after 0.62 s); a stage lit 0.5 s after that
+release would light with its base about 6 m inside the bore. A bore that clears the 5.2 m
+fairing ("The bore and the vehicle's largest section") leaves a much wider annulus around
+the 3.66 m body, and the effect shrinks; a release at the track end and the vented shaft
+have neither effect. What the column after the release leaves out, with its direction:
+the column pulls the carriage back with up to p_0 A (1.10 MN for the 3.7 m bore at
+p_atm(-100 m)), more than a 5 g0 brake's own m_c (a_b - g) = 0.78 MN on a 20 t carriage,
+so the brake force, the brake energy and the facility length max(L, s_release + v^2/(2
+a_b)) of a sealed run are upper bounds; on a massless carriage (lm_fixed's) the column
+has no mass to act on; and a stopped carriage is pulled back down by about p_0 A + m_c g,
+which the brake would have to hold. The planar track-push line every planar run carries
+("no air drag in the vented shaft") and the early-release line ("in the vented shaft
+after the release") keep their vented wording byte for byte; a sealed run's shaft line
+reads them as the shaft open above the carriage, where the vehicle flies (S5 changes no
+line that a vented run prints).
+
+**Stall against the column.** `at_push_start` binds F_p(L), the column's force at the
+track end, its largest on the stroke (`PushStart.column_end_N`, 0 vented), and
+`stall_reason` gains a sealed rule after S4's: F_max + (1 - f_imp) T(0) <= M_0 g sin
+phi(0) + F_p(L) ends the run at push start with status `drive_stall`, a flag of its own
+(the numbers, F_p(L) and the bound p_0 A) and nothing moved (the felt g and
+interface-force metrics None, as for S4's stall). It is a conservative guard for every
+push. Beyond the point where F_p(s) = F_max + T_sys - M g sin phi the column outweighs the
+drive and the thrust, and the speed falls from its peak there. A cold step push (the power
+cap never reached; M constant: (1/2) M v^2 = (F_max - M g sin phi) s - W_p(s)) stops
+before L, and swings about that point, only when (F_max - M g sin phi) L <= W_p(L); with
+F_max - M g sin phi between W_p(L)/L and F_p(L) it would still reach L, slowly, on its
+momentum, and the rule refuses it too (0.912 to 0.986 p_0 A, or 92.5% to 100% of F_p(L),
+for the 5 m gap over 100 m). The flag says what the rule does not credit: the stack's
+momentum, a rising thrust and a falling mass, and with a release speed a release at that
+speed before the track end, where the column is below F_p(L) (review pass 3, P3H-m2; a
+review probe, rerun: F_max - M g = 0.95 F_p(L), a cold step push with a 3 m/s release
+speed, is refused, and with the guard removed it releases at s = 3.61 m at 3.000 m/s,
+where flying on it would have peaked at 4.44 m/s at the balance point, 30.87 m). Measured
+with the guard removed (scratch
+probe: the F9 in 1-D, the test shaft, a cold step push): F_max - M g = 0.97, 0.95 and 0.93
+F_p(L) release at L at 4.2453, 3.1637 and 1.4129 m/s, on the energy closed form to 1e-12,
+and then fall back; 0.5 F_p(L) stops in the shaft and swings, no event of the push ends
+that motion, and the run reaches the integrator's t_max_s = 3600 s and the planner's
+RuntimeError. So the guard is needed, and it is conservative. Above it no push stops in
+the shaft: under the force law F_max beats the weight and the column on the whole stroke
+after the rise and P_max/sdot grows as the speed falls; the acceleration law's capped
+force does the same; the force law's taper, which would end toward the open shaft's
+holding force, is refused (Config).
+
+**Speed along the stroke** (review pass 3, P3-m1). The guard keeps the speed rising on
+the F_max plateau, but a sealed push's speed is not monotone in general: it falls
+wherever the drive's force and the thrust's share fall below the weight and the column,
+F + T_sys < M g sin phi + F_p(s). The guard prevents a stop, not a fall. Two cases,
+measured (scratch probes and a review probe, rerun; the F9 in 1-D, cold, no carriage, the
+100 m silo unless stated):
+
+- the power phase, under either law once its power cap binds (the force P_max/sdot is
+  the same; measured under the force law): the terminal speed P_max/(M g sin phi +
+  F_p(s) - T_sys) falls as the column grows, and a stack that reaches it slows. With
+  F_max = m0 (3 g0 + g) and power corners P_max/F_max of 2, 3 and
+  4 m/s (5 and 20 m gaps), and of 2 to 6 m/s on a 300 m track, the speed peaks inside the
+  track. At a 2 m/s corner it peaks at 6.8417 m/s at s = 12.0 m, where P_max/sdot = M g +
+  F_p(s) (to 1.1e-9), against 6.6472 m/s at the exit; at 4 m/s, 13.3104 m/s at 71.7 m
+  against 13.2997 m/s. The vented push's terminal speed P_max/(M g sin phi - T_sys) does
+  not fall, and its speed stays monotone (0 falling steps at corners of 6 to 15 m/s);
+- a slow force rise against a gap far below the sources' 1 to 20 m: the column's
+  stiffness p_0 A gamma/h_0 against the slowly rising force makes the stack oscillate on
+  it. With F_max = m0 (g0 + g) and t_r = 20 s, gaps of 0.05 and 0.1 m slowed the stack to
+  5 and 18 mm/s before it rose again (it stayed positive); gaps of 0.5 m and more, and
+  t_r = 4 s, did not.
+
+A release speed below such a peak is met only if the `target_speed` event sees the
+upward crossing, and scipy tests its sign only at step ends: an upward crossing in one
+step with the peak is passed over (S4a's premise of a monotone sdot holds for the
+vented shaft only: "Linear motor", Stays out of S4a). Measured on the test push of the
+2 m/s corner (`fly_track`, rtol 1e-11): release speeds 1e-3 to 5e-5 m/s below the peak
+release there (trigger `target_speed`); 2e-5 to 1e-9 m/s below it are passed over, and
+the push releases at L at 6.6472 m/s with the flag `release_speed_not_reached` ("the
+push reached 6.64718 m/s at the track end ... below the release speed"), although it
+reached that speed at s of about 12 m. At the 4 m/s corner the window is 1e-7 m/s and
+below (1e-6 m/s is found). Every sealed run with a release speed says so in its column
+line ("Assumption lines"). No planned variant is affected: lm_fixed's corner equals its
+exit speed, and lm_fixed_sealed releases at L. S5 leaves the event as S4a built it; a
+scan of the `target_speed` event like *Passed over*'s is a KI candidate.
+
+**Energy** (also "Assist energy identity"). The work done against the column is the
+drive's extra state `W_piston_J` (`WORK_STATE`; atol 1e-3 J by its suffix), dW_p/dt =
+F_p sdot, so the state vector of a sealed push is [s, sdot, m, W_piston_J, E_drive,
+W_thrust, J_mass]; a vented push keeps S4's layout (no extra state). The identity with
+the column:
+
+    E_drive + W_thrust = delta(M sdot^2/2 + M g z) - J_mass + dissipated + W_p
+
+W_p is the work done against the column's net force F_p (whose own work on the carriage
+is -W_p): drive work the stack does not receive, 4.4% to 5.2% of the supplied work on the
+pushes tested, and 1.92 m/s of exit speed on the cold force-law test push (20 t
+carriage). The carriage does p_0 A s on the atmosphere above, and the trapped gas gives up
+(p_0 V_0 - p V)/(gamma - 1) of internal energy as it expands, so that W_p = p_0 A s -
+(p_0 V_0 - p V)/(gamma - 1), the closed form above; the process is reversible in the
+model, and W_p is a stated term beside the budget's fields, not dissipated (survey 01
+section 6; design section 9: "the piston work is not dissipated").
+`losses.PistonWork(work_J, closed_form_J)` holds the quadrature (the summed increments of
+`W_piston_J` over the ASSIST phases, `losses.piston_work`) and W_p(s_end) - W_p(s_start);
+it is not a field of `AssistEnergyBudget` nor of `sim.Result` (D-SP7-26, D-SP7-27: the
+1-D golden dump converts the one field by field and reads the other by attribute), so
+the metrics rebuild it from the run's ASSIST phases (`metrics.sealed_shaft_piston`).
+`assist_energy_residual_rel` of a sealed push is the identity with W_p
+(`assist_identity_residual_rel`); the budget's own `residual_J()` is then W_p (and its
+`residual_rel()` about 5%, not a broken identity: the docstrings say so). The efficiency
+stays energy-only.
+
+**Metrics** (`SEALED_SHAFT_METRICS`, written after `LINEAR_MOTOR_METRICS` for a sealed
+shaft only, 1-D and planar; a vented linear-motor run and every constant_accel run gain
+none): `piston_work_J` (the work done against the column, the quadrature W_p),
+`piston_force_peak_N` (F_p at the largest s the push's states reach, the release
+position for a push that released; F_p rises with s; 0 for a stall),
+`bore_pressure_release_pa` (p at the release state, None without a release; the
+lowercase `_pa` of `max_q_pa`). The summary's per-variant tables gain `SEALED_SHAFT_ROWS`
+after the linear motor's rows when some run is sealed ('-' for the other runs; n/a in
+every row of a sealed run with no push record, and in the pressure row of a push that
+never released, as the first row's key says); the first row reads "work done against
+the trapped column W_p [J] (drive work the stack does not receive: p_0 dV done on the
+atmosphere above, less the internal energy the expanding gas gives up; not dissipated
+in the model)".
+
+**Assumption lines** (`LinearMotorAssist.assumptions`: thirteen for a sealed shaft, the
+vented ten unchanged byte for byte). Under the acceleration law the control line's force
+reads "M (a + g_eff sin phi) - (1 - f_imp) T + F_p(s) (the sealed shaft's column)" and a
+stop taper's line "at L the drive force is the holding force M g_eff sin phi - (1 -
+f_imp) T plus the sealed shaft's column force F_p(L) at the track end", the force the
+code flies (the force law's taper is refused). The shaft line opens "linear_motor: shaft
+sealed below the carriage (its trapped air column: the three lines that start
+'linear_motor: sealed shaft'; above the carriage the shaft is open at the mouth: the
+vented shaft named by the track-push line of a planar run is, for this run, that open
+shaft above the carriage), no friction", and with a release speed "... named by the
+track-push line of a planar run and the early-release line of a release before the track
+end is ..." (it names only lines the run can carry; the drag clause as for the vented
+shaft: the vehicle above the carriage is in the open shaft). It points to the three
+lines by their opening words, not as "the next three lines": summary.md merges the lines
+of its runs in order of first appearance, and two sealed runs that differ in the shaft
+or column line but share a not-modelled line would break a positional pointer (review
+pass 3, P3H-m1). Then three lines (`sealed_assumptions`; the reference numbers in them
+are the surveys' cases, labelled so, not this run's):
+
+- the column: the bore, A, the gap, p_0 (the ICAO atmosphere at the track start) and gamma
+  ("the bore and the gap assumed; gamma that of air in the ICAO standard atmosphere" when
+  gamma is `atmosphere.KAPPA_AIR`, 1.4; else "the bore, the gap and gamma assumed; air in
+  the ICAO standard atmosphere has 1.4"), the adiabatic, uniform and quasi-static
+  expansion p(s) = p_0 (h_0/(h_0 + s))^gamma, the force on the carriage against the motion
+  below its bound p_0 A from push start to the release, its effect by law with its
+  conditions ("Where it acts": force law, the drive's force unchanged, the stack slows,
+  F_int lower by (m_v/M) F_p and the felt g by F_p/(M g0), the felt g falling on a cold
+  push's F_max plateau, the exit speed lower on every push S5's tests and probes measured,
+  not guaranteed, or, with a release speed, the release position and the push time larger,
+  the speed at release the release speed unless the push reaches the track end first;
+  acceleration law, the force and power rise by F_p and F_p sdot while no cap binds and
+  the work by W_p and the electricity by W_p/eta while no cap binds on the whole push,
+  F_int unchanged, a cap that binds slowing the stack), with a release speed, under
+  either law, that the speed of a sealed push can peak inside the track and then fall
+  (under a power cap, and under the force law in a slow rise against a gap far below the
+  sources' 1 to 20 m) and that a release speed just below such a peak can be passed over
+  inside one integrator step (up to 2e-5 m/s below it on the pushes measured), the push
+  then releasing at the track end with the flag `release_speed_not_reached` although it
+  reached the release speed ("Speed along the stroke"), the work done against the
+  column, drive work the stack does not receive (p_0 dV on the atmosphere above, less the
+  internal energy the gas gives up), booked beside the identity's terms, not as
+  dissipated, and that p_0 A and W_p scale with the bore's area;
+- not modelled on the push, each with its direction: the air ahead of the vehicle pushed
+  out of the mouth (a momentum flux of the order of rho v^2 A_bore at the exit; survey 08
+  A3's case, 76.7 m/s in a 3.7 m bore: about 77 kN, plus 4 to 23 kN at 3 g0 to accelerate
+  the air pushed out, 0.4% to 0.5% of a 20.81 MN interface force), which acts on the
+  vehicle as the neglected shaft drag does (under the force law it would raise F_int by D
+  m_c/M, under the acceleration law by D); the open shaft's hydrostatic drop (F_p biased
+  high by up to rho g s sin phi A: 13 kN, 1.2% of F_p(L), for a 3.7 m bore, a 5 m gap and
+  a 100 m vertical stroke); the non-uniform, unsteady expansion near the end of a
+  small-gap stroke (survey 08 A3's case: the gas has cooled to 35 to 110 K, from about 288
+  K, for 0.5 to 10 m gaps, and its sound speed, 118 to 211 m/s, is only 1.5 to 3 times the
+  carriage's 76.7 m/s; the uniform adiabat holds that cooling, 85 K at the end of the 5 m
+  gap's 100 m stroke), so the uniform, quasi-static adiabat is first order there: the face
+  pressure would be lower and F_p nearer its bound, so F_p is biased low there (inferred;
+  heat from the walls would act the other way; the bound holds regardless); and, for an
+  engine lit on the track, its exhaust, which the sealing carriage leaves only the annulus
+  between the bore and the vehicle to escape by (0.231 m^2, 2.15% of a 3.7 m bore around a
+  3.66 m body: survey 07's case): the pressure it would build above the carriage, which
+  would dominate the push (inferred, not computed), is left out, the thrust and the
+  impingement being those of the open shaft (the tests fly hot sealed pushes as checks of
+  the identity, not as a model of that exhaust; whether to refuse a sealed shaft lit on
+  the track instead is the user's decision);
+- not modelled after the release and in the geometry: the trapped column after the release
+  (the carriage brakes by its own closed form, the vehicle above it sees the open shaft;
+  with a release speed the line says instead that the vehicle is flown so, in the shaft
+  open at the mouth after a release at the track end, and that after one before the
+  track end the cavity between the departing vehicle's base and the braking carriage,
+  which still seals the bore, fed only through the bore-body annulus, is left out: a base
+  suction of up to about p_0 A_body, inferred, the vehicle's speed in the shaft after the
+  release biased high, and the exhaust of a stage lit before its base clears the mouth,
+  trapped there, inferred, the other way: "Push only"), whose pull of up to p_0 A (this
+  run's value) would add to the brake's m_c (a_b - g_eff
+  sin phi) (0.78 MN for a 5 g0 brake on a 20 t carriage on a vertical track), so the brake
+  force, the brake energy and the facility length are upper bounds, a massless carriage
+  leaves the column no mass to act on, and a stopped carriage is pulled back down by about
+  p_0 A + m_c g_eff sin phi, which the brake would have to hold ("Push only"); the bore
+  checked against the diameter sqrt(4 A_ref/pi) of the run's A_ref only (the main-body
+  section in the vehicle files), not the vehicle's largest section (the F9 class's 5.2 m
+  fairing, 30.0 to 43.1 m below the mouth of a 100 m silo, would not pass a 3.7 m bore; a
+  bore that clears it has more than (5.2/3.7)^2 = 1.975 times the area, 3.58 times for the
+  7.0 m shaft the scene draws, so more than 1.975 times p_0 A and W_p at the same gap: "The
+  bore and the vehicle's largest section"); and that a vented shaft, the alternative,
+  needs vents of about the bore area (inferred, survey 07 section 9.2's case: an
+  incompressible orifice estimate, C = 0.94 to 0.83, of 11.4 to 13.0 m^2, 1.06 to 1.21 A,
+  to hold the pressure difference at the exit dynamic pressure; a 3.7 m bore around a 3.66
+  m body is choked, its 0.231 m^2 annulus 2.15% of the bore against the 37.8% Kantrowitz
+  minimum at Mach 0.225).
+
+**Closed forms the tests use** (`tests/test_sealed_shaft.py`; the F9 in 1-D through
+`fly_track` or `sim.simulate`, g = mu/R_E^2, d = 3.7 m, h_0 = 5 m, gamma = 1.4, p_0 =
+p_atm(-100 m), M = m0 + m_c, rtol 1e-11; every expected value from the test's own
+formulas):
+
+- p, F_p and W_p against the formulas above for h_0 in {0.5, 1, 5, 20} m and s from 1e-6
+  m to 1e4 m: p and F_p at 1e-13 (F_p of its bound), W_p against scipy's adaptive
+  quadrature of the plain F_p at 1e-9 relative for s >= 1e-3 m, against the plain closed
+  form at 1e-11 for s >= 0.1 m, and against the series W_p = p_0 A gamma s^2/(2 h_0) [1 -
+  (gamma + 1) s/(3 h_0)] (good to (s/h_0)^2) within 1e-15 p_0 A s below 1e-3 m; survey
+  07's sea-level table to its digits.
+- A step force-law push (t_r = 0, P_max never reached), cold: M sddot = F_max - M g sin
+  phi - F_p(s), hence (1/2) M v^2 = (F_max - M g sin phi) s - W_p(s) at every step,
+  vertical and horizontal, the exit v_e from it, the `W_piston_J` state = W_p(s) at
+  every step, and E_drive = (1/2) M v_e^2 + M g sin phi L + W_p(L).
+- At the same state (t, s, sdot, m_v, T): the sealed force law's drive force equals the
+  vented one's and F_int = F_int,vented - (m_v/M) F_p, the felt g lower by F_p/(M g0),
+  cold and hot (both on a 20 t carriage, the hot one with f_imp 0.5); the acceleration
+  law's uncapped drive force is the vented one's plus F_p and F_int is unchanged (cold,
+  no carriage; hot, a step command no cap reaches, on a 20 t carriage with f_imp 0.5),
+  and where the vented command already reaches the cap both sit at it, the drive force
+  the same bit for bit and F_int lower by (m_v/M) F_p (the cold push's power cap late in
+  the push; a hot step command capped by F_max from push start, no carriage).
+- The identity with the column, cold and hot, both laws (the five pushes of
+  `_limit_cases`).
+- A release at a target speed (the force law cold at 50 m/s, F_max = m0 (3 g0 + g), P_max
+  = 50 F_max; no carriage and a 20 t carriage): trigger `target_speed` before L, the exit
+  speed the release speed, F_p and p at the flown release position s_release (1e-12) and
+  W_p(s_release) (1e-9), the identity with it, the facility max(L, s_release + v^2/(2
+  a_b)); against the same drive vented, the release position and the push time larger, and
+  the column line saying so, not "the exit speed is lower".
+- A speed peak inside the track (the force law cold, no carriage, F_max = m0 (3 g0 + g),
+  a 2 m/s power corner): the dense output's largest speed (refined to 1e-12 s) lies at
+  1 m < s < L/2, more than 0.1 m/s above the exit speed, with steps where the speed
+  falls, and there P_max/sdot = M g + F_p(s) (1e-8; measured 1.1e-9); a release speed 1e-3
+  m/s below the peak releases there (`target_speed`), and one 1e-6 m/s below it is
+  passed over: the push releases at L, at the exit speed of the push with no release
+  speed, with one `release_speed_not_reached` flag ("Speed along the stroke").
+- The stall at push start against the column: F_max = M g + F_p(L)/2 stalls (flag
+  written out), the same drive vented flies, F_max = (M g + F_p(L))(1 + 1e-3) reaches L,
+  and a step push with F_max - M g = 0.95 F_p(L), which would reach L on its momentum, is
+  refused (the guard's conservatism, pinned), with a 3 m/s release speed too, its flag
+  then adding the early release to what the rule does not credit.
+
+**Measured** (scratch probes, not run by the suite): the step push's speeds on the
+energy closed form to 2.4e-15 of v_e (vertical; 1.8e-15 horizontal), its W_piston_J state
+on W_p(s) to 4.9e-15 of W_p(L), the exit within 3.3e-16 and E_drive within 2.2e-16, the
+same at rtol 1e-10, 1e-11 and 1e-12 (the step cap t_push/push_steps sets the steps); the
+identity with the column 1.3e-16 to 1.7e-15 and the quadrature on its closed form
+1.3e-15 to 3.0e-15 (the five pushes); the interface share to 2.9e-16 of F_max (both
+laws, uncapped and at the cap). The tests assert 1e-9: margins above 1e5. On those
+pushes W_p is 4.4% to 5.2% of the push's supplied work (survey 07: 99 MJ of 2.249 GJ,
+4.4%, at sea level for the full-load push); the cold force law's push on a 20 t carriage
+exits at 67.78 m/s against 69.70 m/s vented, its interface-force peak 20.25 MN against
+20.52 MN (test pushes on the 1-D F9, not findings); released at 50 m/s instead, that push
+releases at 47.69 m after 2.125 s against 44.89 m after 2.034 s vented (with no carriage
+45.41 m after 2.035 s against 42.79 m after 1.950 s), F_p, p and W_p at s_release within
+6.7e-15 of the closed forms. The synthetic structural case of
+`tests/test_structure_linear_motor.py` (SHORT, 50 m, the synthetic structure file, x =
+20 t) sizes 5,812 kg sealed against 5,903 kg vented (n_q 3.966 against 4.019 g0;
+synthetic, not a finding).
+
+**Byte identity of the rest.** A vented linear-motor run and every constant_accel run
+are byte-identical to the commit before S5: the vented drive keeps no extra state and
+S4's arithmetic (the sealed terms are separate branches, never a zero added), no new
+metric key, no new summary row, its ten assumption lines; constant_accel is untouched.
+`tests/vented_pins_support.py` holds sha256 digests captured from that commit's code
+(e12e524: `SOURCE_COMMIT`, the JSON's `source_commit`; its `src` extracted with
+`git archive e12e524 src`, never HEAD once S5 is committed; the support module using
+only pre-S5 API; the capture reproduced, and the working tree's capture equal to it):
+
+- five 1-D runs (the force law cold and hot on a 20 t carriage, the acceleration law with
+  a taper, a release speed, constant_accel 3 g0): their integrator states bit for bit,
+  metrics, time series, events, assumption lines, flags, status and budget;
+- the planar flown push of S4b's 30 m force-law push (through the config and
+  `build_assist`): its phases' states bit for bit, events, flags, status and the drive's
+  assumption lines, and its planar track metrics (`planar_track_metrics` on the push, the
+  function S5 changed), sampled time series and budget.
+
+The metric key lists (the five 1-D runs and the planar track metrics) are compared
+everywhere, the digests in the capture environment (the golden tier's EXACT_ENV_KEYS).
+The exact 1-D golden tier, the planar digest pin and output capture and the golden-dump
+field lists stand as before.
+
+**Stays out of S5:**
+
+- a partly vented shaft (a pressure state `_pa`, which has no atol entry); heat transfer
+  and a non-uniform, unsteady expansion of the column;
+- the column after the release and the air above the vehicle (stated, with their
+  directions), and the cavity under a vehicle released before the track end, closed below
+  by the braking carriage, with the exhaust of a stage lit in it (stated, inferred, with
+  their directions: "Push only");
+- the exhaust of an engine lit on the track in a sealed shaft (stated; refusing that
+  combination instead is the user's decision);
+- a scan of the `target_speed` event for an upward crossing passed over at a sealed
+  push's speed peak, like *Passed over*'s scan of the two-way watches, or a refusal or
+  flag of a sealed release speed on a power-limited push (stated, with the measured
+  window: "Speed along the stroke"; a KI candidate);
+- a check of the bore against the vehicle's largest section, the bore lm_fixed_sealed
+  flies, and whether a sealed variant can sit in a fairing-area bound arm such as
+  `aero_bound` (the user's decision before S6b: "The bore and the vehicle's largest
+  section");
+- the column in the readers. Replay, scene and the app do not name it, and
+  `replay.is_vented` reads a sealed block as not vented. On a page with sealed runs only,
+  the vented-shaft drag clause and close-up note are left out. On a page with vented and
+  sealed runs, the drag clause names the vented runs alone, which implies drag in the
+  sealed runs' shaft (there is none above the carriage), and the unnamed close-up note
+  ("the shaft is treated as vented") reads as covering the sealed runs. The scene's
+  display-only list says "the model has a vented shaft" on every page, and so does the
+  shaft note of configs/display/f9_class.yaml. Open: fix them, or refuse a directory with
+  a sealed run in the readers, before S6b publishes a sealed page;
+- an exact stall rule (the guard above is conservative for every push);
+- the experiment variant lm_fixed_sealed (S6b).
 
 ## Failed-ignition coast
 
@@ -9619,7 +10132,9 @@ finding).
 
 **Stays out of S4b:** a structural-dynamics model (the single mode stands, labelled as in
 S2); drag on the vehicle in the vented shaft during the push (S4's shaft line); the sealed
-shaft's air column (S5: the flown push carries its piston force once the drive does); a
+shaft's air column (S5: the flown push carries its piston force once the drive does; done,
+"The sealed shaft": the column's lower F_int and n reach the sizing through this path with
+no new branch); a
 second-order count of a curving load in the bound (crediting the mode's lag on a slowly
 curving q, which would remove the conservatism measured above); a grid-independent slope
 change at a corner (the one-sided load derivatives from the state rates at each sub-phase
@@ -9809,7 +10324,9 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
     <a> g0 (assumed) <rise>; the drive force M (a + g_eff sin phi) - (1 - f_imp) T,
     capped by F_max = <F> kN and P_max / sdot with P_max = <P> MW (assumed); while a cap
     binds the acceleration follows from the capped force; the drive never pulls back: a
-    negative drive force (holding the vehicle back) ends the run (drive_limit).
+    negative drive force (holding the vehicle back) ends the run (drive_limit). With a
+    sealed shaft (SP7 step S5) the force reads "M (a + g_eff sin phi) - (1 - f_imp) T +
+    F_p(s) (the sealed shaft's column)".
 - linear_motor: P_max is the mechanical power at the carriage (F sdot); the electricity
   is the positive drive work / efficiency and the electrical power peak the mechanical
   peak / efficiency, drive efficiency <eta> (assumed), which moves no trajectory.
@@ -9827,7 +10344,9 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
     a stop taper over the last <s_taper> m: the acceleration command is scaled by min(1,
     (L - s) / s_taper); at L the drive force is the holding force M g_eff sin phi - (1 -
     f_imp) T (zero net acceleration) unless a cap binds there, and it drops to zero in a
-    step at release.
+    step at release. With a sealed shaft (SP7 step S5) the holding force reads "the
+    holding force M g_eff sin phi - (1 - f_imp) T plus the sealed shaft's column force
+    F_p(L) at the track end" (the force law's taper is refused there).
   - with a release speed (SP7 step S4a; `release_assumption`, no taper): linear_motor:
     release where the speed along the track reaches the release speed <v> m/s (assumed),
     before the track end, or at the track end (s = L) when the push does not reach it
@@ -9873,6 +10392,28 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
     (the release position and the push time biased low, or the speed at a release at
     the track end biased high; drag can also make a cap bind that the drag-free push
     never reaches).
+- with a sealed shaft (SP7 step S5; "The sealed shaft", Assumption lines): the shaft line
+  opens "linear_motor: shaft sealed below the carriage (its trapped air column: the three
+  lines that start 'linear_motor: sealed shaft'; above the carriage the shaft is open at
+  the mouth: the vented shaft named by the track-push line of a planar run is, for this
+  run, that open shaft above the carriage), no friction" (with a release speed "... of a
+  planar run and the early-release line of a release before the track end is ..."; the
+  rest as above), and three lines follow it (`sealed_assumptions`), thirteen lines in
+  all: linear_motor: sealed shaft: <the column: the bore, A, the gap, p_0, gamma and
+  whether it is assumed, the pressure law, the force and its bound from push start to
+  the release, the law's effect with its conditions, with a release speed the speed
+  peak inside the track and a release speed just below it passed over, the work done
+  against the column, drive work the stack does not receive, booked beside the
+  identity's terms, not as dissipated, p_0 A and W_p scaling with the bore's area>;
+  linear_motor: sealed shaft, not modelled on the push: <the air pushed out of the mouth,
+  survey 08's case; the open shaft's hydrostatic drop, F_p biased high; the non-uniform,
+  unsteady expansion of the cooled gas, first order, F_p biased low there; the exhaust of
+  an engine lit on the track>; linear_motor: sealed shaft, not modelled after the release
+  and in the geometry: <the column after the release, with a release speed the cavity
+  under a vehicle released before the track end and the exhaust of a stage lit in it,
+  inferred; the brake force, brake energy and facility length upper bounds; the bore
+  checked against the run's A_ref section only, the F9 class's 5.2 m fairing; the vents a
+  vented shaft needs, inferred, survey 07's case>.
 - the track gravity (`LinearMotorAssist.track_gravity_assumption`, the form of
   constant_accel's): linear_motor: constant g_eff = <value> m/s^2 on the track, omega_p
   = 0, Coriolis neglected (every 1-D run); on a planar run linear_motor: constant g_eff =
@@ -10743,7 +11284,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_linear_motor_readers.py::test_the_app_lists_and_panels_a_linear_motor_directory` (slow, the same fixture) | "Linear motor: the flown power cap, the release at a target speed and the readers", the app: `app.directory_row` (complete, playable, planar_2d) and `app.results_panel` of pad and lm_target with the shipped basis: the push block's model linear_motor, the short law in its text, net_accel_g None, the force law's 'not prescribed' acceleration in the panel's caveats and no 'holds no constant acceleration'; (fix round 2) lm_target's early-release caveat in the panel's caveats, `app.video_footer` of pad and lm_target ending with its frame line and equal to the panel's video_footer, pad and lm's video footer plots.animation_caveats' lines alone and no early-release caveat in their panel; (fix round 3, H3-m1) the footer of pad and lm_fall ending with the early-release line and the fall-back line; (fix round 4) the panel of pad and lm_fall with the fall-back display-only carriage item and of pad and lm_target with DISPLAY_ONLY (V4-1), the footer of pad and lm_stall naming no push load and ending with its no-release line (V4-3) | exact |
 | `test_linear_motor.py::test_braking_closed_forms` (m_c 0 and 22 t) | "Linear motor", braking: d = v^2/(2 a_b), t = v/a_b, F = m_c (a_b - g sin phi) (vertical and horizontal), E = (1/2) m_c v^2 (1 - g sin phi/a_b) = F d, all 0 for m_c = 0, facility L + d; a run's braking metrics at its exit speed | 1e-15 relative (F d 1e-14) |
 | `test_linear_motor.py::test_linear_motor_metrics_and_assumption_lines`, `::test_planar_track_metrics_of_a_linear_motor_push` | "Linear motor", metrics: LINEAR_MOTOR_METRICS last, in order (1-D; planar right after the push settings, net_accel_* None); the settings, push_power_limited (True power-limited, False with the corner never reached and at the tie k = P_max/(F_max v_e) = 1 with v_e = sqrt(2 a_f L - a_f^2 t_r^2/12), True at k = 0.999), v_e/t_push, the felt plateau F_max/M/g0, L and track_end, the peak power P_max and the electrical peak P_max/eta (0 for a negative power); a constant_accel run has none of the keys; the ten assumption lines, four written out (the shaft line with its biases both ways, the ignition line) and the acceleration law's taper and shaft lines | exact; 1e-12 relative (plateau, peak) |
-| `test_linear_motor.py::test_linear_motor_config_si_properties_and_build`, `::test_linear_motor_config_refusals` (45 cases), `::test_linear_motor_dump_states_the_given_keys`, `::test_depth_bound_applies_to_every_track_drive`, `::test_union_tags_and_the_app_form` | "Linear motor", config: both blocks validate, YAML integers held as floats, the SI properties (kN, MW, g0, t), `build_assist` through `ASSIST_MODELS` (the unbound model, the buried track); refused: the law's keys, the taper at the stroke, a null optional key, strict finite numbers (a bool and a numeric string for each of the eleven numbers, NaN, inf), the bounds (zero force, power and command; a negative rise and taper; an efficiency above 1, a negative impingement), a sealed shaft, an assist-family key and (SP7 step S4a) a release_speed_mps given together with any stop_taper_m (5 and 0), a null one, a bool, a numeric string, 0 and inf; the model's `CONTROL_LAWS` equal `config.ControlLaw`; the dump leaves out None keys and validates again (python and json); the depth bound on both drives (`TRACK_DRIVE_CONFIGS`), a depth within it refused where the specs are built; `ASSIST_UNION_TAGS` derived from the union, `PLANNED_MODELS == ("cable_winch",)`, the app form's tags, its site choices and a request naming the drive refused | raises (message or type) / exact |
+| `test_linear_motor.py::test_linear_motor_config_si_properties_and_build`, `::test_linear_motor_config_refusals` (46 cases), `::test_linear_motor_dump_states_the_given_keys`, `::test_depth_bound_applies_to_every_track_drive`, `::test_union_tags_and_the_app_form` | "Linear motor", config: both blocks validate, YAML integers held as floats, the SI properties (kN, MW, g0, t), `build_assist` through `ASSIST_MODELS` (the unbound model, the buried track); refused: the law's keys, the taper at the stroke, a null optional key, strict finite numbers (a bool and a numeric string for each of the eleven numbers, NaN, inf), the bounds (zero force, power and command; a negative rise and taper; an efficiency above 1, a negative impingement), a shaft other than vented or sealed and (SP7 step S5) a sealed shaft without its three keys, an assist-family key and (SP7 step S4a) a release_speed_mps given together with any stop_taper_m (5 and 0), a null one, a bool, a numeric string, 0 and inf; the model's `CONTROL_LAWS` equal `config.ControlLaw`; the dump leaves out None keys and validates again (python and json); the depth bound on both drives (`TRACK_DRIVE_CONFIGS`), a depth within it refused where the specs are built; `ASSIST_UNION_TAGS` derived from the union, `PLANNED_MODELS == ("cable_winch",)`, the app form's tags, its site choices and a request naming the drive refused | raises (message or type) / exact |
 | `test_linear_motor.py::test_fires_on_first_step_is_the_guards_own_test` (x' = +-1 from x = 0, direction +-1) | "Event rules", the disarm guard: `engine.fires_on_first_step` is True exactly when `integrate_phase` disarms the event at zero with a note (moving into its direction), False when it moves away | exact |
 | `test_linear_motor.py::test_push_boundaries_merge_the_drive_kinks`, `::test_thrust_clamp_time_is_where_t_vac_reaches_the_back_pressure`, `::test_existing_models_keep_their_push` | "Linear motor", the protocol seam: without a drive kink the boundaries are the thrust kinks as before; a drive kink or the thrust clamp merged once (dropped at or before push start); `prelude.thrust_clamp_time` at t_ign + t_ramp share (ramp) and t_ign - tau ln(1 - share) (lag), share = p_amb A_e/T_full, where T_vac = p_amb A_e (1e-12) and the delivered thrust leaves zero, None for a step, a failed schedule, vacuum and share >= 1; constant_accel and none exact, returning themselves, no kink, no watch, no stall; the linear motor's kink at t_r (none for a step), its watches by law and taper, no estimate unbound | exact |
 | `test_planar_pipeline.py::test_trajectory_key_drops_the_efficiency_for_constant_accel_and_the_linear_motor` | "Reporting definitions (planar)", the sensitivity reuse: the drive efficiency is energy-only (one trajectory key at 0.5 and 0.6) for constant_accel and, since SP7 step S4, the linear motor (P_max mechanical at the carriage), and trajectory-relevant for another model (cable_winch); the two drives' keys differ | exact |
@@ -10972,6 +11513,25 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_structure_linear_motor.py::test_a_hot_push_reads_mixed_station_drivers_at_its_samples` (a hot force plateau with a carriage; a push lit on the track into its power phase) | "The flown push of a linear motor", the reduction's limit: the maximum of n (m_prop1 + c) over the push's cases (the release case, which the sizing does not read, left out) against its dense maximum (`track_peaks`) for 30 values of c from -0.9 to 2 m_prop1 (the domes' crowns and the transfer tube within), the gap recorded | below 1e-9 relative (measured 0.0) |
 | `test_structure_linear_motor.py::test_the_transform_flies_the_push_and_records_the_flown_values`, `::test_constant_accel_transform_carries_no_flown_key`, `::test_vehicle_at_is_bit_identical_across_call_orders_on_a_flown_push`, `::test_dm_slope_of_a_flown_push_is_bounded_and_smooth` (plain, a 10 m taper, a corner inside the rise, hot without a carriage), `::test_the_payload_limit_flag_checks_the_compression_after_a_flown_release` (a release past a corner, a release in tension), `::test_a_full_load_push_that_cannot_release_is_refused_at_build`, `::test_an_offload_whose_push_cannot_release_is_infeasible`, `::test_the_flown_push_assumption_line` | "The flown push of a linear motor", the transform on the synthetic file and pad (the force law over 50 m): it flies its push, its context kept, no stage-1 ignition time; the record's keys `STRUCTURE_RECORD_KEYS`, `structure_t_r_s` the drive's 0.5 s, `structure_dlf` min(2, 1 + T_ax/(pi t_r)) (the bound equals the formula on this cold push), `structure_ramp_cost_rel` null, `structure_n_q_g` = F_max/(M g0) on the vehicle carrying dm, the release flag's rise plateau, residual and bound residual, no taper keys, the payload-limit flag's `dlf_rise`, `n_bound_g` and `f_bound_N` and, last, `release_compression_g` (here the release peak); the payload-limit flag on a release just past a 10 m/s corner (3 Hz; the compression after it, its release peak, about 4.08 above n_peak 3.88 g0) and on a release in tension (3 Hz; about 1.61 above n_peak and the release peak, 1.29 g0) fired with the upper limit between n_peak (and the release peak) and the compression and not above it, the run flag's line naming the compression (review rounds 2 and 3, P2-m2 and H-P3-01); the fixed point below 1e-6 kg with five sizings to spare under the cap of 25, its contraction in the cap flag (recorded); constant_accel's transform: no flown push, its release flag's head S2's and none of `FLOWN_RELEASE_FLAG_KEYS`, its payload-limit flag S2's five values, no flown number on its requirement, no flown line; vehicle_at bit-identical forwards and in reverse (two offloads) and rebuilt (one), equal to `charge_structure` of its sizing; dm'(x) by 1 kg and 10 g differences agreeing and above -1/(2 E), each sizing uncapped with five to spare, at 0, 20 and 40 t on the plain push, at 0 with a 10 m taper and at 20 t with a 5 m/s corner inside the rise (review round 2, P2-M1: their sub-phases of 4.7e-14 and 2.1e-11 s), and at 0 and 20 t on the push lit 2 s before its start with no carriage (review round 3, P3-M1: its flat F_int and n m_v; eight sizings); the slopes recorded: about -4e-4 kg/kg, -4.1e-3 with the corner, +0.0092 and +0.0103 hot; a 3 MN drive refused at build (its push at x = 0 stalls); a hot acceleration law on a 250 t carriage infeasible at an offload of 60 t (`drive_limit`, a PreludeFailure in `search.INFEASIBLE`); the flown push's assumption line under rise_time, step (the load plus its total variation) and quasi_static, sizing flown and full_load (whatever x the solve tries, a payload case's dm_1 at P_1*), each fixed-point iterate, with a taper | 1e-11 relative (n_q against the last iterate); 1e-9 kg; 1e-5 kg/kg; exact |
 | `test_structure_linear_motor.py::test_a_linear_motor_structural_case_solves`, `::test_a_linear_motor_structural_x_star_converges` (slow) | "The flown push of a linear motor", Pins: the synthetic linear-motor structural case (100 m force law) solved at SP1's P_ref with the shipped budget: ok, no `offload_nonmonotone`, verified, the offloaded vehicle carrying dm at x* bit for bit, the fixed point at x* inside its cap, dm'(x*) above -1/(2 E) and smooth (recorded with the contraction, the iterations and the evaluations); x* under the budget tightened 10x with the same context as the transform's push_context (exit criterion 6) | x* within 1e-3 x* (measured 3.4e-7); 1e-5 kg/kg |
+| `test_sealed_shaft.py::test_pressure_force_and_work_against_their_closed_forms` (h_0 0.5, 1, 5, 20 m) | "The sealed shaft": p = p_0 (h_0/(h_0 + s))^gamma and F_p = max(0, p_0 - p) A against the test's formulas, W_p against scipy's adaptive quadrature of F_p (s >= 1e-3 m) and the plain closed form (s >= 0.1 m), at 1e-6 m the series p_0 A gamma s^2/(2 h_0) [1 - (gamma + 1) s/(3 h_0)]; F_p < p_0 A, F_p and W_p increasing, F_p = W_p = 0 and p = p_0 at and below s = 0 | p, F_p 1e-13 (F_p of p_0 A); W_p 1e-9 relative (quadrature), 1e-11 (closed form), 1e-15 p_0 A s (series) |
+| `test_sealed_shaft.py::test_hand_numbers_of_the_trapped_column_at_sea_level` | "The sealed shaft", survey 07 section 9.2 at sea level, d = 3.7 m, L = 100 m: p_atm A = 1.0895 MN; for h_0 = 1, 5, 20 m p_end/p_0 = 0.0016, 0.014, 0.081, F_p(L) = 1.088, 1.074, 1.001 MN, W_p(L) = 107, 99, 81 MJ | the quoted digits |
+| `test_sealed_shaft.py::test_sealed_shaft_and_model_refusals` | "The sealed shaft", Config: `SealedShaft` refuses a bore, gap or p_0 not finite and > 0 and gamma not finite and > 1; the model refuses a shaft that is not a `SealedShaft` and a sealed shaft with the force law's stop taper (`SEALED_TAPER_REFUSAL`), accepts a zero taper and the acceleration law's taper; extra states () vented, (W_piston_J,) sealed from 0 J | raises (message) / exact |
+| `test_sealed_shaft.py::test_step_push_follows_the_energy_closed_form` (vertical, horizontal) | "The sealed shaft", a step force-law push, cold: (1/2) M v^2 = (F_max - M g sin phi) s - W_p(s) at every integrator step, the exit from it, the W_piston_J state = W_p(s) at every step, F_p <= p_0 A, E_drive = (1/2) M v_e^2 + M g sin phi L + W_p(L) | 1e-9 of v_e, of W_p(L) and relative |
+| `test_sealed_shaft.py::test_assist_energy_identity_with_the_column` (force law cold and hot; acceleration law cold, hot capped by F_max, hot uncapped on a 20 t carriage) | "The sealed shaft", Energy, and "Assist energy identity": work_drive + work_thrust = delta_mech + massflow + dissipated + W_p recomputed from the fields; the budget's own residual is W_p; dissipated 0; `PistonWork` quadrature on its closed form W_p(s_end); the metric is the record's identity residual; W_p 3% to 6% of the supplied work; F_p < p_0 A at every step | 1e-9 (CLAUDE.md 1e-6) / 1e-12 / exact |
+| `test_sealed_shaft.py::test_column_share_of_the_interface_force` (the same five pushes) | "The sealed shaft", Where it acts: at every integrator step, at the same state, force law (cold and hot, both on a 20 t carriage): the drive force equal (bit for bit), F_int = F_int,vented - (m_v/M) F_p, felt g lower by F_p/(M g0); acceleration law, uncapped steps (more than five on each push but the one capped from push start): drive force + F_p, F_int unchanged; steps where the vented command already exceeds the cap (more than five on the cold push's power cap and on the hot push capped by F_max): the drive force equal (bit for bit), F_int lower by (m_v/M) F_p; the extra rate F_p sdot | 1e-9 of F_max and of the felt g; exact; the extra rate 1e-12 relative (1e-6 W absolute) |
+| `test_sealed_shaft.py::test_metrics_of_a_sealed_push_and_none_on_a_vented_one` | "The sealed shaft", Metrics: the sealed run's keys are the vented run's plus `SEALED_SHAFT_METRICS` after `LINEAR_MOTOR_METRICS`; piston_work_J the record's, piston_force_peak_N = F_p(s_release), bore_pressure_release_pa = p(s_release); none on the vented run (whose residual metric is `residual_rel()`); the sealed push exits slower with a lower F_int peak | exact / 1e-12 |
+| `test_sealed_shaft.py::test_a_sealed_push_released_at_a_target_speed` (no carriage, 20 t carriage) | "The sealed shaft", Push only, Metrics and Where it acts: the force law cold released at 50 m/s: trigger `target_speed`, s_release < L, the exit speed the release speed (1e-9), piston_force_peak_N = F_p(s_release) and bore_pressure_release_pa = p(s_release) (1e-12), piston_work_J = W_p(s_release) < W_p(L) (1e-9), the identity with the column (1e-9; the metric is the record's), the facility max(L, s_release + v^2/(2 a_b)); the vented twin releases at the same speed at a smaller position and push time; the column line names those, not the exit speed | 1e-9 / 1e-12 / exact |
+| `test_sealed_shaft.py::test_a_sealed_push_s_speed_can_peak_and_fall_inside_the_track` | "The sealed shaft", Speed along the stroke (review pass 3, P3-m1): the force law cold, no carriage, F_max = m0 (3 g0 + g), a 2 m/s power corner (`fly_track`): the largest speed of the dense output (refined by a bounded search to 1e-12 s) at 1 m < s < L/2, more than 0.1 m/s above the exit speed, more than ten falling steps, and P_max/sdot = M g + F_p(s) there; a release speed 1e-3 m/s below the peak releases there (`target_speed`, at the release speed, before the peak's s, no flag), one 1e-6 m/s below it is passed over (released at L at the exit speed of the push with no release speed, one `release_speed_not_reached` flag): the miss the column line states | 1e-8 relative (measured 1.1e-9); 1e-9 relative; exact |
+| `test_sealed_shaft.py::test_stall_against_the_column_at_push_start` | "The sealed shaft", Stall: F_max = M g + F_p(L)/2 gives drive_stall with the column's flag (written out: the stack's momentum, a rising thrust and a falling mass not credited), zero work and peak force, no release pressure, F_int peak None; vented the same drive flies; (M g + F_p(L))(1 + 1e-3) reaches L; a step push with F_max - M g = 0.95 F_p(L), above W_p(L)/L so it would reach L, is refused (the guard's conservatism), and with a 3 m/s release speed too, its flag adding "a release at the release speed before the track end, where the column is below F_p(L)" to what is not credited (review pass 3, P3H-m2) | exact |
+| `test_sealed_shaft.py::test_assist_energy_budget_keeps_its_fields` | D-SP7-26, D-SP7-27: `AssistEnergyBudget`'s five fields; `PistonWork` (work_J, closed_form_J) frozen, not a subclass; no piston field on `sim.Result`; an empty push a zero record | exact |
+| `test_sealed_shaft.py::test_a_planar_sealed_push_closes_its_identity_and_writes_its_metrics` | "The sealed shaft", planar prelude (28.5 deg site, g_ref): the identity with the column, the quadrature on its closed form and the W_piston_J state on W_p(s) at every step; `planar_track_metrics` ends with `SEALED_SHAFT_METRICS`, its residual the record's | 1e-9 / exact / 1e-12 |
+| `test_sealed_shaft.py::test_sealed_config_validates_dumps_and_builds`, `::test_sealed_config_refusals` (15 cases), `::test_constant_accel_keeps_its_vented_shaft` | "The sealed shaft", Config: a sealed block validates, dumps its three keys and validates again; a vented dump has no shaft_* key; `config.ShaftKind` = the model's; `build_assist` traps the column at the ICAO pressure of the track start (-100 m; -10 m for a 30 m stroke exiting at 20 m); the acceleration law's taper accepted; at the ICAO floor (a 5,004 m stroke) the floor's pressure, `standard_atmosphere`'s, and below it the model raises (review pass 3, C3-m1), while a vented track that deep validates; refused: a sealed key on a vented shaft (a null too), a missing key, gamma 1 or a bool, a numeric-string bore, a zero bore, a NaN, infinite or negative gap, the force law's taper, a sealed track starting below the ICAO floor (a 6,000 m stroke, the message written out in part), an unknown shaft; constant_accel refuses a sealed shaft and a shaft key, its line unchanged | raises (message or type) / exact |
+| `test_sealed_shaft.py::test_a_bore_at_or_below_the_body_is_refused` | "The sealed shaft", Config: `resolve_run` refuses a bore at the diameter sqrt(4 A_ref/pi) = 3.6598 m of the run's A_ref (the main body) and at 3.6 m (the message names the run's A_ref section, never "body diameter", and says a wider section such as a fairing is not checked), a 3.7 m bore against an A_ref set to the 5.2 m fairing's section (21.24 m^2, d = 5.20035 m, `aero_bound`'s override), and a sealed shaft on a vehicle without an aero block; 3.7 m resolves, and 3.66 m (the nominal body A_ref's source rounds) too; `config.body_diameter_m`, which the check calls | raises (message) / exact |
+| `test_sealed_shaft.py::test_sealed_assumption_lines` | "The sealed shaft", Assumption lines: thirteen lines, the vented ten with the shaft line's opening changed (written out: the three lines named by their opening words 'linear_motor: sealed shaft', three such lines; the vented shaft named by a planar run's track-push line, and with a release speed by the early-release line, read as the open shaft above the carriage) and three after it: the column (written out in part: the values, gamma that of ICAO air, the bound, the law's effect and its condition, "on every push S5's tests and probes measured", the felt g falling on a cold force-law plateau, the work done against the column, no 'reversible'; with a release speed the release position and the push time, not the exit speed), not modelled on the push (survey 08's case, 77 kN plus 4 to 23 kN at 3 g0, 0.4% to 0.5%; the hydrostatic drop, biased high; the non-uniform, unsteady expansion of the gas cooled to 35 to 110 K, first order, biased low; the exhaust of an engine lit on the track, inferred), not modelled after the release and in the geometry (p_0 A, the braking metrics upper bounds, the massless carriage, the bore checked against the run's A_ref section only, the 5.2 m fairing, more than 1.975 times the area and p_0 A and W_p, the vents, inferred; the open shaft at the mouth after the release written out, no cavity); with a release speed, under either law, the column line's speed peak and passed-over release speed and the third line's cavity under a vehicle released before the track end (both written out; neither without a release speed); the acceleration law's effect, its control line with + F_p(s) and its taper line with F_p(L) (both written out against the vented lines); gamma 1.3 called assumed | exact |
+| `test_sealed_shaft.py::test_summary_rows_of_a_sealed_shaft_run` | "The sealed shaft", Metrics: `SEALED_SHAFT_ROWS` (every `SEALED_SHAFT_METRICS` key) after `LINEAR_MOTOR_ROWS` in the 1-D and planar tables when a sealed run is in the table, none otherwise; '-' for the pad and a vented motor, n/a for a release item without a release and in every row of a sealed run without a push record (the rows still shown); the first row's label: the n/a key (every row: no push record; the pressure row: no release), work done against the trapped column, drive work the stack does not receive, not dissipated in the model, no 'reversible' | exact |
+| `test_sealed_shaft.py::test_vented_runs_keep_their_metric_keys`, `::test_vented_runs_match_their_pins` | "The sealed shaft", Byte identity of the rest: captured from the commit before S5, e12e524 (`SOURCE_COMMIT` and the JSON's `source_commit`, asserted equal; its `src` by `git archive e12e524 src`); the metric keys of five 1-D runs (force law cold, hot on a 20 t carriage; acceleration law with a taper; a release speed; constant_accel) and of the planar flown push's track metrics (everywhere); sha256 digests (the 1-D runs: integrator states, metrics, time series, events, assumptions, flags, status, budget; the planar flown push through the config: phases' states, events, flags, status, the drive's assumptions, its planar track metrics, sampled time series and budget) equal `tests/data/vented_pins.json` in the capture environment (skipped elsewhere unless LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) | exact |
+| `test_structure_linear_motor.py::test_a_sealed_push_lowers_the_flown_interface_peak_by_the_column_share` | "The sealed shaft", Where it acts, through "The flown push of a linear motor": a cold force-law push (30 m, F_max 22 MN, 20 t carriage) sealed and vented; both max-F_int and max-n cases at t_r; there F_int,sealed = (m_v/M) F_max - (m_v/M) F_p(s*) and = the vented drive at the sealed state less the share, n lower by F_p(s*)/(M g0), p_0 = p_atm(-30 m) | 1e-9 |
+| `test_structure_linear_motor.py::test_a_sealed_shaft_does_not_raise_the_structural_mass` | "The sealed shaft": SHORT sealed on the synthetic file at x = 20 t: the record's keys STRUCTURE_RECORD_KEYS, n_q, n_peak and F_peak below the vented push's, dm not larger (5,812 against 5,903 kg measured; synthetic) | exact (inequalities) |
 | `test_structure_reporting.py::test_payload_case_two_passes_contraction_and_flag`, `::test_payload_contraction_edge_cases` | the payload form on fake runs whose P* falls with the stage-1 dry mass (P* = P_ref + 0.5 - 0.25 (dry1 - 22,200 kg), a test rule): dm_0 the full-load sizing at P_ref, P_1* = P_ref + 0.5 - 0.25 dm_0, dm_1 the sizing at P_1* (smaller), P_2* on dm_1, c and the residual estimate recomputed from the record by their definitions, the flag off at the design's limits and fired when `STRUCTURE_PAYLOAD_CONTRACTION_MAX` is lowered below c (the run's and the record's flags, the run line carrying the estimate, the tolerance and c against the limit, the console line); the record's kind, keys ending with `STRUCTURE_RECORD_KEYS`, its `structure_dm_x0_kg` equal to dm_0 and to the offload case's `structure_dm_x0_kg` of the same variant and settings, the run written under the case's name with dm_1 restated under the full_load provenance, its note starting "structure payload case 'cold_pstar_st':" and no dict of either pass carrying "(solved)" or "offload case", the payload-case and structure assumption lines and no offload line, the pass-1 run among the checked runs, nothing under `cases`; a case whose P_2* search fails (status search_failed, `run` and `unconverged` null, `payload_kg` NaN, dm_1 recorded, no payload flag, nothing written and no figure) and one whose P_1* search fails (no second pass), the summary's two status rows, `STRUCTURE_PAYLOAD_NOT_WRITTEN` and `STRUCTURE_PAYLOAD_FLAG_NA` in their cells, the console lines; the edge cases (equal sizings 0, P_1* = P_ref inf, a hand case 0.1) ("Reporting the structure", The payload form) | 1e-12 relative; exact |
 | `test_structure_reporting.py::test_structure_inputs_present_only_with_a_block` | `structure_inputs` after `energy_inputs` and `structure_payload_cases` after `cases`: the file and sha256, the envelope per element (13 elements) equal to an envelope rebuilt here at the central coefficients on the synthetic pad (the maximum thickness, its station, mode, governing case label and time; none at the minimum gauge), the plausibility table equal to `structure.plausibility` (M, R, M/R, the two end factors, the element masses, the band fraction equal to the file's, the rule's text `plausibility_rule_text` at that band naming its edges, never 0.7 R at a 0.25 band, the dominant element the largest `element_kg` with its share and its envelope's governing mode, case label and height at its thickest station), the sets' label and values as the file's, `tornado` and `break_even` null with the note; JSON-safe; without a block the record's eleven keys are SP1's, in order, and `increments` empty (The block-level structure_inputs) | exact |
 | `test_structure_reporting.py::test_structure_block_with_payload_cases_needs_an_offload_block`, `::test_structure_block_needs_the_pads_hold` | a structure block with a payload case and no `offload` block refused by `config.ExperimentConfig` ("needs an offload: block"), a block with no payload case resolving without one; the preflight `sim.check_resolved` refusing a structure block whose reference pad lights stage 1 at the release (t_ign_s 0) or after it (0.5 s) with "never holds down under thrust above its weight" (`structure_block_needs_hold` naming how the pad lights, the liftoff extension at TWR < 1, the restrained-thrust case the hold-down envelope would lack and the modelling choice; never "no HOLD phase", since with the shipped ramp both pads fly HOLD rows), passing the shipped pad lit 2 s before the release, and passing a pad lit at the release in an experiment without a block (Structure block and structural cases; The post-hoc flight check) | exact |

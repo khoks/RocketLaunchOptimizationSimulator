@@ -55,6 +55,7 @@ from launchsim.config import (
     PLANAR_2D,
     RAMP_START_TIME,
     SEARCHED_FIGURES,
+    SHAFT_SEALED,
     STRUCTURE_CENTRAL_SET,
     STRUCTURE_PHYSICS_SETS,
     STRUCTURE_SET_NAMES,
@@ -384,6 +385,63 @@ per-variant tables only when some run of the table is a linear-motor run
 conditional-row precedent of RAMP_START_ROWS and FAILED_ROWS)."""
 LINEAR_MOTOR_AFTER_KEY = "facility_length_m"
 """The row the linear motor's rows follow."""
+SEALED_SHAFT_SOURCE = "sealed_shaft"
+"""Row source of a sealed-shaft row (``_sealed_shaft_cell``: the run's metric, "-" for a
+run whose shaft is not sealed, n/a in every row for a sealed-shaft run with no push
+record, and n/a in the release-pressure row of a push that never released)."""
+SEALED_SHAFT_MARK_KEY = "piston_work_J"
+"""The metric whose presence marks a sealed-shaft run (``metrics.SEALED_SHAFT_METRICS``:
+written for a linear-motor push in a sealed shaft only)."""
+SEALED_SHAFT_ROWS: tuple[VariantRow, ...] = (
+    (
+        "sealed shaft (SP7 step S5; '-': not a sealed-shaft run; n/a in every row: a "
+        "sealed-shaft run with no push record; n/a in the pressure row: no release): work "
+        "done against the trapped column W_p [J] (drive work "
+        "the stack does not receive: p_0 dV done on the atmosphere above, less the "
+        "internal energy the expanding gas gives up; not dissipated in the model)",
+        SEALED_SHAFT_SOURCE,
+        "piston_work_J",
+    ),
+    (
+        "  peak column force on the carriage F_p [N] (against the motion; below p_0 A_bore)",
+        SEALED_SHAFT_SOURCE,
+        "piston_force_peak_N",
+    ),
+    (
+        "  column pressure at the release [Pa] (p_0 (h_0 / (h_0 + s))^gamma)",
+        SEALED_SHAFT_SOURCE,
+        "bore_pressure_release_pa",
+    ),
+)
+"""The sealed shaft's rows (SP7 step S5; ``metrics.SEALED_SHAFT_METRICS``), after the
+linear motor's rows of the 1-D and the planar per-variant tables only when some run of the
+table has a sealed shaft (``_has_sealed_shaft``), so every other summary is unchanged."""
+
+
+def _is_sealed_shaft_run(rr: RunResult) -> bool:
+    """True when a run's shaft is sealed: its metrics carry SEALED_SHAFT_MARK_KEY, or its
+    resolved run block's assist is a LinearMotorConfig with ``shaft: sealed`` (a run
+    whose search or guidance failed writes no push metrics)."""
+    if SEALED_SHAFT_MARK_KEY in rr.result.metrics:
+        return True
+    run = getattr(rr.resolved, "run", None)
+    assist = getattr(run, "assist", None)
+    return isinstance(assist, LinearMotorConfig) and assist.shaft == SHAFT_SEALED
+
+
+def _has_sealed_shaft(runs: Mapping[str, RunResult]) -> bool:
+    """True when some run has a sealed shaft (``_is_sealed_shaft_run``)."""
+    return any(_is_sealed_shaft_run(rr) for rr in runs.values())
+
+
+def _sealed_shaft_cell(m: Mapping[str, Any], key: str, sealed: bool) -> str:
+    """One sealed-shaft cell of a run's metrics m: LINEAR_MOTOR_NOT_A_MOTOR ("-") for a
+    run whose shaft is not sealed (``sealed`` False, and no SEALED_SHAFT_MARK_KEY), n/a
+    (``_fmt`` of None) for a sealed-shaft run whose metrics hold no push record, else the
+    metric (``_fmt``; n/a for a release item of a push that never released)."""
+    if SEALED_SHAFT_MARK_KEY not in m:
+        return _fmt(None) if sealed else LINEAR_MOTOR_NOT_A_MOTOR
+    return _fmt(m.get(key))
 
 
 def _is_linear_motor_run(rr: RunResult) -> bool:
@@ -458,12 +516,14 @@ def variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
     """VARIANT_ROWS with the ignition rows after the flags row, the before-flight pair
     after the before-release pair when it differs for some run
     (``_flight_burn_differs``), LINEAR_MOTOR_ROWS after the facility row when some run
-    is a linear-motor run (SP7 step S4a), plus FAILED_ROWS when any run carries a
+    is a linear-motor run (SP7 step S4a) and SEALED_SHAFT_ROWS after them when some run
+    has a sealed shaft (SP7 step S5), plus FAILED_ROWS when any run carries a
     failed-ignition item."""
     rows: list[VariantRow] = []
     flight_pair = _flight_burn_differs(er)
     stage = first_stage_name(er)
     motor = _has_linear_motor(er.runs)
+    sealed = _has_sealed_shaft(er.runs)
     for row in VARIANT_ROWS:
         rows.append(row)
         if row[1] == "flags":
@@ -472,6 +532,8 @@ def variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
             rows += FLIGHT_BURN_ROWS
         elif row[2] == LINEAR_MOTOR_AFTER_KEY and motor:
             rows += LINEAR_MOTOR_ROWS
+            if sealed:
+                rows += SEALED_SHAFT_ROWS
     if any("failed_stage" in rr.result.metrics for rr in er.runs.values()):
         rows += FAILED_ROWS
     return tuple(rows)
@@ -513,6 +575,8 @@ def _variant_cell(er: ExperimentResult, name: str, source: str, key: str) -> str
         return _fmt(rr.result.metrics.get(key))
     if source == LINEAR_MOTOR_SOURCE:
         return _linear_motor_cell(rr.result.metrics, key, _is_linear_motor_run(rr))
+    if source == SEALED_SHAFT_SOURCE:
+        return _sealed_shaft_cell(rr.result.metrics, key, _is_sealed_shaft_run(rr))
     if name == er.baseline.name:
         return "(baseline)"
     return _fmt(er.comparison.get(name, {}).get(key))
@@ -1390,12 +1454,14 @@ def planar_variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
     """PLANAR_VARIANT_ROWS with the stage-1 ignition rows (``ignition_rows``) after the
     flags row, followed by RAMP_START_ROWS when some run states its ramp start by depth,
     speed or height (``_states_ramp_trigger``), LINEAR_MOTOR_ROWS after the facility row
-    when some run is a linear-motor run (SP7 step S4a), plus PLANAR_FAILED_ROWS when any
+    when some run is a linear-motor run (SP7 step S4a) and SEALED_SHAFT_ROWS after them
+    when some run has a sealed shaft (SP7 step S5), plus PLANAR_FAILED_ROWS when any
     run carries a failed ignition (the impact-speed row labelled PLANAR_SHAFT_IMPACT_LABEL
     when some run fell back inside the shaft, fix round 3)."""
     rows: list[VariantRow] = []
     ramp = _states_ramp_trigger(er)
     motor = _has_linear_motor(er.runs)
+    sealed = _has_sealed_shaft(er.runs)
     for row in PLANAR_VARIANT_ROWS:
         rows.append(row)
         if row[1] == "flags":
@@ -1404,6 +1470,8 @@ def planar_variant_rows(er: ExperimentResult) -> tuple[VariantRow, ...]:
                 rows += RAMP_START_ROWS
         elif row[2] == LINEAR_MOTOR_AFTER_KEY and motor:
             rows += LINEAR_MOTOR_ROWS
+            if sealed:
+                rows += SEALED_SHAFT_ROWS
     if any("failed_stage" in rr.result.metrics for rr in er.runs.values()):
         shaft = any(SHAFT_FALLBACK in str(f) for rr in er.runs.values() for f in rr.result.flags)
         rows += [
