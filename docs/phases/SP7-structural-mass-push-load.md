@@ -850,7 +850,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S3c | The sweep's no-offload record, added at S7a (D-SP7-48): `<case>.dv_shortfall_mps` appended to the sweep index, the no-offload lines under the sweep table; Amendment 1 of the pre-registration (74eb3c8); then `sweep` A re-run | results_io.py, summary.py, tests/test_offload_pipeline.py, physics.md | the column and lines on synthetic sweeps (fast tests); the standing gates; honesty review of the wording | [x] | 1e4c732 (pass-3 minors 77e1691) |
 | S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [x] | 25967be (merge 8c4b41a) |
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [x] | 7cdc24a |
-| S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [ ] | |
+| S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [x] | b0fcc31 |
 | S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [ ] | |
 | (checkpoint 2) | the drive realism complete; an in-progress handoff point | | | | |
 | S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [ ] | |
@@ -1422,6 +1422,26 @@ option fairly with its cost)
   tier and planar pins, the touched slow tests, 593 tests of the touched files with their slow
   cases, the gallery byte-identical): pass (deviation 49). KI-042, KI-045 and KI-052 closed;
   KI-053 to KI-066 opened from the fix rounds' candidates. Next: S4b.
+- Step S4b closed (2026-10-25; commit b0fcc31). Each sizing of a linear-motor case flies the push
+  alone on the vehicle carrying dm and reads the load cases at the exact maxima of its dense
+  output; the dynamic factor is the larger of the rise formula with the drive's t_r and the
+  phase-free single-mode bound of the flown history (D-SP7-52, from review pass 1's major M1:
+  the formula alone ran up to 3.9% (n) and 5.3% (F_int) below a single mode on a hot step at
+  clamp release or an early peak); the release at the flown release instant; the fixed point
+  from dm = 0 (6 sizings and a contraction of 0.0104 at the synthetic case's x*); exact track
+  peaks on linear-motor runs (KI-046; the sampled rows were 1.98e-5 low). Workflow: one
+  implementer; physics, compliance and honesty reviewers in four passes (27, 21, 12 and 9
+  findings; 6, 5, 2 and 0 majors), four fix rounds, none rejected; the gate (its first agent
+  cut by a network error, re-run from the journal): the step criterion item by item, fast
+  suite 2155, full suite 2206 (51 slow in 13 groups, the frozen sets one per command), ruff,
+  the exact 1-D golden tier, the planar pins, the golden-dump field lists, the frozen files
+  and replay.html's sha256, the constant-2 t and structure-off pins: all pass. Two results
+  against the design's expectation, recorded (deviation 51, D-SP7-53): dm'(x) is about -4e-4
+  kg/kg on the cold force-law case (design 4.4 expected dm' > 0), above the -1/(2 E) floor
+  with no `offload_nonmonotone`; the brief's 50 m synthetic push ends no_offload, so the slow
+  solve and its convergence use the same drive over 100 m (x* 13,160.9 kg, synthetic, not a
+  finding; 3.4e-7 under the tightened budget). KI-046 closed; KI-067 to KI-075 opened. Next:
+  S5.
 
 ## 12. Deviations from the plan
 
@@ -1916,6 +1936,19 @@ Checkpoint 1 and step S6a (2026-10-16):
     floor applies to any release below the ground, so a constant_accel push to a buried exit
     that falls back now ends on its carriage; no shipped experiment has a buried exit and every
     track_end comparison of the gate is bit-identical. Accepted by the session.
+51. **Step S4b's measured monotonicity and test push differ from the design and the brief**
+    (design 4.4: "dm' > 0 under a force-controlled linear motor"; the S4b brief: a slow
+    coupled solve "with no `offload_nonmonotone` and dm' > 0 recorded" on a short push):
+    on the synthetic cold force-law case dm'(x) is about -4e-4 kg/kg (-4.594e-4 at x*): with a
+    fixed force n rises as the stack lightens, but each tank's head F m_prop/(M g0) falls as the
+    offload empties it. The hot push without a carriage gives +0.0092 and +0.0103. The solve
+    raised no `offload_nonmonotone`, and the test records the sign and asserts design 4.4's
+    floor -1/(2 E) = -0.114 kg/kg, not the sign; no push was chosen to make the sign positive
+    (D-SP7-53). The brief's 50 m push ends no_offload carrying the synthetic file's 5.9 t, so
+    the solve and the convergence check fly the same drive over 100 m. The step's files also
+    reached metrics.py, metrics_planar.py (exact track peaks), config.py (the refusal of an
+    unused rise-time override), results_io.py and summary.py (the flown-push line and flag
+    keys), beyond the row's sim.py and structure.py. Accepted by the session.
 
 ## 13. Prompt to start this phase
 

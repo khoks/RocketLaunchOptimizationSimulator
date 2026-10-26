@@ -15,7 +15,8 @@ close-out on 2026-10-04 and ordered after SP2 and before SP3 (decision D-SP1-18)
 
 Last updated: 2026-10-24 (SP7 in progress: step S7a closed (6fa2ff0, the structural findings
 note), steps S4 (25967be, merged 8c4b41a: the linear motor) and S4a (7cdc24a: the target-speed
-release, the readers) closed, S4b in hand; decisions D-SP7-01 to D-SP7-51; SP2 closed 2026-10-07, commit 3a1b243).
+release, the readers) and S4b (b0fcc31: the flown structural push) closed, S5 in hand;
+decisions D-SP7-01 to D-SP7-53; SP2 closed 2026-10-07, commit 3a1b243).
 
 ## Phases
 
