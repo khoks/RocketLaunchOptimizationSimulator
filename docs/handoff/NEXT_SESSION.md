@@ -51,6 +51,9 @@ per SESSION_PROTOCOL.md section 10 from the step table.
   the shaft floor of D-SP7-51). Next: S4b, S5, checkpoint 2, S6b, S7b, S7c, S8, C1, C2.
 - 2026-10-25: step S4b closed (b0fcc31; the flown structural push, D-SP7-52's dynamic factor,
   D-SP7-53's measured dm' sign). Next: S5, checkpoint 2, S6b, S7b, S7c, S8, C1, C2.
+- 2026-10-25: step S5 closed (460c4d6; the sealed shaft). D-SP7-54: file B's sealed bore 5.24 m
+  (clears the 5.2 m fairing). Step S5a added (the sealed shaft's wording at the sources and the
+  readers). Next: S5a, checkpoint 2, S6b, S7b, S7c, S8, C1, C2.
 - Resume point: the phase file's section 11, entry "2026-10-19 (session 2)" and its S7a close line. If a sweep
   directory newer than 20261016T171522Z exists under results/silo_structure_2d/, check it
   as item 1 of section 6 says (finished, interrupted or raised); the reproduction check of

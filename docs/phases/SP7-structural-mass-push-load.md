@@ -851,7 +851,8 @@ use `--results-root <scratch>` (D-SP2-37).
 | S4 | linear_motor core: both control laws, ramp, taper, caps, carriage, braking functions, the pending ignition, refusals, metrics; KI-030; KI-021-KI-023 | assist/linear_motor.py, assist/base.py, config.py, appform.py, units.py, compare.py, phases/prelude.py, phases/engine.py, phases/planar.py, metrics*.py, physics.md | closed forms at 1e-9 relative; limits honoured at every sample; energy identity < 1e-9 (required 1e-6); hot interface force for f_imp 0, 0.5, 1; refusals; pending ignition in 1-D and planar; KI-030's sixteen cases refused with digests unchanged; braking functions; full suite | [x] | 25967be (merge 8c4b41a) |
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [x] | 7cdc24a |
 | S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [x] | b0fcc31 |
-| S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [ ] | |
+| S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [x] | 460c4d6 |
+| S5a | Sealed-shaft wording at the sources and the readers (added at S5's gate: KI-077, KI-079) | sim.py, phases/prelude.py, replay.py, scene.py, physics.md | no vented or constant_accel byte moves; a scratch sealed run's summary, replay and scene pages name the sealed shaft; honesty and visual review | [ ] | |
 | (checkpoint 2) | the drive realism complete; an in-progress handoff point | | | | |
 | S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [ ] | |
 | S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [ ] | |
@@ -1442,6 +1443,21 @@ option fairly with its cost)
   solve and its convergence use the same drive over 100 m (x* 13,160.9 kg, synthetic, not a
   finding; 3.4e-7 under the tightened budget). KI-046 closed; KI-067 to KI-075 opened. Next:
   S5.
+- Step S5 closed (2026-10-25; commit 460c4d6). The sealed shaft: the trapped column at the ICAO
+  pressure of the track start acting on the carriage, F_int lower by (m_v/M) F_p under the force
+  law, the work W_piston_J as a model state and `losses.PistonWork` outside
+  `AssistEnergyBudget`, conditional metrics, rows and lines. Workflow: one implementer;
+  physics, compliance and honesty reviewers in three passes (28, 14 and 8 findings; 8, 1 and 0
+  majors), three fix rounds (1 rejected with a reason: two pre-existing physics.md lines); the
+  gate: the step criterion item by item (the work closed form and the identity at 1e-9, F_p <=
+  p_0 A, F_int sample by sample, the refusals, the flown structural push: 5,812 kg sealed
+  against 5,903 kg vented on the synthetic file, not a finding), fast suite 2205, full suite
+  2256, ruff, the exact 1-D golden tier, the planar pins, the golden-dump field lists, the
+  frozen files and replay.html's sha256, vented and constant_accel digests pinned before the
+  change and byte-identical after: all pass. The review found the design's 3.7 m bore cannot
+  pass the 5.2 m fairing (D-SP7-54: file B's bore 5.24 m) and that two run-level lines and the
+  readers still call a sealed shaft vented: a step S5a is added for that wording before S6b
+  (deviation 52). KI-076 to KI-080 opened. Next: S5a, checkpoint 2, S6b.
 
 ## 12. Deviations from the plan
 
@@ -1949,6 +1965,16 @@ Checkpoint 1 and step S6a (2026-10-16):
     reached metrics.py, metrics_planar.py (exact track peaks), config.py (the refusal of an
     unused rise-time override), results_io.py and summary.py (the flown-push line and flag
     keys), beyond the row's sim.py and structure.py. Accepted by the session.
+52. **Step S5's choices beyond the brief, and a step S5a added** (the S5 row names
+    assist/linear_motor.py, dynamics.py, losses.py and physics.md): the implementer added three
+    refusals the brief did not name (a sealed shaft with the force law's stop taper, whose
+    holding target ignores the column; a vehicle with no aero block, whose body diameter is
+    unknown; a push that cannot beat the weight plus the column force at the track end, as
+    `drive_stall`), and the change reached config.py, atmosphere.py, metrics*.py, summary.py and
+    replay.py. Two run-level lines (`sim.PLANAR_ASSUMPTIONS`, the early-release line) and the
+    readers (replay's vented test, the scene's display-only list) still describe a sealed shaft
+    as vented; since file B registers a sealed variant, the wording is fixed in an added step
+    S5a before S6b rather than left to S7c. Accepted by the session.
 
 ## 13. Prompt to start this phase
 
