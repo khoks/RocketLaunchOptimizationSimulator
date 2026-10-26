@@ -5,9 +5,13 @@ I/O).
 ``events_frame`` lists its events (EVENT_COLUMNS). ``run_metrics`` gives the flat
 metrics dict of a run, ``track_metrics`` and ``track_flags`` the items of a push,
 ``failed_ignition_metrics`` and ``failed_ignition_flags`` those of a failed ignition,
-``ignition_timing_metrics`` the constant-g ignition-timing yardsticks, and
-``metrics_record`` the metrics.json record of one run. Units are SI with the unit in
-each key; times are relative to release unless a key says otherwise; the frame is the
+``ignition_timing_metrics`` the constant-g ignition-timing yardsticks, ``track_scan``
+and ``track_peaks`` the scan and the exact maxima of track quantities on a push's dense
+output (SP7 step S4b: a linear motor's felt-g and interface-force peaks,
+``linear_motor_track_peaks``, and the samples and load history of
+``sim.linear_motor_push_load``), and ``metrics_record`` the metrics.json record of one
+run. Units are SI with the unit in each key; times are relative to release unless a key
+says otherwise; the frame is the
 +z-up ascent datum frame of ``dynamics.VERTICAL_LAYOUT``. ``sim.simulate`` calls these
 and ``sim`` re-exports every name.
 """
@@ -15,13 +19,14 @@ and ``sim`` re-exports every name.
 from __future__ import annotations
 
 import math
-from collections.abc import Container, Mapping
+from collections.abc import Callable, Container, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 from scipy.integrate import OdeSolution
-from scipy.optimize import brentq
+from scipy.optimize import brentq, minimize_scalar
 
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.linear_motor import (
@@ -468,13 +473,15 @@ def track_metrics(
     and the release are always included: the thrust kinks, and for the linear motor
     the end of its rise and every watch crossing (power_limit, power_limit_end,
     drive_cap, drive_cap_end, taper_start), each a sub-phase end; exact for the forces
-    of the prescribed-acceleration drive, which are monotone within a lit sub-phase,
-    and for a cold linear-motor push whose stop taper begins after its rise ends; a
-    taper entered during the rise (the rising limit or command times the falling
-    taper weight) can peak between samples, 2e-5 relative with t_r 4 s and a 90 m
-    taper on a 100 m stroke, and so can the felt g and the interface force on a hot
-    linear-motor push in its power phase (P_max/sdot falling, the thrust rising),
-    docs/physics.md "Linear motor"). The
+    of the prescribed-acceleration drive, which are monotone within a lit sub-phase).
+    On a linear-motor push that did not stall, felt_g_track_peak (with its time and
+    mass) and interface_force_peak_N (with its alias) come instead from the dense
+    output (``linear_motor_track_peaks``, SP7 step S4b, KI-046): a taper entered during
+    the rise (the rising limit or command times the falling taper weight) peaks between
+    samples, 2e-5 relative above the sampled rows with t_r 4 s and a 90 m taper on a
+    100 m stroke, and so can the felt g and the interface force on a hot push in its
+    power phase (docs/physics.md "Linear motor" and "The flown push of a linear motor";
+    the minima, drive_force_peak_N and the track-normal peaks stay sampled). The
     drive power is not monotone in general, so its extrema come from the dense output
     (``losses.drive_power_extrema``): drive_power_peak_W = max(0, max P) with its
     absolute time drive_power_peak_t_s (0 for a push in which the drive only brakes),
@@ -490,8 +497,9 @@ def track_metrics(
     braking work (an assumption, stated in the assumptions list).
     propellant_burned_on_track_kg counts from the push start to the end of the last
     track phase. felt_g_track_peak is the peak felt axial acceleration over the ASSIST
-    rows, with its time relative to release (felt_g_track_peak_t_s; None when the run
-    never released) and the vehicle mass there (felt_g_track_peak_mass_kg). The keys
+    rows (a linear motor's that did not stall from the dense output, as above), with its
+    time relative to release (felt_g_track_peak_t_s; None when the run never released)
+    and the vehicle mass there (felt_g_track_peak_mass_kg). The keys
     named here are canonical; the CLAUDE.md summary names of TRACK_METRIC_ALIASES
     (assist_energy_J/kWh, peak_drive_power_W, peak_interface_force_N) are written
     beside them with the same numbers, and peak_track_normal_g = max(vehicle, carriage).
@@ -547,6 +555,8 @@ def track_metrics(
     }
     # The CLAUDE.md-named aliases (same numbers; they overwrite the pad's zeros too).
     out.update({alias: out[canonical] for alias, canonical in TRACK_METRIC_ALIASES.items()})
+    if isinstance(assist, LinearMotorAssist) and trace.status != DRIVE_STALL:
+        out.update(linear_motor_track_peaks(trace))  # SP7 step S4b: exact peaks (KI-046)
     out.update(stall_unavailable_metrics(trace))
     if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
         out.update(linear_motor_metrics(trace, assist, track, v_exit, p_peak))
@@ -793,6 +803,275 @@ def linear_motor_metrics(
         ),
     }
     return out
+
+
+# ------------------------------------- exact track peaks (SP7 step S4b; KI-046)
+
+TRACK_PEAK_SCAN_POINTS = 256
+"""Samples per ASSIST sub-phase on which ``track_peaks`` brackets the local maxima of
+its quantities (the scan of ``losses.drive_power_extrema``, DRIVE_POWER_SCAN_POINTS)."""
+TRACK_PEAK_XATOL_S = 1e-10
+"""Time tolerance [s] of the bounded Brent search that refines a track peak (the value
+error is second order in it; as ``losses.DRIVE_POWER_XATOL_S``)."""
+TRACK_PEAK_TIE_REL = 1e-12
+"""How far [relative] a candidate must exceed the incumbent in ``track_peaks`` to replace
+it (review round 3 of SP7 step S4b, P3-M1). The candidates are offered in time order, so
+a maximum that is flat to rounding keeps its earliest instant, a sub-phase boundary,
+instead of one rounding picks: on a force plateau without a carriage the interface force
+F_max and n m_v = (F_max + T)/g0 are flat, and on a hot push the contents change along
+that plateau, so a rounding-chosen instant moved the push's cases with every iterate of
+dm and kept the structural fixed point from converging. A sample no more than this above
+its neighbours is not refined (``track_peaks``). The value kept lies within 1.25 times
+this tolerance of the largest."""
+
+type TrackQuantities = Callable[[float, np.ndarray, TrackParams], tuple[float, ...]]
+"""Quantities of one track state, (t [s], track-layout state, the phase's TrackParams) ->
+a fixed number of floats, whose maxima ``track_peaks`` locates."""
+
+
+@dataclass(frozen=True, eq=False)
+class TrackScan:
+    """``fn`` sampled on one ASSIST sub-phase that spans time (``track_scan``): t_s, the
+    n_points scan times [s], ends included; y, the dense-output states there, shape
+    (n_states, n_points) in the track layout; values, fn's quantities there, shape
+    (n_points, count)."""
+
+    t_s: np.ndarray
+    y: np.ndarray
+    values: np.ndarray
+
+
+def track_scan(
+    phases: Sequence[PhaseResult],
+    fn: TrackQuantities,
+    count: int,
+    *,
+    n_points: int = TRACK_PEAK_SCAN_POINTS,
+) -> tuple[TrackScan | None, ...]:
+    """The scan ``track_peaks`` brackets its maxima on (SP7 step S4b), one entry per
+    phase in order: a TrackScan of fn at n_points (>= 3) equally spaced times of a phase
+    that spans time (one vectorised dense-output evaluation), None for a phase that
+    spans none. Inputs as ``track_peaks``. ValueError for n_points < 3, a quantity count
+    that does not match fn's and a phase that spans time without dense output. Frame:
+    the track frame."""
+    if n_points < 3:
+        raise ValueError(f"n_points must be >= 3, got {n_points}")
+    out: list[TrackScan | None] = []
+    for res in phases:
+        if res.span_s <= 0.0:
+            out.append(None)
+            continue
+        if res.dense is None:
+            raise ValueError(
+                f"track_peaks: the ASSIST phase at t = {res.spec.t0:.6g} s has no dense "
+                "output (a search evaluation); the exact peaks need a flown push"
+            )
+        params: TrackParams = res.spec.params
+        ts = np.linspace(res.spec.t0, res.t_end, n_points)
+        ys = np.asarray(res.dense(ts), dtype=float)  # one vectorised dense evaluation
+        rows = [fn(float(t), ys[:, i], params) for i, t in enumerate(ts)]
+        if any(len(row) != count for row in rows):
+            raise ValueError(f"fn gave {len(rows[0])} quantities, expected {count}")
+        out.append(TrackScan(ts, ys, np.array(rows, dtype=float)))
+    return tuple(out)
+
+
+@dataclass(frozen=True, eq=False)
+class TrackPeak:
+    """The largest value of one track quantity over a push (``track_peaks``): value (the
+    quantity's unit), the absolute time t_s [s], the track state y there (the phase's own
+    start or end state at a sub-phase boundary, the dense output inside a sub-phase) and
+    the TrackParams of its sub-phase."""
+
+    value: float
+    t_s: float
+    y: np.ndarray
+    params: TrackParams
+
+
+def track_peaks(
+    phases: Sequence[PhaseResult],
+    fn: TrackQuantities,
+    count: int,
+    *,
+    n_points: int = TRACK_PEAK_SCAN_POINTS,
+    xatol_s: float = TRACK_PEAK_XATOL_S,
+    scans: Sequence[TrackScan | None] | None = None,
+) -> tuple[TrackPeak, ...]:
+    """The exact maxima of ``count`` quantities over the ASSIST sub-phases of a push, from
+    the dense output (SP7 step S4b; KI-046; docs/physics.md, "The flown push of a linear
+    motor"): the pattern of ``losses.drive_power_extrema`` and of
+    ``metrics_planar.scan_peak``.
+
+    Inputs: phases, the push's ASSIST PhaseResults in time order (track layout and
+    TrackParams; each phase that spans time needs its dense output); fn(t, y, params) ->
+    ``count`` floats; n_points (>= 3) scan samples per sub-phase, ends included; xatol_s
+    [s], the refine's time tolerance; scans, ``track_scan``'s result for the same phases,
+    fn and count when the caller has it (computed here otherwise; the same numbers either
+    way). Method, per quantity: every sub-phase's own start
+    and end states are candidates (a peak at a sub-phase boundary, the drive's kinks, the
+    thrust kinks, the watch crossings and the release, is exact); inside a sub-phase fn is
+    evaluated on the n_points samples of one vectorised dense-output evaluation, and every
+    sample at least as high as its neighbours and strictly higher than one of them (one
+    neighbour at an end sample) brackets a local maximum that a bounded Brent search
+    refines over the two neighbouring intervals; the refined value competes when it
+    exceeds the sample's (an interior sample competes as itself otherwise). Every kink of
+    the linear motor's force lies on a sub-phase boundary (D-SP7-49; the exceptions are
+    KI-048's), so each quantity is smooth inside a sub-phase and a maximum is missed only
+    when two maxima of it lie within one scan spacing (span/(n_points - 1)). The
+    candidates are offered in time order (a sub-phase's start, its interior, its end) and
+    one replaces the incumbent only when it exceeds it by more than TRACK_PEAK_TIE_REL
+    relative (review round 3, P3-M1), so a maximum that is flat to rounding (the interface
+    force and n m_v on a force plateau without a carriage) keeps its earliest instant, a
+    sub-phase boundary, whatever rounding does. A sample above both neighbours by no more
+    than TRACK_PEAK_TIE_REL relative is not refined (on a smooth quantity a refine gains at
+    most a quarter of its excess, and on a flat plateau the brackets are rounding): it
+    competes as itself. The value kept is then within 1.25 TRACK_PEAK_TIE_REL relative of
+    the largest. Output: one TrackPeak per quantity, in fn's order.
+    ValueError without a phase, for n_points < 3, for a quantity count that does not match
+    fn's, and for a phase that spans time without dense output. Frame: the track frame.
+    """
+    if not phases:
+        raise ValueError("track_peaks needs at least one ASSIST phase")
+    if n_points < 3:
+        raise ValueError(f"n_points must be >= 3, got {n_points}")
+    if scans is None:
+        scans = track_scan(phases, fn, count, n_points=n_points)
+    if len(scans) != len(phases):
+        raise ValueError("track_peaks: one scan entry per phase")
+    best: list[TrackPeak | None] = [None] * count
+
+    def offer(k: int, value: float, t: float, y: np.ndarray, params: TrackParams) -> None:
+        """Make (value, t, y, params) quantity k's maximum when it exceeds the incumbent
+        by more than TRACK_PEAK_TIE_REL relative (offered in time order: the earliest
+        instant of a flat maximum stays)."""
+        current = best[k]
+        if current is None or value > current.value + TRACK_PEAK_TIE_REL * abs(current.value):
+            best[k] = TrackPeak(float(value), float(t), np.array(y, dtype=float), params)
+
+    def values(t: float, y: np.ndarray, params: TrackParams) -> tuple[float, ...]:
+        out = fn(t, y, params)
+        if len(out) != count:
+            raise ValueError(f"fn gave {len(out)} quantities, expected {count}")
+        return out
+
+    def offer_state(t: float, y: np.ndarray, params: TrackParams) -> None:
+        """Offer every quantity of one state (a sub-phase's own start or end)."""
+        for k, v in enumerate(values(t, y, params)):
+            offer(k, v, t, y, params)
+
+    for res, scan in zip(phases, scans, strict=True):
+        params: TrackParams = res.spec.params
+        offer_state(res.spec.t0, np.asarray(res.y[:, 0], dtype=float), params)
+        if res.span_s > 0.0 and scan is not None:
+            dense = res.dense
+            ts, ys, vals = scan.t_s, scan.y, scan.values
+            n_points = ts.shape[0]
+            for k in range(count):
+                column = vals[:, k]
+                for i in range(n_points):
+                    lo, hi = max(i - 1, 0), min(i + 1, n_points - 1)
+                    v, left, right = column[i], column[lo], column[hi]
+                    if not (v >= left and v >= right and (v > left or v > right)):
+                        continue
+                    if max(v - left, v - right) <= TRACK_PEAK_TIE_REL * abs(v):
+                        # flat to rounding: a refine gains at most a quarter of that
+                        if 0 < i < n_points - 1:
+                            offer(k, float(v), float(ts[i]), ys[:, i], params)
+                        continue
+
+                    def negative(
+                        t: float, k: int = k, dense: OdeSolution = dense, p: TrackParams = params
+                    ) -> float:
+                        return -values(t, np.asarray(dense(t), dtype=float), p)[k]
+
+                    sol = minimize_scalar(
+                        negative,
+                        bounds=(float(ts[lo]), float(ts[hi])),
+                        method="bounded",
+                        options={"xatol": xatol_s},
+                    )
+                    t_ref = float(sol.x)
+                    v_ref = -float(sol.fun)
+                    if v_ref > v:
+                        offer(k, v_ref, t_ref, np.asarray(dense(t_ref), dtype=float), params)
+                    elif 0 < i < n_points - 1:
+                        offer(k, float(v), float(ts[i]), ys[:, i], params)
+        offer_state(res.t_end, np.asarray(res.y_end, dtype=float), params)
+    return tuple(peak for peak in best if peak is not None)
+
+
+def track_felt_and_interface(t: float, y: np.ndarray, params: TrackParams) -> tuple[float, float]:
+    """(felt axial acceleration [g0], interface force [N]) of one track state: F_int from
+    the drive's ``state_rate`` with the delivered thrust T of the phase at t [s], and the
+    felt (F_int + T)/(m_v g0), exactly ``dynamics.track_observables``' ``felt_g`` and
+    ``F_int_N`` (the sampled rows' values). Frame: the track frame."""
+    thrust = params.thrust_N(t)
+    f = params.forces(t, y, thrust)
+    m_v = float(params.layout.get(y, "m_kg"))
+    return float(to_g((f.interface_force_N + thrust) / m_v)), float(f.interface_force_N)
+
+
+FELT_AND_INTERFACE_COUNT = 2
+"""The number of quantities ``track_felt_and_interface`` gives (felt g, interface force)."""
+
+
+LINEAR_MOTOR_EXACT_PEAK_METRICS: tuple[str, ...] = (
+    "felt_g_track_peak",
+    "felt_g_track_peak_t_s",
+    "felt_g_track_peak_mass_kg",
+    "interface_force_peak_N",
+    "peak_interface_force_N",
+)
+"""The track metrics a linear-motor push takes from ``track_peaks`` instead of the sampled
+rows (SP7 step S4b; KI-046): the felt-g peak with its time after release and the mass
+there, and the interface-force peak with its CLAUDE.md alias. A constant_accel push keeps
+the sampled rows' values, which are exact for its monotone forces (the 1-D golden tier and
+the planar output capture)."""
+
+
+def linear_motor_track_peaks(trace: RunTrace) -> dict[str, Any]:
+    """LINEAR_MOTOR_EXACT_PEAK_METRICS of a linear-motor push that did not stall, from
+    ``track_peaks`` of (felt g, interface force) over its ASSIST sub-phases (SP7 step S4b):
+    felt_g_track_peak [g0] with its time after release [s] (None when the push never
+    released) and the vehicle mass there [kg]; interface_force_peak_N [N] and its alias
+    peak_interface_force_N. Each is at least the sampled rows' value less 1.25
+    TRACK_PEAK_TIE_REL relative (the rows are dense output samples and sub-phase ends, the
+    ends are candidates here, and a flat maximum keeps its earliest instant), higher where
+    a peak lies between samples: a stop taper entered during the rise, 2e-5 relative
+    measured. Input: the RunTrace. Frame: the track frame."""
+    felt, f_int = track_peaks(
+        trace.assist_phases(), track_felt_and_interface, FELT_AND_INTERFACE_COUNT
+    )
+    m_kg = float(felt.params.layout.get(felt.y, "m_kg"))
+    return {
+        "felt_g_track_peak": felt.value,
+        "felt_g_track_peak_t_s": _rel_release(trace, felt.t_s),
+        "felt_g_track_peak_mass_kg": m_kg,
+        "interface_force_peak_N": f_int.value,
+        "peak_interface_force_N": f_int.value,
+    }
+
+
+def run_wide_felt_with_track_peak(metrics: Mapping[str, Any]) -> dict[str, Any]:
+    """The run-wide felt-g items (``peak_felt_axial_g`` with ``_t_s``, ``_mass_kg`` and
+    ``_phase``) lifted to a linear-motor push's exact track peak when it exceeds the
+    run-wide value (from the sampled rows; on a planar run with the flight's scan peak
+    among them) (SP7 step S4b): the track peak then is the
+    run's, at its time and mass, in phase ASSIST; {} otherwise (also when either value is
+    missing), so the run-wide peak is never below ``felt_g_track_peak``. Input: the merged
+    metrics of the run (``run_metrics`` or ``planar_run_metrics`` updated by the track
+    metrics)."""
+    track = metrics.get("felt_g_track_peak")
+    run = metrics.get("peak_felt_axial_g")
+    if track is None or run is None or run >= track:
+        return {}
+    return {
+        "peak_felt_axial_g": track,
+        "peak_felt_axial_g_t_s": metrics.get("felt_g_track_peak_t_s"),
+        "peak_felt_axial_g_mass_kg": metrics.get("felt_g_track_peak_mass_kg"),
+        "peak_felt_axial_g_phase": ASSIST_KIND,
+    }
 
 
 def track_flags(

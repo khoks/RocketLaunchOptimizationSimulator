@@ -2659,8 +2659,30 @@ STRUCTURE_OUTER_SETS: tuple[str, ...] = (SET_OUTER_LOW, SET_OUTER_HIGH)
 """The outer envelope's sets: each fixes every design axis, recording its own margin and
 cap, so those two never count as a departure from the headline on an outer set."""
 STRUCTURE_HEADLINE_DYNAMIC = "rise_time"
-"""The headline's dynamic mode (the DLF from the file's rise time; the sets were searched
-under it): a case under quasi_static or step moves a design axis (``structure_layer_label``)."""
+"""The headline's dynamic mode (the DLF from a rise time: the structure file's assumed
+real-drive one for constant_accel, the drive's own for a linear motor, SP7 step S4b; the
+sets were searched under it at the headline constant_accel push): a case under
+quasi_static or step moves a design axis (``structure_layer_label``)."""
+STRUCTURE_FLOWN_PUSH_NOTE = (
+    "on a linear-motor case (ramp cost n/a: its push is flown, SP7 step S4b) t_r is the "
+    "drive's own force rise time (a constant_accel case's is the structure file's assumed "
+    "real-drive t_r; an outer set's dynamics.rise_time_s does not act on a linear-motor "
+    "case, so there its layer's 'design axes at their corner' leave t_r at the drive's "
+    "value); n_q is the largest flown quasi-static load, not a plateau; DLF is the "
+    "factor (n_peak - n_rest)/(n_q - n_rest) of the charged n_peak, which is under "
+    "rise_time the larger of the rise formula's peak n_rest + min(2, 1 + T/(pi t_r)) (n_q - "
+    "n_rest) and the flown load history's phase-free single-mode bound, under step the "
+    "larger of n_rest + 2 (n_q - n_rest) and the flown load plus its total variation from "
+    'rest, and n_q under quasi_static (docs/physics.md, "The flown push of a linear '
+    'motor")'
+)
+"""The note printed under the case table and the payload table when a solved structural
+case's push is flown (``structure_push_is_flown``; SP7 step S4b, review round 1 H-P1-06
+and H-P1-07, round 2 H-P2-04, round 3 H-P3-02): the shared rows' t_r, n_q and DLF mean
+the drive's own rise time, the flown load and the charged factor there, worded by mode,
+and an outer set's corner rise time does not act on such a case. A summary
+without such a case does not print it, so a constant_accel summary (a search_failed case
+among its cases included) is unchanged."""
 STRUCTURE_ROW_NOT_BAND = "a row, not a band end"
 """What the layer cell says of a case that moves the entry path or the sizing basis off the
 headline (design 4.2.6: "rows, not band"); such a case is never a band end."""
@@ -3126,6 +3148,20 @@ STRUCTURE_FLAGS_NOT_RECORDED_TEXT = "structure flags not recorded"
 """What ``modelled_structure_text`` says of a record that carries no flag list
 (``structure_flags_text`` None; fix round 2, N2-06): never STRUCTURE_NO_FLAG_TEXT, which
 would read an unrecorded list as clean."""
+
+
+def structure_push_is_flown(record: Mapping[str, Any]) -> bool:
+    """Whether a structural case record's push was flown (a linear motor, SP7 step S4b):
+    charged and sized at its x* (``structure_dlf`` recorded: a search_failed case records
+    every value at x* null, its ramp cost included, whatever its drive; review round 2,
+    C-P2-01 and H-P2-01), with its ramp cost recorded as null (constant_accel's analytic
+    push, once sized, always records a number, 0 outside rise_time)."""
+    return (
+        bool(record.get("structure_charged"))
+        and record.get("structure_dlf") is not None
+        and "structure_ramp_cost_rel" in record
+        and record["structure_ramp_cost_rel"] is None
+    )
 
 
 def structure_charged(record: Mapping[str, Any]) -> bool:
@@ -3993,6 +4029,8 @@ def structure_section(record: Mapping[str, Any]) -> str:
     if cases:
         lines += [_structure_table(cases, STRUCTURE_CASE_ROWS, "name"), ""]
         lines.append(f"- {STRUCTURE_FLIGHT_CHECK_NOTE}")
+        if any(structure_push_is_flown(c) for c in cases):
+            lines.append(f"- {STRUCTURE_FLOWN_PUSH_NOTE}")
     else:
         lines += ["(no structural case or penalty row ran)", ""]
     for c in structural:
@@ -4084,6 +4122,8 @@ def structure_section(record: Mapping[str, Any]) -> str:
             _structure_table(payload_cases, STRUCTURE_PAYLOAD_ROWS, "name"),
             "",
         ]
+        if any(structure_push_is_flown(p) for p in payload_cases):
+            lines += [f"- {STRUCTURE_FLOWN_PUSH_NOTE}", ""]
     for p in record.get("structure_payload_cases") or []:
         if p.get("skipped"):
             lines.append(f"- {p.get('name')} (of {p.get('of')}): {p['skipped']}")

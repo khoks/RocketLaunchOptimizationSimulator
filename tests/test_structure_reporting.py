@@ -710,6 +710,8 @@ def test_structure_subsection_rows_trace_to_the_record(
     by = {c["name"]: c for c in rec["cases"]}
     text = summary.offload_section(rec)
     assert all(line.isascii() for line in text.splitlines())
+    # a constant_accel pass: s1_fail's null ramp cost is no flown push (S4b review round 2)
+    assert summary.STRUCTURE_FLOWN_PUSH_NOTE not in text
     section = text.split(summary.STRUCTURE_SUBSECTION_TITLE)[1].split("### Decomposition")[0]
     for label, _fmt, _key in (*summary.STRUCTURE_CASE_ROWS, *summary.STRUCTURE_PAYLOAD_ROWS):
         assert f"| {label} |" in section, label

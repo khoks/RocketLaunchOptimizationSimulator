@@ -3429,14 +3429,35 @@ def _require_push(run: ResolvedRun, what: str) -> None:
         )
 
 
+def _refuse_unused_rise_time(
+    run: ResolvedRun, settings: ResolvedStructureCase | StructureSettingsConfig, what: str
+) -> None:
+    """ValueError when a structural case overrides ``dynamics.rise_time_s`` on a run whose
+    drive is the linear motor (SP7 step S4b): its dynamic load factor takes the drive's own
+    ``force_rise_time_s`` (docs/physics.md, "The flown push of a linear motor"), so the
+    override would be recorded as a design-axis row that changes nothing."""
+    if isinstance(run.run.assist, LinearMotorConfig) and (
+        structure.PATH_RISE_TIME in settings.overrides
+    ):
+        raise ValueError(
+            f"{what}: structure override {structure.PATH_RISE_TIME} does not act on run "
+            f"{run.name!r}'s linear motor, whose dynamic load factor takes the drive's own "
+            "force_rise_time_s; vary force_rise_time_s instead"
+        )
+
+
 def _case_structure(
     case: OffloadCaseConfig, run: ResolvedRun, structures: dict[str, ResolvedStructureCase]
 ) -> ResolvedStructureCase | None:
     """The resolved structure of an offload case built on run (a variant or a sweep
-    point), after checking run has a push; None for a case without ``structure``."""
+    point), after checking run has a push and, on a linear motor, no override of the
+    assumed real-drive rise time (``_refuse_unused_rise_time``); None for a case without
+    ``structure``."""
     if case.structure is None:
         return None
-    _require_push(run, f"offload case {case.name!r}")
+    what = f"offload case {case.name!r}"
+    _require_push(run, what)
+    _refuse_unused_rise_time(run, structures[case.name], what)
     return structures[case.name]
 
 
@@ -3471,6 +3492,7 @@ def _resolve_structure_block(
         what = f"structure payload case {pc.name!r}"
         variant = variants[pc.of]
         _require_push(variant, what)
+        _refuse_unused_rise_time(variant, pc, what)
         st = resolve_structure_settings(pc, sfile, STRUCTURE_SIZING_FULL_LOAD, what)
         payload.append(ResolvedStructurePayloadCase(pc.name, pc.of, variant, st))
     cases: dict[str, ResolvedStructureCase] = {}

@@ -1475,12 +1475,16 @@ def _offload_case(
     (``sim.offload_structure_transform``: the envelope from ctx's reference pad, so an
     arm's from its perturbed pad); its verification and recorded run fly the start with
     the offload and the modelled dm restated (``_structural_final``, at x* or, for
-    no_offload, at 0); the recorded run carries the structure's assumption line and, like
-    the case record, the run-level structure keys (``sim.structure_record``). After the
-    recorded run is assembled its own flight is checked against the envelope
+    no_offload, at 0); the recorded run carries the structure's assumption line (and, for
+    a flown linear-motor push, ``sim.structure_push_assumptions``' line, SP7 step S4b)
+    and, like the case record, the run-level structure keys (``sim.structure_record``).
+    After the recorded run is assembled its own flight is checked against the envelope
     (``sim.structure_flight_check``, SP7 step S3b: the exceedance sized into
     ``structure_flight_exceedance_kg`` and its flag, never charged or iterated), and the
-    sizing's Increment goes to the outcome for the thickness figure."""
+    sizing's Increment goes to the outcome for the thickness figure. A linear-motor
+    case's transform has already flown its sizing at x = 0 when it was built (a push that
+    does not release there is refused then, ``sim.build_structure_transform``), so the
+    sizings at 0 here fly."""
     from launchsim import sim  # late: sim imports this module
 
     cfg = case.config
@@ -1531,6 +1535,8 @@ def _offload_case(
         if transform is not None:  # its dry masses carry dm: the structural variant instead
             rr = sim.without_assumptions(rr, sim.OFFLOAD_ASSUMPTIONS)
         rr = sim.with_assumptions(rr, _offload_assumptions(case, envelope_pad=pad_name))
+        if transform is not None:  # a flown push's line (SP7 step S4b; none for constant_accel)
+            rr = sim.with_assumptions(rr, sim.structure_push_assumptions(transform))
         if items is not None and transform is not None and at_x is not None:
             items = sim.with_flight_check(items, sim.structure_flight_check(transform, rr, at_x))
             increment = at_x.increment
@@ -1892,7 +1898,8 @@ def _structure_payload_case(
     ``flight_check`` says so (STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA), its
     ``structure_flight_exceedance_kg`` stays None and no flight flag is appended. The run
     carries STRUCTURE_PAYLOAD_CASE_ASSUMPTION (ending with the same words) and the
-    structure assumption line. A payload search that found no P* on either pass ends the
+    structure assumption line (with a flown push's line after it, SP7 step S4b, worded
+    for a full-load sizing). A payload search that found no P* on either pass ends the
     case with that search's status: ``run`` None, nothing written and no figure (the
     second pass's record keeps dm_1 and the structure keys, its ``unconverged`` None,
     ``payload_kg`` the failed search's NaN and no payload flag)."""
@@ -1963,6 +1970,7 @@ def _structure_payload_case(
             [
                 sim.STRUCTURE_PAYLOAD_CASE_ASSUMPTION,
                 sim.structure_assumption(case.structure, transform.envelope_pad),
+                *sim.structure_push_assumptions(transform),
             ],
         )
         rr = sim.with_structure_items(rr, items)

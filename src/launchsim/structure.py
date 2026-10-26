@@ -947,6 +947,198 @@ def peak_load(n_quasi: float, n_rest: float, dlf: float) -> float:
     return n_0 + factor * (n_q - n_0)
 
 
+SINGLE_MODE_STEP_FRACTION = 1.0e-6
+"""A grid interval no longer than this fraction of the axial period T is a step of the load
+in ``single_mode_bound`` (review round 2, P2-M1): its change enters the steps and the
+total variation, never a slope. The mode cannot tell a change over w dt <= 2 pi x 1e-6
+from a step (a step's bound |J| covers a short ramp's amplitude |Delta| |sin(w dt/2)|/(w
+dt/2)), while a slope over such an interval is rounding: the planner leaves ASSIST
+sub-phases of 3e-15 to 1e-10 s at a stop taper's start and at a power corner, whose
+256-point scans gave slopes of rounding noise (up to +-16 g0/s at 1 ulp of time) that the
+bound summed."""
+
+
+@dataclass(frozen=True, eq=False)
+class SingleModeBound:
+    """The phase-free single-mode bound on a flown load (``single_mode_bound``; SP7 step
+    S4b; docs/physics.md, "The flown push of a linear motor", "The dynamic factor: the
+    rise formula and the flown history's bound").
+
+    residual: rho_i at each grid entry, the bound on the oscillation x - q there (the
+    load's unit); envelope: the largest q + rho over the push (the grid and the
+    breakpoints between its entries); weighted: per weight given, the largest (q + rho) w
+    (the weight's PL interpolant at the breakpoints); release_residual: the bound on the
+    oscillation's amplitude about q at the last entry (the release, just before the
+    drop), the slope cut there included."""
+
+    residual: np.ndarray
+    envelope: float
+    weighted: tuple[float, ...]
+    release_residual: float
+
+
+def single_mode_bound(
+    t_s: ArrayLike,
+    q: ArrayLike,
+    q_rest: float,
+    period_s: float,
+    mode: DynamicMode,
+    weights: Sequence[ArrayLike] = (),
+) -> SingleModeBound:
+    """The phase-free single-mode bound of a flown load history (pure; SP7 step S4b, fix
+    round 1 of its review; docs/physics.md, "The flown push of a linear motor", "The
+    dynamic factor: the rise formula and the flown history's bound").
+
+    Inputs: t_s [s], the grid, nondecreasing (two entries at one time, or at times no more
+    than SINGLE_MODE_STEP_FRACTION x T apart, are a step of the load there); q, the
+    quasi-static load on it (any unit: g0 for n, N for F_int), the piecewise-linear (PL)
+    model of the flown load; q_rest, the resting load before the first entry, held with
+    zero slope (the single mode starts at rest there: x = q_rest, x' = 0; exact for n,
+    which stays g_eff sin phi/g0 on the clamp, and a premise for F_int on a hot push,
+    whose hold value m_v g_eff sin phi - T(0) the startup ramp was still lowering at push
+    start: the thrust and the clamp both react at the aft end, so that change is taken as
+    no forcing of the stack's mode, as design 4.2.1's F_0 is; measured, a single mode of
+    F_int started from rest at ignition exceeds the charged F_peak by up to 2.3% on a hot
+    push with a 20 t carriage in the 2 to 10 Hz band; review round 4, P4-m1,
+    docs/physics.md); period_s, the
+    axial period T = 1/f [s], > 0; mode, one of DYNAMIC_MODES; weights, arrays on the
+    grid (masses [kg]) for the weighted envelopes.
+    The single mode x'' = -w^2 (x - q), w = 2 pi/T, driven by the PL load from rest
+    responds exactly as x = q - sum_k [J_k cos(w tau_k) + D_k sin(w tau_k)/w], J_k the
+    load's steps (the first entry's jump from q_rest among them) and D_k its slope jumps
+    (from zero slope at rest), tau_k = t - t_k. Each term is bounded on its own, whatever
+    its phase relative to the others (none of their cancellations is credited, nor
+    damping), from what its own elapsed time tau_k fixes: |J cos| <= |J|; a slope decrease
+    (D < 0) gives |D| sin(u)/w <= |D| min(tau, 1/w) (|sin u| <= min(u, 1)); a slope
+    increase (D > 0) gives -D sin(u)/w, which is <= 0 for the first half period (sin u >=
+    0 for u <= pi) and <= D min(1/w, tau - T/2) after it (-sin u <= u - pi), so
+
+        x - q <= rho(t) = min(V(t), sum |J_k| + sum |D_k| min(1/w, max(0, t - t_k*)))
+
+    under rise_time, t_k* = t_k for a slope decrease and t_k + T/2 for an increase, and
+    V(t) the load's total variation from q_rest (the step bound |z| <= V of z = (x - q) +
+    i x'/w); rho = V under ``step`` (every change charged as a step) and 0 under
+    ``quasi_static``. On a load that ramps from rest to a plateau over t_r, rho reaches
+    min(Delta q, 2 r/w) = (DLF - 1) Delta q with DLF = min(2, 1 + T/(pi t_r)) once the
+    plateau has lasted 1/w past t_r and T/2 + 1/w past the push start:
+    ``dynamic_load_factor``'s bound, which this generalises to a step at push start, a
+    load that peaks before t_r, a corner, a fall and a release inside a rise. A slope
+    change contributes nothing at its own instant, and a slope increase nothing for half
+    a period. A slope decrease on a load that is not rising (a corner off a plateau)
+    raises rho no faster than q falls, so it never raises q + rho; inside a rise (old
+    slope r > 0, new slope -s) its term (r + s) min(tau, 1/w) outgrows the fall, and q +
+    rho keeps rising at r for up to 1/w after the corner (part of the bound's
+    conservatism; docs/physics.md). Between consecutive breakpoints (the entries, t_k*
+    and t_k* + 1/w) q, V and S = sum |J| + the slope terms are linear and rho = min(V, S)
+    piecewise linear; q + V rises at q' + |q'| >= 0, and where q + S falls q' < 0 (S is
+    nondecreasing), so q + V is flat there: q + rho = min(q + V, q + S) peaks on a
+    breakpoint, and envelope is exact for the PL model. The weighted envelopes are
+    taken on the same breakpoints. The PL model is the scan's: its slope content near a
+    corner depends on the grid's spacing there (``metrics.TRACK_PEAK_SCAN_POINTS`` per
+    sub-phase), so a corner in a short sub-phase is resolved at once and one on a long
+    sub-phase over its first spacing (docs/physics.md). At the release (the last entry),
+    with the slope cut there, the oscillation's amplitude about q(t_rel) is |z| with z =
+    sum_k [-J_k e^{-iu_k} + i D_k (1 - e^{-iu_k})/w] and |z| = |(x - q) + i (x' - q')/w +
+    i q'/w|, so |z| <= min(V, sum |J| + (sum |D| + |q'(t_rel)|)/w, sum |J| + sum |D|
+    min(tau, 2/w)) under rise_time (V under step, 0 under quasi_static): release_residual,
+    the amplitude the oscillation keeps after the push, with no sign credited.
+    Output: the SingleModeBound. ValueError for a grid that is not 1-D, finite and
+    nondecreasing with at least two entries, or a weight of another length. Frame: the
+    load's own (the stack axis).
+    """
+    if mode not in DYNAMIC_MODES:
+        raise ValueError(f"mode must be one of {DYNAMIC_MODES}, got {mode!r}")
+    t = np.asarray(t_s, dtype=float)
+    load = np.asarray(q, dtype=float)
+    rest = _require_finite("q_rest", q_rest)
+    period = _require_positive("period_s", period_s)
+    if t.ndim != 1 or t.shape != load.shape or t.size < 2:
+        raise ValueError("t_s and q must be 1-D arrays of one length >= 2")
+    if not (np.all(np.isfinite(t)) and np.all(np.isfinite(load))):
+        raise ValueError("t_s and q must be finite")
+    dt = np.diff(t)
+    if np.any(dt < 0.0):
+        raise ValueError("t_s must be nondecreasing")
+    w_list = [np.asarray(wt, dtype=float) for wt in weights]
+    if any(wt.shape != t.shape for wt in w_list):
+        raise ValueError("every weight must lie on the grid")
+    inv_w_s = period / (2.0 * math.pi)  # 1/w [s]
+    dq = np.diff(load)
+    first = abs(load[0] - rest)
+    variation = first + np.concatenate(([0.0], np.cumsum(np.abs(dq))))
+    is_step = dt <= SINGLE_MODE_STEP_FRACTION * period
+    steps = first + np.concatenate(([0.0], np.cumsum(np.where(is_step, np.abs(dq), 0.0))))
+    seg = np.flatnonzero(~is_step)
+    slope = dq[seg] / dt[seg]
+    jumps = slope - np.concatenate(([0.0], slope[:-1]))
+    t_jump = t[seg]
+    slope_rel = float(slope[-1]) if seg.size else 0.0
+
+    def capped_sum(times: np.ndarray, sizes: np.ndarray) -> Callable[..., np.ndarray]:
+        """u, cap -> sum over times <= u of sizes min(u - time, cap), by cumulative sums
+        (times sorted here)."""
+        order = np.argsort(times, kind="stable")
+        ts, ss = times[order], sizes[order]
+        a_cum = np.concatenate(([0.0], np.cumsum(ss)))
+        b_cum = np.concatenate(([0.0], np.cumsum(ss * ts)))
+
+        def total(u: np.ndarray, cap_s: float) -> np.ndarray:
+            i_u = np.searchsorted(ts, u, side="right")
+            i_l = np.searchsorted(ts, u - cap_s, side="right")
+            recent = u * (a_cum[i_u] - a_cum[i_l]) - (b_cum[i_u] - b_cum[i_l])
+            return a_cum[i_l] * cap_s + np.maximum(recent, 0.0)
+
+        return total
+
+    # the peak's slope term: a slope increase uncharged for its first half period
+    t_star = t_jump + np.where(jumps > 0.0, period / 2.0, 0.0)
+    peak_part = capped_sum(t_star, np.abs(jumps))
+    release_part = capped_sum(t_jump, np.abs(jumps))
+
+    def rho(v: np.ndarray, s: np.ndarray, u: np.ndarray) -> np.ndarray:
+        """The mode's residual bound on x - q from V, the steps and the instants u."""
+        if mode == "quasi_static":
+            return np.zeros_like(v)
+        if mode == "step":
+            return v
+        return np.minimum(v, s + peak_part(u, inv_w_s))
+
+    residual = rho(variation, steps, t)
+    # the breakpoints t_k* and t_k* + 1/w strictly inside the grid's span
+    u = np.concatenate((t_star, t_star + inv_w_s))
+    u = u[(u > t[0]) & (u < t[-1])]
+    j = np.searchsorted(t, u, side="right") - 1
+    frac = (u - t[j]) / (t[j + 1] - t[j])
+
+    def at_u(values: np.ndarray) -> np.ndarray:
+        """values' PL interpolant at u (a segment of positive length holds each u)."""
+        return values[j] + frac * (values[j + 1] - values[j])
+
+    bound_grid = load + residual
+    bound_u = at_u(load) + rho(at_u(variation), steps[j], u)
+    envelope = float(max(np.max(bound_grid), np.max(bound_u, initial=-np.inf)))
+    weighted = tuple(
+        float(max(np.max(bound_grid * wt), np.max(bound_u * at_u(wt), initial=-np.inf)))
+        for wt in w_list
+    )
+    if mode == "quasi_static":
+        release = 0.0
+    elif mode == "step":
+        release = float(variation[-1])
+    else:
+        t_end = np.array([t[-1]])
+        release = float(
+            min(
+                variation[-1],
+                steps[-1] + (float(np.sum(np.abs(jumps))) + abs(slope_rel)) * inv_w_s,
+                steps[-1] + float(release_part(t_end, 2.0 * inv_w_s)[0]),
+            )
+        )
+    return SingleModeBound(
+        residual=residual, envelope=envelope, weighted=weighted, release_residual=release
+    )
+
+
 def ramped_plateau_accel_mps2(stroke_m: float, exit_speed_mps: float, t_rise_s: float) -> float:
     """The plateau of a net acceleration that ramps linearly from 0 over t_r and then stays
     constant, chosen so the push reaches the exit speed at the end of the stroke (design
@@ -1950,32 +2142,149 @@ class ReleaseState:
     """The release of a push (design 4.2.2): n_before_g [g0], the felt load just before
     (the plateau; raised with it under ``rise_time``), n_after_g [g0], just after (0 for a
     cold push, T/(m g0) for a lit one, drag neglected), and case, the stack's contents at
-    release (a PUSH LoadCase)."""
+    release (a PUSH LoadCase).
+
+    A flown push (SP7 step S4b, sim.linear_motor_push_load) releases where it was flown:
+    n_before_g is then the felt load at the release instant, which a power phase (a
+    release at a target speed in it, or at the track end after a corner) or a stop taper
+    leaves below the push's largest load, and it states rise_plateau_g [g0], the push's
+    largest flown quasi-static load n_q, from which the rise formula's residual (DLF - 1)
+    (n_q - n_rest) is taken (``push_requirement``); with a stop taper also taper_time_s
+    [s], the time the taper took, measured from its start (not from the load's peak) to
+    the release, and taper_drop_g [g0], the drop it flew (the largest felt load from its
+    start on, less n_before_g), which a ramp of that time leaves as a residual (DLF_taper
+    - 1) taper_drop_g (design 4.2.2: "for a taper, its own ramp DLF"). The flown load
+    history's own bound (PushLoad.history, ``single_mode_bound``) is taken beside these
+    formulas. All three None (constant_accel's analytic push): n_before_g is the plateau
+    held to the release, the form of S2.
+    """
 
     n_before_g: float
     n_after_g: float
     case: LoadCase
+    rise_plateau_g: float | None = None
+    taper_time_s: float | None = None
+    taper_drop_g: float | None = None
 
     def __post_init__(self) -> None:
-        """Refuse non-finite loads or a case that is not a push."""
+        """Refuse non-finite loads, a case that is not a push, a taper time below 0 or a
+        negative taper drop, a taper without the rise plateau, and one of the two taper
+        numbers without the other."""
         _require_finite("n_before_g", self.n_before_g)
         _require_finite("n_after_g", self.n_after_g)
         if self.case.kind != PUSH:
             raise ValueError("the release case must be a push case")
+        if self.rise_plateau_g is not None:
+            _require_finite("rise_plateau_g", self.rise_plateau_g)
+        if (self.taper_time_s is None) != (self.taper_drop_g is None):
+            raise ValueError("a taper states both its time and its drop, or neither")
+        if self.taper_time_s is not None:
+            if self.rise_plateau_g is None:
+                raise ValueError("a tapered release is a flown one: state rise_plateau_g")
+            _require_non_negative("taper_time_s", self.taper_time_s)
+            _require_non_negative("taper_drop_g", float(self.taper_drop_g or 0.0))
+
+    @property
+    def from_flown_push(self) -> bool:
+        """Whether the release is a flown push's (rise_plateau_g given; SP7 step S4b), not
+        constant_accel's analytic one."""
+        return self.rise_plateau_g is not None
+
+
+FLOWN_PEAK_KINDS: tuple[str, ...] = ("n", "F_int", "n m_v", "n m_prop1")
+"""The four exact maxima a flown push is sampled at (``sim.linear_motor_push_load``, whose
+case tags are ``sim.PUSH_SAMPLE_TAGS``, "max <kind>"): the felt load n, the interface force
+F_int, n m_v (the thrust-structure entry's load (F_int + T)/g0) and n times the stage-1
+propellant."""
+FLOWN_BOUND_WEIGHTS: tuple[str, ...] = ("n m_v", "n m_prop1")
+"""The weighted envelopes of n the flown history's bound takes (``push_requirement``,
+``FlownHistory.bound_weights``), in this order: n times the vehicle mass and n times the
+stage-1 propellant (the FLOWN_PEAK_KINDS of the same names)."""
+FLOWN_BOUND_REL_TOL = 1.0e-10
+"""How far [relative] the flown history's bound must exceed the rise formula's value before
+it replaces it in a case's peak or the release's (``push_requirement``): on a load that
+ramps from rest to a plateau the two are equal in exact arithmetic (``single_mode_bound``
+reduces to min(2, 1 + T/(pi t_r))), and this keeps their rounding out of the record. The
+rounding of the grid's slopes only adds to sum |D_k|, so the bound lies above the formula
+there: +2.7e-13 to +7.9e-13 relative on 60 cold pushes (review round 3, P3-m1, which
+found the earlier 1e-12 only 1.27 times that excess); 1e-10 is the tests' own estimate of
+the bound's rounding and still nothing physical."""
+
+
+@dataclass(frozen=True, eq=False)
+class FlownHistory:
+    """The quasi-static load history of a flown push (SP7 step S4b, fix round 1 of its
+    review; ``sim.linear_motor_push_load``), which ``push_requirement`` bounds with
+    ``single_mode_bound`` beside the rise formula.
+
+    t_s [s]: the grid, nondecreasing from the push start to the release (each sub-phase's
+    dense scan with its own start and end states and the cases' instants; a sub-phase
+    boundary appears twice, the end of one and the start of the next); n_g [g0], f_N [N],
+    m_vehicle_kg [kg] and m_prop1_kg [kg] (the stage-1 propellant): the felt load, the
+    interface force, the vehicle's mass and its stage-1 propellant on the grid;
+    case_index: per PushLoad case, the grid entry of its instant (the last at that time,
+    after any step there, or the first after it); case_kinds: per case, the
+    FLOWN_PEAK_KINDS whose exact maximum it is (a raise to the bound's envelope of that
+    quantity). Frame: the track frame (n and F_int along the stack axis)."""
+
+    t_s: np.ndarray
+    n_g: np.ndarray
+    f_N: np.ndarray
+    m_vehicle_kg: np.ndarray
+    m_prop1_kg: np.ndarray
+    case_index: tuple[int, ...]
+    case_kinds: tuple[tuple[str, ...], ...]
+
+    def __post_init__(self) -> None:
+        """Refuse arrays that are not 1-D, finite and of one length >= 2, a grid that
+        decreases, a case index off the grid, case kinds of another count or outside
+        FLOWN_PEAK_KINDS; store read-only copies."""
+        names = ("t_s", "n_g", "f_N", "m_vehicle_kg", "m_prop1_kg")
+        arrays = {}
+        for name in names:
+            values = np.array(getattr(self, name), dtype=float)
+            if values.ndim != 1 or values.size < 2 or not np.all(np.isfinite(values)):
+                raise ValueError(f"FlownHistory.{name} must be a finite 1-D array of >= 2")
+            values.setflags(write=False)
+            arrays[name] = values
+        if len({a.size for a in arrays.values()}) != 1:
+            raise ValueError("a FlownHistory's arrays must have one length")
+        if np.any(np.diff(arrays["t_s"]) < 0.0):
+            raise ValueError("FlownHistory.t_s must be nondecreasing")
+        size = arrays["t_s"].size
+        if any(not 0 <= int(i) < size for i in self.case_index):
+            raise ValueError("a FlownHistory case index lies off its grid")
+        if len(self.case_kinds) != len(self.case_index):
+            raise ValueError("a FlownHistory states the kinds of every case it indexes")
+        for kinds in self.case_kinds:
+            if not set(kinds) <= set(FLOWN_PEAK_KINDS):
+                raise ValueError(f"case kinds must lie in {FLOWN_PEAK_KINDS}, got {kinds!r}")
+        for name, values in arrays.items():
+            object.__setattr__(self, name, values)
+
+    def bound_weights(self) -> tuple[np.ndarray, ...]:
+        """The weights of n's single-mode bound in FLOWN_BOUND_WEIGHTS order: the vehicle
+        mass and the stage-1 propellant [kg] on the grid."""
+        by_kind = {"n m_v": self.m_vehicle_kg, "n m_prop1": self.m_prop1_kg}
+        return tuple(by_kind[kind] for kind in FLOWN_BOUND_WEIGHTS)
 
 
 @dataclass(frozen=True)
 class PushLoad:
     """The quasi-static load cases of one push and what the dynamic load factor acts on
-    (design 4.2.1; sim.py builds it: the analytic constant_accel case now, a flown linear
-    motor's governing samples in S4b).
+    (design 4.2.1; sim.py builds it: the analytic constant_accel case,
+    ``sim.constant_accel_push_load``, and since SP7 step S4b a flown linear motor's
+    governing samples, ``sim.linear_motor_push_load``).
 
-    cases: PUSH LoadCases at the quasi-static plateau (n and F_int); n_rest_g [g0] and
-    f_rest_N [N]: the resting values the increment is taken over (on the carriage:
-    g_eff sin(phi)/g0 and m_v g_eff sin(phi) - T); ramp: a RampedPlateau for constant_accel
-    (None for a drive that flies its own rise); rise_time_s: the drive's own force rise
-    time [s] (None: the coefficient set's assumed real-drive rise time, constant_accel);
-    release: the ReleaseState.
+    cases: PUSH LoadCases (n and F_int), at the plateau for constant_accel and at the
+    flown push's governing samples for a linear motor (its exact maxima and its sub-phase
+    starts); n_rest_g [g0] and f_rest_N [N]: the resting values the increment is taken
+    over (on the carriage: g_eff sin(phi)/g0 and m_v g_eff sin(phi) - T); ramp: a
+    RampedPlateau for constant_accel (None for a drive that flies its own rise);
+    rise_time_s: the drive's own force rise time [s] (None: the coefficient set's assumed
+    real-drive rise time, constant_accel); release: the ReleaseState; history: a flown
+    push's FlownHistory (SP7 step S4b; None for constant_accel's analytic push), whose
+    single-mode bound ``push_requirement`` takes beside the rise formula.
     """
 
     cases: tuple[LoadCase, ...]
@@ -1984,15 +2293,22 @@ class PushLoad:
     ramp: RampedPlateau | None
     rise_time_s: float | None
     release: ReleaseState
+    history: FlownHistory | None = None
 
     def __post_init__(self) -> None:
-        """Refuse an empty or non-push case list or non-finite resting values."""
+        """Refuse an empty or non-push case list, non-finite resting values, and a history
+        that does not index every case or sits beside a RampedPlateau."""
         if not self.cases or any(c.kind != PUSH for c in self.cases):
             raise ValueError("a PushLoad needs at least one case, all of kind push")
         _require_finite("n_rest_g", self.n_rest_g)
         _require_finite("f_rest_N", self.f_rest_N)
         if self.rise_time_s is not None:
             _require_non_negative("rise_time_s", self.rise_time_s)
+        if self.history is not None:
+            if len(self.history.case_index) != len(self.cases):
+                raise ValueError("a PushLoad's history indexes every case")
+            if self.ramp is not None:
+                raise ValueError("a flown push's history goes with no RampedPlateau")
 
 
 def _features(
@@ -2840,7 +3156,9 @@ class PushRequirement:
     drive ramping over t_r needs to reach the same (L, v_e); 0 otherwise), accel_plateau_mps2
     a' and ramp_cost_rel (a' - a)/a (None without a RampedPlateau); n_rest_g [g0] and
     f_rest_N [N]; cases: the push's LoadCases at the peak, n_g = n_rest + DLF (n_q - n_rest)
-    and interface_force_N = F_rest + DLF (F_q - F_rest) (the heads use n_peak); n_q_g and
+    and interface_force_N = F_rest + DLF (F_q - F_rest) (a flown push: the larger of this
+    and its history's bound, docs/physics.md "The flown push of a linear motor"; the heads
+    use n_peak); n_q_g and
     f_q_N: the quasi-static plateau of each case [g0, N]; release_n_before_g [g0], the
     plateau just before the release (raised as the cases' under ``rise_time``);
     release_n_peak_g = n_rest + DLF (n_before - n_rest) [g0], the largest instantaneous
@@ -2851,6 +3169,37 @@ class PushRequirement:
     (the conservative bound the flags fire on); release_swing_plateau_g = n_after -
     (n_before - n_after) [g0], the swing from the plateau (the residual fully damped,
     printed beside); release_case.
+
+    A flown push (PushLoad.history, SP7 step S4b) carries the larger of the rise formula
+    and its flown history's single-mode bound (``single_mode_bound``; FLOWN_BOUND_REL_TOL),
+    case by case and at the release. Its n_q_g and f_q_N are then the flown quasi-static
+    loads at the samples (n_quasi_g the largest flown quasi-static load, not a plateau),
+    release_n_before_g the felt load at the flown release, and release_swing_plateau_g the
+    swing with every residual damped (from n_before); dlf is the factor the sized peak
+    carries on n, (n_peak - n_rest)/(n_quasi - n_rest) where the bound governs it (the rise
+    formula's otherwise); and it adds, None otherwise: dlf_rise, the rise formula's factor
+    under the case's mode (``dynamic_load_factor``: min(2, 1 + T/(pi t_r)) at the drive's
+    own t_r under ``rise_time``, 2 under ``step``, 1 under ``quasi_static``); n_bound_g
+    [g0] and f_bound_N [N], the
+    bound's largest q + rho of n and F_int over the push (None under ``quasi_static``,
+    where the bound is the load itself); release_rise_plateau_g, the push's largest flown
+    quasi-static load n_q [g0]; release_rise_residual_g = (dlf_rise - 1) (n_q - n_rest)
+    [g0], the rise formula's residual at the release; with a stop taper
+    release_taper_time_s [s], release_taper_dlf (the ``dynamic_load_factor`` of a ramp of
+    that time under the same mode) and release_taper_residual_g = (DLF_taper - 1) x the
+    taper's drop [g0]; release_bound_residual_g [g0], the bound's amplitude at the release
+    (None under ``quasi_static``). release_n_peak_g is then n_before + the larger of the
+    formulas' residuals (summed, each at its worst phase) and the bound's: damping is not
+    credited. With A = n_peak,rel - n_before, the amplitude about n_before, and the drop to
+    n_after, the mode keeps about n_after an amplitude of at most |n_before - n_after| + A:
+    release_compression_g = n_after + |n_before - n_after| + A [g0] is the largest load
+    after the release and release_swing_g = n_after - |n_before - n_after| - A the lowest
+    (release_swing_plateau_g with A = 0). A release that unloads (n_after <= n_before)
+    gives S2's forms, n_peak,rel and 2 n_after - n_peak,rel; one in tension (F_int < 0 at
+    the release, so n_after = T/(m_v g0) > n_before; review round 3, H-P3-01) loads the
+    stack, its compression 2 n_after - n_before + A above n_peak,rel and its swing n_before
+    - A. constant_accel's release keeps S2's forms, which assume it unloads
+    (release_compression_g None).
     """
 
     dynamic: str
@@ -2871,6 +3220,16 @@ class PushRequirement:
     release_swing_g: float
     release_swing_plateau_g: float
     release_case: LoadCase
+    release_rise_plateau_g: float | None = None
+    release_rise_residual_g: float | None = None
+    release_taper_time_s: float | None = None
+    release_taper_dlf: float | None = None
+    release_taper_residual_g: float | None = None
+    dlf_rise: float | None = None
+    n_bound_g: float | None = None
+    f_bound_N: float | None = None
+    release_bound_residual_g: float | None = None
+    release_compression_g: float | None = None
 
     @property
     def n_peak_g(self) -> float:
@@ -2884,8 +3243,55 @@ class PushRequirement:
 
     @property
     def n_quasi_g(self) -> float:
-        """The largest quasi-static plateau over the push's cases [g0]."""
+        """The largest quasi-static load over the push's cases [g0]: constant_accel's
+        plateau, a flown push's largest flown quasi-static load."""
         return max(self.n_q_g)
+
+
+def _over_formula(formula: float, bound: float) -> float:
+    """The flown history's bound where it exceeds the rise formula's value by more than
+    FLOWN_BOUND_REL_TOL relative, the formula's value otherwise (the same unit)."""
+    return bound if bound > formula + FLOWN_BOUND_REL_TOL * abs(formula) else formula
+
+
+def _flown_case_peaks(
+    case: LoadCase,
+    index: int,
+    history: FlownHistory,
+    bound_n: SingleModeBound,
+    bound_f: SingleModeBound,
+    n_formula: float,
+    f_formula: float,
+) -> tuple[float, float]:
+    """(n [g0], F_int [N]) charged on a flown push's case ``index``: the larger of the rise
+    formula's values and the history's bound, the case's own quasi-static load plus the
+    bound's residual at its grid entry, raised to the bound's envelope of each quantity
+    the case is the exact maximum of (n: the envelope of n; n m_v and n m_prop1: the
+    weighted envelope over the case's own mass, so its n m is the bound's largest; F_int:
+    the envelope of F_int).
+
+    Inputs: case, the push's LoadCase (its quasi-static n [g0], F_int [N] and masses
+    [kg]); index, its position among the PushLoad's cases (its grid entry and kinds in
+    history); history, the push's FlownHistory; bound_n and bound_f, the
+    ``single_mode_bound`` of n (weighted in FLOWN_BOUND_WEIGHTS order) and of F_int;
+    n_formula [g0] and f_formula [N], the rise formula's peaks of the case. Frame: the
+    stack axis."""
+    k = history.case_index[index]
+    kinds = history.case_kinds[index]
+    n_bound = case.n_g + float(bound_n.residual[k])
+    f_bound = float(case.interface_force_N or 0.0) + float(bound_f.residual[k])
+    if "n" in kinds:
+        n_bound = max(n_bound, bound_n.envelope)
+    masses = {
+        "n m_v": case.vehicle_mass_kg,
+        "n m_prop1": case.lox_stage1_kg + case.rp1_stage1_kg,
+    }
+    for kind, weighted in zip(FLOWN_BOUND_WEIGHTS, bound_n.weighted, strict=True):
+        if kind in kinds and masses[kind] > 0.0:
+            n_bound = max(n_bound, weighted / masses[kind])
+    if "F_int" in kinds:
+        f_bound = max(f_bound, bound_f.envelope)
+    return _over_formula(n_formula, n_bound), _over_formula(f_formula, f_bound)
 
 
 def push_requirement(
@@ -2905,10 +3311,28 @@ def push_requirement(
     ``peak_load``(n_before, n_rest, DLF), and the instant drop to n_after swings to
     ``peak_load``(n_after, n_peak,rel, 2) = 2 n_after - n_peak,rel (the swing from the
     plateau, 2 n_after - n_before, printed beside).
-    Frame: the stack axis.
+    A flown push (SP7 step S4b: the linear motor; PushLoad.history, its release
+    ``ReleaseState.from_flown_push``) keeps that rule as the rise formula, DLF from the
+    drive's own t_r, and takes beside it the phase-free single-mode bound of its flown
+    history (``single_mode_bound`` of n and of F_int from their resting values at the
+    coefficient set's period, under the same mode; skipped under ``quasi_static``, where
+    it is the load itself): each case is charged the larger (``_flown_case_peaks``;
+    FLOWN_BOUND_REL_TOL), and the requirement's dlf is the factor the largest charged n
+    carries, (n_peak - n_rest)/(n_quasi - n_rest) where the bound governs. Its release
+    carries the rise formula's residual from the push's largest flown quasi-static load
+    n_q = rise_plateau_g, (DLF_rise - 1)(n_q - n_rest), and, with a stop taper, the
+    taper's own residual (DLF_taper - 1) taper_drop_g, DLF_taper =
+    ``dynamic_load_factor``(taper_time_s, T, dynamic) (design 4.2.2: "for a taper, its own
+    ramp DLF"), or the bound's amplitude at the release where that is larger: n_peak,rel =
+    n_before + the larger, swinging to 2 n_after - n_peak,rel as above when the release
+    unloads the stack (n_after <= n_before); a release in tension (n_after > n_before)
+    swings to n_before - A and compresses to 2 n_after - n_before + A, A = n_peak,rel -
+    n_before (release_compression_g; review round 3, H-P3-01). constant_accel's path is
+    unchanged bit for bit. Frame: the stack axis.
     """
     t_r = coeffs.rise_time_s if push.rise_time_s is None else push.rise_time_s
-    dlf = dynamic_load_factor(t_r, 1.0 / coeffs.axial_frequency_hz, dynamic)
+    period = 1.0 / coeffs.axial_frequency_hz
+    dlf = dynamic_load_factor(t_r, period, dynamic)
     raise_mps2 = 0.0
     plateau = None
     cost = None
@@ -2918,25 +3342,72 @@ def push_requirement(
             plateau = ramped_plateau_accel_mps2(push.ramp.stroke_m, push.ramp.exit_speed_mps, t_r)
             raise_mps2 = plateau - push.ramp.accel_net_mps2
         cost = raise_mps2 / push.ramp.accel_net_mps2
+    history = push.history
+    bound_n = bound_f = None
+    if history is not None and dynamic != "quasi_static":
+        bound_n = single_mode_bound(
+            history.t_s,
+            history.n_g,
+            push.n_rest_g,
+            period,
+            dynamic,
+            history.bound_weights(),
+        )
+        bound_f = single_mode_bound(history.t_s, history.f_N, push.f_rest_N, period, dynamic)
     n_q, f_q, peaks = [], [], []
-    for case in push.cases:
+    n_formula_top = -math.inf
+    for index, case in enumerate(push.cases):
         nq = case.n_g + float(to_g(raise_mps2))
         fq = float(case.interface_force_N) + case.vehicle_mass_kg * raise_mps2
         n_q.append(nq)
         f_q.append(fq)
-        peaks.append(
-            _replace_case(
-                case,
-                n_g=peak_load(nq, push.n_rest_g, dlf),
-                interface_force_N=peak_load(fq, push.f_rest_N, dlf),
+        n_peak = peak_load(nq, push.n_rest_g, dlf)
+        f_peak = peak_load(fq, push.f_rest_N, dlf)
+        n_formula_top = max(n_formula_top, n_peak)
+        if history is not None and bound_n is not None and bound_f is not None:
+            n_peak, f_peak = _flown_case_peaks(
+                case, index, history, bound_n, bound_f, n_peak, f_peak
             )
-        )
-    before = push.release.n_before_g + float(to_g(raise_mps2))
-    peak_rel = peak_load(before, push.n_rest_g, dlf)
-    after = push.release.n_after_g
+        peaks.append(_replace_case(case, n_g=n_peak, interface_force_N=f_peak))
+    dlf_n = dlf
+    if history is not None:
+        n_top, n_quasi = max(c.n_g for c in peaks), max(n_q)
+        if n_top > n_formula_top and n_quasi > push.n_rest_g:
+            dlf_n = (n_top - push.n_rest_g) / (n_quasi - push.n_rest_g)
+    release = push.release
+    before = release.n_before_g + float(to_g(raise_mps2))
+    rise_plateau = rise = taper_time = dlf_taper = taper = bound_rel = None
+    if release.rise_plateau_g is None:
+        peak_rel = peak_load(before, push.n_rest_g, dlf)
+    else:
+        rise_plateau = release.rise_plateau_g
+        rise = (dlf - DLF_QUASI_STATIC) * (rise_plateau - push.n_rest_g)
+        peak_rel = before + rise
+        if release.taper_time_s is not None:
+            taper_time = release.taper_time_s
+            dlf_taper = dynamic_load_factor(taper_time, period, dynamic)
+            taper = (dlf_taper - DLF_QUASI_STATIC) * float(release.taper_drop_g or 0.0)
+            peak_rel += taper
+        if bound_n is not None:
+            bound_rel = bound_n.release_residual
+            peak_rel = _over_formula(peak_rel, before + bound_rel)
+    after = release.n_after_g
+    swing = peak_load(after, peak_rel, DLF_STEP)
+    swing_plateau = peak_load(after, before, DLF_STEP)
+    compression = None
+    if release.from_flown_push:
+        compression = peak_rel
+        if after > before:
+            # a release that loads the stack (review round 3, H-P3-01): the interface in
+            # tension at the release (F_int < 0), so the drop to n_after is a rise; the
+            # mode keeps about n_after the rise plus the amplitude A about n_before
+            lift, amplitude = after - before, peak_rel - before
+            swing = after - (lift + amplitude)
+            swing_plateau = after - lift
+            compression = after + (lift + amplitude)
     return PushRequirement(
         dynamic=dynamic,
-        dlf=dlf,
+        dlf=dlf_n,
         rise_time_s=t_r,
         axial_frequency_hz=coeffs.axial_frequency_hz,
         accel_raise_mps2=raise_mps2,
@@ -2950,9 +3421,19 @@ def push_requirement(
         release_n_before_g=before,
         release_n_peak_g=peak_rel,
         release_n_after_g=after,
-        release_swing_g=peak_load(after, peak_rel, DLF_STEP),
-        release_swing_plateau_g=peak_load(after, before, DLF_STEP),
-        release_case=push.release.case,
+        release_swing_g=swing,
+        release_swing_plateau_g=swing_plateau,
+        release_case=release.case,
+        release_rise_plateau_g=rise_plateau,
+        release_rise_residual_g=rise,
+        release_taper_time_s=taper_time,
+        release_taper_dlf=dlf_taper,
+        release_taper_residual_g=taper,
+        dlf_rise=None if history is None else dlf,
+        n_bound_g=None if bound_n is None else bound_n.envelope,
+        f_bound_N=None if bound_f is None else bound_f.envelope,
+        release_bound_residual_g=bound_rel,
+        release_compression_g=compression,
     )
 
 
@@ -3569,6 +4050,31 @@ def _stage_tank_increments(
     return out
 
 
+FLOWN_RELEASE_FLAG_KEYS: tuple[str, ...] = (
+    "release_rise_plateau_g",
+    "release_rise_residual_g",
+    "release_taper_time_s",
+    "release_taper_dlf",
+    "release_taper_residual_g",
+    "release_bound_residual_g",
+)
+"""The PushRequirement numbers a flown push's release flag appends after ``meco_swing_g``,
+each only when it is set (SP7 step S4b): how its release peak was built."""
+FLOWN_PUSH_FLAG_KEYS: tuple[str, ...] = ("dlf_rise", "n_bound_g", "f_bound_N")
+"""The PushRequirement numbers a flown push's payload-limit flag appends after its limits,
+each only when it is set (SP7 step S4b): the rise formula's factor and the flown history's
+bounds beside which n_peak and F_peak were charged."""
+FLOWN_PUSH_RELEASE_COMPRESSION_KEY = "release_compression_g"
+"""The value a flown push's payload-limit flag appends last (SP7 step S4b, review rounds 2
+and 3, P2-m2 and H-P3-01): PushRequirement.release_compression_g, the largest load after
+the release, n_after + |n_before - n_after| + A (A = n_peak,rel - n_before, the amplitude
+about n_before), which the flag checks against the upper axial limit beside n_peak (the
+history's phase-free release bound can lift it above n_peak). It is the release peak
+n_peak,rel when the release unloads the stack (n_after <= n_before) and 2 n_after -
+n_before + A, above it, when the interface is in tension at the release. constant_accel's
+flag keeps S2's values and check, its plateau holding to the release."""
+
+
 def _release_flag(
     geometry: StackGeometry,
     coeffs: StructureCoefficients,
@@ -3580,14 +4086,20 @@ def _release_flag(
 
     Inputs: geometry, coeffs and envelope (the pad's MECO case); req, the push at its peak.
     Output: the StructureFlag. The push: the largest instantaneous load at the release,
-    n_peak,rel (the ramp's undamped residual included), drops to n_after and swings to
+    n_peak,rel (the ramp's undamped residual included; for a flown release, SP7 step S4b,
+    n_before + the larger of the rise formula's residual plus a stop taper's and the flown
+    history's bound, whose numbers are recorded after ``meco_swing_g`` under their
+    PushRequirement names, FLOWN_RELEASE_FLAG_KEYS), drops to n_after and swings to
     n_swing = 2 n_after - n_peak,rel (the swing from the plateau, 2 n_after - n_before,
-    printed beside); MECO: n_MECO to 0 (a slowly built thrust load, no residual) swings to
+    printed beside; a flown release in tension, n_after > n_before, rises to n_after and
+    swings to n_before - A, A = n_peak,rel - n_before, its plateau swing n_before: review
+    round 3, H-P3-01); MECO: n_MECO to 0 (a slowly built thrust load, no residual) swings to
     -n_MECO. Per tank of both stages at the swing, with the model's head convention (to
     the bottom dome's crown, m/(rho A) + b, b the dome depth, each stage's own A and b):
     the bottom's minimum gauge pressure p_min + g0 n_swing (m + rho A b)/A [Pa, from the
     ambient] for the push and for MECO, and the push's absolute value p_amb + that (p_amb
-    the sea-level ambient of the release at the silo's top; negative: the column would
+    the sea-level ambient, the release's own depth not used: a flown push can release
+    below the silo's mouth at a target speed, SP7 step S4a; negative: the column would
     separate from its dome; MECO's ambient is MECO_AMBIENT_PA, so its gauge value is also
     its absolute one). The stage-1 tanks are nearly empty at MECO (on the depletion row,
     m = 0, MECO's value is only p_min less the dome's own head), the stage-2 tanks full;
@@ -3618,6 +4130,12 @@ def _release_flag(
         ("meco_n_g", meco.n_g),
         ("meco_swing_g", swing_meco),
     ]
+    # A flown release (SP7 step S4b) records how its peak was built; constant_accel's
+    # values stay S2's list.
+    for key in FLOWN_RELEASE_FLAG_KEYS:
+        number = getattr(req, key)
+        if number is not None:
+            values.append((key, float(number)))
 
     def head_pa(sg: StageGeometry, n_g: float, m_kg: float, rho_kgm3: float) -> float:
         """g0 n (m + rho A b)/A [Pa]: the head to a stage's bottom dome's crown at n [g0]."""
@@ -3810,9 +4328,22 @@ def size_increment(
         ),
     )
     n_peak = req.n_peak_g
+    flown_push = tuple(
+        (key, float(number))
+        for key in FLOWN_PUSH_FLAG_KEYS
+        if (number := getattr(req, key)) is not None
+    )
+    compression = n_peak
+    if req.dlf_rise is not None and req.release_compression_g is not None:
+        # a flown push (SP7 step S4b, review rounds 2 and 3, P2-m2 and H-P3-01): the
+        # largest load after its release, n_after + |n_before - n_after| + A, which the
+        # history's phase-free release bound (and a release in tension) can lift above
+        # n_peak
+        flown_push += ((FLOWN_PUSH_RELEASE_COMPRESSION_KEY, req.release_compression_g),)
+        compression = max(n_peak, req.release_compression_g)
     payload_flag = StructureFlag(
         name=FLAG_PAYLOAD_LIMIT,
-        fired=(n_peak > coeffs.payload_limit_axial_max_g)
+        fired=(compression > coeffs.payload_limit_axial_max_g)
         or (req.release_swing_g < coeffs.payload_limit_axial_min_g),
         values=(
             ("n_peak_g", n_peak),
@@ -3820,6 +4351,7 @@ def size_increment(
             ("release_swing_plateau_g", req.release_swing_plateau_g),
             ("limit_axial_max_g", coeffs.payload_limit_axial_max_g),
             ("limit_axial_min_g", coeffs.payload_limit_axial_min_g),
+            *flown_push,
         ),
     )
     flags = (_release_flag(geometry, coeffs, envelope, req), upper_flag, payload_flag)

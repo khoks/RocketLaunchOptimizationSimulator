@@ -5001,7 +5001,12 @@ sub-phase, and for a cold linear-motor push whose stop taper begins after its ri
 ends. A taper entered during the rise (the rising limit or command times the falling
 taper weight) can peak between samples, 2e-5 relative with t_r 4 s and a 90 m taper on
 a 100 m stroke (measured against a dense scan), and so can the felt g and F_int on a
-hot linear-motor push in its power phase (P_max/sdot falling, the thrust rising). The drive power P = F_drive sdot is not monotone in general: with full
+hot linear-motor push in its power phase (P_max/sdot falling, the thrust rising). Since SP7
+step S4b a linear-motor push that did not stall takes `felt_g_track_peak` (with its time and
+mass) and `interface_force_peak_N` (with its alias) from the dense output instead
+(`metrics.linear_motor_track_peaks`, KI-046: "The flown push of a linear motor"), and the
+run-wide `peak_felt_axial_g` is lifted to that peak when it exceeds the sampled value;
+constant_accel's stay the sampled rows', exact for its monotone forces. The drive power P = F_drive sdot is not monotone in general: with full
 thrust, P(t) = (F_drive(0) - mdot (a + g) t) a t is a downward parabola with its
 vertex at t* = F_drive(0)/(2 mdot (a + g)), which lies inside the push for a hot push
 near the drive-limit threshold (or under the force-limited linear motor). The power extrema are
@@ -5324,8 +5329,10 @@ events are the seven `drive_ramp_end`, `power_limit`, `power_limit_end`, `drive_
 `drive_cap_end`, `taper_start` and `drive_limit` (for S4a's readers). A crossing ends
 the sub-phase, is logged, and the push goes on from it to the same boundary
 (`fly_track`): every kink is a sub-phase end, split for the integrator and among the
-sampled rows the track peaks are read from (the felt g, F_int and F_drive peak at the
-power corner when it falls inside the rise), including a crossing a flight passed over
+sampled rows the drive-force peak is read from (and, before SP7 step S4b, the felt g and
+F_int peaks, which a linear-motor push now takes from its dense output: "The flown push of
+a linear motor"; the three peak at the power corner when it falls inside the rise),
+including a crossing a flight passed over
 inside one of its steps (*Passed over*) and the thrust clamp; the kinks left unsplit are
 a binding whose margin never leaves its watch's zero band and, should a step ever hold
 two extrema of one watch value, a maximum the scan does not see (*Passed over*, Limits).
@@ -5659,7 +5666,9 @@ law cold 0). The sampled track peaks equal the dense-output maxima (scanned at 2
 at the release (k = 1, cold and hot), a hot power-limited push on a 20 t carriage and a
 hot step command capped by F_max from push start; before the split they missed by up to
 2.4e-2 (the corner inside a 1 s rise). A cold push whose taper begins during the rise
-misses by 2e-5 ("Silo model").
+misses by 2e-5 ("Silo model"); since SP7 step S4b the metrics take that peak from the dense
+output (`metrics.track_peaks`, "The flown push of a linear motor"), matching Airy's closed
+form to rounding.
 
 **Stays out of S4:** friction; air drag on the vehicle in the vented shaft (stated in
 the drive's shaft line: under the force law the exit speed, the peak drive power short
@@ -5670,7 +5679,7 @@ drag makes one bind) the exit speed is biased high); the sealed shaft and its ai
 release at a target speed and a release before L (S4a, `release_speed_mps`, done); a braking
 phase in the trace (B-007); the readers (replay, scene, app) and the summary rows of the
 drive (S4a, done); the drive in the app's form (B-016); the structural transform on a flown
-push (S4b).
+push (S4b, done: "The flown push of a linear motor").
 
 ## Linear motor: the flown power cap, the release at a target speed and the readers (SP7 step S4a)
 
@@ -6312,7 +6321,7 @@ crossing passed over inside one
 integrator step (sdot is monotone on every push a config builds: the drive force is never
 below the holding force before a cap and the cap never below it on a straight track; the
 scan of *Passed over* reads the two-way watches only); the structural transform on a
-flown push (S4b).
+flown push (S4b, done: "The flown push of a linear motor").
 
 ## Failed-ignition coast
 
@@ -7451,7 +7460,8 @@ D-SP7-09). The increment over the resting load n_0 (or F_0) is multiplied by
     quasi_static:  DLF = 1;      step: DLF = 2
     peak:          n_peak = n_0 + DLF (n_q - n_0)
 
-with t_r the force rise time [s] and T = 1/f the assumed first axial period [s]. The
+(a flown push: the larger of this and its history's bound, "The flown push of a linear
+motor") with t_r the force rise time [s] and T = 1/f the assumed first axial period [s]. The
 rise_time value is the undamped single-mode envelope of a ramp to a constant, whose exact
 peak 1 + |sin(pi t_r/T)|/(pi t_r/T) drops to 1 at integer t_r/T; using the exact form on an
 uncertain T would credit those zeros (tuning), so the bound replaces |sin| by 1. The exact
@@ -7647,7 +7657,8 @@ T_max.
 
 **The push and the increment** (`push_requirement`, `size_increment`, `size`). The push is
 taken at its peak: n_peak = n_rest + DLF (n_q - n_rest) and F_peak = F_rest + DLF (F_q -
-F_rest) by S1's `dynamic_load_factor` (t_r the drive's own, or the assumed real-drive
+F_rest) (a flown push: the larger of this and its history's bound, "The flown push of a
+linear motor") by S1's `dynamic_load_factor` (t_r the drive's own, or the assumed real-drive
 rise time of the coefficient set for constant_accel; T = 1/f) and `peak_load`; for
 constant_accel under `rise_time` the plateau is raised to S1's ramped plateau a' (n_q +=
 (a' - a)/g0, F_q += m_v (a' - a); the trajectory is not re-flown, stated); the heads use
@@ -7712,7 +7723,8 @@ release swings to -4.389 g0 rather than the plateau's -4.006; at the step row (D
 stage-2 tanks), per tank of both stages, with the model's head to the bottom dome's crown
 (m/(rho A) + b, as the dome sizing): the bottom's minimum gauge pressure p_min + g0 n_swing
 (m + rho A b)/A for the push and for MECO, and the push's absolute value p_atm + that, p_atm
-the sea-level ambient of the release at the silo's top (negative: the column would separate
+the sea-level ambient (the release's own depth not used: a flown push can release below the
+silo's mouth at a target speed, SP7 step S4a; negative: the column would separate
 from its dome; MECO's ambient is not in its load case and is taken as 0, `MECO_AMBIENT_PA`,
 near vacuum at its altitude, so its gauge value is also its absolute one); the common dome's
 reverse pressure p_MEOP,RP1 - max(p_min,LOX + g0 n_swing (m_LOX + rho_LOX A b)/A, -p_atm)
@@ -7723,7 +7735,11 @@ p_MEOP,RP1 - p_min,LOX > 0 already at zero swing for the central pair and positi
 pad's own MECO, so it is judged against MECO's); the upper stack's swing n_swing U g0
 against MECO's. Fired when a stage-1 column separates at the push (D-SP7-19), the push's
 reverse pressure is positive and above MECO's, or the upper stack swings further than at
-MECO; the stage-2 tanks' numbers (`stage2_*`) are recorded beside and do not fire it. At the
+MECO; the stage-2 tanks' numbers (`stage2_*`) are recorded beside and do not fire it. A
+flown push (SP7 step S4b) releases from its flown load with the larger of the rise
+formula's residual from its largest load plus, after a stop taper, the taper's own ramp
+residual, and its flown history's single-mode bound ("The flown push of a linear motor",
+The release). At the
 gate's central headline it fires: both stage-1 columns would separate (the LOX bottom at
 -911.6 kPa gauge, -810.3 kPa absolute, the RP-1 bottom at -181.5 kPa absolute) and the
 dome's reverse pressure is 363.3 kPa (p_MEOP,RP1 + p_atm, the floor binding; the linear
@@ -7741,9 +7757,14 @@ also shows on stage 2; S3a's and S6a's caveat wording carries this comparison (D
 At the step row the push's stage-2 LOX bottom is at -388.4 kPa gauge.
 `structure_upper_stack_exceeded`: n_peak U above the
 envelope's (1 + margin) largest capped n U (the pad's own value recorded beside);
-stage 2 and the interstage are then charged. `structure_payload_limit`: n_peak above
+stage 2 and the interstage are then charged. `structure_payload_limit`: n_peak (a flown
+push: the larger of n_peak and the largest load after its release,
+`release_compression_g` = n_after + |n_before - n_after| + A, which is n_peak,rel when the
+release unloads the stack, checked here only, never sized; "The flown push of a linear
+motor", The release) above
 +6.0 g0 or the release swing (from the release's peak, D-SP7-39; the plateau's swing
-printed beside) below -2.0 g0 (FUG25 Table 5-3, printed p.33; limit loads at the payload
+printed beside, on a flown push the swing from n_before with every residual damped) below
+-2.0 g0 (FUG25 Table 5-3, printed p.33; limit loads at the payload
 interface; the payload and its adapter are not sized). The fixed-point cap flag is S3's.
 
 **Plausibility** (`plausibility`, `plausibility_factors`, `widen_band`; design 4.2.5,
@@ -8044,7 +8065,7 @@ What S3 left to later steps: the payload cases, the block-level `structure_input
 Structure subsection, the sweep and arm columns, the thickness figure, the post-hoc flight
 check and the plausibility-scaled row are S3b's ("Reporting the structure" below); the
 wording of every caveat that mentions structure is S3a's; a pushed drive other than
-constant_accel is S4b's. Until S3a a structural run written by
+constant_accel is S4b's (the linear motor, done: "The flown push of a linear motor"). Until S3a a structural run written by
 `launchsim run` would contradict itself on disk: its offload block still prints SP1's
 caveat "no structural mass is charged for the push load" (`summary.OFFLOAD_CAVEATS`) and
 the case table's row "assumed stage-1 dry mass added" at 0 beside the same record's
@@ -8086,9 +8107,9 @@ case by `build_structure_transform`, from a resolved case by `offload_structure_
   and pad, not on perturbed station masses;
 - the push is the analytic constant_accel case (`constant_accel_push_load`, "The push and
   the increment") of the vehicle at x flying P_ref, with the case's own track, g_eff and
-  stage-1 ignition (a hot start's thrust and burned propellant included); a drive other
-  than constant_accel raises NotImplementedError (a flown push inside the transform is step
-  S4b), a start without a push ValueError.
+  stage-1 ignition (a hot start's thrust and burned propellant included); a linear-motor
+  push is flown inside the transform instead (SP7 step S4b, "The flown push of a linear
+  motor"); any other drive raises NotImplementedError, a start without a push ValueError.
 
 Each call starts from dm = 0 and iterates
 
@@ -9103,6 +9124,524 @@ Program-level sentences ("no structural model exists" in `replay.penalty_structu
 and in app.py's `SP1_HEADLINE` "Structure." caveat, site/build.py's gallery addition, the
 README, site and deck prose) are S7c's and S8's, once the findings note exists.
 
+### The flown push of a linear motor (SP7 step S4b)
+
+Modules: `src/launchsim/sim.py` (`flown_push_trace`, `linear_motor_push_load`,
+`_flown_history`, `PUSH_SAMPLE_TAGS`, `PUSH_SAMPLE_N`, `PUSH_SAMPLE_F_INT`,
+`PUSH_SAMPLE_BOUNDARY`, `PUSH_HISTORY_GAP_FRACTION`, `StructureTransform.push_context`,
+`.flies_push` and `.push`,
+`build_structure_transform`, `structure_push_assumptions`; `simulate` and `simulate_planar`
+call `run_wide_felt_with_track_peak` on a linear-motor run), `src/launchsim/structure.py`
+(`single_mode_bound`, `SingleModeBound`, `SINGLE_MODE_STEP_FRACTION`, `FlownHistory` and
+`.bound_weights`, `FLOWN_PEAK_KINDS`, `FLOWN_BOUND_WEIGHTS`, `FLOWN_BOUND_REL_TOL`,
+`PushLoad.history`; `ReleaseState.rise_plateau_g`, `taper_time_s`,
+`taper_drop_g` and `.from_flown_push`; `PushRequirement.dlf_rise`, `n_bound_g`,
+`f_bound_N`, `release_rise_plateau_g`, `release_rise_residual_g`, `release_taper_time_s`,
+`release_taper_dlf`, `release_taper_residual_g`, `release_bound_residual_g` and
+`release_compression_g`;
+`push_requirement`, `_flown_case_peaks`, `_release_flag`, `FLOWN_RELEASE_FLAG_KEYS`,
+`FLOWN_PUSH_FLAG_KEYS`, `FLOWN_PUSH_RELEASE_COMPRESSION_KEY`), `src/launchsim/metrics.py`
+(`track_scan`, `TrackScan`,
+`track_peaks`, `TrackPeak`, `track_felt_and_interface`, `FELT_AND_INTERFACE_COUNT`,
+`TRACK_PEAK_SCAN_POINTS`, `TRACK_PEAK_XATOL_S`, `TRACK_PEAK_TIE_REL`, `linear_motor_track_peaks`,
+`LINEAR_MOTOR_EXACT_PEAK_METRICS`, `run_wide_felt_with_track_peak`; `track_metrics`),
+`src/launchsim/metrics_planar.py` (`planar_track_metrics`), `src/launchsim/config.py`
+(`_refuse_unused_rise_time`), `src/launchsim/summary.py` (`STRUCTURE_FLOWN_PUSH_NOTE`,
+`structure_push_is_flown`) and `src/launchsim/results_io.py` (the flown push's assumption
+line). Tests: `tests/test_structure_linear_motor.py` and, on fake runs,
+`tests/test_structure_pipeline.py::test_a_linear_motor_structural_case_flies_its_push_in_the_pass`,
+`::test_a_linear_motor_structure_payload_case_flies_its_push_at_full_load` and
+`::test_a_rise_time_override_on_a_linear_motor_structural_case_is_refused`. Design 4.2.1,
+4.2.2 and 4.4 (D-SP7-16, D-SP7-20), the S4b row of section 5 and exit criterion 6; KI-046.
+Review round 1 of S4b (M1, M2, H-P1-02) found the rise formula alone unconservative on
+flown pushes; the flown history's bound below is its fix, and review round 2 (P2-M1) its
+step floor for the planner's ultra-short sub-phases.
+
+**The flight.** A structural case whose variant's drive is `linear_motor` flies its push
+inside the transform. `build_structure_transform` keeps the start run's `SearchContext`
+(`search_context` of its `planar_setup`: the context `offload_problem_factory` gives the
+solve, built anew, so a copy) as `push_context`, and every sizing of the fixed point flies,
+with `flown_push_trace`, that context's planner for the vehicle at x carrying the iterate
+dm, at the payload it flies, in FINAL_MODE (the final tolerance; rtol 1e-10 in the shipped
+budget) with dense output, through `PlanarPlanner.start` only: the hold of a start lit
+before the push, the push and the release (the track end, or the release speed's root,
+S4a), no ascent (design 4.4: `ctx.planner(P_ref, final).start(assist, track)`). Nothing
+tightens the push automatically: a caller that tightens the solve (`SearchContext.tightened`)
+passes the same tightened context as the transform's `push_context`
+(`dataclasses.replace`), as the convergence test does. A push that does not release
+(`drive_stall`, `drive_limit`) raises `search.PreludeFailure` with the planner's status: an
+offload evaluation that meets it is infeasible (also where only an iterate fails: a dm = 0
+first iterate can stall near an acceleration law's drive_limit threshold although the
+vehicle carrying the converged dm would fly; "Stays out" below). The builder flies
+the sizing at x = 0 once (the full-load stack at P_ref, from dm = 0 through its fixed
+point's iterates, where the solve and the record start) and refuses a case whose push
+fails to release at one of those iterates (the first that fails ends the build) with a
+ValueError naming the status, before the
+case's solve (review round 1, m1; round 2, H-P2-06): the experiment still ends with
+FAILED.txt, now with this message before the solve instead of a PreludeFailure from the
+offload pass's sizings at 0 after it. Measured on the development machine in a short burst
+(the force law over 50 m, six iterates per sizing): one flight about 16 ms, its reduction
+(scan, exact maxima and history) about 6 ms, the history's two bounds about 0.5 ms per
+`push_requirement` call (up to 1 ms in review round 2's measurement) and the increment
+about 4 ms, so a transform call (one sizing of six iterates) about 0.15 s (constant_accel's
+analytic call: 21 to 76 ms); under sustained load the machine throttles and the same call
+takes about 0.38 s. The slow coupled solve below spent 33 s with its verification,
+unthrottled.
+
+**The governing samples** (`linear_motor_push_load`; design 4.4: "maximum n, maximum F_int,
+maximum head per tank, the events"). Every PUSH load case is a flown state, with n = (F_int
++ T)/(m_v g0), its interface force and thrust, and the tank contents at that instant (the
+stage-1 propellant m_v - m_fixed, m_fixed the stage-1 dry mass, stage 2 wet, the fairing and
+the payload, split by the LOX fraction; stage 2 full), at:
+
+- the exact maxima over the push of n, F_int, n m_v (= (F_int + T)/g0, the thrust-structure
+  entry's load) and n m_prop1 (the head at each stage-1 barrel's bottom, p - p_u = n g0
+  m/A: both tanks keep the mixture fraction, so one instant serves both; stage 2's contents
+  do not change on the track, so its heads peak with n);
+- every sub-phase start: the push start, the drive's kinks and watch crossings
+  (`drive_ramp_end`, `power_limit`, `drive_cap`, their ends, `taper_start`), the thrust
+  kinks, the thrust clamp and an ignition on the track: the events;
+
+one case per instant, labelled with every sample there (`PUSH_SAMPLE_TAGS`, "max <kind>"
+in `FLOWN_PEAK_KINDS`' order, the logged event names or `PUSH_SAMPLE_BOUNDARY`); an instant
+is one float time, so maxima refined by separate searches can land a few ulps apart as
+separate cases (the four maxima of the Airy push below within 3.1e-15 s), and the starts of
+the planner's ultra-short sub-phases each give a case (two `taper_start` cases 3e-15 s
+apart there; review round 4, H-P4-01). The resting
+values are those at push start, n_0 = g_eff sin phi(0)/g0 and F_0 = m_v(0) g_eff sin phi(0)
+- T(0): cold, the vehicle's weight component on the carriage; hot, the hold's (the thrust on
+the clamped vehicle); the forms of constant_accel's case. A trace whose push-start mass is
+not the vehicle's liftoff mass less the hold's burn (within `STRUCTURE_MASS_TOL_KG`) is
+refused. The PushLoad also carries the push's load history (`FlownHistory`, the input of
+the bound below): n, F_int, the vehicle mass and the stage-1 propellant on the dense scan of
+every sub-phase (`metrics.track_scan`'s 256 samples, the sub-phase's own start and end
+states at its ends, each case's instant inserted with its own values and the scan samples
+within a quarter spacing of it removed, `PUSH_HISTORY_GAP_FRACTION`; cases a few ulps apart
+stay separate entries, history intervals down to 4.4e-16 s on the Airy push, which
+`SINGLE_MODE_STEP_FRACTION` below reads as steps), a sub-phase boundary appearing twice,
+with each case's grid entry and the maxima it is the case of.
+
+The reduction's limit: a station driver that mixes n and the contents, n (m + c), is read
+at the cases only: a head above a barrel's bottom (c < 0), the aft and common domes sized at
+their crowns and the transfer tube at its bottom (c = rho A b or rho A (L_tube + b) > 0,
+`_dome_driver_offset`), a barrel's compression with the column above it (the RP-1 barrel's
+with the LOX column, c > 0); so is the thrust-structure entry's load F_peak + T, which mixes
+F_int and F_int + T when its factor exceeds 1 (with constant thrust it peaks with F_int). On
+a cold push the contents are constant and every driver peaks with n. On a force plateau
+with constant thrust n (m + c) = (F + T_sys)(m + c)/(M g0) is a ratio of two linear
+functions of t, so monotone between the samples. Measured on two hot pushes (a force plateau
+with a 20 t carriage and f_imp 0.5; a push lit 0.3 s after its start whose corner at 15 m/s
+puts it in its power phase), over 30 values of c from -0.9 to 2 times the stage-1
+propellant (a range that covers the domes' and the tube's offsets), the cases' maximum (the
+release case, which the sizing does not read, left out) equals the dense maximum to
+rounding (gap 0.0).
+
+**Exact maxima** (`metrics.track_peaks`; KI-046). The pattern of
+`losses.drive_power_extrema` and `metrics_planar.scan_peak` on the ASSIST sub-phases: each
+sub-phase's own start and end states are candidates (a peak on a boundary is exact: the
+drive's kinks, the thrust kinks, the watch crossings, the release); inside a sub-phase each
+quantity is evaluated at `TRACK_PEAK_SCAN_POINTS` = 256 samples of one vectorised
+dense-output evaluation (`track_scan`, whose scan the history reuses), and every sample at
+least as high as its neighbours and strictly higher than one of them brackets a local
+maximum that a bounded Brent search refines to `TRACK_PEAK_XATOL_S` = 1e-10 s. Every kink of
+the linear motor's force is a sub-phase boundary (D-SP7-49; KI-048's exceptions aside), so
+each quantity is smooth inside a sub-phase and a maximum is missed only when two lie within
+one scan spacing.
+
+A flat maximum keeps its earliest instant (review round 3, P3-M1). The candidates are
+offered in time order (a sub-phase's start, its interior, its end), and one replaces the
+incumbent only when it exceeds it by more than `TRACK_PEAK_TIE_REL` = 1e-12 relative; a
+sample above both neighbours by no more than that is not refined (on a smooth quantity a
+refine gains at most a quarter of its excess). The value kept is within 1.25e-12 relative of
+the largest. Without the rule rounding chose the instant: on a force plateau without a
+carriage M = m_v, so F_int = F_max and n m_v = (F_max + T)/g0 are flat from the end of the
+rise to the release, and on a hot push the contents change along that plateau (n rises
+from 5.2228 to 5.2539 g0 on the hot 50 m push). The max-F_int and max-n m_v cases wandered
+from 0.500 to 0.577 s as dm changed by 0.2 kg, each charged its own n, contents and grid
+entry, so the increment S(dm), governed by the stage-1 RP-1 barrel's mixed driver, jumped by
+-0.41 to +0.53 kg between dm 0.2 kg apart: every sizing of that push hit the fixed point's cap of 25
+(contraction 36 to 87), and dm(x) was noise (10 g slopes of -29 and -44 kg/kg against 1 kg
+slopes of +0.15 and -0.39). With the rule those cases sit at t_r with the `drive_ramp_end`
+event at every dm, the history grid keeps one size, and the brackets on the flat plateau
+are no longer refined (on that push about 200 Brent searches per reduction; measured in one
+burst with the structure file read once, a reduction takes 112 to 119 ms with the tie set
+to 0 against 8.0 to 8.4 ms with it, the flight about 20 ms; review round 4, C-P4-01 and
+H-P4-02: round 3's 0.4 and 0.09 s included a read of the structure file, about 45 ms, in
+each call). On a cold push the instant was harmless (n, the masses and
+the contents are constant on the plateau), and the tie moves the cold max-n case to t_r
+with every number unchanged to rounding. The same rule places the run metrics'
+`felt_g_track_peak_t_s` and `_mass_kg` at a flat plateau's earliest instant instead of
+where rounding puts them (a hot acceleration law's n).
+
+Against a closed form (KI-046): a cold force-law push from the holding force with
+F_max = M (3 g0 + g), t_r 4 s and a 90 m stop taper on a 100 m stroke enters its taper about
+2 s into its rise (s = j t^3/6 with j = 3 g0/t_r up to L - s_t). On the taper inside the
+rise x = L - s obeys
+
+    x'' = -(j t/s_t) x,   x = alpha Ai(-k t) + beta Bi(-k t),   k = (j/s_t)^(1/3)
+
+(Airy's equation; alpha and beta from x = s_t and x' = -j t_1^2/2 at the taper's start
+t_1), so n = (g + j t x/s_t)/g0 and F_int = M (g + j t x/s_t) peak at the root of x + t x' =
+0, inside the sub-phase (t* = 2.7613 s, n* = 2.7093 g0 on the planar track).
+`track_peaks` matches the Airy peak to rounding (0 and 2.2e-16 relative, planar and 1-D;
+its time within 3.7e-8 s). The same helper makes two run metrics exact on a linear-motor
+push that did not stall (`linear_motor_track_peaks`, `LINEAR_MOTOR_EXACT_PEAK_METRICS`):
+`felt_g_track_peak` with its time and mass, and `interface_force_peak_N` with its alias
+`peak_interface_force_N`, 1-D and planar, keys and order unchanged; on that push the
+sampled rows' maxima are 1.98e-5 relative below them (KI-046's 2e-5). After the merge
+`run_wide_felt_with_track_peak` lifts the run-wide `peak_felt_axial_g` (time, mass, phase
+ASSIST) to the exact track peak when it exceeds the run-wide value (the sampled rows', with
+the flight's scan peak on a planar run), so the run-wide peak is never below the track's.
+constant_accel's metrics stay the sampled rows' (exact for its monotone forces: the 1-D
+golden tier and the planar output capture are unchanged); the minima, `drive_force_peak_N`
+and the track-normal peaks stay sampled.
+
+**The dynamic factor: the rise formula and the flown history's bound** (`push_requirement`,
+`single_mode_bound`; design 4.2.1, D-SP7-16; review round 1, M1 and M2). The linear motor's
+PushLoad states `rise_time_s` = the drive's `force_rise_time_s` and no RampedPlateau, so
+under `rise_time` the rise formula takes DLF_rise = min(2, 1 + T/(pi t_r)) with the drive's
+t_r (2 at t_r = 0, a step) and T = 1/f the coefficient set's axial period; no plateau raise
+is charged, since the rise is flown (its cost is in the trajectory: `structure_ramp_cost_rel`
+is null). The structure file's assumed real-drive rise time (`dynamics.rise_time_s`), which
+exists because constant_accel flies a step, does not act on a linear-motor case: neither
+the central value, nor a set's, nor a case override (refused when the experiment is
+resolved, `config._refuse_unused_rise_time`: "vary force_rise_time_s instead"; review round
+1, C-P1-02). The formula n_0 + DLF_rise (n - n_0) is the single mode's worst-phase peak
+only for a load that ramps linearly from rest over t_r to a plateau. A flown load does not
+always: a hot push whose delivered thrust exceeds the stack's weight (the default carriage
+0 t and f_imp 0: the drive's force at push start is 0) steps at clamp release (n from
+0.9965 to 1.3617 g0 on the gate vehicle at P_ref, F_int from F_0 = m_v g - T = -2.04 MN to
+0); an acceleration law capped by F_max, a power corner or a
+taper reaches its largest value before t_r; a power corner, a taper and a release cut the
+load's slope. Review round 1 measured the formula up to 3.9% (n) and 5.3% (F_int) below the
+single mode's response on such pushes at 3 and 5 Hz. Every flown push therefore takes,
+beside the formula, the phase-free single-mode bound of its flown history.
+
+The flown load q(t) (n or F_int) is taken as the piecewise-linear interpolant of its history
+from rest at q_0 (n_0 or F_0, zero slope). The single mode x'' = -w^2 (x - q), w = 2 pi/T,
+from rest responds exactly as
+
+    x = q - sum_k [J_k cos(w tau_k) + D_k sin(w tau_k)/w]
+
+with J_k the load's steps (the first entry's jump from q_0 among them), D_k its slope jumps
+(from zero slope at rest) and tau_k = t - t_k. Each term is bounded on its own, whatever its
+phase relative to the others (none of their cancellations is credited, nor damping), from
+what its own elapsed time fixes: |J cos| <= |J|; a slope decrease (D < 0) gives |D|
+sin(u)/w <= |D| min(tau, 1/w); a slope increase (D > 0) gives -D sin(u)/w, at most 0 for its
+first half period (the mode lags a rising slope) and D min(1/w, tau - T/2) after it. So
+
+    x - q <= rho(t) = min(V(t), sum |J_k| + sum |D_k| min(1/w, max(0, t - t_k*)))
+
+with t_k* = t_k for a slope decrease and t_k + T/2 for an increase, and V the load's total
+variation from q_0 (the step bound: |z| <= V for z = (x - q) + i x'/w, whose rate is -i w z
+- q'). On a ramp from rest to a plateau rho reaches min(Delta, 2 r/w) = (DLF_rise - 1) Delta
+once the plateau has lasted: the formula, which the bound reproduces to rounding on every
+flown push whose n and F_int ramp linearly from rest to a plateau that outlasts that
+saturation (the cold force law, a cold stop taper after the rise included, whose fall only
+lowers q + rho; the acceleration law's n; measured equal within 1e-11). A step J at push
+start adds J; a load that peaks at t' < t_r is charged the ramp it flew, (DLF(t') - 1)
+Delta. A slope change contributes nothing at its own instant, and a slope increase nothing
+for its first half period. A slope decrease on a load that is not rising (a corner off a
+plateau) raises rho no faster than q falls, so it never raises q + rho; inside a rise (old
+slope r > 0, new slope -s) its term (r + s) min(tau, 1/w) outgrows the fall, so q + rho
+keeps rising at r for up to 1/w after the corner (review round 2, H-P2-02). Between
+consecutive breakpoints (the entries, t_k* and t_k* + 1/w) q, V and S = sum |J| + the slope
+terms are linear and rho = min(V, S) piecewise linear: q + V rises at q' + |q'| >= 0, and
+where q + S falls q' < 0 (S never falls), so q + V is flat there; q + rho = min(q + V, q +
+S) therefore peaks on a breakpoint, and its maximum over the push is exact for the PL
+model. Under `step` rho = V (every change charged as a step: the peak is the load plus its
+total variation from rest, n + V), under `quasi_static` 0 (the bound is skipped there: it
+is the load itself).
+
+Rest at push start is exact for n and a premise for F_int on a hot push (review round 4,
+P4-m1). On the clamp n stays g_eff sin phi/g0 whatever the thrust, so n's mode is at rest
+there. F_int = m_v g_eff sin phi - T(t) is not constant on the clamp: the startup ramp
+lowers it by about the thrust (from 5.59 to -2.04 MN on the gate vehicle at P_ref, the
+tests' start lit 2 s before its push), and under a start whose ramp ends at push start it
+is still changing at that instant. The bound, the formula's F_0 and the tests' oracle all
+take F_0 as rest, so that change is no forcing of F_int's mode. The justification: the
+thrust and the clamp both react at the stack's aft end, so on the clamp the change moves
+load between two forces at that end and leaves the load the stack above carries, n m_v g0,
+unchanged; design 4.2.1 prescribes the hold's value as F_0, and constant_accel's hot F_0
+carries the same convention. The convention is not uniform: the same thrust ramp flown on
+the track (lit after push start, with a carriage) is charged as a forcing of F_int's mode.
+Measured (review round 4: a single mode of F_int driven from rest at m_v g_eff at ignition by
+the hold's own F_int, the HoldParams schedule with its back-pressure clamp, then by the
+flown push): on a hot force-law push with a 20 t carriage and f_imp 0.5, over 2 to 10 Hz
+in 0.25 Hz steps and t_r 0.4, 0.6, 0.8 and 1.0 s, that oracle exceeds the charged F_peak
+in 32 of the 132 configurations, by up to 0.456 MN (2.3%; 2.5 Hz, t_r 1.0 s; 0.454 MN at
+t_r 0.6 s), 0.372 MN (1.95%) at 3.5 Hz with t_r 1.0 s and 0.302 MN (1.5%) at 3 Hz with t_r
+0.8 s; on a hot acceleration law with a 250 t carriage by 0.185 MN (0.8%) at 1.25 Hz,
+outside the band. The hold leaves F_int's mode a free oscillation of at most 0.533 MN in
+the band (2 Hz; 0.487 at 2.5 Hz), which raises the oracle's maximum by at most that much,
+so the hot pushes without a carriage (a step at clamp release), whose charged F_peak lies
+1.2 to 4.0 MN above the oracle from rest at the seven frequencies measured from 2.5 to 5
+Hz, stay covered there, and no test sees the excess. n is unaffected. "Stays out" below
+lists it.
+
+The PL model is the history's grid, with two limits. First, a grid interval no longer than
+`SINGLE_MODE_STEP_FRACTION` = 1e-6 of the period is a step: its change enters J and V,
+never a slope (review round 2, P2-M1). The planner leaves ASSIST sub-phases of 3e-15 to
+1e-10 s at a stop taper's `taper_start` and at a `power_limit` corner (event location),
+and the scan puts 256 samples on each, so their differences are rounding: read as slopes
+(up to +-16 g0/s at one ulp of time) and each charged at min(tau, 1/w), they had lifted the
+cold 50 m push with a 10 m taper from the formula's 4.540 to 6.346 g0 (F_peak +40%) and left
+its transform's fixed point at the cap of 25, dm jumping by tonnes per kilogram of offload.
+The mode cannot tell a change over w dt <= 2 pi x 1e-6 from a step (a step's |J| covers a
+short ramp's amplitude |Delta| |sin(w dt/2)|/(w dt/2)), so the rule costs nothing physical;
+a whole sub-phase shorter than about 255 x 1e-6 T (85 us at 3 Hz) is then one step of its
+change, at most its slope times that span. Second, the slope content near a corner depends
+on the grid's spacing there (`metrics.TRACK_PEAK_SCAN_POINTS` per sub-phase; review round
+2, P2-m1): a corner in a short sub-phase is resolved at once, one at the start of a long
+sub-phase over its first spacing, its curvature spread over the next samples. Both are
+valid bounds of their PL models (the models' interpolation error is about 0.01 g0 there,
+review round 2's estimate), but they differ: on a cold 60 m push whose power corner sits at
+the ramp-end speed v_r (1 + eps), the corner 0.18 ms before t_r (eps = -1e-3, resolved at
+once) charges n_peak 4.7529 g0 against 4.6927 g0 at eps = +-1e-5 (resolved over the 12 ms
+first spacing of the following 3 s sub-phase): +0.060 g0, F_peak +1.3%, the release bound
++0.12 g0. The vehicle's mass moves the corner's time with x and dm, so dm(x) can step by
+about 1% of the push's load where a corner crosses such a boundary (not measured on a
+solve).
+
+Each case is charged the larger of the formula and the bound (`_flown_case_peaks`): n_peak
+= max(n_0 + DLF_rise (n - n_0), n + rho_n at the case's instant), F_peak likewise with F_0
+and rho_F; the case of the largest n is raised to the bound's maximum of n + rho_n over the
+push (`n_bound_g`), the case of the largest F_int to that of F_int (`f_bound_N`), and the
+cases of the largest n m_v and n m_prop1 so that their n m is the bound's largest (n +
+rho_n) m over the push. The bound replaces the formula's value only where it exceeds it by
+more than `FLOWN_BOUND_REL_TOL` = 1e-10 relative (their rounding apart on a linear ramp:
+the grid slopes' rounding only adds to sum |D_k|, and on 60 cold pushes the bound lay
++2.7e-13 to +7.9e-13 above the formula, too close to the earlier 1e-12; review round 3,
+P3-m1). The
+requirement's dlf is the factor the charged n_peak carries, (n_peak - n_0)/(n_q - n_0), the
+formula's where the formula governs, so the summary's row n_peak = n_rest + DLF (n_q -
+n_rest) holds; `dlf_rise` keeps the formula's. The heads use n_peak. Against the single-mode
+oracle (x'' = -w^2 (x - q(t)) integrated on the flown dense output from rest at push
+start, the premise above, DOP853 at rtol 1e-10; it reproduces the ramp's exact peak where |sin(pi t_r/T)| = 1 to 1e-7), on the
+eleven configurations of review round 1 and the release in tension of review round 3 (at 3
+and 5 Hz; "The release" below) the charged n_peak and F_peak are at least its maxima, the
+release swing at most the lowest load it keeps after the release and the compression after
+the release at least the largest (`test_the_charged_push_bounds_the_single_mode_oracle`).
+Measured margins (charged less oracle, re-measured after the step floor, which removed
+rounding from four of the eleven): n_peak 0.0022 to 0.749 g0 and F_peak 0.046% to 20.4%
+(relative to |F|; the release in tension's interface force is negative throughout).
+The hot push with a step at clamp release at t_r 0.5 s, 5 Hz, charges n_peak 6.204 against
+the oracle's 5.954 g0 (the formula 5.888) and F_peak 5.4% above the oracle's; the
+acceleration law capped in a 0.5 s rise at 5 Hz 0.020 g0; the taper entered in the rise at
+5 Hz 0.030 g0 (0.157 before the floor); a lm_fixed_r07-like push (F_max 24 MN, P_max 0.7
+F_max x 77 m/s, release at L) 0.0022 g0 at 5 Hz and 0.0063 g0 at 3 Hz above the formula,
+which there equals the oracle. The bound is conservative by its construction: the
+phase-free sum (a hot push's step and ramp at their worst common phase), a corner inside a
+rise (q + rho rising at the old slope for 1/w after it), and the first-order count of a
+curving load, which charges the power phase's relaxing slope at worst phase after its
+first half period and does not credit the lag the mode keeps on a curving q (the 0.0022
+and 0.0063 g0 above). The extreme case, a 5 m/s corner inside a 0.5 s rise at 3 Hz,
+charges n_peak 4.422 against the formula's 4.103 and the oracle's 3.673 g0 (4.478 before
+the floor): of its 0.320 g0 over the formula about 0.077 comes from the corner itself (the
+same history with a straight fall at the first spacing's slope after the corner gives
+4.179) and 0.243 from the curvature of the power phase after it. On the hot carriage push
+(the mass burns, so n and F_int curve) the bound exceeds the formula by 1.5e-5 relative on
+F_peak.
+
+**The release** (`ReleaseState`, `push_requirement`, `_release_flag`; design 4.2.2). The
+release state is the flown one: n_before the felt load at the release instant (the track
+end, or the release speed's root before it, S4a), n_after = T(t_rel)/(m_v g0) (drag
+neglected, as constant_accel's), the contents then; the facility length is S4a's
+(`linear_motor_facility_m`). constant_accel holds its plateau to the release (n_before =
+n_q), so its release peak n_0 + DLF (n_q - n_0) carries the rise's undamped residual (DLF -
+1)(n_q - n_0). A flown push's load at the release can lie below its largest (a power phase,
+the release at a target speed in it or at the track end after a corner, or a stop taper; a
+release at a target speed inside the rise does not: the load rises through the rise, so
+there n_before = n_q), so its release state names the push's largest flown quasi-static
+load n_q (`rise_plateau_g`), and
+
+    n_peak,rel = n_before + A,  A = max((DLF_rise - 1)(n_q - n_0) [+ (DLF_taper - 1) drop_taper], A_rel)
+    n_swing    = n_after - |n_before - n_after| - A
+    n_comp     = n_after + |n_before - n_after| + A
+
+the rise formula's residual taken from n_q, which the load at the rise's end does not
+exceed. A bounds the amplitude |z| about n_before just before the release, z = (x -
+n_before) + i x'/w; the drop to n_after moves the load, not the mode, so about n_after z' =
+(x - n_after) + i x'/w = (n_before - n_after) + z and the mode keeps at most |n_before -
+n_after| + A:
+n_swing is the lowest load after the release (`release_swing_g`) and n_comp the largest
+(`release_compression_g`; review round 3, H-P3-01). A release that unloads the stack
+(n_after <= n_before) gives the forms of S2, n_swing = 2 n_after - n_peak,rel and n_comp =
+n_peak,rel. A release in tension (F_int < 0 at the release, so n_after = T/(m_v g0) exceeds
+n_before; S4's "Linear motor" flags it `interface_tensile`) loads the stack instead: n_swing
+= n_before - A and n_comp = 2 n_after - n_before + A, above n_peak,rel. A hot force law at
+6 MN on a 250 t carriage with f_imp 0.5 over 30 m releases with F_int = -0.85 MN, n_before
+1.242 and n_after 1.397 g0: at 3 Hz n_peak,rel 1.294, n_comp 1.605 and n_swing 1.190
+against the oracle's post-release 1.597 and 1.198 (0.008 g0 margins; at 5 Hz 0.035);
+S2's forms had given a compression of 1.294 and a swing of 1.501. n_comp is checked only
+by the payload-limit flag, never sized: the stations are sized at n_peak (the heads above).
+In tension the oracle's own maximum after the release lies well above n_peak (review round
+4, P4-m2; at 3 Hz): 1.597 against 1.294 g0 on this push, 1.812 against 1.281 with a 6 m/s
+power corner (n_before 1.025) and 1.830 against 1.290 g0 (42% above) with an 8 m stop
+taper, which ends near the holding force (n_before 0.9965, n_after 1.3975). Such a release
+repeats the pad's own hold-down release, n stepping from about 1.0 to T/(m g0), about 1.4
+g0, with full tanks; the pad's quasi-static envelope (its flown rows) does not carry that
+step's overshoot either, so leaving it out keeps the increment consistent with the pad
+("Stays out" below). Nor is the interface's tension sized (review round 4, H-P4-05): S4's
+`interface_tensile` (the vehicle would have to be held back on the carriage) charges no
+hold-back hardware, and the load ring is sized for the largest interface force F_peak alone,
+0 kg when F_peak <= 0. On this push F_int stays negative throughout (-2.04 MN at rest,
+-0.80 MN at t_r, the charged F_peak -0.535 MN), so it charges no ring, against 605 kg for
+the cold 50 m push of the tests; the claims on F_int here, the bound's and the oracle's,
+cover its largest value, not its most negative. The swing with every
+residual damped (`release_swing_plateau_g`) is n_after - |n_before - n_after|: 2 n_after -
+n_before, or n_before in tension. constant_accel's release keeps S2's forms, which carry
+the same premise that the release unloads (n_after <= n_before; its `push_requirement`
+path is unchanged, "Stays out" below). With a stop taper (design 4.2.2: "for a taper, its own ramp DLF") the formula adds a
+ramp down of drop_taper = (the largest n from its start on) - n_before over t_taper = t_rel -
+t_start, measured from the taper's start (its `taper_start` event, or the push start for a
+taper active from s = 0), not from the load's peak: a taper entered in the rise first lets
+the load rise (the Airy push falls from its peak for 1.86 s of its 2.61 s); DLF_taper =
+`dynamic_load_factor`(t_taper, T, mode). A_rel is the bound's amplitude at the release
+(`release_bound_residual_g`): with the slope cut there, the oscillation's amplitude about
+the load just before the drop, q(t_rel) = n_before, is |z| of z = sum_k [-J_k e^{-i u_k} + i
+D_k (1 - e^{-i u_k})/w] (review round 3, H-P3-01: not about n_after), so
+
+    A_rel = min(V, sum |J| + (sum |D| + |q'(t_rel)|)/w, sum |J| + sum |D| min(tau, 2/w))
+
+under `rise_time` (no sign credited: an amplitude), V under `step` (the fall n_q - n_before
+included) and 0 under `quasi_static`. A release that cuts a ramp keeps r min(t, 2/w), where
+the formula gave (DLF_rise - 1) r t; a power corner adds its slope change and the release its
+cut (review round 1, M2 and H-P1-02: the power phase's fall is not slow on this measure,
+since a corner's residual is |dq/dt jump|/w whatever the fall's length). A cold force-law
+taper ends at the holding force, so there n_before = n_0: a 40 m taper after a 0.5 s rise
+over a 100 m stroke takes 0.6198 s (atan(s_t Omega/v_0)/Omega, Omega = sqrt(a_f/s_t)),
+DLF_taper 1.1712 at 3 Hz; the formula's swing is -2.117 g0 (residuals 0.620 + 0.500), but
+the bound governs there (A_rel 1.144 g0) and the charged swing is -2.141 g0, against -0.996
+with every residual damped (2 n_after - n_before; the same push released at the track end
+without a taper: -4.540, charged). A force-law push released at 40 m/s in its power phase
+from a 30 m/s corner has n_before 2.940 below n_q 3.920, and there the bound governs. The
+release flag records how its peak was built (`FLOWN_RELEASE_FLAG_KEYS`: `release_rise_plateau_g`,
+`release_rise_residual_g`, with a taper `release_taper_time_s`, `release_taper_dlf`,
+`release_taper_residual_g`, and `release_bound_residual_g`, after `meco_swing_g`) and the
+payload-limit flag the push's (`FLOWN_PUSH_FLAG_KEYS`: `dlf_rise`, `n_bound_g`, `f_bound_N`,
+after its limits, then `release_compression_g`, `FLOWN_PUSH_RELEASE_COMPRESSION_KEY`). That
+flag also checks n_comp against the upper axial limit beside n_peak (review rounds 2 and 3,
+P2-m2 and H-P3-01): the phase-free release bound can lift n_comp = n_peak,rel above n_peak
+on a release that unloads (on the configurations above 4.084 against 3.882 g0 past a 10 m/s
+corner at 3 Hz, 2.709 against 2.320 for a 1 m/s release inside the rise; the oracle's
+post-release maxima stayed below n_peak on all fourteen such configurations measured, the
+closest 2.849 against 2.868 g0, a 2 m/s release inside the rise), and a release in tension
+lifts n_comp above both (1.605 against n_peak and n_peak,rel of 1.294 g0 above, and the
+oracle's 1.597). constant_accel's flag values stay S2's
+lists and its check S2's (its plateau holds to the release, so n_peak,rel = n_peak), and its
+`push_requirement` path is unchanged bit for bit. Measured against the oracle the release
+bound is the most conservative part (phase-free over the rise, the corner and the cut): on
+the eleven configurations of review round 1 the charged swing lies 0.11 to 1.81 g0 beyond
+the oracle's at the check's frequency (1.9 before the step floor), and n_comp as far above
+its post-release maximum; on the release in tension, whose bound is small (A 0.052 g0 at 3
+Hz), 0.008 and 0.035 g0 at 3 and 5 Hz.
+
+**The fixed point on a flown push.** As S3's: each call starts from dm = 0 and iterates
+dm_{k+1} = S(push(m(x) + dm_k)) to `STRUCTURE_FIXED_POINT_TOL_KG` = 1e-6 kg under the cap of
+25 with its flag; the push is flown afresh for each iterate (under the cold force law n =
+F_max/(M g0) falls as dm grows while F_int = F_max stays; under the acceleration law F_int
+grows with it). Measured on the synthetic file and pad, the force law over 50 m (F_max 22 MN,
+t_r 0.5 s): six sizings per call (steps 5,966, 63.0, 0.66, 6.8e-3, 7.1e-5 and 7.4e-7 kg at x
+= 20 t), contraction 0.0103 to 0.0106 from x = 0 to 40 t (the acceleration law at a_cmd 3
+g0, flying its command at 20 and 40 t: 0.0047 and 0.0048), recorded in the cap flag as S3
+records it; at the slow solve's x* (100 m) 0.0104 in six sizings. The same push lit 2 s
+before its start with no carriage (its F_int and n m_v flat on the plateau, the contents
+burning): eight sizings per call, contraction 0.025 and 0.026 at x = 0 and 20 t (60 m with
+t_r 2 s: 0.024; 100 m: 0.025); before the flat-maximum rule ("Exact maxima") every such
+sizing hit the cap of 25 with a measured contraction of 33 to 87, and a coupled solve over
+250 m took 310 s, its dm at x* an unconverged iterate scattering by 0.5 kg (review round 3,
+P3-M1). vehicle_at(x) is
+bit-identical across call orders, repeats and a rebuilt transform (a test): the push
+depends on the vehicle alone and nothing is cached.
+
+**Monotonicity, measured.** Design 4.4 reports its probe giving dm'(x) > 0 under a
+force-controlled linear motor; S4b measures it slightly negative on the synthetic case:
+-4.9e-4, -4.3e-4 and -4.2e-4 kg/kg at x = 0, 20 and 40 t over 50 m, and -4.6e-4 kg/kg at
+the slow solve's x* over 100 m (the 1 kg and 10 g differences agreeing within 1e-5 kg/kg).
+With a fixed force the felt load rises as 1/M, but each stage-1 tank's head n m_prop = F
+m_prop/(M g0) falls as the offload empties the tank and the cold interface force stays
+F_max: the LOX barrel's and the domes' increments fall while the skirt's, the ring's, the
+RP-1 barrel's and the transfer tube's rise a little (per tonne of offload at x = 0: LOX
+barrel -0.87, common dome -0.20, RP-1 aft dome -0.07, skirt +0.15, ring +0.07, RP-1 barrel
++0.34, transfer tube +0.10 kg), and the sum falls. The slope is far above -1/(2 E) = -0.114
+kg/kg, which keeps m_res(x, dm(x)) falling; the solver's `offload_nonmonotone` stays the
+in-run check (the slow solve below raises none). The sign depends on the push: lit 2 s
+before its start with no carriage the same 50 m push gives dm' = +0.0092 and +0.0103 kg/kg
+at x = 0 and 20 t (60 m with t_r 2 s: +0.0101 and +0.0110; 100 m: +0.0092 at x = 0; the 1
+kg and 10 g differences agreeing within 7e-8 kg/kg), positive as design 4.4's probe; a
+push lit 0.3 s after its start whose 15 m/s corner puts it in its power phase gives -0.0017
+and -0.0016 kg/kg (review round 3, P3-M1; measured, not explained term by term here).
+
+**Records and the assumption line.** The record keys are S3's (`STRUCTURE_RECORD_KEYS`,
+unchanged; no key added): `structure_dynamic` stays the case's mode, `structure_t_r_s` is
+the drive's t_r under every mode (the rise time the push states; used only under
+`rise_time`), `structure_dlf` the factor (n_peak - n_rest)/(n_q - n_rest) of the charged
+n_peak (under `rise_time` the larger of the rise formula's peak and the bound's; under
+`step` the larger of n_rest + 2 (n_q - n_rest) and n + V; n_q under `quasi_static`, factor
+1), `structure_n_q_g` the largest flown quasi-static load (not a plateau),
+`structure_n_peak_g` and `structure_F_peak_N` the charged flown values,
+`structure_ramp_cost_rel` null. The summary prints `STRUCTURE_FLOWN_PUSH_NOTE` (its DLF
+clause worded by mode, review round 2, H-P2-04) under the case table and the payload table
+when a solved case's push is flown (`structure_push_is_flown`: charged, `structure_dlf`
+recorded and the ramp cost null; review round 2, C-P2-01 and H-P2-01: a search_failed case
+records every value at x* null, its ramp cost included, whatever its drive, so the ramp cost
+alone would have read a failed constant_accel case as flown), saying whose t_r, which n_q
+and which DLF those rows show; a summary without one is unchanged. A structural run whose
+push is flown carries one more assumption line after the structure line
+(`sim.structure_push_assumptions`, "Assumptions"), worded by the case's sizing basis (each
+offload x at P_ref under `flown`; under `full_load`, which every structure payload case is,
+the full-load vehicle whatever x the solve tries, at P_ref, and a payload case's dm_1 at
+P_1*; each carrying every fixed-point iterate of dm: the push is flown at each iterate of
+every sizing, review round 2, H-P2-05) and by its mode (the residuals it charges: none
+under `quasi_static`); constant_accel's runs carry none, and their records, sweeps,
+summaries and the frozen sets are unchanged (its analytic path is untouched).
+
+**Pins** (slow; `tests/test_structure_linear_motor.py`): the coupled solve of a synthetic
+linear-motor structural case (the synthetic file, central, flown, rise_time, aft_ring; the
+force law over 100 m, F_max 22 MN, t_r 0.5 s, cold; the synthetic pad; at SP1's P_ref along
+stage 1): status ok, no `offload_nonmonotone`, the verification passed, the offloaded
+vehicle carrying the transform's dm at x* bit for bit, dm'(x*) and the contraction recorded;
+and its x* with the budget tightened 10x (`SearchContext.tightened` by checks.convergence)
+and the same context passed as the transform's push_context, within 1e-3 x* (exit
+criterion 6). Measured: x* 13,160.9 kg with dm 5,906.2 kg (test values, not findings), 41
+evaluations, the tightened x* 3.4e-7 relative away (3.38e-7 again after review round 1's
+fix, every recorded number unchanged; the step floor of review round 2 does not touch
+this push, which has no sub-phase shorter than 0.5 s; after review round 3's flat-maximum
+rule, which moves this cold push's max-n case to t_r, every recorded number is again
+unchanged: x* 13,160.88 kg, dm 5,906.17 kg, dm'(x*) -4.59e-4 kg/kg, contraction 0.0104
+in six sizings, 41 evaluations, 3.38e-7); the two solves 33 s and 36 s on an
+unthrottled machine (the history's scan is the peaks' own, and its two bounds add about 0.5
+to 1 ms per fixed-point iterate). On this cold push the bound equals the formula, so these
+numbers are the formula's. The 50 m push of
+the fast tests, carrying the same file's 5.9 t, ends no_offload at P_ref (a test input, not a
+finding).
+
+**Stays out of S4b:** a structural-dynamics model (the single mode stands, labelled as in
+S2); drag on the vehicle in the vented shaft during the push (S4's shaft line); the sealed
+shaft's air column (S5: the flown push carries its piston force once the drive does); a
+second-order count of a curving load in the bound (crediting the mode's lag on a slowly
+curving q, which would remove the conservatism measured above); a grid-independent slope
+change at a corner (the one-sided load derivatives from the state rates at each sub-phase
+boundary, which would remove the scan-resolution step above); the hold's own dynamics
+before the push (the bound, the formula and the tests' oracle start from rest at push
+start; on a hot push F_int was still falling there, by about the thrust over the startup
+ramp, which is taken as no forcing of its mode: up to 0.456 MN, 2.3%, below the oracle
+started at ignition, "The dynamic factor" above; review round 4, P4-m1); the overshoot of
+a release in tension (n_comp is flagged, not sized: the oracle's maximum after the release
+up to 42% above n_peak, the pad's own hold-down release step left out alike; review round
+4, P4-m2); the interface's
+tension (S4's `interface_tensile`: no hold-back hardware is sized and no load ring is
+charged for F_peak <= 0; review round 4, H-P4-05); a sizing at
+a structure payload case's P_1* whose push does not release (the payload search flew that
+payload with dm_0 on board; a dm_1 large enough to stall it would end the experiment); a
+fixed point whose first iterate (dm = 0) stalls although the vehicle carrying the converged
+dm would fly (an acceleration law near its drive_limit threshold: such an offload reads as
+infeasible); constant_accel's release in tension (S2's forms n_peak,rel and 2 n_after -
+n_peak,rel assume the release unloads, n_after <= n_before; a hot constant_accel push
+whose thrust exceeds m_v (a + g) at the release would load the stack instead, and its
+path stays bit for bit S2's here).
+
 ## Assumptions
 
 Every assumption string the code emits, in one place, with the code that emits it.
@@ -9497,6 +10036,39 @@ run's record, "Wording the structure (SP7 step S3a)"):
 (the bracket is `ResolvedStructureCase.provenance`, the restated dry mass's `source`, so
 the line and the source name the same settings; a plausibility-scaled case's ends with
 `, plausibility-scaled`, SP7 step S3b).
+
+and, when the push is flown (a linear motor; SP7 step S4b), `sim.structure_push_assumptions`
+after it (none for constant_accel; a structure payload case's run carries it too, worded for
+its full-load sizing):
+
+- structure: the push is the linear motor's as flown (the planner's track start alone,
+  at the search's final tolerance), <on the vehicle at each offload x at P_ref, carrying
+  each fixed-point iterate of the modelled mass (sizing flown) | on the full-load vehicle
+  (x = 0) whatever x the solve tries, at P_ref (a structure payload case: at P_ref for dm_0
+  and at P_1* for the dm_1 its run carries), carrying each fixed-point iterate of the
+  modelled mass (sizing full_load)>, and the sizing reads its exact maxima of the felt load n, the
+  interface force, n m_v and n times the stage-1 propellant (located on the dense output of
+  every sub-phase) and its states at every sub-phase start; <rise_time: each case's peak
+  is the larger of the rise formula n_rest + DLF (n_q - n_rest), DLF = min(2, 1 + T/(pi
+  t_r)) with the drive's own force rise time t_r = <t_r> s (structure_t_r_s; 2 for a step,
+  t_r = 0), and the phase-free single-mode bound of the flown history of n and of the
+  interface force (every step and slope change from rest at push start at its worst phase,
+  damping not credited; structure_dlf is the factor the largest charged n carries) |
+  step: the dynamic mode step charges every change of the flown load as a step: each
+  case's peak is the larger of n_rest + 2 (n_q - n_rest) and the flown load plus its total
+  variation from rest, n + V (the drive's rise time t_r = <t_r> s is recorded, not used) |
+  quasi_static: the dynamic mode quasi_static charges the flown quasi-static loads with no
+  residual (the drive's rise time t_r = <t_r> s is recorded, not used)>; the structure
+  file's assumed real-drive rise time, which stands in for constant_accel's step, is not
+  used; no plateau raise is charged (the rise is flown); the release swing starts from the
+  load at the flown release (the track end or the release speed)<rise_time: , carrying the
+  larger of the rise formula's residual from the push's largest flown load[ (plus, after a
+  stop taper, the taper's own residual: its ramp factor over the time from its start on the
+  drop it flew)] and the flown history's bound at
+  the release, the slope cut there included | step: , carrying the larger of n_q - n_rest[
+  (plus the stop taper's drop)] and the flown history's total variation | quasi_static: ,
+  with no residual>; a station load that mixes n and the tank contents is read at those
+  samples only (exact on a cold push, whose contents do not change on the track).
 
 A structure payload case's recorded run (SP7 step S3b, "Reporting the structure") carries
 no offload line (nothing is removed) but `sim.STRUCTURE_PAYLOAD_CASE_ASSUMPTION` and then
@@ -10383,17 +10955,27 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_structure_pipeline.py::test_offload_problem_without_a_transform_is_sp1s_offload`, `::test_stage_dry_mass_helpers` | `vehicle_at` without a transform is `with_offload` bit for bit; a transform applied once, after the offload, at P_ref, the vehicle keeping P0; `from_factory` passes it; `verify_offload` flies the offloaded vehicle as given; `with_stage_dry_mass` and `charge_structure` (2,000 kg on 22,200 gives 24,200 exactly; dm = 0 returns the vehicle) ("Coupling the structure to the offload solve", The transform) | exact |
 | `test_structure_pipeline.py::test_dm_slope_is_bounded_and_smooth`, `::test_vehicle_at_is_bit_identical_across_call_orders` | on the synthetic file and the synthetic pad: dm'(x) > -1/(2 E), E = 4.381 kg/kg, at 0, 10, 20, 41.26 and 60 t (the half-bound is asserted on the synthetic file only), the 1 kg and 10 g differences agreeing; full_load the x = 0 sizing at every x; `vehicle_at` the same bits forwards, in reverse, repeated and on a rebuilt transform, equal to `charge_structure` of the offloaded vehicle with the sizing at x (Monotonicity; The structural transform) | -1/(2 E); 1e-5 kg/kg; exact (float.hex) |
 | `test_structure_pipeline.py::test_gate_sets_exceed_the_hard_bound_inside_the_cap` (5 cases) | the gate file's four frozen sets (physics_high_mass also under dynamic step), sizing only on the synthetic pad (no solve, D-SP7-31): dm'(x) > -1/E at the same five offloads, the two differences agreeing, the fixed point converged with at least five sizings to spare under the cap of 25 (the outer high-mass corner takes 10, D-SP7-44), its contraction below 0.06 and recorded in the cap flag; the outer high-mass corner alone measured below the half-bound -1/(2 E) (dm' from -0.128 kg/kg at x = 0 to -0.121 at 60 t) (Contraction; Monotonicity) | -1/E; 1e-5 kg/kg; exact |
-| `test_structure_pipeline.py::test_inner_iteration_converges_caps_and_flags`, `::test_structure_record_keys_and_values`, `::test_transform_refuses_a_start_without_a_push_and_other_drives` | the fixed point from dm = 0: the first step dm itself, the steps shrinking, the contraction below 0.01, the last step below 1e-6 kg within the cap of 25 (D-SP7-44), the cap flag's values exactly (iterations, last step, tolerance 1e-6 kg, cap 25, the measured contraction); the cap lowered to 2 sets `capped`, fires `structure_fixed_point_cap` with its numbers (cap 2, contraction null) and adds the run flag last, after the run's own flags and the lines of the record's other fired flags (the release and payload-limit flags on the synthetic pad); the record's keys in `STRUCTURE_RECORD_KEYS` order, dm1 + dm2 and dm2, dm at 0, the settings (`structure_overrides` {}), DLF = min(2, 1 + T/(pi t_r)) at t_r 0.8 s and f 3 Hz, the elements summing to dm and splitting into closed form and ring, the governing element the largest, the four flags, the file's path and sha256; the pad refused (no push) and another drive refused naming S4b (Contraction; Records) | 1e-2 relative (first step); 1e-9 kg; 1e-12 relative (DLF); exact |
+| `test_structure_pipeline.py::test_inner_iteration_converges_caps_and_flags`, `::test_structure_record_keys_and_values`, `::test_transform_refuses_a_start_without_a_push_and_other_drives` | the fixed point from dm = 0: the first step dm itself, the steps shrinking, the contraction below 0.01, the last step below 1e-6 kg within the cap of 25 (D-SP7-44), the cap flag's values exactly (iterations, last step, tolerance 1e-6 kg, cap 25, the measured contraction); the cap lowered to 2 sets `capped`, fires `structure_fixed_point_cap` with its numbers (cap 2, contraction null) and adds the run flag last, after the run's own flags and the lines of the record's other fired flags (the release and payload-limit flags on the synthetic pad); the record's keys in `STRUCTURE_RECORD_KEYS` order, dm1 + dm2 and dm2, dm at 0, the settings (`structure_overrides` {}), DLF = min(2, 1 + T/(pi t_r)) at t_r 0.8 s and f 3 Hz, the elements summing to dm and splitting into closed form and ring, the governing element the largest, the four flags, the file's path and sha256; the pad refused (no push) and a drive other than constant_accel and linear_motor refused (NotImplementedError; the linear motor's flown push is S4b's) (Contraction; Records) | 1e-2 relative (first step); 1e-9 kg; 1e-12 relative (DLF); exact |
 | `test_structure_pipeline.py::test_structural_case_and_block_resolve`, `::test_structural_refusals` (27 cases), `::test_structure_block_needs_its_loader_its_vehicle_and_the_planar_payload_search` | the case field's defaults, the provenance text (`..., set central, flown, rise_time, aft_ring, margin 0, no cap`; an outer set's own cap as `cap 4 g0`), the file's central coefficients, the start's dicts and trajectory key equal to an unstructured case's, the dumps (no null `structure`), an outer set's own margin and cap, the overrides in the coefficients and named in the provenance after the settings (`..., set central, full_load, step, thrust_structure, margin 0.1, cap 4.5 g0, overrides nof.nof_barrel 1.54, ring.ring_pads 4`, paths sorted; D-SP7-43), four distinct structure keys, a sweep point inheriting the case's structure, a payload case at the full load, the set names and design-axis paths; every refusal of design 4.3 and this step (penalty, paired_pad, stage2_offload_t, fixed, both, no push, no block, unknown set, sizing, dynamic, entry or key, a negative margin, a 1 g0 cap, a non-design, bool, out-of-range or fractional override, overrides or another margin or cap on an outer set, payload cases on the baseline, an unknown or push-less variant, twice or named like a run, a blank file); no loader, a file for another vehicle, an unfrozen set, the fixed guidance ("Experiment schema (planar)", Structure block and structural cases) | exact |
 | `test_structure_pipeline.py::test_structure_file_is_read_with_its_sha256_and_plain_content` | `cli.read_structure_file`: the sha256 of the bytes, the content equal to the YAML with the gate file's shared MEOP anchor expanded into distinct copies (no anchor in a dump), one CliError each for a missing, non-UTF-8, non-mapping or invalid file; `cli.load_experiment` finds the file next to the experiment, then at the repository root (the test places it at the root first, then a longer copy next to the experiment, which wins), names a missing "structure file", and quotes it by `cli.recorded_config_path`: repository-relative for a file at the root, next to the experiment or named by a rooted path under the repository, as given for one outside it (Structure block and structural cases) | exact |
 | `test_structure_pipeline.py::test_sp1s_resolved_and_solved_dicts_are_unchanged`, `::test_sp1_record_carries_each_rows_verification`, `::test_structural_solved_run_restates_dm_with_its_provenance` | every offload start of both shipped offload experiments (48 and 2), the solved-run dicts of SP1's four gate rows at their x* and the penalty row's restated dry mass (written out, key order kept) equal their digests captured at the start commit 15b4e6e; the penalty form refusing a stage-2 mass or a note without a provenance, the modelled form a blank note; the record's per-row verification P* (added in S3, its note saying so) within 1e-4 P_ref of its block's P_ref, the +2 t row's 0.00299 kg above it; a structural solved run restates each stage's dry mass with dm added, `source` the provenance, the note, never `assumed`, its vehicle carrying dm1 and dm2, a trajectory key of its own (dm > 0), a stage with dm = 0 untouched (Verification with dm) | exact (sha256); 1e-15 relative; 1e-9 kg |
-| `test_structure_pipeline.py::test_structural_and_plain_cases_never_share_a_solve`, `::test_overrides_are_recorded_and_named_at_source`, `::test_record_keys_assumptions_and_resolved_config_only_with_a_structure`, `::test_fired_structure_flags_reach_the_run_and_the_case_record`, `::test_a_failed_structural_solve_still_records_its_structure`, `::test_arms_size_on_their_own_perturbed_pad` | the pass on fake runs (the sim seams monkeypatched, the real structural sizing on the synthetic pad): an unstructured, two structural (flown, full_load) and a repeated structural case solved as three solves, the repeat reusing its own; the structural verification flying dm1 restated under the provenance, the recorded run's dict the same; a case overriding `nof.nof_barrel` 1.54 and `dynamics.rise_time_s` 0.1 solved apart from the central case with a dm more than 1.5 times its, its record and its run's metrics carrying `structure_overrides` (the central case {}), `structure_t_r_s` 0.1, `structure_set` still central, the provenance on the verified and the recorded dict and in the assumption line naming the overrides (D-SP7-43); the case record and the run's metrics ending with the structure keys, none on the unstructured case, `stage1_dry_mass_added_kg` 0 and `assumed_penalty` False on both; the structure assumption line on the structural run only, whose offload line is `OFFLOAD_STRUCTURE_ASSUMPTIONS` (no line of its says every dry mass is unchanged; it precedes the structure line) while the unstructured run keeps SP1's; the record JSON-safe, the summary block and the console lines rendering it; `OffloadReport.structure` and resolved_config.yaml's last key `structure` only with a structural case (none without one, none with --no-offload); every fired structure flag promoted to the recorded run's `flags` and the case record's (the central case's release and payload-limit flags, a `dynamic: step` case's three: one ASCII line each, name then numbers, in `structure_flags` order, counted by `n_flags`, listed by the summary's flags section, every flag kept with its numbers in `structure_flags`, the statuses unchanged); a search_failed structural case writing no run, its record carrying every structure key with the values at x* null; each arm's transform on its own pad (a vehicle parameter's perturbed pad, a run parameter's unchanged one), its in-memory case record and recorded run (`_offload_case`'s outcome, spied) ending with the structure keys and naming that pad, the written arm records in offload.sensitivity[] ending with STRUCTURE_RECORD_KEYS and naming that pad (S3b) (Memo keys; Records) | exact; 1e-15 relative |
+| `test_structure_pipeline.py::test_structural_and_plain_cases_never_share_a_solve`, `::test_overrides_are_recorded_and_named_at_source`, `::test_record_keys_assumptions_and_resolved_config_only_with_a_structure`, `::test_fired_structure_flags_reach_the_run_and_the_case_record`, `::test_a_failed_structural_solve_still_records_its_structure`, `::test_arms_size_on_their_own_perturbed_pad` | the pass on fake runs (the sim seams monkeypatched, the real structural sizing on the synthetic pad): an unstructured, two structural (flown, full_load) and a repeated structural case solved as three solves, the repeat reusing its own; the structural verification flying dm1 restated under the provenance, the recorded run's dict the same; a case overriding `nof.nof_barrel` 1.54 and `dynamics.rise_time_s` 0.1 solved apart from the central case with a dm more than 1.5 times its, its record and its run's metrics carrying `structure_overrides` (the central case {}), `structure_t_r_s` 0.1, `structure_set` still central, the provenance on the verified and the recorded dict and in the assumption line naming the overrides (D-SP7-43); the case record and the run's metrics ending with the structure keys, none on the unstructured case, `stage1_dry_mass_added_kg` 0 and `assumed_penalty` False on both; the structure assumption line on the structural run only, whose offload line is `OFFLOAD_STRUCTURE_ASSUMPTIONS` (no line of its says every dry mass is unchanged; it precedes the structure line) while the unstructured run keeps SP1's; the record JSON-safe, the summary block and the console lines rendering it; `OffloadReport.structure` and resolved_config.yaml's last key `structure` only with a structural case (none without one, none with --no-offload); every fired structure flag promoted to the recorded run's `flags` and the case record's (the central case's release and payload-limit flags, a `dynamic: step` case's three: one ASCII line each, name then numbers, in `structure_flags` order, counted by `n_flags`, listed by the summary's flags section, every flag kept with its numbers in `structure_flags`, the statuses unchanged); a search_failed structural case writing no run, its record carrying every structure key with the values at x* null (its null ramp cost not read as a flown push: no `STRUCTURE_FLOWN_PUSH_NOTE`, S4b review round 2); each arm's transform on its own pad (a vehicle parameter's perturbed pad, a run parameter's unchanged one), its in-memory case record and recorded run (`_offload_case`'s outcome, spied) ending with the structure keys and naming that pad, the written arm records in offload.sensitivity[] ending with STRUCTURE_RECORD_KEYS and naming that pad (S3b) (Memo keys; Records) | exact; 1e-15 relative |
 | `test_structure_pipeline.py::test_a_written_run_without_a_structure_block_has_no_structure_key` | the fixed-guidance experiment of the output capture (pad and silo_cold) resolved with and without a structure loader writes the same metrics.json and summary.md (timestamp and git normalised) and no structure key in them or in resolved_config.yaml (two short flights; 2.9 s unloaded on the development machine, so in the fast tier; both runs by the current code: the start commit's side rests on the output capture of test_planar_pipeline.py, metrics.json's key paths everywhere and summary.md's normalised sha256 in the capture environment, and on the dict digests of `test_sp1s_resolved_and_solved_dicts_are_unchanged`; metrics.json's values before versus after are not byte-pinned) (Records) | exact |
 | `test_structure_pipeline.py::test_structure_off_headline_reproduces_sp1`, `::test_constant_2t_cross_check_equals_sp1s_penalty_row`, `::test_structural_solve_charges_dm_through_the_pipeline` (slow) | SP1's experiment at the shipped budget through `planar_offload`: P_ref, silo_cold_s1's x* and its verification's P* equal the record (26,054.396243494975; 41,262.90803733282; 26,054.404695649962 kg); a constant 2,000.0 kg on stage 1 in place of the sizing equals silo_cold_s1_dry+2t (x* 32,285.203295407457 kg, its verification's P* 26,054.39923045693 kg), two sizings, the recorded run's dict 24.2 t under the provenance, `xv_dry_mass_delta_kg` 2,000 kg; a structural case on the synthetic file solved beside the headline with `xv_dry_mass_delta_kg` = dm1 + dm2, no `offload_nonmonotone`, the cap not reached, decomposition explained; measured differences 0.0 kg, 309 s for the module (Pins) | 0.002 kg; 1e-6 kg |
+| `test_structure_pipeline.py::test_a_linear_motor_structural_case_flies_its_push_in_the_pass` | "The flown push of a linear motor", Records and the assumption line: the pass on fake runs (the real transform, its pushes flown) with a structural case of a linear-motor variant beside silo_cold's: the flown transform, the same `STRUCTURE_RECORD_KEYS`, `structure_t_r_s` the drive's 0.5 s against the file's 0.8 s, `structure_ramp_cost_rel` None against a positive raise; the recorded run's structure line followed by `sim.structure_push_assumptions`' line (silo_cold's run the structure line alone); the record JSON-safe, the summary block rendering it with `STRUCTURE_FLOWN_PUSH_NOTE` | exact |
+| `test_structure_pipeline.py::test_a_linear_motor_structure_payload_case_flies_its_push_at_full_load`, `::test_a_rise_time_override_on_a_linear_motor_structural_case_is_refused` | "The flown push of a linear motor", Records and the assumption line; The dynamic factor (review round 1, C-P1-01, H-P1-01, C-P1-02): a structure payload case of a linear-motor variant on fake runs (full_load, the drive's t_r, ramp cost null; dm_0 and dm_1 positive and different, recorded as structure_dm_x0_kg and structure_dm_kg; its run's flown-push line worded for the full-load sizing at P_ref and at P_1*, never "at each offload"; the summary's note under the payload table); a `dynamics.rise_time_s` override on a linear-motor offload case or payload case refused when the experiment is resolved, the same override on silo_cold resolving | exact |
+| `test_structure_linear_motor.py::test_the_bound_of_a_ramp_from_rest_is_the_rise_formula`, `::test_the_bound_charges_a_step_at_push_start_and_an_early_peak`, `::test_a_falling_corner_adds_to_the_release_not_to_the_envelope`, `::test_a_corner_inside_a_rise_keeps_q_plus_rho_rising_for_1_over_w`, `::test_a_sub_phase_shorter_than_the_step_floor_is_a_step`, `::test_a_release_inside_the_rise_keeps_the_cut_ramp_s_residual`, `::test_the_bound_weights_and_its_refusals` | "The flown push of a linear motor", The dynamic factor and The release (`single_mode_bound` on PL loads, 3 Hz): a ramp from rest to a plateau gives n_0 + DLF Delta (t_r 0.5 s and 0.05 s, the cap), inside the rise r min(1/w, max(0, t - T/2)), the release 2 r/w, step the load plus its total variation 2 n_1 - n_0, quasi_static n_1; a step J before a ramp n_1 + min(V, J + 2 r/w) above the formula; an early peak at t' the factor of t'; a falling corner off a plateau leaving the envelope at n_1 + 2 r/w and the release at 2 (r + s)/w (step: Delta + s); a corner inside a rise (review round 2, H-P2-02): q + rho n_0 + r t_c + r/w at the corner and the envelope n_0 + r t_c + 2 r/w at t_c + 1/w, the exact single-mode response below it; a 1e-14 s sub-phase of 256 entries with 1 ulp of alternating noise at a corner (review round 2, P2-M1): the bound of the history without it, and with fix round 1's rule (a step only at dt = 0) the envelope more than 0.1 g0 higher; a release mid-ramp r min(t, 2/w), above the exact (2 r/w)|sin(w t/2)|; a constant weight scaling the envelope; the refusals of the bound (a decreasing grid, arrays of other lengths, a non-finite grid or load, a weight off the grid, a period <= 0, an unknown mode), of `FlownHistory` (a non-finite or one-entry array, arrays of other lengths, a decreasing grid, a case index off the grid, case kinds of another count or unknown) and of a PushLoad whose history does not index every case or sits beside a RampedPlateau (review round 3, C-P3-02) | 1e-10 relative (rounding of grid slopes, about 1e-12 measured); the tiny sub-phase 1e-11 absolute (its noise's variation, about 5e-13, enters J and V) |
+| `test_structure_linear_motor.py::test_cold_force_law_push_load_against_its_closed_forms`, `::test_hot_force_law_with_a_carriage_peaks_at_different_instants`, `::test_acceleration_law_push_load_against_its_closed_forms` (cold, hot on a 250 t carriage) | "The flown push of a linear motor": the reduced push of a short planar push on the gate vehicle at P_ref against closed forms (the engine numbers read from the vehicle): the force law cold n_q = F_max/(M g0), F_q = F_max, the max-n case at the end of the rise (n flat on the plateau: its earliest instant, review round 3, P3-M1); hot (the 2 s ramp ending at push start, sea-level thrust, mass flow T_vac/(g0 Isp_vac)) with a 20 t carriage and f_imp 0.5: max n at the release, (F_max + T/2)/(M(t_rel) g0), max F_int, n m_v and n m_prop1 at the end of the rise, F_q = (m_v/M)(F_max + T/2) - T; the acceleration law n_q = (a + g)/g0, cold F_q = m_v (a + g), hot m_v(t_r) (a + g) - T; n_0 = g/g0 and F_0 = m_v(0) g - T(0); dlf_rise = min(2, 1 + T_ax/(pi t_r)) at the drive's t_r 0.5 s (not the file's 0.8 s); where n and F_int ramp linearly from rest (cold, the acceleration law's n) the bound's envelopes equal the formula's peaks and the charged values are the formula's; elsewhere each the larger of the two (the hot carriage push's F_peak 1.5e-5 relative above the formula, recorded); quasi_static n_q and step 2 n_q - n_0, no plateau raise; the release (track end) n_before = n_q, n_after = T/(m_v g0), its peak n_before + the larger of (DLF - 1)(n_q - n_0) and the bound's residual, swing 2 n_after - peak and compression the peak (each release here unloads); the contents at release | 1e-9 relative (measured 3.1e-15 or better); the bound's equality 1e-11 |
+| `test_structure_linear_motor.py::test_release_at_a_target_speed_in_the_power_phase`, `::test_release_inside_the_rise_carries_the_cut_ramp`, `::test_release_after_a_stop_taper_uses_the_tapers_own_factor`, `::test_a_release_in_tension_loads_the_stack`, `::test_a_flown_release_state_refuses_an_incomplete_taper` | "The flown push of a linear motor", The release: a cold force-law push released at 40 m/s in its power phase from a 30 m/s corner, the release time t_r + (v_c - v_r)/a_f + the vertical power phase's t(v), n_before = P_max/(v M g0) below n_q, the bound governing the release (step: the total variation (n_q - n_0) + (n_q - n_before)); released at 1 m/s inside the rise: n_before = n_q = g/g0 + r t_rel, the release residual 2 r/w above the formula's; a taper after the rise (40 m over 100 m; 10 m over 50 m, whose `taper_start` leaves a 4.7e-14 s sub-phase, review round 2, P2-M1): t_taper = atan(s_t Omega/v_0)/Omega, n_before = n_0, the drop n_q - n_0, DLF_taper = min(2, 1 + T_ax/(pi t_taper)) and the formula's peak with both residuals, or the bound's where larger, the bound's envelopes of n and F_int equal to the formula's (1e-11); every one of these releases unloads (n_after <= n_before), its compression after the release the release peak; a release in tension (review round 3, H-P3-01: hot, F_max 6 MN, a 250 t carriage, f_imp 0.5): F_int = (m_v/M)(F_max + T/2) - T < 0 at the release, n_after = T/(m_v g0) above n_before = (F_max + T/2)/(M g0), the swing n_before - A, the compression 2 n_after - n_before + A above the release peak and n_peak by more than 0.1 g0, the damped swing n_before, under rise_time and quasi_static (A = 0); `ReleaseState`'s refusals (a taper's time and drop together, only on a flown release, neither negative; the plateau finite) and, a release not flown, S2's peak n_0 + DLF (n_before - n_0) with no flown key | 1e-9 relative (measured 1.2e-14 or better); exact |
+| `test_structure_linear_motor.py::test_the_oracle_reproduces_the_ramp_s_exact_peak`, `::test_the_charged_push_bounds_the_single_mode_oracle` (thirteen configurations) | "The flown push of a linear motor", The dynamic factor and The release (review round 1, M1, M2, H-P1-02, m3): the single-mode oracle (x'' = -w^2 (x - q(t)) on the flown dense output from rest, DOP853 rtol 1e-10, its maxima refined at the roots of x') reproducing the ramp's exact peak at t_r/T = 1.5; on a hot push whose clamp release is a step (t_r 0.5 s at 5 Hz, 2 s at 3 and 5 Hz), an acceleration law capped in its rise (3 and 5 Hz), a taper entered in the rise (5 Hz), a lm_fixed_r07-like push (5 Hz), a release just past a 10 m/s corner (3 and 5 Hz), a 5 m/s corner and a 1 m/s release inside the rise (3 Hz), and a release in tension (review round 3, H-P3-01: hot, F_max 6 MN, a 250 t carriage, f_imp 0.5; 3 and 5 Hz): the charged n_peak and F_peak at least the oracle's maxima, the release swing at most the lowest load the oracle keeps after the release and the compression after the release at least the largest (the margins recorded after review round 2's step floor: n 0.0022 to 0.749 g0, F 0.046% to 20.4% of |F|, swing and compression 0.11 to 1.81 g0 on the eleven, 0.008 and 0.035 g0 on the release in tension) | 1e-7 relative (the oracle's ramp); 1e-9 (the bounds) |
+| `test_structure_linear_motor.py::test_track_peaks_find_the_interior_peak_of_a_taper_entered_in_the_rise`, `::test_run_metrics_carry_the_exact_track_peak_on_a_linear_motor_run`, `::test_a_flat_maximum_keeps_its_earliest_instant`, `::test_track_peaks_and_track_scan_refuse_what_they_cannot_read` | KI-046 ("The flown push of a linear motor", Exact maxima): a cold force-law push, F_max = M (3 g0 + g), t_r 4 s, a 90 m taper on 100 m: the felt-g and interface-force maxima inside the taper's sub-phase against Airy's closed form (x = alpha Ai(-k t) + beta Bi(-k t), the root of x + t x' = 0), planar (`track_peaks`, the reduced push's max-n case) and 1-D (`sim.simulate`: `felt_g_track_peak`, `interface_force_peak_N` and its alias, the time after release), the sampled rows' maxima below by 1e-7 to 1e-4 relative (1.98e-5 measured), the run-wide peak never below the track's, `run_wide_felt_with_track_peak` lifting a lower sampled run-wide value and leaving a higher one; a flat maximum (review round 3, P3-M1: the 50 m force law lit 2 s before its push, no carriage, f_imp 0, at six dm 0.2 kg apart): the max-F_int, max-n m_v and max-n m_prop1 cases at t_r with `drive_ramp_end`, F_int = F_max and n m_v = (F_max + T)/g0 there, the max-n case at the release, one history grid size; the refusals of `track_scan` and `track_peaks` (fewer than three scan points, a quantity count unlike fn's, a phase without dense output; no phase and a scan list of another length) | 1e-9 relative (measured 2.2e-16 or better); time 1e-4 s (measured 3.7e-8 s) |
+| `test_structure_linear_motor.py::test_a_hot_push_reads_mixed_station_drivers_at_its_samples` (a hot force plateau with a carriage; a push lit on the track into its power phase) | "The flown push of a linear motor", the reduction's limit: the maximum of n (m_prop1 + c) over the push's cases (the release case, which the sizing does not read, left out) against its dense maximum (`track_peaks`) for 30 values of c from -0.9 to 2 m_prop1 (the domes' crowns and the transfer tube within), the gap recorded | below 1e-9 relative (measured 0.0) |
+| `test_structure_linear_motor.py::test_the_transform_flies_the_push_and_records_the_flown_values`, `::test_constant_accel_transform_carries_no_flown_key`, `::test_vehicle_at_is_bit_identical_across_call_orders_on_a_flown_push`, `::test_dm_slope_of_a_flown_push_is_bounded_and_smooth` (plain, a 10 m taper, a corner inside the rise, hot without a carriage), `::test_the_payload_limit_flag_checks_the_compression_after_a_flown_release` (a release past a corner, a release in tension), `::test_a_full_load_push_that_cannot_release_is_refused_at_build`, `::test_an_offload_whose_push_cannot_release_is_infeasible`, `::test_the_flown_push_assumption_line` | "The flown push of a linear motor", the transform on the synthetic file and pad (the force law over 50 m): it flies its push, its context kept, no stage-1 ignition time; the record's keys `STRUCTURE_RECORD_KEYS`, `structure_t_r_s` the drive's 0.5 s, `structure_dlf` min(2, 1 + T_ax/(pi t_r)) (the bound equals the formula on this cold push), `structure_ramp_cost_rel` null, `structure_n_q_g` = F_max/(M g0) on the vehicle carrying dm, the release flag's rise plateau, residual and bound residual, no taper keys, the payload-limit flag's `dlf_rise`, `n_bound_g` and `f_bound_N` and, last, `release_compression_g` (here the release peak); the payload-limit flag on a release just past a 10 m/s corner (3 Hz; the compression after it, its release peak, about 4.08 above n_peak 3.88 g0) and on a release in tension (3 Hz; about 1.61 above n_peak and the release peak, 1.29 g0) fired with the upper limit between n_peak (and the release peak) and the compression and not above it, the run flag's line naming the compression (review rounds 2 and 3, P2-m2 and H-P3-01); the fixed point below 1e-6 kg with five sizings to spare under the cap of 25, its contraction in the cap flag (recorded); constant_accel's transform: no flown push, its release flag's head S2's and none of `FLOWN_RELEASE_FLAG_KEYS`, its payload-limit flag S2's five values, no flown number on its requirement, no flown line; vehicle_at bit-identical forwards and in reverse (two offloads) and rebuilt (one), equal to `charge_structure` of its sizing; dm'(x) by 1 kg and 10 g differences agreeing and above -1/(2 E), each sizing uncapped with five to spare, at 0, 20 and 40 t on the plain push, at 0 with a 10 m taper and at 20 t with a 5 m/s corner inside the rise (review round 2, P2-M1: their sub-phases of 4.7e-14 and 2.1e-11 s), and at 0 and 20 t on the push lit 2 s before its start with no carriage (review round 3, P3-M1: its flat F_int and n m_v; eight sizings); the slopes recorded: about -4e-4 kg/kg, -4.1e-3 with the corner, +0.0092 and +0.0103 hot; a 3 MN drive refused at build (its push at x = 0 stalls); a hot acceleration law on a 250 t carriage infeasible at an offload of 60 t (`drive_limit`, a PreludeFailure in `search.INFEASIBLE`); the flown push's assumption line under rise_time, step (the load plus its total variation) and quasi_static, sizing flown and full_load (whatever x the solve tries, a payload case's dm_1 at P_1*), each fixed-point iterate, with a taper | 1e-11 relative (n_q against the last iterate); 1e-9 kg; 1e-5 kg/kg; exact |
+| `test_structure_linear_motor.py::test_a_linear_motor_structural_case_solves`, `::test_a_linear_motor_structural_x_star_converges` (slow) | "The flown push of a linear motor", Pins: the synthetic linear-motor structural case (100 m force law) solved at SP1's P_ref with the shipped budget: ok, no `offload_nonmonotone`, verified, the offloaded vehicle carrying dm at x* bit for bit, the fixed point at x* inside its cap, dm'(x*) above -1/(2 E) and smooth (recorded with the contraction, the iterations and the evaluations); x* under the budget tightened 10x with the same context as the transform's push_context (exit criterion 6) | x* within 1e-3 x* (measured 3.4e-7); 1e-5 kg/kg |
 | `test_structure_reporting.py::test_payload_case_two_passes_contraction_and_flag`, `::test_payload_contraction_edge_cases` | the payload form on fake runs whose P* falls with the stage-1 dry mass (P* = P_ref + 0.5 - 0.25 (dry1 - 22,200 kg), a test rule): dm_0 the full-load sizing at P_ref, P_1* = P_ref + 0.5 - 0.25 dm_0, dm_1 the sizing at P_1* (smaller), P_2* on dm_1, c and the residual estimate recomputed from the record by their definitions, the flag off at the design's limits and fired when `STRUCTURE_PAYLOAD_CONTRACTION_MAX` is lowered below c (the run's and the record's flags, the run line carrying the estimate, the tolerance and c against the limit, the console line); the record's kind, keys ending with `STRUCTURE_RECORD_KEYS`, its `structure_dm_x0_kg` equal to dm_0 and to the offload case's `structure_dm_x0_kg` of the same variant and settings, the run written under the case's name with dm_1 restated under the full_load provenance, its note starting "structure payload case 'cold_pstar_st':" and no dict of either pass carrying "(solved)" or "offload case", the payload-case and structure assumption lines and no offload line, the pass-1 run among the checked runs, nothing under `cases`; a case whose P_2* search fails (status search_failed, `run` and `unconverged` null, `payload_kg` NaN, dm_1 recorded, no payload flag, nothing written and no figure) and one whose P_1* search fails (no second pass), the summary's two status rows, `STRUCTURE_PAYLOAD_NOT_WRITTEN` and `STRUCTURE_PAYLOAD_FLAG_NA` in their cells, the console lines; the edge cases (equal sizings 0, P_1* = P_ref inf, a hand case 0.1) ("Reporting the structure", The payload form) | 1e-12 relative; exact |
 | `test_structure_reporting.py::test_structure_inputs_present_only_with_a_block` | `structure_inputs` after `energy_inputs` and `structure_payload_cases` after `cases`: the file and sha256, the envelope per element (13 elements) equal to an envelope rebuilt here at the central coefficients on the synthetic pad (the maximum thickness, its station, mode, governing case label and time; none at the minimum gauge), the plausibility table equal to `structure.plausibility` (M, R, M/R, the two end factors, the element masses, the band fraction equal to the file's, the rule's text `plausibility_rule_text` at that band naming its edges, never 0.7 R at a 0.25 band, the dominant element the largest `element_kg` with its share and its envelope's governing mode, case label and height at its thickest station), the sets' label and values as the file's, `tornado` and `break_even` null with the note; JSON-safe; without a block the record's eleven keys are SP1's, in order, and `increments` empty (The block-level structure_inputs) | exact |
 | `test_structure_reporting.py::test_structure_block_with_payload_cases_needs_an_offload_block`, `::test_structure_block_needs_the_pads_hold` | a structure block with a payload case and no `offload` block refused by `config.ExperimentConfig` ("needs an offload: block"), a block with no payload case resolving without one; the preflight `sim.check_resolved` refusing a structure block whose reference pad lights stage 1 at the release (t_ign_s 0) or after it (0.5 s) with "never holds down under thrust above its weight" (`structure_block_needs_hold` naming how the pad lights, the liftoff extension at TWR < 1, the restrained-thrust case the hold-down envelope would lack and the modelling choice; never "no HOLD phase", since with the shipped ramp both pads fly HOLD rows), passing the shipped pad lit 2 s before the release, and passing a pad lit at the release in an experiment without a block (Structure block and structural cases; The post-hoc flight check) | exact |
-| `test_structure_reporting.py::test_structure_subsection_rows_trace_to_the_record`, `::test_no_offload_line_without_a_payload_case_says_not_flown` | the Structure subsection of a pass with a central case, an unscaled and a plausibility-scaled physics_low_mass case, a central case overriding `nof.nof_barrel` 1.54, a quasi-static case whose solve ends no_offload, a penalty row, a physics_low_mass case overriding `nof.nof_barrel` 1.54, a full_load case, a physics_low_mass and a central case at margin 0.1, a physics_low_mass case at entry thrust_structure, a central case at margin 0.05 whose solve ends search_failed, three payload cases (central rise-time, central quasi-static, scaled physics_low_mass) and four structural arms: every row label of both tables; the cells against the record (dm1 = dm - dm2, F_peak in MN, the DLF, the penalty row's 2 t with n/a in the structure rows, the kinds; the layer cells by D-SP7-18 and design 4.2.6: the central label only at the headline settings, "design axis (layer 2): <set> with overrides nof.nof_barrel 1.54" for the override cases, "... at margin 0.1" for the margin cases, "... at dynamic quasi_static" for the no_offload case, "<layer label>, a row, not a band end (sizing full_load)" and "(entry thrust_structure)" for the full_load and the entry case, a margin-and-cap-and-entry case naming all three, an outer set's own margin and cap never a departure, `structure_is_band_end` true for the headline-settings physics cases and false for the central, margin and entry cases; the overrides row, the scaled flags, the factor cell a number equal on every physics_low_mass case and "n/a (not a band end)" on every central one, x* in tonnes and `STRUCTURE_NO_OFFLOAD_CELL` in both the x* and the share cell of the no_offload end with no "0 t", the fired flags and `STRUCTURE_FLAGS_NOT_SIZED` for a search_failed record, the flight check n/a on a fake run with its short label (under 160 characters, as every case-table label) naming the element scope in short (`STRUCTURE_FLIGHT_CHECK_SCOPE_SHORT`, not the full sentence) and the note under the table carrying the full scope and the cap, margin, unscaled-sizing and not-applicable qualifications; the search_failed case's x* and share cells a bare n/a, its flags cell `STRUCTURE_FLAGS_NOT_SIZED`, never "n/a t" in the subsection); the no_offload line with the solver's 12.5 m/s shortfall, its dm and the payload deficit of the quasi-static payload case (the same set and settings; not the rise-time one), "not flown" without one, and "not flown for these settings ... differs in dynamic" with a same-set payload case of another dynamic mode; the physics band line naming each end in brackets from the headline-settings cases only and printing the unscaled end and the scaled end side by side with the factor, the same line with the cases in either order, "scaled only ... the unscaled end was not flown" without the unscaled twin, "the rule's factor on this end is f; no plausibility-scaled case was flown" without the scaled twin, never an override, margin, entry, full_load or quasi-static case; the outer line "not flown" at both ends, the break-even note, the layer-2 line naming the override, margin and quasi-static cases with their set, what they move and their x*, the quasi-static case as "no offload (s1_none; ...)" and the search_failed case as "no x* (s1_fail, status search_failed)" with no "x*" before either (`_xstar_phrase`; `_xstar_text` giving the bare form for a band end) ("never a band end"; absent without one), the settings-rows line naming the entry case (absent without one), the where-found line quoting the file's method, the applicability line (each x* this experiment's own solve; never "as sizing-only estimates"); the central element table's labels (the interstage relation, the thrust structure "not in the load path on entry aft_ring", the station sizings, the ring; under entry thrust_structure the relation as applied, k_ts max(0, F_peak + T - (1 + margin) T_max), and the ring not in the load path; never "closed form over the pad envelope") and sums, a fallback central case named "the central-set case s1_m10 (margin 0.1; not the headline settings)" in the heading and the trigger; M/R equal to the inputs' and the case's, the band edges from the record's fraction, the trigger line (above (1 + band) R, the dominant element's share, mode and load case, the central case's own increment on it); the payload table's c, dm_0 (equal to the case table's dm at x = 0), both status rows, its settings rows (the layer and set, the dynamic mode and DLF, the entry, margin, overrides, sizing basis, the scaled flag and factor, M/R, F_peak at P_1*) per case, the scaled case's dm_1 below the central one's, the flight-check row `STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA` on every case, its heading naming per payload case the full_load case of the same variant and settings (the rise-time case beside s1_full, the quasi-static and the scaled one `STRUCTURE_PAYLOAD_NO_FULL_LOAD`) and that the runs offload nothing; the arms count on one bullet and `STRUCTURE_ARM_CAVEAT` as the next (its +10.4 kg, the unchanged pad for a run parameter; the one object in `summary` and `sim`; "structural sensitivity arms:" twice in the subsection, once under the arms table) and the figures line and names for the structural runs only; one cell count per table; ASCII; the arms table's three structural columns with each arm's dm, set and pad and the caveat under it, an unsolved arm "n/a (not solved: reference_failed)" and a plain arm "n/a (uncharged)"; nothing of it, no caveat and no column without a block; `structure_section` empty without inputs (The Structure subsection) | exact |
+| `test_structure_reporting.py::test_structure_subsection_rows_trace_to_the_record`, `::test_no_offload_line_without_a_payload_case_says_not_flown` | the Structure subsection of a pass with a central case, an unscaled and a plausibility-scaled physics_low_mass case, a central case overriding `nof.nof_barrel` 1.54, a quasi-static case whose solve ends no_offload, a penalty row, a physics_low_mass case overriding `nof.nof_barrel` 1.54, a full_load case, a physics_low_mass and a central case at margin 0.1, a physics_low_mass case at entry thrust_structure, a central case at margin 0.05 whose solve ends search_failed, three payload cases (central rise-time, central quasi-static, scaled physics_low_mass) and four structural arms: every row label of both tables; the cells against the record (dm1 = dm - dm2, F_peak in MN, the DLF, the penalty row's 2 t with n/a in the structure rows, the kinds; the layer cells by D-SP7-18 and design 4.2.6: the central label only at the headline settings, "design axis (layer 2): <set> with overrides nof.nof_barrel 1.54" for the override cases, "... at margin 0.1" for the margin cases, "... at dynamic quasi_static" for the no_offload case, "<layer label>, a row, not a band end (sizing full_load)" and "(entry thrust_structure)" for the full_load and the entry case, a margin-and-cap-and-entry case naming all three, an outer set's own margin and cap never a departure, `structure_is_band_end` true for the headline-settings physics cases and false for the central, margin and entry cases; the overrides row, the scaled flags, the factor cell a number equal on every physics_low_mass case and "n/a (not a band end)" on every central one, x* in tonnes and `STRUCTURE_NO_OFFLOAD_CELL` in both the x* and the share cell of the no_offload end with no "0 t", the fired flags and `STRUCTURE_FLAGS_NOT_SIZED` for a search_failed record, the flight check n/a on a fake run with its short label (under 160 characters, as every case-table label) naming the element scope in short (`STRUCTURE_FLIGHT_CHECK_SCOPE_SHORT`, not the full sentence) and the note under the table carrying the full scope and the cap, margin, unscaled-sizing and not-applicable qualifications; the search_failed case's x* and share cells a bare n/a, its flags cell `STRUCTURE_FLAGS_NOT_SIZED`, never "n/a t" in the subsection); the no_offload line with the solver's 12.5 m/s shortfall, its dm and the payload deficit of the quasi-static payload case (the same set and settings; not the rise-time one), "not flown" without one, and "not flown for these settings ... differs in dynamic" with a same-set payload case of another dynamic mode; the physics band line naming each end in brackets from the headline-settings cases only and printing the unscaled end and the scaled end side by side with the factor, the same line with the cases in either order, "scaled only ... the unscaled end was not flown" without the unscaled twin, "the rule's factor on this end is f; no plausibility-scaled case was flown" without the scaled twin, never an override, margin, entry, full_load or quasi-static case; the outer line "not flown" at both ends, the break-even note, the layer-2 line naming the override, margin and quasi-static cases with their set, what they move and their x*, the quasi-static case as "no offload (s1_none; ...)" and the search_failed case as "no x* (s1_fail, status search_failed)" with no "x*" before either (`_xstar_phrase`; `_xstar_text` giving the bare form for a band end) ("never a band end"; absent without one), the settings-rows line naming the entry case (absent without one), the where-found line quoting the file's method, the applicability line (each x* this experiment's own solve; never "as sizing-only estimates"); the central element table's labels (the interstage relation, the thrust structure "not in the load path on entry aft_ring", the station sizings, the ring; under entry thrust_structure the relation as applied, k_ts max(0, F_peak + T - (1 + margin) T_max), and the ring not in the load path; never "closed form over the pad envelope") and sums, a fallback central case named "the central-set case s1_m10 (margin 0.1; not the headline settings)" in the heading and the trigger; M/R equal to the inputs' and the case's, the band edges from the record's fraction, the trigger line (above (1 + band) R, the dominant element's share, mode and load case, the central case's own increment on it); the payload table's c, dm_0 (equal to the case table's dm at x = 0), both status rows, its settings rows (the layer and set, the dynamic mode and DLF, the entry, margin, overrides, sizing basis, the scaled flag and factor, M/R, F_peak at P_1*) per case, the scaled case's dm_1 below the central one's, the flight-check row `STRUCTURE_PAYLOAD_FLIGHT_CHECK_NA` on every case, its heading naming per payload case the full_load case of the same variant and settings (the rise-time case beside s1_full, the quasi-static and the scaled one `STRUCTURE_PAYLOAD_NO_FULL_LOAD`) and that the runs offload nothing; the arms count on one bullet and `STRUCTURE_ARM_CAVEAT` as the next (its +10.4 kg, the unchanged pad for a run parameter; the one object in `summary` and `sim`; "structural sensitivity arms:" twice in the subsection, once under the arms table) and the figures line and names for the structural runs only; one cell count per table; ASCII; the arms table's three structural columns with each arm's dm, set and pad and the caveat under it, an unsolved arm "n/a (not solved: reference_failed)" and a plain arm "n/a (uncharged)"; nothing of it, no caveat and no column without a block; `structure_section` empty without inputs; no `STRUCTURE_FLOWN_PUSH_NOTE` in this constant_accel pass, its search_failed case's null ramp cost included (S4b review round 2, C-P2-01, H-P2-01) (The Structure subsection) | exact |
 | `test_structure_reporting.py::test_sweep_structure_columns_only_for_a_structural_case`, `::test_sweep_point_config_carries_the_block_file` | the sweep index of a point with an unstructured and a structural case: `<case>.<column>` for `OFFLOAD_STRUCTURE_SWEEP_COLUMNS` (the eighteen written out) after both cases' plain groups and before `status`, only for the structural case, its values from the record (the set, sizing, a null cap as NaN, margin 0, dm, dm at 0, n_peak, the factor empty on the central set with M/R above 1 beside it, the fired flags joined, scaled False, overrides `none`), an unstructured record all None, a failed record None with `STRUCTURE_FLAGS_NOT_SIZED` flags, a scaled physics_low_mass record with two overrides giving True, its factor and `nof.nof_barrel 1.54; ring.ring_pads 4`, the factor None on an outer set, overrides None giving None, read back from the CSV; a sweep with no structural record keeps exactly SP1's columns; `structure_block_used` the block's file and sha256, passed by `_run_sweeps_into` to a point's `write_single` only when the sweep solves a structural case there (None with `--no-offload`, None for a sweep naming only the plain case of an experiment with a block, None without a block, never for the baseline copy); `write_single` writing `structure` as resolved_config.yaml's last key only when given (The sweep and arm columns) | exact |
 | `test_structure_reporting.py::test_plausibility_scaled_row_refusals_and_factor`, `::test_structural_case_dump_carries_plausibility_scaled_and_sp1_cases_do_not` | `plausibility_scaled` refused on the central and both outer sets, as a non-bool and on a payload case of the central set; accepted on physics_low_mass with the provenance suffix and a key of its own; the transform's factor equal to `structure.plausibility`'s favourable-end factor on the synthetic pad at central (the model above 1.3 R; the adverse end 1.0 on physics_high_mass; the central case 1.0), the ratio M/R; the scaled sizing's dm the factor times the unscaled within 1e-3 (the fixed point on the scaled mass) and exactly the factor times its own increment; the three keys on every record in `STRUCTURE_RECORD_KEYS` order, the elements summing to dm, the ring scaled, a search_failed record keeping the keys; a structural case's dump carrying `plausibility_scaled: false`, an unstructured case's no `structure` (The plausibility-scaled row) | 1e-3 relative; 1e-15 relative; exact |
 | `test_structure_reporting.py::test_flight_check_on_a_synthetic_recorded_run` | the synthetic pad flight relabelled as a push (HOLD rows ASSIST): the flight adapter's cases equal the pad adapter's FLIGHT cases field by field, no hold-down support; `flight_load_set` refusing a HOLD case and a flight without stage 1, no hold cases, MECO a stage-1 row; the flight inside its own envelope 0.0 kg on all six elements with no flag, the threshold 1 kg, margin 0 and a NaN cap in the flag's values; at 20% more felt n with stage 2 checked twelve elements, every kg >= 0 summing to the total above 1 kg, the flag fired with its numbers (the largest element's kg and case label); against the envelope capped at 4.5 g0 (the pad's MECO n above it) the pad's own flight 0.0 kg with no flag and the 20% flight still fired, the flag line naming the cap; a flight at +5% n fired at margin 0 and 0.0 kg at margin 0.1, the line naming the margin; under the synthetic physics_high_mass set (its RP-1 row plate_limited) and the central set, each barrel's exceedance of the +5% flight equal to the push path's (`_barrel_push` and `_barrel_increment` on the flight's features against the envelope element) within 1e-9 kg, the plate-limited RP-1 barrel's above 100 kg and above what the reduction's own anchoring gives; through `structure_flight_check` on a RunResult whose dict restates dm: the check, `with_flight_check` filling the key and appending the flag last without mutating its input, `with_structure_items` promoting the line ("sized, not charged or iterated", the element scope `STRUCTURE_FLIGHT_CHECK_SCOPE` with "the aft skirt and the load ring are not checked", "stage 2 not checked (not sized by the push)" and never "stage 2 0 kg" when stage 2 was not checked, the stage-2 mass when it was, no "unscaled sizing" on an unscaled case whose flag carries `FLIGHT_DM_FACTOR_KEY` 1.0); a plausibility-scaled case's check carrying its sizing's factor under that key with the mass equal to the bare `flight_exceedance` (unscaled) and its line saying so; None on a run without a time series; the adapter refusing a flight without a lit stage-1 row and a vehicle that is not the one flown (The post-hoc flight check) | exact; 1e-12 relative; 1e-9 kg |

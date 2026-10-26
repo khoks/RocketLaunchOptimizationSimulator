@@ -33,10 +33,13 @@ to the offload solve"): ``StructureTransform`` is the vehicle transform of a str
 offload case (``offload.VehicleTransform``), built once per case by
 ``build_structure_transform`` (the geometry from the full-load vehicle, the envelope from
 the pad's own flight, closed over) or, from a resolved case and its pad,
-``offload_structure_transform``; each call sizes the analytic constant_accel push of the
-vehicle it is given by a short fixed-point iteration and adds dm to the stages' dry
-masses (``charge_structure``); ``structure_record`` gives the run-level record keys and
-``structure_assumption`` the run's assumption line.
+``offload_structure_transform``; each call sizes the push of the vehicle it is given (the
+analytic constant_accel case, or since SP7 step S4b a linear motor's push flown by
+``flown_push_trace`` and reduced to its governing samples by ``linear_motor_push_load``;
+docs/physics.md, "The flown push of a linear motor") by a short fixed-point iteration and
+adds dm to the stages' dry masses (``charge_structure``); ``structure_record`` gives the
+run-level record keys, ``structure_assumption`` the run's assumption line and
+``structure_push_assumptions`` a flown push's.
 
 The reporting of the structure (SP7 step S3b; docs/physics.md, "Reporting the structure"):
 ``payload_structure_transform`` builds the transform of a structure payload case (the
@@ -73,8 +76,8 @@ reaches those two. The offload pass of ``results_io`` (SP1 step 7) also looks up
 ``offload_penalty_assumption``) here at call time, and (SP7 step S3)
 ``offload_structure_transform``, ``structure_record``, ``structure_assumption``,
 ``with_structure_items``, ``without_assumptions`` and
-``OFFLOAD_STRUCTURE_ASSUMPTIONS``. These are the
-only live seams on ``sim``: every other reporting
+``OFFLOAD_STRUCTURE_ASSUMPTIONS``, and (SP7 step S4b) ``structure_push_assumptions``.
+These are the only live seams on ``sim``: every other reporting
 function (``compare``, ``write_plots``, ``experiment_summary``, ``write_run``,
 ``metrics_record``, ...) is bound in its owning module, so patching it on ``sim`` has no
 effect on the pipeline; patch it on the owning module (``metrics``, ``compare``,
@@ -90,6 +93,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import operator
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -102,7 +106,7 @@ from launchsim import structure
 from launchsim.assist import NoAssist, build_assist
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.constant_accel import ConstantAccelAssist
-from launchsim.assist.linear_motor import LinearMotorAssist
+from launchsim.assist.linear_motor import TAPER_START, LinearMotorAssist
 from launchsim.atmosphere import ATMOSPHERE_ASSUMPTIONS, ambient_scalar
 from launchsim.compare import (  # re-exported
     ATTRIBUTION_TERMS,
@@ -171,6 +175,7 @@ from launchsim.dynamics import (
     Gravity,
     InverseSquareGravity,
     PlanarDynamics2D,
+    TrackParams,
     g_eff_track,
 )
 from launchsim.guidance import GuidanceSpec, solve_delta_for_gamma
@@ -191,6 +196,7 @@ from launchsim.metrics import (  # re-exported
     TIMESERIES_TEXT_COLUMNS,
     TRACK_COLUMNS,
     TRACK_METRIC_ALIASES,
+    TrackScan,
     _peak_felt,
     _phase_samples,
     _rel_release,
@@ -208,9 +214,13 @@ from launchsim.metrics import (  # re-exported
     last_burn_end_s,
     metrics_record,
     run_metrics,
+    run_wide_felt_with_track_peak,
     sample_trace,
+    track_felt_and_interface,
     track_flags,
     track_metrics,
+    track_peaks,
+    track_scan,
 )
 from launchsim.metrics_planar import (  # re-exported
     PLANAR_EVENT_COLUMNS,
@@ -240,6 +250,7 @@ from launchsim.orbit import TargetOrbit
 from launchsim.phases import (
     ASSIST_KIND,
     HOLD_KIND,
+    ZERO_SPAN_S,
     AscentStart,
     IgnitionSpec,
     IntegratorSettings,
@@ -331,6 +342,7 @@ from launchsim.results_io import (  # re-exported
 from launchsim.search import (
     FINAL_MODE,
     INFEASIBLE,
+    PreludeFailure,
     SearchBudget,
     SearchContext,
     SearchRecord,
@@ -340,6 +352,7 @@ from launchsim.search import (
 )
 from launchsim.structure import (
     FLIGHT,
+    FLOWN_PEAK_KINDS,
     HOLD,
     PUSH,
     SET_PHYSICS_HIGH,
@@ -350,6 +363,7 @@ from launchsim.structure import (
     CoefficientValue,
     Envelope,
     FlightCheck,
+    FlownHistory,
     Increment,
     LoadCase,
     PadLoadSet,
@@ -965,6 +979,8 @@ def simulate(
             g_eff_mps2,
         )
         metrics.update(track_metrics(trace, assist, track, assist_budget, frame))
+        if isinstance(assist, LinearMotorAssist):  # SP7 step S4b: the exact track peak
+            metrics.update(run_wide_felt_with_track_peak(metrics))
         flags += track_flags(
             frame, metrics["drive_work_out_J"], stalled=trace.status == DRIVE_STALL
         )
@@ -1502,6 +1518,8 @@ def simulate_planar(
             phases, phases[0].spec.params.layout, assist.carriage_mass_kg, env.g_ref_mps2
         )
         metrics.update(planar_track_metrics(trace, assist, track, assist_budget, frame))
+        if isinstance(assist, LinearMotorAssist):  # SP7 step S4b: the exact track peak
+            metrics.update(run_wide_felt_with_track_peak(metrics))
         flags += track_flags(
             frame, metrics["drive_work_out_J"], stalled=trace.status == DRIVE_STALL
         )
@@ -2302,6 +2320,327 @@ def constant_accel_push_load(
     )
 
 
+# ------------------------------------------------- the flown linear-motor push (SP7 S4b)
+
+
+def flown_push_trace(context: SearchContext, vehicle: Vehicle) -> RunTrace:
+    """Fly a linear-motor push alone (SP7 step S4b; design 4.4: ``ctx.planner(P_ref,
+    final).start(assist, track)``): the planner of context with its vehicle replaced by
+    ``vehicle`` (the vehicle at x carrying dm, at the payload it flies), in FINAL_MODE
+    (the context's final tolerance) with dense output on, through its track start only
+    (``PlanarPlanner.start``: the hold, if any, the push and the release; no ascent).
+
+    Inputs: context, the case's SearchContext (its ignition, environment, settings,
+    assist and track; a caller that tightens the solve, ``SearchContext.tightened``,
+    passes the same tightened context here, as the convergence test does through
+    ``StructureTransform.push_context``: nothing tightens it automatically); vehicle, at
+    its payload [kg]. Output: the start's prefix RunTrace (HOLD and ASSIST phases, the
+    release and its events): states in the track layout, SI units, times absolute on the
+    run's clock [s]. Frame: the HOLD and ASSIST phases in the track frame (the track
+    layout, flat, constant g_eff). Raises PreludeFailure (one of ``search.INFEASIBLE``, so
+    a search evaluation that meets it counts as infeasible) when the push does not
+    release: the planner's status (``drive_stall``, ``drive_limit``) and its flags.
+    Pure."""
+    ctx = replace(context, vehicle=vehicle)
+    start = ctx.planner(vehicle.payload_mass_kg, FINAL_MODE, dense=True).start(
+        ctx.assist, ctx.track
+    )
+    if start.status != "nominal" or start.prefix.y_release is None:
+        reason = "; ".join(start.prefix.flags) or "no release"
+        raise PreludeFailure(
+            start.status,
+            f"the structural transform's flown push ended with status {start.status}: {reason}",
+        )
+    return start.prefix
+
+
+PUSH_SAMPLE_TAGS: tuple[str, ...] = tuple(f"max {kind}" for kind in FLOWN_PEAK_KINDS)
+"""The tags of a flown push's four exact maxima in its cases' labels
+(``linear_motor_push_load``), "max <kind>" in ``structure.FLOWN_PEAK_KINDS``' order: the
+felt load n, the interface force, n m_v and n times the stage-1 propellant."""
+PUSH_SAMPLE_N = PUSH_SAMPLE_TAGS.index("max n")
+"""The position of the felt load's maximum among PUSH_SAMPLE_TAGS (and the quantities)."""
+PUSH_SAMPLE_F_INT = PUSH_SAMPLE_TAGS.index("max F_int")
+"""The position of the interface force's maximum among PUSH_SAMPLE_TAGS (and the
+quantities)."""
+_PUSH_QUANTITY_ORDER: tuple[str, ...] = ("n", "F_int", "n m_v", "n m_prop1")
+"""The order ``linear_motor_push_load``'s quantities are computed in; they are returned in
+FLOWN_PEAK_KINDS' order (``_PUSH_QUANTITY_PICK``), whatever that order is."""
+_PUSH_QUANTITY_PICK = operator.itemgetter(
+    *(_PUSH_QUANTITY_ORDER.index(kind) for kind in FLOWN_PEAK_KINDS)
+)
+PUSH_HISTORY_GAP_FRACTION = 0.25
+"""A case instant inserted into a flown push's load history (``_flown_history``) removes
+the scan samples closer to it than this fraction of the scan spacing (and a case that
+close to its sub-phase's ends is not inserted), so an inserted case lies at least a
+quarter spacing from every scan sample and sub-phase end. Inserted cases are not spaced
+from each other: the maxima of one instant, refined by separate Brent searches, can land
+a few ulps apart (within 3.1e-15 s on the Airy push of KI-046, history intervals down to
+4.4e-16 s), each its own case and grid entry. Such intervals, like the planner's own
+ultra-short sub-phases, are steps under ``structure.SINGLE_MODE_STEP_FRACTION``, which
+keeps them out of the slopes (review round 4, H-P4-01)."""
+PUSH_SAMPLE_BOUNDARY = "sub-phase start"
+"""The tag of a flown push's sub-phase start at which no ASSIST event was logged."""
+
+
+def _push_event_names(trace: RunTrace, t_s: float) -> list[str]:
+    """The names of the ASSIST events logged within ZERO_SPAN_S of t_s [s], in log
+    order."""
+    return [
+        e.name for e in trace.events if e.phase == ASSIST_KIND and abs(e.t_s - t_s) <= ZERO_SPAN_S
+    ]
+
+
+def _history_index(t_grid: np.ndarray, t_s: float) -> int:
+    """The grid entry of an instant t_s [s]: the last entry at that time (after any step
+    there), else the first after it (the bound is nondecreasing, so it does not
+    undercharge)."""
+    j = int(np.searchsorted(t_grid, t_s, side="right")) - 1
+    if j >= 0 and t_grid[j] == t_s:
+        return j
+    return min(j + 1, t_grid.size - 1)
+
+
+def _flown_history(
+    phases: Sequence[PhaseResult],
+    scans: Sequence[TrackScan | None],
+    cases: Sequence[LoadCase],
+    case_kinds: Sequence[tuple[str, ...]],
+    m_fixed_kg: float,
+    prop1_load_kg: float,
+) -> FlownHistory:
+    """A flown push's quasi-static load history (pure; SP7 step S4b; ``structure.
+    FlownHistory``): per ASSIST sub-phase in time order its dense scan (``track_scan``'s
+    samples of n and F_int, ends included), the ends replaced by the sub-phase's own start
+    and end states (as ``track_peaks`` reads them), each case instant strictly inside it
+    inserted with the case's own values (the scan samples within
+    PUSH_HISTORY_GAP_FRACTION of a scan spacing of it removed), a sub-phase that spans no
+    time as one entry; a sub-phase boundary appears twice (the end of one, the start of
+    the next, at one time: a step of the load there if their values differ). The vehicle
+    mass and the stage-1 propellant (clamped to [0, the load]) beside, each case's grid
+    entry (``_history_index``) and its kinds. Inputs: phases, the push's ASSIST
+    PhaseResults; scans, ``track_scan`` of them; cases, the PushLoad cases; case_kinds,
+    each case's FLOWN_PEAK_KINDS; m_fixed_kg [kg], everything but the stage-1 propellant;
+    prop1_load_kg [kg], stage 1's load. Frame: the track frame."""
+    times: list[np.ndarray] = []
+    values: list[np.ndarray] = []
+    for res, scan in zip(phases, scans, strict=True):
+        params: TrackParams = res.spec.params
+        lay = params.layout
+        t0, t1 = res.spec.t0, res.t_end
+        if times and abs(t0 - float(times[-1][-1])) <= ZERO_SPAN_S:
+            t0 = float(times[-1][-1])  # one boundary time on both sides
+        y0 = np.asarray(res.y[:, 0], dtype=float)
+        n0, f0 = track_felt_and_interface(res.spec.t0, y0, params)
+        m0 = float(lay.get(y0, "m_kg"))
+        if scan is None:
+            times.append(np.array([t0]))
+            values.append(np.array([[n0, f0, m0]]))
+            continue
+        y1 = np.asarray(res.y_end, dtype=float)
+        n1, f1 = track_felt_and_interface(t1, y1, params)
+        m1 = float(lay.get(y1, "m_kg"))
+        ts = np.array(scan.t_s, dtype=float)
+        rows = np.column_stack(
+            (
+                scan.values[:, PUSH_SAMPLE_N],
+                scan.values[:, PUSH_SAMPLE_F_INT],
+                np.asarray(lay.get(scan.y, "m_kg")),
+            )
+        ).astype(float)
+        ts[0], ts[-1] = t0, t1
+        rows[0], rows[-1] = (n0, f0, m0), (n1, f1, m1)
+        gap = PUSH_HISTORY_GAP_FRACTION * (t1 - res.spec.t0) / (ts.size - 1)
+        inside = [c for c in cases if ts[0] + gap < c.t_s < t1 - gap]
+        if inside:
+            keep = np.ones(ts.size, dtype=bool)
+            for c in inside:
+                keep[1:-1] &= np.abs(ts[1:-1] - c.t_s) >= gap
+            extra_t = np.array([c.t_s for c in inside])
+            extra = np.array(
+                [[c.n_g, float(c.interface_force_N or 0.0), c.vehicle_mass_kg] for c in inside]
+            )
+            ts = np.concatenate((ts[keep], extra_t))
+            rows = np.concatenate((rows[keep], extra))
+            order = np.argsort(ts, kind="stable")
+            ts, rows = ts[order], rows[order]
+        times.append(ts)
+        values.append(rows)
+    t = np.concatenate(times)
+    grid = np.concatenate(values)
+    m_v = grid[:, 2]
+    return FlownHistory(
+        t_s=t,
+        n_g=grid[:, 0],
+        f_N=grid[:, 1],
+        m_vehicle_kg=m_v,
+        m_prop1_kg=np.clip(m_v - m_fixed_kg, 0.0, prop1_load_kg),
+        case_index=tuple(_history_index(t, c.t_s) for c in cases),
+        case_kinds=tuple(case_kinds),
+    )
+
+
+def linear_motor_push_load(
+    trace: RunTrace,
+    vehicle: Vehicle,
+    assist: LinearMotorAssist,
+    layout: StackLayout,
+    *,
+    label: str = "push",
+) -> PushLoad:
+    """The PushLoad of a flown linear-motor push, reduced to its governing samples, with
+    its load history (pure; SP7 step S4b; design 4.4: "maximum n, maximum F_int, maximum
+    head per tank, the events"; docs/physics.md, "The flown push of a linear motor").
+
+    Inputs: trace, the push flown on ``vehicle`` (``flown_push_trace``: ASSIST phases
+    with dense output, the release); vehicle, the two-stage Vehicle it flew (dm
+    included, at its payload); assist, the drive (its rise time t_r and its stop taper);
+    layout, the structure file's StackLayout (stage names, LOX mass fractions); label,
+    the cases' label prefix.
+    Output: a PushLoad whose PUSH cases are the flown states (n = (F_int + T)/(m_v g0),
+    F_int and T at that instant, the tank contents then: the stage-1 propellant m_v -
+    m_fixed, m_fixed = stage 1's dry mass + stage 2 wet + fairing + payload, split by its
+    LOX fraction; stage 2 full) at the exact maxima over the push (``metrics.track_peaks``
+    on the dense output of every sub-phase) of n, F_int, n m_v (= (F_int + T)/g0: the
+    thrust-structure entry's load) and n m_prop1 (the head at each stage-1 barrel's
+    bottom, p - p_u = n g0 m/A; one instant for both tanks, whose contents keep the
+    mixture fraction), and at every sub-phase start (the push start, the drive's kinks
+    and watch crossings, the thrust kinks and an ignition on the track: the events), one
+    case per instant whose label names every sample there (PUSH_SAMPLE_TAGS, the logged
+    event names or PUSH_SAMPLE_BOUNDARY); n_rest = g_eff sin phi(0)/g0 and F_rest =
+    m_v(0) g_eff sin phi(0) - T(0), the resting values at push start (cold: the vehicle's
+    weight component on the carriage; hot: the hold's, the thrust on the clamped
+    vehicle, F_rest taken as rest although the startup ramp may still be lowering it
+    there: ``structure.single_mode_bound``'s premise); ramp None (the rise is flown, no
+    plateau raise); rise_time_s the drive's t_r; the ReleaseState at the flown release
+    (t_release: the track end, or the release speed's root): n_before the felt load
+    there, n_after = T(t_release)/(m_v g0) (drag neglected), the contents then,
+    rise_plateau_g = the largest n, and with a stop taper its time (from its
+    ``taper_start`` event, or the push start for a taper active from s = 0, to the
+    release; measured from the taper's start, not from the load's peak) and its drop (the
+    largest n from its start on, less n_before); and history, the FlownHistory
+    (``_flown_history``: n, F_int and the masses on the dense scan of every sub-phase
+    with the cases' instants) whose single-mode bound ``push_requirement`` takes beside
+    the rise formula. A station driver that mixes n and the contents, n (m + c)
+    (a head above a barrel's bottom, c < 0; the aft and common domes sized at their
+    crowns and the transfer tube at its bottom, c = rho A b or rho A (L_tube + b) > 0; a
+    barrel's compression with the column above it, c > 0), is evaluated at these samples
+    only; on a cold push the contents are constant and every driver peaks with n.
+    Checked: the push-start mass is the vehicle's liftoff mass less the hold's burn,
+    within STRUCTURE_MASS_TOL_KG. Frame: the track's axis (the stack axis on the vertical
+    track).
+    """
+    if vehicle.n_stages != 2:
+        raise ValueError("the structural model sizes two stages")
+    phases = trace.assist_phases()
+    if not phases or trace.y_release is None:
+        raise ValueError("a flown push needs its ASSIST phases and a release")
+    s1, s2 = vehicle.stages
+    first, last = phases[0], phases[-1]
+    p0 = first.spec.params
+    lay = p0.layout
+    y0 = np.asarray(first.y[:, 0], dtype=float)
+    m0 = float(lay.get(y0, "m_kg"))
+    burned_on_hold = 0.0 if trace.hold is None else trace.hold.propellant_burned_kg
+    expected = vehicle.liftoff_mass_kg() - burned_on_hold
+    if abs(m0 - expected) > STRUCTURE_MASS_TOL_KG:
+        raise ValueError(
+            f"the push starts at {m0!r} kg, not the vehicle's {expected!r} kg: the vehicle "
+            "is not the one the push flew"
+        )
+    upper2 = vehicle.payload_mass_kg + vehicle.fairing_mass_kg
+    upper = s2.wet_mass_kg + upper2
+    m_fixed = s1.dry_mass_kg + upper
+    f1, f2 = layout.stage1.lox_mass_fraction, layout.stage2.lox_mass_fraction
+    lox2 = f2 * s2.propellant_mass_kg
+
+    def quantities(t: float, y: np.ndarray, params: TrackParams) -> tuple[float, ...]:
+        """(n [g0], F_int [N], n m_v [g0 kg], n m_prop1 [g0 kg]) of one track state (t
+        [s], y in the track layout, its sub-phase's TrackParams), in FLOWN_PEAK_KINDS'
+        order (``_PUSH_QUANTITY_PICK``); m_prop1 = m_v - m_fixed, unclamped. Frame: the
+        track frame (along the stack axis)."""
+        felt, f_int = track_felt_and_interface(t, y, params)
+        m_v = float(params.layout.get(y, "m_kg"))
+        return _PUSH_QUANTITY_PICK((felt, f_int, felt * m_v, felt * (m_v - m_fixed)))
+
+    def case_at(tag: str, t: float, y: np.ndarray, params: TrackParams) -> LoadCase:
+        """The flown PUSH LoadCase of one track state (tag, the label's sample names; t
+        [s]; y in the track layout; its sub-phase's TrackParams): n [g0] and F_int [N]
+        from ``track_felt_and_interface``, the thrust [N] and the vehicle mass [kg] there,
+        the stage-1 propellant m_v - m_fixed clamped to [0, its load] [kg] and split by
+        the LOX fraction, stage 2 full. Frame: the track frame (the stack axis)."""
+        felt, f_int = track_felt_and_interface(t, y, params)
+        m_v = float(params.layout.get(y, "m_kg"))
+        prop1 = _non_negative_mass(m_v - m_fixed, s1.propellant_mass_kg)
+        lox1 = f1 * prop1
+        return LoadCase(
+            label=f"{label} {tag} t={t:.4f} s",
+            kind=PUSH,
+            t_s=float(t),
+            n_g=felt,
+            stage1_attached=True,
+            lox_stage1_kg=lox1,
+            rp1_stage1_kg=prop1 - lox1,
+            lox_stage2_kg=lox2,
+            rp1_stage2_kg=s2.propellant_mass_kg - lox2,
+            upper_mass_stage1_kg=upper,
+            upper_mass_stage2_kg=upper2,
+            vehicle_mass_kg=m_v,
+            thrust_N=params.thrust_N(t),
+            interface_force_N=f_int,
+        )
+
+    count = len(PUSH_SAMPLE_TAGS)
+    scans = track_scan(phases, quantities, count)
+    peaks = track_peaks(phases, quantities, count, scans=scans)
+    samples: dict[float, tuple[list[str], np.ndarray, TrackParams]] = {}
+    for tag, pk in zip(PUSH_SAMPLE_TAGS, peaks, strict=True):
+        samples.setdefault(pk.t_s, ([], pk.y, pk.params))[0].append(tag)
+    for res in phases:
+        y_start = np.asarray(res.y[:, 0], dtype=float)
+        tags = samples.setdefault(res.spec.t0, ([], y_start, res.spec.params))[0]
+        tags.extend(_push_event_names(trace, res.spec.t0) or [PUSH_SAMPLE_BOUNDARY])
+    cases = [
+        case_at(", ".join(tags), t, np.asarray(y, dtype=float), params)
+        for t, (tags, y, params) in samples.items()
+    ]
+    kinds = [
+        tuple(k for k, tag in zip(FLOWN_PEAK_KINDS, PUSH_SAMPLE_TAGS, strict=True) if tag in tags)
+        for tags, _y, _p in samples.values()
+    ]
+    history = _flown_history(phases, scans, cases, kinds, m_fixed, s1.propellant_mass_kg)
+    t_rel = last.t_end
+    y_rel = np.asarray(last.y_end, dtype=float)
+    p_rel = last.spec.params
+    release = case_at("release", t_rel, y_rel, p_rel)
+    n_q = peaks[PUSH_SAMPLE_N].value
+    taper_time = taper_drop = None
+    if assist.tapered:
+        starts = [e.t_s for e in trace.events if e.name == TAPER_START and e.phase == ASSIST_KIND]
+        t_taper = starts[0] if starts else first.spec.t0
+        k0 = next(k for k, res in enumerate(phases) if res.spec.t0 >= t_taper - ZERO_SPAN_S)
+        felt_taper = track_peaks(phases[k0:], quantities, count, scans=scans[k0:])[PUSH_SAMPLE_N]
+        taper_time = t_rel - t_taper
+        taper_drop = max(0.0, felt_taper.value - release.n_g)
+    g_axial0 = p0.g_eff_mps2 * math.sin(p0.track.phi(0.0))
+    return PushLoad(
+        cases=tuple(cases),
+        n_rest_g=float(to_g(g_axial0)),
+        f_rest_N=m0 * g_axial0 - p0.thrust_N(first.spec.t0),
+        ramp=None,
+        rise_time_s=assist.rise_time_s,
+        release=ReleaseState(
+            n_before_g=release.n_g,
+            n_after_g=float(to_g(p_rel.thrust_N(t_rel) / release.vehicle_mass_kg)),
+            case=release,
+            rise_plateau_g=n_q,
+            taper_time_s=taper_time,
+            taper_drop_g=taper_drop,
+        ),
+        history=history,
+    )
+
+
 # ----------------------------------------------------------- structure coupling (SP7 S3)
 
 STRUCTURE_FIXED_POINT_TOL_KG = 1.0e-6
@@ -2376,26 +2715,34 @@ class StructureTransform:
     settings: the case's ResolvedStructureCase; geometry: built once from the full-load
     vehicle (D-SP7-13) and closed over; envelope: built once from the pad's own flight
     (both stages, at the case's margin and cap); layout; assist, track and g_eff_mps2
-    [m/s^2]: the case's push (constant_accel); stage1_ignition_s [s]: stage 1's ignition
-    from the push start when it lights on the track (None: cold); start_vehicle: the
+    [m/s^2]: the case's push (constant_accel, or since SP7 step S4b a linear_motor);
+    stage1_ignition_s [s]: stage 1's ignition from the push start when it lights on the
+    track (None: cold; constant_accel's analytic push only, None for a flown push, whose
+    context carries the ignition); start_vehicle: the
     solve's full-load vehicle (x = 0, payload P0); mode: the solve's offload mode;
     reference_payload_kg: P_ref [kg]; envelope_pad: the name of the run whose flight is
     the envelope; envelope_pad_key: its ``compare.trajectory_key``; plausibility (SP7
     step S3b): the plausibility rule's check at the central coefficients on this pad's
     envelope (margin 0, no cap: the rule's basis, D-SP7-33); plausibility_factor: the
     factor every sizing's dm is multiplied by (the rule's factor for the case's physics
-    band end when ``settings.plausibility_scaled``, else 1.0).
+    band end when ``settings.plausibility_scaled``, else 1.0); push_context (SP7 step
+    S4b): the SearchContext a linear-motor push is flown with (``flown_push_trace``; built
+    as the solve's own is, but a copy: tightening the solve's context does not reach it,
+    so a caller that tightens the search passes the same tightened context here, with
+    ``dataclasses.replace``, as the convergence test does), None for constant_accel's
+    analytic push.
 
     Pure and deterministic: a call depends on its arguments and these fields only and
     starts from dm = 0, so ``OffloadProblem.vehicle_at(x)`` gives the same bits in any
-    call order. Frame: the stack axis.
+    call order (a flown push too: it is flown afresh for each vehicle, nothing cached).
+    Frame: the stack axis.
     """
 
     settings: ResolvedStructureCase
     geometry: StackGeometry
     envelope: Envelope
     layout: StackLayout
-    assist: ConstantAccelAssist
+    assist: ConstantAccelAssist | LinearMotorAssist
     track: TrackGeometry
     g_eff_mps2: float
     stage1_ignition_s: float | None
@@ -2406,6 +2753,7 @@ class StructureTransform:
     envelope_pad_key: str
     plausibility: Plausibility
     plausibility_factor: float
+    push_context: SearchContext | None = None
 
     @property
     def plausibility_ratio(self) -> float:
@@ -2420,17 +2768,32 @@ class StructureTransform:
         trajectory key."""
         return (self.settings.key, self.envelope_pad_key)
 
+    @property
+    def flies_push(self) -> bool:
+        """Whether the push is flown inside every sizing (a linear motor, SP7 step S4b),
+        not analytic; unrelated to the sizing basis ``flown`` (re-sized at every x)."""
+        return isinstance(self.assist, LinearMotorAssist)
+
     def push(self, vehicle: Vehicle) -> PushLoad:
-        """The analytic constant_accel push of vehicle (its masses as flown, dm included)
-        (``constant_accel_push_load``)."""
-        return constant_accel_push_load(
-            vehicle,
-            self.assist,
-            self.track,
-            self.layout,
-            g_eff_mps2=self.g_eff_mps2,
-            stage1_ignition_s=self.stage1_ignition_s,
-        )
+        """The push of vehicle (its masses as flown, dm included, at the payload it
+        flies): constant_accel's analytic case (``constant_accel_push_load``), or a
+        linear motor's flown push reduced to its governing samples (SP7 step S4b:
+        ``flown_push_trace`` with push_context, then ``linear_motor_push_load``; raises
+        PreludeFailure when the push does not release)."""
+        assist = self.assist
+        if isinstance(assist, ConstantAccelAssist):
+            return constant_accel_push_load(
+                vehicle,
+                assist,
+                self.track,
+                self.layout,
+                g_eff_mps2=self.g_eff_mps2,
+                stage1_ignition_s=self.stage1_ignition_s,
+            )
+        if self.push_context is None:
+            raise ValueError("a flown push needs the transform's push_context")
+        trace = flown_push_trace(self.push_context, vehicle)
+        return linear_motor_push_load(trace, vehicle, assist, self.layout)
 
     def iterate(self, flown: Vehicle) -> StructureSizing:
         """The fixed point dm = f S(push(flown + dm)) from dm = 0 (design 4.4): sized with
@@ -2502,9 +2865,20 @@ def build_structure_transform(
     solve's x = 0); mode, the offload mode; pad_cases, the pad's PadLoadSet (the envelope);
     reference_payload_kg, P_ref [kg]; envelope_pad and envelope_pad_key, the pad run's
     name and trajectory key (the records and the memo key).
-    Output: the transform. Raises ValueError for a start with no push and
-    NotImplementedError for a drive other than constant_accel (a flown push inside the
-    transform is step S4b's). The plausibility rule's check (``central_plausibility``) is
+    Output: the transform. A constant_accel push is sized analytically (stage 1's
+    ignition on the track from the run's ignition and push time); a linear_motor push is
+    flown inside every sizing (SP7 step S4b) with the start run's SearchContext
+    (``search_context`` of its ``planar_setup``, as ``offload_problem_factory`` builds the
+    solve's), and its sizing at x = 0 (the full-load stack at P_ref, flown from dm = 0
+    through its fixed point's iterates) is flown once here: a push that fails to release
+    at one of those iterates (the first that fails ends the build; later iterates are not
+    flown) is refused with a ValueError naming the planner's status (the
+    case cannot be sized where the solve and its record start; the experiment still ends
+    with FAILED.txt, now with this message before the case's solve; an offload x > 0
+    whose push does not release stays an infeasible evaluation, PreludeFailure). Raises
+    ValueError for a start with no push and
+    NotImplementedError for any other drive. The plausibility rule's check
+    (``central_plausibility``) is
     taken on this pad at the central coefficients, and its factor for the case's physics
     band end is applied to every sizing when ``settings.plausibility_scaled`` (SP7 step
     S3b; ``plausibility_factor_for``). Frame: the stack axis.
@@ -2517,11 +2891,18 @@ def build_structure_transform(
     assist = setup.assist
     if setup.track is None or isinstance(assist, NoAssist):
         raise ValueError(f"run {start.name!r}: structure sizes the push load, but it has no push")
-    if not isinstance(assist, ConstantAccelAssist):
+    if isinstance(assist, ConstantAccelAssist):
+        t_push = assist.push_time_s(setup.track.length_m)
+        ignition = _push_stage1_ignition_s(setup, start_vehicle, t_push)
+        context = None
+    elif isinstance(assist, LinearMotorAssist):
+        ignition = None
+        context = search_context(setup, start_vehicle, start.run.end)
+    else:
         raise NotImplementedError(
             f"run {start.name!r}: the structural transform sizes a constant_accel push "
-            f"analytically; a {type(assist).__name__} push is flown inside the transform "
-            "in SP7 step S4b, not built yet"
+            "analytically and flies a linear_motor push (SP7 step S4b); the structural "
+            f"transform for a {type(assist).__name__} push is not built"
         )
     masses = stack_masses(full_load_vehicle)
     geometry = build_geometry(masses, layout, coeffs)
@@ -2533,8 +2914,7 @@ def build_structure_transform(
         envelope_cap_g=settings.envelope_cap_g,
     )
     check = central_plausibility(config, masses, pad_cases)
-    t_push = assist.push_time_s(setup.track.length_m)
-    return StructureTransform(
+    transform = StructureTransform(
         settings=settings,
         geometry=geometry,
         envelope=envelope,
@@ -2542,7 +2922,7 @@ def build_structure_transform(
         assist=assist,
         track=setup.track,
         g_eff_mps2=setup.env.g_ref_mps2,
-        stage1_ignition_s=_push_stage1_ignition_s(setup, start_vehicle, t_push),
+        stage1_ignition_s=ignition,
         start_vehicle=start_vehicle,
         mode=mode,
         reference_payload_kg=reference_payload_kg,
@@ -2550,7 +2930,19 @@ def build_structure_transform(
         envelope_pad_key=envelope_pad_key,
         plausibility=check,
         plausibility_factor=plausibility_factor_for(settings, check),
+        push_context=context,
     )
+    if transform.flies_push:
+        try:
+            transform.sizing_at(0.0)
+        except PreludeFailure as exc:
+            raise ValueError(
+                f"run {start.name!r}: the linear motor's push of the full-load stack (x = 0, "
+                f"P_ref {reference_payload_kg:g} kg) fails to release ({exc.args[0]}) at one "
+                "of its fixed point's iterates from dm = 0 (the first that fails ends the "
+                "build): the structural transform needs it to fly"
+            ) from exc
+    return transform
 
 
 def central_plausibility(
@@ -2684,8 +3076,17 @@ def structure_record(
     the rule does not fire on that end or the set is not a physics end) and
     structure_plausibility_scaled (whether dm carries that factor); at x*: structure_dlf
     [-], structure_t_r_s and structure_f_Hz (the rise time [s] and axial frequency [Hz]
-    behind it), structure_n_q_g and structure_n_peak_g [g0], structure_F_peak_N [N],
-    structure_ramp_cost_rel (the constant_accel plateau's raise (a' - a)/a [-]),
+    behind it; for a flown linear-motor push, SP7 step S4b, the drive's own rise time,
+    and structure_dlf the factor (n_peak - n_rest)/(n_q - n_rest) of the charged n_peak,
+    which is under rise_time the larger of the rise formula's peak (factor min(2, 1 +
+    T/(pi t_r))) and the flown history's single-mode bound, under step the larger of n_rest
+    + 2 (n_q - n_rest) and the flown load plus its total variation, and n_q under
+    quasi_static (factor 1)), structure_n_q_g (the largest
+    quasi-static load: constant_accel's plateau, a flown push's largest flown load) and
+    structure_n_peak_g [g0], structure_F_peak_N [N] (a flown push's charged peaks: the
+    rise formula's or the flown history's bound's),
+    structure_ramp_cost_rel (the constant_accel plateau's raise (a' - a)/a [-]; None for
+    a flown push, whose rise is in its trajectory),
     structure_elements (kg per ``<stage>.<element>``; a scaled case's times its factor,
     so they sum to dm), structure_closed_form_kg and structure_ring_kg [kg] (likewise),
     structure_governing (the element with the largest increment: stage, element, push
@@ -2838,6 +3239,93 @@ def structure_assumption(settings: ResolvedStructureCase, envelope_pad: str) -> 
     )
 
 
+def structure_push_assumptions(transform: StructureTransform) -> list[str]:
+    """The assumption line of a structural run whose push is flown (SP7 step S4b; [] for
+    constant_accel's analytic push, so its runs keep their lines), worded by the case's
+    sizing basis and dynamic mode: the push flown on the vehicle at each offload x at
+    P_ref (sizing ``flown``) or on the full-load vehicle (x = 0) whatever x the solve
+    tries (``full_load``, every structure payload case: at P_ref, and a payload case's dm_1
+    at P_1*), carrying each fixed-point iterate of dm, and read at its exact maxima and
+    sub-phase starts; how each case's peak is charged (``rise_time``: the larger of the
+    rise formula with the drive's own t_r and the flown history's phase-free single-mode
+    bound; ``step``: every change as a step, the larger of n_rest + 2 (n_q - n_rest) and
+    the flown load plus its total variation from rest, n + V; ``quasi_static``: no
+    residual; the structure file's assumed real-drive rise time unused); no plateau raise; the
+    release swing from the flown release with the mode's residual; and the reduction's
+    limit (a station load that mixes n and the tank contents is read at the samples
+    only). The run carries it after ``structure_assumption`` (``results_io``)."""
+    assist = transform.assist
+    if not isinstance(assist, LinearMotorAssist):
+        return []
+    t_r = assist.rise_time_s
+    dynamic = transform.settings.dynamic
+    if transform.settings.sizing == STRUCTURE_SIZING_FULL_LOAD:
+        vehicle = (
+            "on the full-load vehicle (x = 0) whatever x the solve tries, at P_ref (a structure "
+            "payload case: at P_ref for dm_0 and at P_1* for the dm_1 its run carries), "
+            "carrying each fixed-point iterate of the modelled mass"
+        )
+    else:
+        vehicle = (
+            "on the vehicle at each offload x at P_ref, carrying each fixed-point iterate of "
+            "the modelled mass"
+        )
+    unused = (
+        "the structure file's assumed real-drive rise time, which stands in for "
+        "constant_accel's step, is not used"
+    )
+    taper = assist.tapered
+    if dynamic == "rise_time":
+        charge = (
+            "each case's peak is the larger of the rise formula n_rest + DLF (n_q - n_rest), "
+            f"DLF = min(2, 1 + T/(pi t_r)) with the drive's own force rise time t_r = {t_r:g} s "
+            "(structure_t_r_s; 2 for a step, t_r = 0), and the phase-free single-mode bound of "
+            "the flown history of n and of the interface force (every step and slope change "
+            "from rest at push start at its worst phase, damping not credited; structure_dlf "
+            f"is the factor the largest charged n carries); {unused}"
+        )
+        release = (
+            ", carrying the larger of the rise formula's residual from the push's largest "
+            "flown load"
+            + (
+                " (plus, after a stop taper, the taper's own residual: its ramp factor over "
+                "the time from its start on the drop it flew)"
+                if taper
+                else ""
+            )
+            + " and the flown history's bound at the release, the slope cut there included"
+        )
+    elif dynamic == "step":
+        charge = (
+            "the dynamic mode step charges every change of the flown load as a step: each "
+            "case's peak is the larger of n_rest + 2 (n_q - n_rest) and the flown load plus "
+            f"its total variation from rest, n + V (the drive's rise time t_r = {t_r:g} s is "
+            f"recorded, not used); {unused}"
+        )
+        release = (
+            ", carrying the larger of n_q - n_rest"
+            + (" (plus the stop taper's drop)" if taper else "")
+            + " and the flown history's total variation"
+        )
+    else:
+        charge = (
+            f"the dynamic mode {dynamic} charges the flown quasi-static loads with no residual "
+            f"(the drive's rise time t_r = {t_r:g} s is recorded, not used); {unused}"
+        )
+        release = ", with no residual"
+    return [
+        "structure: the push is the linear motor's as flown (the planner's track start "
+        f"alone, at the search's final tolerance), {vehicle}, and the sizing reads its exact "
+        "maxima of the felt load n, the interface force, n m_v and n times the stage-1 "
+        "propellant (located on the dense output of every sub-phase) and its states at every "
+        f"sub-phase start; {charge}; no plateau raise is charged (the rise is flown); the "
+        "release swing starts from the load at the flown release (the track end or the "
+        f"release speed){release}; a station load that mixes n and the tank contents is read "
+        "at those samples only (exact on a cold push, whose contents do not change on the "
+        "track)"
+    ]
+
+
 def _structure_flag_line(flag: Mapping[str, Any]) -> str:
     """The run flag of a fired structure flag record (``_flag_record``'s form: name,
     fired, values): ``<name>: <what fired, with its numbers>``. The release, upper-stack
@@ -2870,9 +3358,15 @@ def _structure_flag_line(flag: Mapping[str, Any]) -> str:
             "interstage were sized"
         )
     if name == structure.FLAG_PAYLOAD_LIMIT:
+        compression = v.get(structure.FLOWN_PUSH_RELEASE_COMPRESSION_KEY)
+        after = (
+            ""
+            if compression is None
+            else f", the largest load after the flown release {float(compression):.3g} g0"
+        )
         return (
-            f"{name}: the push's peak axial load {v['n_peak_g']:.3g} g0 and release swing "
-            f"{v['release_swing_g']:.3g} g0 against the payload's axial limits "
+            f"{name}: the push's peak axial load {v['n_peak_g']:.3g} g0{after} and release "
+            f"swing {v['release_swing_g']:.3g} g0 against the payload's axial limits "
             f"{v['limit_axial_min_g']:g} to {v['limit_axial_max_g']:g} g0"
         )
     if name == structure.FLAG_FLIGHT_EXCEEDANCE:

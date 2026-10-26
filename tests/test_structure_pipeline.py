@@ -28,7 +28,8 @@ Fast:
   run's and the case record's ``flags`` (informational, D-SP7-19); a case's overrides
   recorded and named in the provenance, the restated dry mass's source and the
   assumption line (D-SP7-43), which also name the case's sizing, dynamic, entry, margin
-  and cap; a drive other than constant_accel refused naming step S4b, a start without a
+  and cap; a drive other than constant_accel and linear_motor refused (the linear motor's
+  flown push is SP7 step S4b's, tests/test_structure_linear_motor.py), a start without a
   push refused;
 - the configuration: the case field and the experiment block resolve (an outer set's own
   margin and cap, the provenance text, the sweep points inheriting the field, the payload
@@ -574,8 +575,9 @@ def test_transform_refuses_a_start_without_a_push_and_other_drives(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The builder refuses the pad (no push) with a ValueError and any drive other than
-    constant_accel with a NotImplementedError naming step S4b (a flown push inside the
-    transform is S4b's); a resolved case without structure has no transform."""
+    constant_accel and linear_motor with a NotImplementedError (the linear motor's flown
+    push, SP7 step S4b, is tests/test_structure_linear_motor.py's); a resolved case
+    without structure has no transform."""
     st = resolve_structure_settings(StructureCaseConfig(), synthetic_file, "flown", "test")
     pad = sp1_resolved.baseline
     with pytest.raises(ValueError, match="no push"):
@@ -593,7 +595,7 @@ def test_transform_refuses_a_start_without_a_push_and_other_drives(
 
     monkeypatch.setattr(sim, "planar_setup", setup)
     start = sp1_resolved.variants["silo_cold"]
-    with pytest.raises(NotImplementedError, match="S4b"):
+    with pytest.raises(NotImplementedError, match="OtherDrive push is not built"):
         sim.build_structure_transform(
             st, start.to_vehicle(), start, "stage1", synthetic_pad, ss.P_REF_KG,
             envelope_pad="p", envelope_pad_key="k",
@@ -1366,6 +1368,111 @@ def test_record_keys_assumptions_and_resolved_config_only_with_a_structure(
     assert skipped is not None and skipped.structure is None
 
 
+LM_VARIANT = {
+    "assist": {
+        "model": "linear_motor",
+        "stroke_m": 50,
+        "control": "force",
+        "force_max_kN": 22000,
+        "power_max_MW": 5000,
+        "force_rise_time_s": 0.5,
+        "brake_decel_g": 5,
+        "drive_efficiency": 0.5,
+        "track": {"angle_deg": 90, "exit_altitude_m": 0},
+    },
+    "ignition": {"stage1": {"t_ign_s": 0.5, "reference": "release"}},
+}
+"""A linear-motor variant (force law over 50 m; SP7 step S4b) for the pass on fake runs."""
+
+
+def test_a_linear_motor_structural_case_flies_its_push_in_the_pass(
+    fake_pass: SimpleNamespace,
+) -> None:
+    """SP7 step S4b on fake runs (the real transform, its pushes flown): a structural case
+    of a linear-motor variant solves with a flown transform; its record ends with the
+    same STRUCTURE_RECORD_KEYS, structure_t_r_s the drive's 0.5 s (silo_cold's case the
+    file's 0.8 s) and structure_ramp_cost_rel None (silo_cold's positive); its recorded
+    run carries the structure line and then the flown push's line
+    (``sim.structure_push_assumptions``), silo_cold's structural run the structure line
+    alone; the record is JSON-safe and the summary block renders it, with the flown-push
+    note under the case table (STRUCTURE_FLOWN_PUSH_NOTE)."""
+    lm_case = {"name": "lm_st", "of": "lm", "solve": "stage1", "structure": {}}
+    _r, report = _pass([ST_CASE, lm_case], variants={"lm": LM_VARIANT})
+    transforms = dict(fake_pass.solves)
+    assert transforms["lm_st"].flies_push and not transforms["s1_st"].flies_push
+    by = {c["name"]: c for c in report.record["cases"]}
+    n = len(sim.STRUCTURE_RECORD_KEYS)
+    assert tuple(list(by["lm_st"])[-n:]) == sim.STRUCTURE_RECORD_KEYS
+    assert (by["lm_st"]["structure_t_r_s"], by["s1_st"]["structure_t_r_s"]) == (0.5, 0.8)
+    assert by["lm_st"]["structure_ramp_cost_rel"] is None
+    assert by["s1_st"]["structure_ramp_cost_rel"] > 0.0
+    lm_lines = [a for a in report.runs["lm_st"].result.assumptions if a.startswith("structure:")]
+    st_lines = [a for a in report.runs["s1_st"].result.assumptions if a.startswith("structure:")]
+    assert len(st_lines) == 1 and len(lm_lines) == 2
+    assert lm_lines[0].startswith("structure: the dry masses carry")
+    assert lm_lines[1] == sim.structure_push_assumptions(transforms["lm_st"])[0]
+    record = results_io.offload_record(report)
+    json.dumps(results_io.json_safe(record))
+    text = summary.offload_section(record)
+    assert "lm_st" in text and summary.STRUCTURE_FLOWN_PUSH_NOTE in text
+
+
+def test_a_linear_motor_structure_payload_case_flies_its_push_at_full_load(
+    fake_pass: SimpleNamespace,
+) -> None:
+    """Review round 1 (C-P1-01, H-P1-01) on fake runs: a structure payload case of a
+    linear-motor variant (always full_load) builds a flown transform (its record's rise
+    time the drive's 0.5 s and its ramp cost null), sizes the full-load vehicle at P_ref
+    (dm_0) and at P_1* (dm_1, a different push mass, so a different dm; both recorded,
+    dm_0 as structure_dm_x0_kg and dm_1 as structure_dm_kg), and its run carries the
+    payload-case line, the structure line and the flown push's line worded for the
+    full-load sizing (on the full-load vehicle whatever x the solve tries, at P_ref and at
+    P_1* for dm_1; never "at each offload"); the record is JSON-safe, its sizing basis
+    full_load; the summary carries the flown-push note under the payload table."""
+    block = {"file": SYNTHETIC_NAME, "payload_cases": [{"name": "lm_pstar", "of": "lm"}]}
+    exp, veh = _experiment([ST_CASE], block=block, variants={"lm": LM_VARIANT})
+    resolved = _resolve(exp, veh)
+    baseline = _fake_rr(resolved.baseline, P_REF_FAKE)
+    variants = {n: _fake_rr(r, P_REF_FAKE + 1500.0) for n, r in resolved.variants.items()}
+    report = results_io.planar_offload(resolved, baseline, variants)
+    assert report is not None
+    (p,) = report.record["structure_payload_cases"]
+    assert p["name"] == "lm_pstar" and p["status"] == "ok"
+    assert p["structure_sizing"] == "full_load" and p["structure_t_r_s"] == 0.5
+    assert p["structure_ramp_cost_rel"] is None
+    assert p["dm_0_kg"] > 0.0 and p["dm_1_kg"] > 0.0 and p["dm_1_kg"] != p["dm_0_kg"]
+    assert p["structure_dm_x0_kg"] == p["dm_0_kg"] and p["structure_dm_kg"] == p["dm_1_kg"]
+    rr = report.runs["lm_pstar"]
+    lines = [a for a in rr.result.assumptions if a.startswith("structure:")]
+    assert len(lines) == 2 and lines[0].startswith("structure: the dry masses carry")
+    assert "on the full-load vehicle (x = 0) whatever x the solve tries, at P_ref" in lines[1]
+    assert "at P_1* for the dm_1 its run carries" in lines[1]
+    assert "each offload" not in lines[1]
+    record = results_io.offload_record(report)
+    json.dumps(results_io.json_safe(record))
+    assert summary.STRUCTURE_FLOWN_PUSH_NOTE in summary.offload_section(record)
+
+
+def test_a_rise_time_override_on_a_linear_motor_structural_case_is_refused() -> None:
+    """Review round 1 (C-P1-02): a linear motor's dynamic load factor takes the drive's own
+    force_rise_time_s, so an override of the structure file's dynamics.rise_time_s on a
+    structural case of a linear-motor variant (an offload case or a payload case) would be
+    recorded as a design-axis row that changes nothing: refused when the experiment is
+    resolved, naming the drive's own setting; the same override on silo_cold
+    (constant_accel) resolves."""
+    lm_case = {"name": "lm_st", "of": "lm", "solve": "stage1", "structure": {}}
+    over = {"overrides": {"dynamics.rise_time_s": 0.1}}
+    exp, veh = _experiment([ST_CASE, {**lm_case, "structure": over}], variants={"lm": LM_VARIANT})
+    with pytest.raises(ValueError, match="vary force_rise_time_s instead"):
+        _resolve(exp, veh)
+    block = {"file": SYNTHETIC_NAME, "payload_cases": [{"name": "p", "of": "lm", **over}]}
+    exp, veh = _experiment([ST_CASE], block=block, variants={"lm": LM_VARIANT})
+    with pytest.raises(ValueError, match="does not act on run 'lm'"):
+        _resolve(exp, veh)
+    exp, veh = _experiment([{**ST_CASE, "structure": over}], variants={"lm": LM_VARIANT})
+    assert _resolve(exp, veh) is not None
+
+
 def test_fired_structure_flags_reach_the_run_and_the_case_record(
     fake_pass: SimpleNamespace,
 ) -> None:
@@ -1419,7 +1526,9 @@ def test_a_failed_structural_solve_still_records_its_structure(
     """A structural case whose solve ends search_failed writes no run, and its case record
     still carries every structure key: structure_charged, the settings, dm at x = 0 and
     the file, every value at x* None and no flag (an unsolved structural case never reads
-    as an uncharged one)."""
+    as an uncharged one). Its null ramp cost does not read as a flown push (review round
+    2, C-P2-01 and H-P2-01): the constant_accel summary prints no
+    STRUCTURE_FLOWN_PUSH_NOTE."""
     fake_pass.fail.add("s1_st")
     _resolved, report = _pass([ST_CASE])
     (rec,) = report.record["cases"]
@@ -1431,9 +1540,12 @@ def test_a_failed_structural_solve_still_records_its_structure(
     assert rec["structure_dm_x0_kg"] > 0.0 and rec["structure_file"] == SYNTHETIC_NAME
     for key in ("structure_dm_kg", "structure_dlf", "structure_elements", "structure_iterations"):
         assert rec[key] is None, key
-    assert rec["structure_flags"] == []
+    assert rec["structure_ramp_cost_rel"] is None and rec["structure_flags"] == []
+    assert not summary.structure_push_is_flown(rec)
     record = results_io.offload_record(report)
-    assert "s1_st" in summary.offload_section(record) and cli.offload_lines(record)
+    text = summary.offload_section(record)
+    assert "s1_st" in text and cli.offload_lines(record)
+    assert summary.STRUCTURE_FLOWN_PUSH_NOTE not in text
 
 
 def test_arms_size_on_their_own_perturbed_pad(

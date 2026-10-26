@@ -67,6 +67,7 @@ from launchsim.metrics import (
     _track_rows,
     linear_motor_facility_m,
     linear_motor_metrics,
+    linear_motor_track_peaks,
     stall_unavailable_metrics,
 )
 from launchsim.orbit import orbit_elements
@@ -988,7 +989,10 @@ def planar_track_metrics(
     linear-motor push adds ``metrics.LINEAR_MOTOR_METRICS`` after the push settings
     (``metrics.linear_motor_metrics``; its net_accel_* stay None; its facility length
     from its release position, ``metrics.linear_motor_facility_m``); no other drive
-    gains a key. A ``drive_stall`` run writes ``metrics.STALL_UNAVAILABLE_TRACK_METRICS`` as
+    gains a key. On a linear-motor push that did not stall the felt-g and interface-force
+    peaks come from the dense output instead of the sampled rows
+    (``metrics.linear_motor_track_peaks``, SP7 step S4b, KI-046; the keys and their order
+    unchanged). A ``drive_stall`` run writes ``metrics.STALL_UNAVAILABLE_TRACK_METRICS`` as
     None. Frame: the flat track frame with constant g_eff."""
     rows = frame[frame["phase"] == ASSIST_KIND]
     phases = trace.assist_phases()
@@ -1037,6 +1041,8 @@ def planar_track_metrics(
         "peak_track_normal_g": max(n_v, n_c),
     }
     out.update({alias: out[canonical] for alias, canonical in TRACK_METRIC_ALIASES.items()})
+    if isinstance(assist, LinearMotorAssist) and trace.status != DRIVE_STALL:
+        out.update(linear_motor_track_peaks(trace))  # SP7 step S4b: exact peaks (KI-046)
     out.update(stall_unavailable_metrics(trace))
     out.update(push_setting_metrics(assist, track))
     if isinstance(assist, LinearMotorAssist):  # SP7 step S4: that drive only
