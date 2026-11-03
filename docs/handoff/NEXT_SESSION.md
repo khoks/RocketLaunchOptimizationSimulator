@@ -54,6 +54,12 @@ per SESSION_PROTOCOL.md section 10 from the step table.
 - 2026-10-25: step S5 closed (460c4d6; the sealed shaft). D-SP7-54: file B's sealed bore 5.24 m
   (clears the 5.2 m fairing). Step S5a added (the sealed shaft's wording at the sources and the
   readers). Next: S5a, checkpoint 2, S6b, S7b, S7c, S8, C1, C2.
+- 2026-11-03: step S5a closed (2bd40bd; the sealed shaft's run-level lines and readers;
+  KI-077 and KI-079 closed, KI-081 to KI-087 opened). A temp-folder cleanup on 2026-11-02
+  deleted the session scratch files (deviation 53); briefs and step scripts now live in
+  C:/Users/rahul/.claude/projects/D--DEV-ClaudeProjects-SpaceRocketOptimization/sp7work/
+  (outside the repository: s6b/BRIEF.md, s7c/BRIEF.md, step_loop.js). Next: checkpoint 2,
+  S6b, S7b, S7c, S8, C1, C2.
 - Resume point: the phase file's section 11, entry "2026-10-19 (session 2)" and its S7a close line. If a sweep
   directory newer than 20261016T171522Z exists under results/silo_structure_2d/, check it
   as item 1 of section 6 says (finished, interrupted or raised); the reproduction check of

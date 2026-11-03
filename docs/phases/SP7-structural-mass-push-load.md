@@ -852,7 +852,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S4a | Release at a target speed; the readers (replay drive clause, scene push labels); the app lists linear-motor and structural directories; the force-against-speed figure; conditional summary rows | phases/prelude.py, phases/engine.py, replay.py, scene.py, summary.py, plots.py, app.py, physics.md | event at sdot = v_release with s from the closed form; track_end runs bit-identical; a scratch linear-motor run's replay and scene pages reviewed against metrics.json; the app started on that scratch root lists and plays it with no 500; full suite; gallery regenerated | [x] | 7cdc24a |
 | S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [x] | b0fcc31 |
 | S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [x] | 460c4d6 |
-| S5a | Sealed-shaft wording at the sources and the readers (added at S5's gate: KI-077, KI-079) | sim.py, phases/prelude.py, replay.py, scene.py, physics.md | no vented or constant_accel byte moves; a scratch sealed run's summary, replay and scene pages name the sealed shaft; honesty and visual review | [ ] | |
+| S5a | Sealed-shaft wording at the sources and the readers (added at S5's gate: KI-077, KI-079) | sim.py, phases/prelude.py, replay.py, scene.py, physics.md | no vented or constant_accel byte moves; a scratch sealed run's summary, replay and scene pages name the sealed shaft; honesty and visual review | [x] | 2bd40bd |
 | (checkpoint 2) | the drive realism complete; an in-progress handoff point | | | | |
 | S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [ ] | |
 | S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [ ] | |
@@ -1458,6 +1458,27 @@ option fairly with its cost)
   pass the 5.2 m fairing (D-SP7-54: file B's bore 5.24 m) and that two run-level lines and the
   readers still call a sealed shaft vented: a step S5a is added for that wording before S6b
   (deviation 52). KI-076 to KI-080 opened. Next: S5a, checkpoint 2, S6b.
+- Step S5a closed (2026-11-03; commit 2bd40bd). The sealed shaft's wording: a sealed planar
+  run's own track-push line (`sim.PLANAR_SEALED_TRACK_PUSH_ASSUMPTION`: the column's net
+  force on the carriage, the shaft open at its top, no drag, q or Mach on the vehicle during
+  the push, the bore checked against the diameter of the run's A_ref only), the early-release
+  line's sealed clauses, and the readers (replay's `shaft_kind`, the drag, close-up and drive
+  clauses with the column's peak force and work; the scene's display-only list and a sealed
+  run's note against the 7 m shaft drawn; the app's `pair_shafts`). Workflow: one
+  implementer; physics, compliance, honesty and visual reviewers in three passes (31, 9 and 9
+  findings; 4, 0 and 0 majors), three fix rounds (2 rejected with reasons: a finding that asked
+  for no change, and the configs/display note the brief kept out); the gate: the run-level
+  lines on a scratch experiment (pad, vented, sealed, sealed with a target-speed release) read
+  against metrics.json and the same experiment under HEAD's code (identical metrics, events
+  and series; summary.md differs only in the sealed lines and the vented line's run tag), the
+  vented and constant_accel digests under HEAD and the tree, the readers' pages, the app on
+  the scratch root (17 routes 200, no 500), the gallery's six pages byte-identical, fast suite
+  2210, ruff, the exact 1-D golden tier, the planar pins and capture, the golden-dump field
+  lists, the frozen files and replay.html's sha256, the touched readers' slow tests: all pass.
+  The full slow tier was not run (the brief named the readers' slow tests; 17 of 53 slow
+  tests ran). A temp-folder cleanup deleted the step's brief and pass 1-2 reports while the
+  workflow was paused at a usage limit (deviation 53). KI-077 and KI-079 closed; KI-081 to
+  KI-087 opened. Next: checkpoint 2, S6b.
 
 ## 12. Deviations from the plan
 
@@ -1975,6 +1996,17 @@ Checkpoint 1 and step S6a (2026-10-16):
     readers (replay's vented test, the scene's display-only list) still describe a sealed shaft
     as vented; since file B registers a sealed variant, the wording is fixed in an added step
     S5a before S6b rather than left to S7c. Accepted by the session.
+53. **Step S5a's files beyond the row, and its reports rebuilt** (the S5a row names sim.py,
+    phases/prelude.py, replay.py, scene.py and physics.md): the change also reached app.py
+    (`pair_shafts`), assist/linear_motor.py (the drive's shaft line), metrics_planar.py,
+    phases/planar.py, plots.py and run_data.py (the sealed wording where they state the shaft),
+    with no vented or constant_accel byte moved. The workflow paused at a usage limit during
+    review pass 3; on 2026-11-02 a temp-folder cleanup deleted the step's brief and its pass
+    1-2 review and fix reports (the workflow journal survived). The brief was restored from
+    the session record, the reports were rebuilt from the journal's result lines, and the
+    workflow resumed from the journal (passes 1-2 replayed, pass 3 and the gate run live).
+    Briefs, step scripts and reports now live outside the temp folder. Accepted by the
+    session.
 
 ## 13. Prompt to start this phase
 
