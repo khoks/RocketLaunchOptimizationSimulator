@@ -12,12 +12,13 @@ runs. The page replays the recorded time series; nothing is re-simulated in it.
 ``replay_data`` builds the embedded data set: per run the series resampled on a common
 clock (the time after release: REPLAY_EARLY_DT_S steps up to REPLAY_EARLY_END_S, then
 REPLAY_LATE_DT_S), q and Mach as JSON null where they are undefined (on the push inside
-a vented shaft, where no air drag is modelled), the events of events.csv and the headline
-metrics of metrics.json, plus the text of the page (subtitle, run labels, notes,
-caveats) generated from the run data. Run selection and the output-path rule are the
-shared ones of run_data, which ``launchsim animate`` uses too (run_data.run_names: the
-baseline plus up to three variants in summary order; at most run_data.MAX_RUNS runs; the
-default output goes to the current directory, never into a results tree).
+the shaft, vented or sealed below the carriage, where no air drag is modelled), the
+events of events.csv and the headline metrics of metrics.json, plus the text of the page
+(subtitle, run labels, notes, caveats) generated from the run data. Run selection and the
+output-path rule are the shared ones of run_data, which ``launchsim animate`` uses too
+(run_data.run_names: the baseline plus up to three variants in summary order; at most
+run_data.MAX_RUNS runs; the default output goes to the current directory, never into a
+results tree).
 
 The reading itself lives in run_data.py (SP2 step A1): the file readers, the directory
 check, run selection, ``run_source``, the series and event readers, the resampling
@@ -70,14 +71,17 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from launchsim import __version__, run_data
 from launchsim.assist.linear_motor import (
+    COLUMN_STALL_TEXT,
     CONTROL_ACCELERATION,
     CONTROL_FORCE,
     RELEASE_TRIGGER_TARGET_SPEED,
     RELEASE_TRIGGER_TRACK_END,
+    SHAFT_SEALED,
 )
 from launchsim.compare import CHECK_NA
 from launchsim.config import OFFLOAD_GROSS_MODES
@@ -101,6 +105,7 @@ from launchsim.summary import (
 )
 from launchsim.units import (
     from_g,
+    j_to_mj,
     kg_to_t,
     km_to_m,
     kn_to_n,
@@ -180,6 +185,13 @@ RELEASE_TRACK_END = RELEASE_TRIGGER_TRACK_END
 (``linear_motor.RELEASE_TRIGGER_TRACK_END``, the same object)."""
 VENTED_SHAFT = "vented"
 """assist.shaft of a silo whose air column is not modelled (no shaft drag on the push)."""
+SEALED_SHAFT = SHAFT_SEALED
+"""assist.shaft of a linear motor whose carriage seals a trapped air column below it (SP7
+step S5; ``linear_motor.SHAFT_SEALED``, the same object): its column acts on the carriage
+during the push, and above the carriage the shaft is open at its top (the silo mouth when
+the track exit is at or below the ground, the track exit when that exit is above it:
+``shaft_open_at_mouth``), and the model computes no air drag there on the push (SP7 step
+S5a: the page names it, never as vented)."""
 MOUTH_AXIS_TOL_M = 0.5
 """|downrange| [m] at the mouth crossing (the ``shaft_exit`` event; the page's events
 carry the downrange to 1 m) below which the close-up note says the vehicle left the
@@ -922,6 +934,20 @@ def below_mouth(assist: Mapping[str, Any]) -> bool:
     return is_mouth(angle, exit_m)
 
 
+def shaft_open_at_mouth(assist: Mapping[str, Any]) -> bool:
+    """True when the shaft above a sealed carriage is open at the silo mouth (SP7 step S5a
+    fix round 3, P3H-m1): a vertical track (``is_vertical``) whose exit is at or below the
+    ground (assist.track exit_altitude_m [m] at most ATOL_M, the config's default 0 when
+    absent): at an exit below the ground the flight model flies the vehicle on in the shaft
+    above it up to the ground (``phases.planar``'s ``_in_shaft``). False for an exit above
+    the ground, where the bore, which the column needs over the whole stroke, is open at
+    the track exit."""
+    if not is_vertical(dict(assist)):
+        return False
+    exit_m = _finite(_mapping(assist.get("track")).get("exit_altitude_m"))
+    return exit_m is None or exit_m <= ATOL_M
+
+
 def release_text(
     m: Mapping[str, Any], v_release_mps: float | None = None, mouth: bool = False
 ) -> str | None:
@@ -1016,9 +1042,13 @@ def motor_acceleration_text(cfg: Mapping[str, Any], m: Mapping[str, Any] | None 
     ``cfg`` and the run's metrics m (SP7 step S4a fix rounds 1 and 2): under the force
     law it is not prescribed (it follows from the force and power limits, the mass and
     the thrust). Under the acceleration law: a stalled push (status DRIVE_STALL) never
-    moved; a push that stopped on the track (no ``release_trigger``) has no release to
-    hold a command to; with no cap bound (``cap_bound`` False) the push held its command
-    a_cmd from the end of its rise to the release (scaled over a stop taper) only when it
+    moved (for a stall by the sealed shaft's rule, ``column_stall``, the text says it was
+    stopped against the column at the track end, SP7 step S5a fix round 1; S4's stall, any
+    shaft, says the drive and the thrust cannot lift the stack: fix round 3, P3C-m1); a
+    push that stopped on the
+    track (no ``release_trigger``) has no release to hold a command to; with no cap bound
+    (``cap_bound`` False) the push held its command a_cmd from the end of its rise to the
+    release (scaled over a stop taper) only when it
     released after the rise (``push_time_s`` > t_r by more than RISE_END_TIE_REL), else it
     released by the end of its rise and never held it; with a cap bound (True, which
     records no timing: a cap can bind inside the rise, or bind and let go) it flew its
@@ -1039,10 +1069,15 @@ def motor_acceleration_text(cfg: Mapping[str, Any], m: Mapping[str, Any] | None 
         cap = cfg.get("cap_bound")
         status = m.get("status")
         if status == DRIVE_STALL_STATUS:
+            why = (
+                "the drive at its force limit and the thrust at push start cannot hold the "
+                "stack against the sealed shaft's column at the track end"
+                if column_stall(m)  # SP7 step S5a fix round 1, P1-m4; else S4's stall, any shaft
+                else "the drive at its force limit and the thrust cannot lift the stack"
+            )
             return (
-                f"the push never started (status {DRIVE_STALL_STATUS}: the drive at its force "
-                "limit and the thrust cannot lift the stack), so it flew no command and no "
-                "push acceleration is quoted"
+                f"the push never started (status {DRIVE_STALL_STATUS}: {why}), so it flew no "
+                "command and no push acceleration is quoted"
             )
         if m and m.get("release_trigger") is None:
             stopped = f" (status {status})" if isinstance(status, str) else ""
@@ -1359,17 +1394,258 @@ def carriage_mass_kg(assist: Mapping[str, Any], m: Mapping[str, Any]) -> float |
     return None if tonnes is None else float(t_to_kg(tonnes))
 
 
-def is_vented(assist: Mapping[str, Any]) -> bool:
-    """True when a run's shaft is vented (assist.shaft). No metric records it, though a
-    sealed shaft's run (SP7 step S5, a linear motor's ``shaft: sealed``) writes
-    ``piston_work_J``; this reads a sealed block as not vented, and the page does not yet
-    name the sealed shaft's trapped column (open for a later step). A linear-motor
-    block that leaves the key out is vented (SP7 step S4a: its config's default, and
-    its only shaft until S5); for any other drive a missing key reads as
-    before (not stated). After a release below the mouth the planar flight computes drag,
-    q and Mach in the rest of the shaft (``closeup_notes``)."""
+def shaft_kind(assist: Mapping[str, Any]) -> str | None:
+    """The shaft of a run's push from its assist block (resolved_config.yaml
+    ``assist.shaft``; SP7 step S5a): VENTED_SHAFT, SEALED_SHAFT (a linear motor's ``shaft:
+    sealed``, SP7 step S5), another recorded string as it stands, or None when the block
+    states none (a pad; a constant_accel block that leaves the key out: not stated). A
+    linear-motor block that leaves the key out is vented (SP7 step S4a: its config's
+    default). No metric records the shaft (a sealed push's metrics carry
+    ``piston_work_J``)."""
     default = VENTED_SHAFT if assist.get("model") == LINEAR_MOTOR_MODEL else None
-    return assist.get("shaft", default) == VENTED_SHAFT
+    shaft = assist.get("shaft", default)
+    return shaft if isinstance(shaft, str) else None
+
+
+def is_vented(assist: Mapping[str, Any]) -> bool:
+    """True when a run's shaft is vented (``shaft_kind``: a sealed block is not, SP7 step
+    S5a reads it with ``is_sealed``; for a drive other than the linear motor a missing key
+    reads as not stated). After a release below the mouth the planar flight computes drag,
+    q and Mach in the rest of the shaft (``closeup_notes``)."""
+    return shaft_kind(assist) == VENTED_SHAFT
+
+
+def is_sealed(assist: Mapping[str, Any]) -> bool:
+    """True when a run's shaft is sealed below the carriage (``shaft_kind`` SEALED_SHAFT;
+    SP7 step S5a): its trapped column acted on the carriage during the push, and above the
+    carriage the shaft is open at its top (the silo mouth when the track exit is at or below
+    the ground, the track exit when that exit is above it: ``shaft_open_at_mouth``), and the
+    model computes no air drag there on the push."""
+    return shaft_kind(assist) == SEALED_SHAFT
+
+
+def sealed_shaft_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str, Any]:
+    """A sealed shaft's push as data (SP7 step S5a): ``bore_m`` [m], ``gap_m`` [m] (h_0)
+    and ``gamma`` from the assist block of resolved_config.yaml (shaft_bore_m, shaft_gap_m,
+    shaft_gamma), and from the run's metrics (metrics.json; ``metrics.SEALED_SHAFT_METRICS``)
+    ``force_peak_N`` [N] (piston_force_peak_N: the column's force on the carriage at the
+    furthest point the push reached), ``work_J`` [J] (piston_work_J: the work done against
+    the column) and ``pressure_release_pa`` [Pa] (bore_pressure_release_pa: the column's
+    pressure at the release); each None when it is not recorded."""
+    return {
+        "bore_m": _finite(assist.get("shaft_bore_m")),
+        "gap_m": _finite(assist.get("shaft_gap_m")),
+        "gamma": _finite(assist.get("shaft_gamma")),
+        "force_peak_N": _finite(m.get("piston_force_peak_N")),
+        "work_J": _finite(m.get("piston_work_J")),
+        "pressure_release_pa": _finite(m.get("bore_pressure_release_pa")),
+    }
+
+
+def sealed_geometry_text(cfg: Mapping[str, Any]) -> str:
+    """'a <d> m bore over a <h_0> m gap' of ``sealed_shaft_settings`` data ``cfg`` (the
+    resolved config's bore and gap; '' when either is missing)."""
+    bore, gap = cfg.get("bore_m"), cfg.get("gap_m")
+    if bore is None or gap is None:
+        return ""
+    return f"a {bore:g} m bore over a {gap:g} m gap"
+
+
+def plain_figures(value: float, digits: int = 4) -> str:
+    """``value`` to ``digits`` significant figures in plain positional notation, never in
+    exponent notation (SP7 step S5a fix round 1, P1-m5): Python's '.<digits>g' where that
+    has no exponent ('2.18', '201.7', '120'), else the same figures written out
+    positionally (``numpy.format_float_positional``: '12350' for 12345.6, '0.00001234'
+    for 1.234e-5). Pure."""
+    text = f"{value:.{digits}g}"
+    if "e" not in text:
+        return text
+    return np.format_float_positional(
+        value, precision=digits, unique=False, fractional=False, trim="-"
+    )
+
+
+def column_stall(m: Mapping[str, Any]) -> bool:
+    """True when a run stopped at push start by the sealed shaft's stall rule (SP7 step S5a
+    fix round 1, P1-m4): status DRIVE_STALL_STATUS and a flag carrying
+    ``linear_motor.COLUMN_STALL_TEXT`` (the drive at F_max and the push-start thrust
+    outweigh the stack's weight but not the weight and the column's force at the track
+    end, F_p(L)); False for S4's stall (the stack not lifted at all) and every other run."""
+    flags = m.get("flags")
+    return (
+        m.get("status") == DRIVE_STALL_STATUS
+        and isinstance(flags, list)
+        and any(isinstance(f, str) and COLUMN_STALL_TEXT in f for f in flags)
+    )
+
+
+COLUMN_STALL_CLAUSE = (
+    "the stall guard counts the column's force at the track end, F_p(L), against the "
+    "drive at F_max and the thrust at push start, and it stopped this run although they "
+    "outweigh the stack's weight (a conservative rule: such a push would have started, and "
+    "whether it would then have stopped in the shaft or reached its release is not "
+    "computed; the run's drive_stall flag gives the numbers and what the rule does not "
+    "credit)"
+)
+"""Why a sealed shaft's column stall never moved (``sealed_column_text``; SP7 step S5a fix
+round 1, P1-m4; docs/physics.md, "The sealed shaft", Stall against the column). Fix round
+2 (P2-m1): a push the rule stops could stop in the shaft as well as reach its release (a
+cold step push reaches the track end only when the drive's surplus over the weight is at
+least W_p(L)/L; the flag says 'the push could stop in the shaft'), so the clause says
+which one is not computed, never that it might have reached the track end."""
+
+
+def sealed_column_text(cfg: Mapping[str, Any], m: Mapping[str, Any]) -> str:
+    """What a sealed shaft's trapped column did on one push, in words (SP7 step S5a), from
+    ``sealed_shaft_settings`` data ``cfg`` and the run's metrics m: 'the trapped air column
+    (a <d> m bore over a <h_0> m gap: resolved_config.yaml) acted on the carriage against
+    the motion with up to <F> MN (piston_force_peak_N), and the push did <W> MJ of work
+    against it, drive work the stack does not receive (piston_work_J: not dissipated in
+    the model)' (four significant figures, never in exponent notation: ``plain_figures``);
+    for a stalled push (status DRIVE_STALL_STATUS) 'did no work, since the push never
+    moved', and, stopped by the sealed shaft's rule (``column_stall``), '; ' and that the
+    stall guard counted the column's force at the track end against the drive
+    (COLUMN_STALL_CLAUSE; fix round 2, P2-m1, P2H-m3, V2-2: a semicolon, not a chain of
+    colons); without the two metrics (a run with no push record) that metrics.json holds
+    neither. Numbers from metrics.json and the resolved config only, never recomputed
+    here."""
+    geometry = sealed_geometry_text(cfg)
+    text = "the trapped air column" + (f" ({geometry}: resolved_config.yaml)" if geometry else "")
+    if m.get("status") == DRIVE_STALL_STATUS:
+        text += " did no work, since the push never moved"
+        return f"{text}; {COLUMN_STALL_CLAUSE}" if column_stall(m) else text
+    force, work = cfg.get("force_peak_N"), cfg.get("work_J")
+    if force is None or work is None:
+        return (
+            f"{text} acted on the carriage against the motion (its force and work are not in "
+            "metrics.json)"
+        )
+    return (
+        f"{text} acted on the carriage against the motion with up to "
+        f"{plain_figures(float(n_to_mn(force)))} MN (piston_force_peak_N), and the push did "
+        f"{plain_figures(float(j_to_mj(work)))} MJ of work against it, drive work the stack "
+        "does not receive (piston_work_J: not dissipated in the model)"
+    )
+
+
+def sealed_law_text(control: Any, cap_bound: Any = None) -> str | None:
+    """What a sealed shaft's column does to a push under its control law (SP7 step S5a;
+    docs/physics.md, "The sealed shaft", Where it acts; fix round 1, V2, V4, H-m4): under
+    the force law the drive's force is set by its law, not by the column, so the column
+    slows the stack and lowers the interface force by (m_v/M) F_p against a vented shaft
+    at the same state; under the acceleration law the drive's force rises by the column's
+    F_p while no cap binds, so the stack's motion and the interface force are those of a
+    vented shaft at the same state, and by ``cap_bound`` (the run's push_cap_bound): False,
+    no cap bound, so the column did not slow this push; True, a cap bound on this push,
+    and where it bound the column slowed the stack; unrecorded (None), where a cap binds
+    the column slows the stack. None for a law not recorded."""
+    if control == CONTROL_FORCE:
+        return (
+            "under the force law the drive's force is set by its law, not by the column, so "
+            "the column slows the stack and lowers the interface force by (m_v/M) F_p "
+            "against a vented shaft at the same state"
+        )
+    if control != CONTROL_ACCELERATION:
+        return None
+    text = (
+        "under the acceleration law the drive's force rises by the column's F_p while no cap "
+        "binds, so the stack's motion and the interface force are those of a vented shaft at "
+        "the same state"
+    )
+    if cap_bound is False:
+        return f"{text}; no cap bound, so the column did not slow this push"
+    if cap_bound is True:
+        return f"{text}; a cap bound on this push, and where it bound the column slowed the stack"
+    return f"{text}, and where a cap binds the column slows the stack"
+
+
+SEALED_CAVITY_TEXT = (
+    "the cavity between the vehicle's base and the braking carriage, which still seals the "
+    "bore below it, is not modelled (inferred: a suction on the vehicle's base, which would "
+    "slow it, so its speed after the release is biased high, and the exhaust of a stage lit "
+    "in the cavity, which would act the other way)"
+)
+"""What a sealed push released before the track end leaves out after the release, with
+the direction of each inferred effect (SP7 step S5a, fix round 1 H-m5 and P1-m3; the run's
+early-release line and the drive's third sealed line). The cushion under a fall back onto
+the carriage is SEALED_CUSHION_TEXT, said only of a run whose flight ended on its parked
+carriage (fix round 2, P2H-m1)."""
+SEALED_CUSHION_TEXT = (
+    "on its fall back onto the parked carriage the air the vehicle compressed above the "
+    "carriage, a cushion against the fall, is not modelled either (inferred: the speed of "
+    "that impact is biased high)"
+)
+"""What a sealed push released before the track end whose flight ended on its parked
+carriage (``fell_onto_carriage``) leaves out of that impact (SP7 step S5a fix round 2,
+P2H-m1): the model has a fall back onto the carriage only where the parked carriage is
+the flight's floor below the ground (``prelude.shaft_floor_m``); every other run's fall
+follows the obstacle-free path, so it gets no cushion clause."""
+
+
+def fell_onto_carriage(record: Mapping[str, Any], run_flags: Sequence[Any]) -> bool:
+    """True when a run's flight ended on its parked carriage (SP7 step S5a fix round 2,
+    P2H-m1): the page record has an impact inside the shaft (``fell_back_in_shaft``) and
+    the run's ``prelude.SHAFT_FALLBACK`` flag logs it there (``shaft_impact_words`` is
+    SHAFT_CARRIAGE_WORDS); False for a stop at the apex below a carriage parked above it,
+    an impact not placed by a flag, and every other run."""
+    return (
+        fell_back_in_shaft(record) is not None
+        and shaft_impact_words(run_flags) == SHAFT_CARRIAGE_WORDS
+    )
+
+
+def sealed_closeup_note(
+    name: str,
+    assist: Mapping[str, Any],
+    m: Mapping[str, Any],
+    early: bool,
+    *,
+    fell_on_carriage: bool = False,
+) -> str:
+    """The close-up sentence of a sealed-shaft run ``name`` (SP7 step S5a, KI-077): its
+    shaft sealed below the carriage, what the trapped column did (``sealed_column_text``:
+    the bore and gap from resolved_config.yaml, its peak force and work from metrics.json),
+    the shaft open above the carriage, at the mouth of a vertical silo whose track exit is
+    at or below the ground (``shaft_open_at_mouth``: above a buried exit the flight goes on
+    in the shaft up to the mouth; fix round 3, P3H-m1), else at the track exit, above the
+    ground (fix round 1, P1-m2: the column acts over the whole stroke, so the bore runs to
+    the track exit), with no air drag, dynamic pressure or Mach number computed in it on
+    the push; for a push released at its release speed (``early``), the flight after it
+    computed as in the open atmosphere (in the rest of the shaft below the mouth of an exit
+    at the ground, ``below_mouth``; in the rest of the track and the shaft above it at a
+    buried exit; else over the rest of the track) and the cavity under the
+    vehicle left out (SEALED_CAVITY_TEXT), and, for one whose flight ended on its parked
+    carriage (``fell_on_carriage``, from ``fell_onto_carriage``), the cushion of that fall
+    left out (SEALED_CUSHION_TEXT; fix round 2, P2H-m1). A stalled push (status
+    DRIVE_STALL_STATUS) never moved, so its sentence ends after the column's text (fix round
+    2, P2H-m3, V2-2). Never 'vented'."""
+    cfg = sealed_shaft_settings(assist, m)
+    text = f"For {name} the shaft is sealed below the carriage: {sealed_column_text(cfg, m)}"
+    if m.get("status") == DRIVE_STALL_STATUS:
+        return text + "."
+    mouth = below_mouth(assist)
+    open_mouth = shaft_open_at_mouth(assist)
+    top = "the mouth" if open_mouth else "the track exit"
+    text += (
+        f"; above the carriage the shaft is open at {top}, and no air drag, dynamic pressure "
+        "or Mach number is computed inside it on the push"
+    )
+    if early:
+        where = "below the mouth" if mouth else "before the track end"
+        if mouth:
+            rest = "in the rest of the shaft"
+        elif open_mouth:  # a buried exit: the shaft goes on above it (fix round 3, P3H-m1)
+            rest = "in the rest of the track and the shaft above it"
+        else:
+            rest = "over the rest of the track"
+        text += (
+            f"; after its release {where} the flight {rest} is computed as in the open "
+            "atmosphere, with drag, dynamic pressure and Mach number (no shaft flow model, no "
+            f"walls), and {SEALED_CAVITY_TEXT}"
+        )
+        if fell_on_carriage:
+            text += f"; {SEALED_CUSHION_TEXT}"
+    return text + "."
 
 
 def kicked(m: Mapping[str, Any]) -> bool:
@@ -1392,7 +1668,9 @@ def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
     """The ground start of a run: 'pad start' or the assist geometry, drive (the net
     acceleration of ``push_accel_g`` for the prescribed drive; for the linear motor its
     law and limits in brief, ``linear_motor_law_text``, SP7 step S4a, the acceleration
-    law's command named as a command), carriage mass and exhaust impingement fraction
+    law's command named as a command), a sealed shaft with its bore and gap ('sealed
+    shaft (a <d> m bore over a <h_0> m gap)', SP7 step S5a; nothing for any other shaft),
+    carriage mass and exhaust impingement fraction
     (when non-zero) and exit speed (for the linear motor said to be measured, with a
     release speed not reached, or, released at its release speed before the track end,
     'released at <v> m/s (measured) <d> m below the mouth': ``motor_exit_text``), from
@@ -1418,6 +1696,9 @@ def assist_text(assist: dict[str, Any], m: dict[str, Any]) -> str:
         law = linear_motor_law_text(linear_motor_settings(assist, m), short=True)
         drive = f"linear motor ({law})"
     parts = [where, drive]
+    if is_sealed(assist):  # SP7 step S5a: a vented run's line is unchanged
+        geometry = sealed_geometry_text(sealed_shaft_settings(assist, m))
+        parts.append("sealed shaft" + (f" ({geometry})" if geometry else ""))
     carriage = _finite(assist.get("carriage_mass_t"))
     if carriage is not None and carriage > 0.0:
         parts.append(f"{carriage:g} t carriage")
@@ -1512,10 +1793,16 @@ def site_tags(base_cfg: Mapping[str, Any]) -> list[str]:
 # ------------------------------------------------------------------ page text
 
 
-def _names(names: Sequence[str]) -> str:
-    """'a', 'a and b', 'a, b and c'."""
+def join_names(names: Sequence[str]) -> str:
+    """The run names ``names`` (one at least) as a list in words: 'a', 'a and b', 'a, b and
+    c'; IndexError for an empty sequence (every caller passes one or more). Public since
+    SP7 step S5a fix round 1 (C-m4), so the scene's lists read the same. Pure."""
     items = list(names)
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+_names = join_names
+"""The module's own name for ``join_names``."""
 
 
 def dry_mass_slopes(metrics: dict[str, Any]) -> dict[str, tuple[float, float, float]]:
@@ -1824,26 +2111,40 @@ def _unless_all(names: Sequence[str], assisted: Sequence[str]) -> str:
 
 SHAFT_NO_DRAG = "the shaft has no air drag"
 """The vented-shaft clause of ``drive_caveat`` (``_shaft_drag_clause``)."""
+SHAFT_VENTED_NO_DRAG = "the vented shaft has no air drag"
+"""The vented-shaft clause of ``drive_caveat`` on a page that also shows a sealed-shaft run
+(SP7 step S5a: each shaft named), in place of SHAFT_NO_DRAG; a page without a sealed run
+keeps SHAFT_NO_DRAG byte for byte."""
+SHAFT_SEALED_NO_DRAG = "the sealed shaft has no air drag above the carriage"
+"""The sealed-shaft clause of ``drive_caveat`` (SP7 step S5a, KI-077): the sealed runs
+named in their own clause, never counted as vented; the drive sentence of each says that
+its shaft is sealed below the carriage and what its trapped column did
+(``sealed_column_text``)."""
 
 
 def _shaft_drag_clause(
-    vented: Sequence[str], push_only: Sequence[str], assisted: Sequence[str]
+    names: Sequence[str],
+    push_only: Sequence[str],
+    assisted: Sequence[str],
+    clause: str = SHAFT_NO_DRAG,
 ) -> str:
-    """The vented-shaft clause of ``drive_caveat`` (one clause since SP7 step S4a fix
-    round 2): SHAFT_NO_DRAG for the ``vented`` runs (named unless every assisted run is
-    one, ``_unless_all``), those of ``push_only`` (released at their release speed below
-    the mouth, whose flight in the shaft after the release is computed as in the open
-    atmosphere) named as 'on the push only': 'the shaft has no air drag (silo and lm; on
-    the push only for lm_target)'; 'the shaft has no air drag on the push' when every
-    vented run is one of them."""
-    whole = [n for n in vented if n not in push_only]
-    early = [n for n in vented if n in push_only]
+    """The shaft clause of ``drive_caveat`` (one clause per shaft kind since SP7 step S4a
+    fix round 2): ``clause`` (SHAFT_NO_DRAG for the vented runs; SHAFT_VENTED_NO_DRAG for
+    them on a page with a sealed run; SHAFT_SEALED_NO_DRAG for the sealed runs, SP7 step
+    S5a) for the runs ``names`` of the clause (named unless every assisted run is one,
+    ``_unless_all``; SP7 step S5a fix round 3, P3C-m2), those of ``push_only`` (released at
+    their release speed below the mouth, whose flight in the shaft after the release is
+    computed as in the open atmosphere) named as 'on the push only': 'the shaft has no air
+    drag (silo and lm; on the push only for lm_target)'; 'the shaft has no air drag on the
+    push' when every run of the clause is one of them."""
+    whole = [n for n in names if n not in push_only]
+    early = [n for n in names if n in push_only]
     if not early:
-        return SHAFT_NO_DRAG + _unless_all(whole, assisted)
+        return clause + _unless_all(whole, assisted)
     if not whole:
-        return f"{SHAFT_NO_DRAG} on the push" + _unless_all(early, assisted)
-    named = "" if list(vented) == list(assisted) else f"{_names(whole)}; "
-    return f"{SHAFT_NO_DRAG} ({named}on the push only for {_names(early)})"
+        return f"{clause} on the push" + _unless_all(early, assisted)
+    named = "" if list(names) == list(assisted) else f"{_names(whole)}; "
+    return f"{clause} ({named}on the push only for {_names(early)})"
 
 
 def paired_baseline_metrics(metrics: Mapping[str, Any], name: str) -> dict[str, Any]:
@@ -1969,7 +2270,17 @@ def drive_caveat(
     mouth, ``early_flight_text`` (the rest of the shaft flown as in the open atmosphere, or
     until it fell back); its shaft is said to have no air drag on the push only, in the
     one shaft clause (``_shaft_drag_clause``). Its omissions are worded per run by law,
-    whether a cap bound and how it released (``_motor_omission``)."""
+    whether a cap bound and how it released (``_motor_omission``). A sealed-shaft run (SP7
+    step S5a, KI-077) is never counted as vented: its runs get a shaft clause of their own
+    (SHAFT_SEALED_NO_DRAG, 'on the push only' for one released below the mouth), the
+    vented clause then reading SHAFT_VENTED_NO_DRAG so that each shaft is named; its drive
+    sentence adds what the trapped column did (``sealed_column_text``: the bore and gap
+    from resolved_config.yaml, its peak force and work from metrics.json) and by its law
+    (``sealed_law_text``; not for a stall), and after an early release the cavity left out
+    (SEALED_CAVITY_TEXT) and, when its flight ended on its parked carriage
+    (``fell_onto_carriage``), that fall's cushion (SEALED_CUSHION_TEXT; fix round 2,
+    P2H-m1); its missing shaft drag above the carriage is an omission like a vented run's.
+    A page without a sealed run is worded as before S5a, byte for byte."""
     assisted = [r["key"] for r in runs if r["assisted"]]
     if not assisted:
         return None
@@ -2013,6 +2324,11 @@ def drive_caveat(
                 vented.append(name)
             else:
                 omitted.setdefault(name, []).append("the missing shaft drag")
+        elif is_sealed(assist):  # SP7 step S5a: its own clause, never counted as vented
+            applies.setdefault(SHAFT_SEALED_NO_DRAG, []).append(name)
+            if name in early:
+                push_only.append(name)
+            omitted.setdefault(name, []).append("the missing shaft drag")
         if kicked(m):
             kicking.append(name)
     if kicking:
@@ -2026,9 +2342,12 @@ def drive_caveat(
     ]
     if stated:
         parts.append("the drive is " + _names(stated))
+    vented_clause = SHAFT_VENTED_NO_DRAG if SHAFT_SEALED_NO_DRAG in applies else SHAFT_NO_DRAG
     parts += [
-        _shaft_drag_clause(names, push_only, assisted)
+        _shaft_drag_clause(names, push_only, assisted, vented_clause)
         if part == SHAFT_NO_DRAG
+        else _shaft_drag_clause(names, push_only, assisted, SHAFT_SEALED_NO_DRAG)
+        if part == SHAFT_SEALED_NO_DRAG
         else part + _unless_all(names, assisted)
         for part, names in applies.items()
     ]
@@ -2040,10 +2359,22 @@ def drive_caveat(
         m = sources[n]["metrics"]
         subject = "The drive" if assisted == [n] else f"The drive of {n}"
         text = f"{subject} is {linear_motor_clause(assist, m)}; "
-        text += motor_acceleration_text(linear_motor_settings(assist, m), m)
+        settings = linear_motor_settings(assist, m)
+        text += motor_acceleration_text(settings, m)
+        sealed = is_sealed(assist)
+        if sealed:  # SP7 step S5a: what its trapped column did, and by its law
+            column = sealed_column_text(sealed_shaft_settings(assist, m), m)
+            text += f"; its shaft is sealed below the carriage: {column}"
+            law = sealed_law_text(settings.get("control"), settings.get("cap_bound"))
+            if law is not None and m.get("status") != DRIVE_STALL_STATUS:
+                text += f"; {law}"
         if n in early:
             flags = m.get("flags") if isinstance(m.get("flags"), list) else []
             text += f"; {early_flight_text(by_key[n], below_mouth(assist), flags, m)}"
+            if sealed:
+                text += f"; {SEALED_CAVITY_TEXT}"
+                if fell_onto_carriage(by_key[n], flags):  # fix round 2, P2H-m1
+                    text += f"; {SEALED_CUSHION_TEXT}"
         sentences.append(text + ".")
     if prescribed:
         figures = ["the release speed"]
@@ -2113,6 +2444,8 @@ def _motor_omission(
     m: Mapping[str, Any],
     payload: bool,
     many: bool = False,
+    *,
+    sealed: bool = False,
 ) -> str:
     """What the omitted pieces ``bits`` (``OMISSION_BIAS`` keys) do to one linear-motor
     run's numbers, from its settings ``cfg`` (``linear_motor_settings``) and metrics m
@@ -2132,7 +2465,13 @@ def _motor_omission(
     and a carriage mass would only add to the load the drive could not lift (fix round 3,
     H3-m4). 'its size' or 'their size is not established here' ends every case but the
     uncapped acceleration law's and the stall's. ``many``: the words of a sentence shared
-    by several runs, 'each push' for 'its push' (fix round 3, V3-1)."""
+    by several runs, 'each push' for 'its push' (fix round 3, V3-1). ``sealed`` (SP7 step
+    S5a fix round 1, H2): the run's shaft is sealed below the carriage, whose column's
+    force F_p acts on the carriage, so with a massless carriage the vehicle receives the
+    drive force less F_p, and less the impinging thrust f_imp T on a push lit on the track
+    (F_int = F - F_p - f_imp T at m_c = 0; fix round 3, P3-m1), and a column stall
+    (``column_stall``) was stopped against the weight and the column at the track end; a
+    vented run's words are unchanged."""
     one = len(bits) == 1
     names = _names(list(bits))
     size = f"{'its' if one else 'their'} size is not established here"
@@ -2145,7 +2484,12 @@ def _motor_omission(
         if "the missing shaft drag" in bits:
             parts.append("the missing shaft drag changes nothing")
         if "the massless carriage" in bits:
-            parts.append("a carriage mass would only add to the load the drive could not lift")
+            parts.append(
+                "a carriage mass would only add to the weight that the stall guard counted, "
+                "with the column's force at the track end, against the drive"
+                if sealed and column_stall(m)
+                else "a carriage mass would only add to the load the drive could not lift"
+            )
         moved = "the pushes never moved" if many else "the push never moved"
         return f"({law}, stalled) {moved}: {' and '.join(parts)}"
     if m and m.get("release_trigger") is None:  # stopped on the track: no release
@@ -2177,10 +2521,13 @@ def _motor_omission(
     massless = "the massless carriage" in bits
     if massless and control == CONTROL_FORCE:
         moved = "the release position and push time low" if early else "the speed at release high"
-        text += (
-            f"; the massless carriage biases {moved} and the interface force high (all of the "
-            "drive force reaches the vehicle)"
+        reaches = (
+            "the drive force less the column's force F_p, and less the impinging thrust "
+            "f_imp T on a push lit on the track, reaches the vehicle"
+            if sealed  # F_int = F - F_p - f_imp T at m_c = 0 (fix round 3, P3-m1)
+            else "all of the drive force reaches the vehicle"
         )
+        text += f"; the massless carriage biases {moved} and the interface force high ({reaches})"
     if "the missing shaft drag" in bits and control == CONTROL_FORCE:
         moved = "the release position and push time low" if early else "the speed at release high"
         interface = (
@@ -2203,21 +2550,28 @@ def _linear_motor_omissions(
     whether a cap bound and how it released (``_motor_omission``), the payload named for
     a run that has one; runs with the same wording share a sentence ('For <names>
     (linear_motor drive, ...) ...'), worded for several runs ('each push', fix round 3,
-    V3-1)."""
+    V3-1). Each run's sealed shaft (``is_sealed``; SP7 step S5a fix round 1, H2) is passed
+    to ``_motor_omission`` as ``sealed``, and a group's rewording for several runs takes the
+    sealed flag of the run that first gave its wording (runs share a wording only when it
+    is the same text, so a sealed and a vented run share one only where ``sealed`` changes
+    nothing)."""
     groups: dict[str, list[str]] = {}
     args: dict[str, tuple[Sequence[str], dict[str, Any], Mapping[str, Any], bool]] = {}
+    sealed_of: dict[str, bool] = {}
     for n in names:
         assist = run_assist(sources[n]["config"])
         m = sources[n]["metrics"]
         cfg = linear_motor_settings(assist, m)
         one = (omitted[n], cfg, m, by_key[n]["payload_kg"] is not None)
-        text = _motor_omission(*one)
+        sealed = is_sealed(assist)  # SP7 step S5a fix round 1, H2
+        text = _motor_omission(*one, sealed=sealed)
         groups.setdefault(text, []).append(n)
         args.setdefault(text, one)
+        sealed_of.setdefault(text, sealed)
     out = []
     for text, group in groups.items():
         if len(group) > 1:
-            text = _motor_omission(*args[text], many=True)
+            text = _motor_omission(*args[text], many=True, sealed=sealed_of[text])
         head, _, rest = text.partition(") ")
         out.append(f"For {_names(group)} ({LINEAR_MOTOR_MODEL} drive, {head[1:]}) {rest}.")
     return out
@@ -2628,7 +2982,10 @@ def closeup_notes(
     ground, where (``_track_end_fall_backs``, fix round 5); how a held run is
     released; the vented shaft (on the push only when a run shown was released below the
     mouth, whose flight in the shaft after the release is computed as in the open
-    atmosphere, whether it left the shaft or fell back in it)."""
+    atmosphere, whether it left the shaft or fell back in it; naming its runs, 'For <names>
+    the shaft is treated as vented', when a sealed-shaft run is shown too); then one
+    sentence per sealed-shaft run (``sealed_closeup_note``, SP7 step S5a, KI-077: never
+    'vented')."""
     notes: list[str] = []
     groups: dict[tuple[Any, ...], list[str]] = {}
     order: list[tuple[str, Any]] = []
@@ -2687,19 +3044,43 @@ def closeup_notes(
         for r in runs
         if r["assisted"] and is_vented(run_assist(sources[r["key"]]["config"]))
     ]
+    sealed = [
+        r["key"]
+        for r in runs
+        if r["assisted"] and is_sealed(run_assist(sources[r["key"]]["config"]))
+    ]
+    # SP7 step S5a: beside a sealed run the vented note names its runs; alone it reads as
+    # before, byte for byte
+    head = f"For {_names(vented)} the shaft is" if sealed and vented else "The shaft is"
     early_vented = [n for n in early if n in vented]
     if vented and not early_vented:
         notes.append(
-            "The shaft is treated as vented, so no air drag, dynamic pressure or Mach "
+            f"{head} treated as vented, so no air drag, dynamic pressure or Mach "
             "number is computed inside it."
         )
     elif vented:
+        if sealed and early_vented == vented:  # the head names them (fix round 3, V3-1)
+            whose = f"{'its' if len(vented) == 1 else 'their'} release below the mouth"
+        else:
+            whose = f"the release below the mouth of {_names(early_vented)}"
         notes.append(
-            "The shaft is treated as vented, so no air drag, dynamic pressure or Mach "
-            f"number is computed inside it on the push; after the release below the mouth "
-            f"of {_names(early_vented)} the flight in the shaft is computed as in the open "
-            "atmosphere, with drag, dynamic pressure and Mach number (no shaft flow model, "
-            "no walls)."
+            f"{head} treated as vented, so no air drag, dynamic pressure or Mach "
+            f"number is computed inside it on the push; after {whose} the flight in the "
+            "shaft is computed as in the open atmosphere, with drag, dynamic pressure and "
+            "Mach number (no shaft flow model, no walls)."
+        )
+    by_key = {r["key"]: r for r in runs}
+    for n in sealed:
+        m = sources[n]["metrics"]
+        flags = m.get("flags") if isinstance(m.get("flags"), list) else []
+        notes.append(
+            sealed_closeup_note(
+                n,
+                run_assist(sources[n]["config"]),
+                m,
+                n in early,
+                fell_on_carriage=fell_onto_carriage(by_key[n], flags),
+            )
         )
     return notes
 

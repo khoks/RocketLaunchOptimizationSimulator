@@ -724,7 +724,7 @@ def series_values(
 ) -> list[float | None]:
     """``values`` (on ``t_s``, increasing) linearly resampled on ``grid`` and rounded to
     ``decimals``; None (JSON null) where a bracketing source value is undefined (q and
-    Mach in a vented shaft). The unit is that of ``values``."""
+    Mach on the push, vented or sealed). The unit is that of ``values``."""
     ok = defined_mask(t_s, values, grid)
     defined = np.isfinite(values)
     if not bool(defined.any()):

@@ -6,18 +6,18 @@ inside a results tree).
 directory (results/<experiment>/<timestamp>), everything the scene page draws, as plain
 JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md section 4.4):
 
-- per run, the recorded series on the scene's time grid, a SELECTION of the run's own
-  CSV rows and never a resample (D-SP2-16, display.select_rows): time after release to
+- per run, the recorded series on the scene's time grid, a SELECTION of the run's own CSV
+  rows and never a resample (D-SP2-16, display.select_rows): time after release to
   TIME_DECIMALS (the event rows and the row of the series' peak q always among them),
-  altitude, Earth-fixed downrange, Earth-relative speed, the unwrapped
-  pitch and the drawn (held) angle, the plume fraction (``thrust_vac_N`` over the stage's
-  full vacuum thrust from the run's own vehicle block), the step series (stage index,
-  phase, fairing on, thrust on), the track series over the push (null outside it), q and
-  Mach (null inside the vented shaft), the run's recorded max-Q (``max_q``: metrics.json's
-  ``max_q_pa`` and ``max_q_time_s``, the planar metrics' refined peak, already after
-  release; None when the record has none), the felt axial acceleration (``felt_axial_g`` as
-  recorded, in g), the two tank series (display.tank_levels, 0.1 kg) and their fills
-  against the full-load tanks of the fill-reference block;
+  altitude, Earth-fixed downrange, Earth-relative speed, the unwrapped pitch and the
+  drawn (held) angle, the plume fraction (``thrust_vac_N`` over the stage's full vacuum
+  thrust from the run's own vehicle block), the step series (stage index, phase, fairing
+  on, thrust on), the track series over the push (null outside it), q and Mach (null on
+  the push inside the shaft, vented or sealed), the run's recorded max-Q (``max_q``:
+  metrics.json's ``max_q_pa`` and ``max_q_time_s``, the planar metrics' refined peak,
+  already after release; None when the record has none), the felt axial acceleration
+  (``felt_axial_g`` as recorded, in g), the two tank series (display.tank_levels, 0.1 kg)
+  and their fills against the full-load tanks of the fill-reference block;
 - the events with the mass before and after each drop (run_data.with_drop_masses),
   labelled by name and stage, each at its matched row's time; a pad's liftoff and ramp
   end synthesised from the metrics and marked so; events at one time grouped;
@@ -39,7 +39,9 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   own wording, replay.replay_offload_note: the one note source of D-SP2-23, two
   decimals, a paired pad said to fly its own payload capacity, a penalty row's assumed
   dry mass, a fixed case's P* - P_ref reading, a net-of-pad-control quotation, a failed
-  verification and the flags), its offload flags one by one (``offload_flags``) and the
+  verification and the flags; for a sealed-shaft run, SP7 step S5a, ``sealed_run_note``
+  after it: the model's bore and gap against the width of the shaft drawn), its offload
+  flags one by one (``offload_flags``) and the
   load-time check verdicts (display.tank_checks plus the rebuilt-mass check and the row
   selection's convergence, ``selection_check``) and, for a pushed run, what structural
   mass its record charges for the push (``structure_note``: a captured frame's footer
@@ -53,7 +55,8 @@ JSON-ready data (SP2 step A2, docs/phases/inputs/2026-10-05-SP2-design.md sectio
   display geometry (the matching display file, else the generic shape with the reason),
   R_E and omega_p from constants, the camera and tolerance constants, the page's drawing
   constant that the display-only text quotes (PLUME_OF_STACK), the display-only list
-  (design 4.9), the caveats (every line replay.caveats gives the same selection, so the
+  (design 4.9; ``display_only_for``: its plume item names each shaft when a sealed-shaft run
+  is shown, SP7 step S5a), the caveats (every line replay.caveats gives the same selection, so the
   scene's model caveats are a superset of the replay page's, plus, for a push released
   at its release speed below the mouth, the scene's own ``early_release_caveat`` (the
   frozen template draws its carriage braking from the mouth; SP7 step S4a fix round 1),
@@ -352,18 +355,120 @@ below the ground, and at the ground along the obstacle-free path when it parks a
 above it. DISPLAY_ONLY itself is gallery text and stays as it is."""
 
 
-def display_only_for(run_flags: Iterable[Sequence[Any]]) -> list[str]:
+DISPLAY_ONLY_PLUME_INDEX = 3
+"""The index of DISPLAY_ONLY's plume item ('The plume inside the shaft ...'), which says
+the model has a vented shaft; ``sealed_plume_item`` replaces it for a selection with a
+sealed-shaft run (SP7 step S5a)."""
+
+
+def sealed_plume_item(shafts: Mapping[str, str | None]) -> str:
+    """DISPLAY_ONLY's plume item for a selection with a sealed-shaft run (SP7 step S5a,
+    KI-077; ``shafts``: run name -> ``replay.shaft_kind`` of each pushed run shown, None for
+    a pad): the impingement fraction as DISPLAY_ONLY's item says it, with no exhaust
+    back-pressure, heating or exhaust flow on the carriage; then the model's shaft of each
+    pushed run, vented or sealed below the carriage, by name (``replay.join_names``); that
+    a sealed shaft's trapped air column acts on the carriage during the push (the caveats
+    give what it did: its force and work, a stall's none) and that the pressure the
+    exhaust of an engine lit on the track would build above the carriage, with only the
+    annulus to escape by, is not modelled (fix round 1, H-m3, P1-m4); and that the shaft
+    drawn is display geometry, its width from configs/display, not a sealed run's bore,
+    with the trapped gap below the carriage not drawn (V5; each sealed run's note,
+    ``sealed_run_note``, gives the bore and the gap). Pure."""
+    vented = [n for n, k in shafts.items() if k == replay.VENTED_SHAFT]
+    sealed = [n for n, k in shafts.items() if k == replay.SEALED_SHAFT]
+    kinds = [f"vented for {replay.join_names(vented)}"] if vented else []
+    kinds.append(f"sealed below the carriage for {replay.join_names(sealed)}")
+    return (
+        "The plume inside the shaft and the carriage beneath lit engines: the model has one "
+        "impingement fraction that moves only track forces and drive energy; no exhaust "
+        "back-pressure, heating or exhaust flow on the carriage. The model's shaft is "
+        f"{' and '.join(kinds)}: a sealed shaft's trapped air column acts on the carriage "
+        "during the push (the caveats give what it did), and the pressure that the exhaust "
+        "of an engine lit on the track would build above the carriage, with only the annulus "
+        "between the bore and the vehicle to escape by, is not modelled. The shaft drawn is "
+        "display geometry, its width from configs/display, not a sealed run's bore, and the "
+        "trapped gap below the carriage is not drawn: each sealed run's note gives the bore "
+        "and the gap."
+    )
+
+
+def display_only_for(
+    run_flags: Iterable[Sequence[Any]], shafts: Mapping[str, str | None] | None = None
+) -> list[str]:
     """The 'what the scene draws that the model does not compute' list (DISPLAY_ONLY) of a
     selection whose runs carry the flags ``run_flags`` (metrics.json, one list per run):
     DISPLAY_ONLY, with its carriage item (DISPLAY_ONLY_CARRIAGE_INDEX) replaced by
     DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM when some run fell back inside the shaft
     (``fell_back_in_shaft``: its impact is on the parked carriage, or at its apex below a
     carriage parked above it, not along the obstacle-free path; SP7 step S4a fix rounds 4
-    and 5, V4-1, M1). The scene payload and the app's results panel both use it. Pure."""
+    and 5, V4-1, M1), and its plume item (DISPLAY_ONLY_PLUME_INDEX), which says the model
+    has a vented shaft, replaced by ``sealed_plume_item`` when ``shafts`` (run name ->
+    ``replay.shaft_kind`` of the runs shown, ``run_shafts``) holds a sealed shaft (SP7 step
+    S5a, KI-077); every other selection's list is unchanged. The scene payload and the
+    app's results panel both use it. Pure."""
     items = list(DISPLAY_ONLY)
     if any(fell_back_in_shaft(flags) for flags in run_flags):
         items[DISPLAY_ONLY_CARRIAGE_INDEX] = DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM
+    if shafts and replay.SEALED_SHAFT in shafts.values():
+        items[DISPLAY_ONLY_PLUME_INDEX] = sealed_plume_item(shafts)
     return items
+
+
+def run_shafts(
+    metrics: Mapping[str, Any], config: Mapping[str, Any], names: Sequence[str]
+) -> dict[str, str | None]:
+    """Run name -> the shaft of its push (``replay.shaft_kind`` of its run block's assist,
+    resolved_config.yaml through run_data.run_source; None for a run without a push) for
+    the runs ``names`` of a planar results directory (SP7 step S5a): what
+    ``display_only_for`` and ``sealed_run_note`` read. Raises run_data.RunDataError for a
+    run metrics.json does not describe. Pure."""
+    out: dict[str, str | None] = {}
+    for name in names:
+        source = run_data.run_source(dict(metrics), dict(config), name)
+        assist = dict(run_data.as_mapping(source["config"].get("assist")))
+        out[name] = replay.shaft_kind(assist) if replay.is_assisted(assist) else None
+    return out
+
+
+def sealed_run_note(
+    assist: Mapping[str, Any], m: Mapping[str, Any], drawn_diameter_m: float | None
+) -> str | None:
+    """The note a sealed-shaft run carries on the scene (SP7 step S5a, KI-077), drawn in its
+    panel's note band, under the panel header and over the view, so every captured frame
+    shows it: 'Sealed shaft: the model's bore is <d> m
+    over a <h_0> m gap (resolved_config.yaml); the <D> m shaft drawn is display geometry,
+    the gap not drawn.' (``replay.sealed_geometry_text`` of the run's assist block;
+    ``drawn_diameter_m`` [m], the silo shaft of the run's display geometry; either part
+    said without its number when it is missing); None for every other run, whose note is
+    unchanged. Short enough for one 11 px canvas line in a single 960 px panel (fix round
+    1, V1: the first wording took two lines; SEALED_NOTE_MAX_CHARS); a one-line note still
+    needs a 960 x 546 frame in a single panel, as any run note does (fix round 2, V2-1:
+    measured, SEALED_NOTE_MAX_CHARS), so a sealed run alone does not fit 960 x 540. Pure."""
+    if not replay.is_sealed(assist):
+        return None
+    cfg = replay.sealed_shaft_settings(assist, m)
+    bore, gap = cfg["bore_m"], cfg["gap_m"]
+    model = (
+        f"the model's bore is {bore:g} m over a {gap:g} m gap (resolved_config.yaml)"
+        if bore is not None and gap is not None
+        else "the model's bore and gap are not in resolved_config.yaml"
+    )
+    drawn = (
+        "the shaft drawn" if drawn_diameter_m is None else f"the {drawn_diameter_m:g} m shaft drawn"
+    )
+    return f"Sealed shaft: {model}; {drawn} is display geometry, the gap not drawn."
+
+
+SEALED_NOTE_MAX_CHARS = 140
+"""The longest ``sealed_run_note`` a test allows (SP7 step S5a fix round 1, V1): the note of
+a 5.24 m bore over a 5 m gap against the 7 m shaft drawn, 139 characters, measured at 676
+px in the page's 11 px canvas font, one line in a panel of about 700 px of text width or
+more (a scratch check in the built-in browser pane, not run by the suite). Any run note
+takes a band of one line or more: a single panel with one, a sealed run's or an offload
+run's, needs a 960 x 546 frame at the 960 px width (measured: lm_sealed_accel alone, and
+silo_cold_s1 of results/silo_offload_2d/20261003T112934Z alone), 6 px more than 960 x 540,
+while 1280 x 720 and 1920 x 1080 fit (docs/physics.md, "The sealed shaft", Run-level lines
+and readers)."""
 
 
 # ------------------------------------------------------------------ directory and display files
@@ -554,7 +659,10 @@ def assist_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str
     net_accel_g stay None (never a = v^2 / (2 L) from its measured exit speed), and its
     settings gain ``drive`` (``linear_motor_drive``: the law, the limits, the command,
     the release and the drive clause as payload data), its source 'metric' when the run's
-    metrics record the drive (push_force_max_N), else 'config'."""
+    metrics record the drive (push_force_max_N), else 'config'. A sealed-shaft run (SP7
+    step S5a) also gains ``sealed_shaft`` (``replay.sealed_shaft_settings``: the bore, gap
+    and gamma of the config, the column's peak force, work and release pressure of the
+    metrics), payload data the frozen template does not draw."""
     model = str(assist.get("model", NO_ASSIST_MODEL))
     if model == NO_ASSIST_MODEL:
         return None
@@ -654,6 +762,8 @@ def assist_settings(assist: Mapping[str, Any], m: Mapping[str, Any]) -> dict[str
     }
     if drive is not None:  # a linear-motor run only: every other payload is unchanged
         settings["drive"] = drive
+    if replay.is_sealed(assist):  # SP7 step S5a: a sealed-shaft run only
+        settings["sealed_shaft"] = replay.sealed_shaft_settings(assist, m)
     return settings
 
 
@@ -1877,6 +1987,24 @@ def scene_payload(
             ).as_dict()
         else:
             record["geometry"] = None
+    # SP7 step S5a (KI-077): a sealed-shaft run's note names its shaft and says the shaft
+    # drawn is display geometry, not its bore; every other run's note is unchanged
+    shafts = run_shafts(metrics, config, kept)
+    for record in records:
+        if shafts.get(record["key"]) != replay.SEALED_SHAFT:
+            continue
+        source = run_data.run_source(
+            metrics, config, record["key"], error=SceneError, wording=SCENE_WORDING
+        )
+        drawn_geometry = record["geometry"] or geometry.as_dict()
+        drawn = run_data.finite(
+            run_data.as_mapping(drawn_geometry.get("silo")).get("shaft_diameter_m")
+        )
+        sealed_note = sealed_run_note(
+            run_data.as_mapping(source["config"].get("assist")), source["metrics"], drawn
+        )
+        if sealed_note is not None:
+            record["note"] = f"{record['note']} {sealed_note}" if record["note"] else sealed_note
 
     caveats = list(replay.replay_data(run_dir, kept)["meta"]["caveats"])
     # SP7 step S4a fix rounds 1, 2 and 5: a release below the mouth, which the frozen
@@ -1937,7 +2065,7 @@ def scene_payload(
             "tank_decimals": TANK_DECIMALS,
         },
         "drawing": {"plume_of_stack": PLUME_OF_STACK},
-        "display_only": display_only_for(flags_of.values()),
+        "display_only": display_only_for(flags_of.values(), shafts),
         "caveats": caveats + offload_caveats,
         "offload_caveats": offload_caveats,
         "footer": FOOTER_TEXT,
@@ -2026,6 +2154,7 @@ __all__ = [
     "DEFAULT_DISPLAY_DIR",
     "DISPLAY_ONLY",
     "DISPLAY_ONLY_CARRIAGE_INDEX",
+    "DISPLAY_ONLY_PLUME_INDEX",
     "DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM",
     "DRIFT_DECIMALS",
     "EMPTY_SERIES_WORDING",
@@ -2044,6 +2173,7 @@ __all__ = [
     "SCENE_SUFFIXES",
     "SCENE_TEMPLATE",
     "SCENE_WORDING",
+    "SEALED_NOTE_MAX_CHARS",
     "SELECTION_CHECK_UNIT",
     "SHAFT_CARRIAGE_TEXT",
     "SHAFT_IMPACT_APEX",
@@ -2083,9 +2213,12 @@ __all__ = [
     "render_page",
     "run_payload",
     "run_rows",
+    "run_shafts",
     "scene_json",
     "scene_payload",
     "scene_run_label",
+    "sealed_plume_item",
+    "sealed_run_note",
     "selection_check",
     "shaft_impact_kind",
     "shaft_impact_text",

@@ -29,6 +29,7 @@ import numpy as np
 from scipy.optimize import brentq
 
 from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.assist.linear_motor import sealed_shaft_of
 from launchsim.assist.track import StraightTrack
 from launchsim.config import (
     RAMP_START_DEPTH,
@@ -946,24 +947,42 @@ def early_release_assumption(
     aerodynamic: bool,
     p_amb_pa: float = 0.0,
     floor_m: float | None = None,
+    sealed: bool = False,
 ) -> str:
     """The run-specific assumption line of a push released at its release speed before
     the track end (SP7 step S4a; design 4.7), added by ``fly_track`` for such a run only.
+    ``sealed`` (SP7 step S5a, KI-079): the drive's shaft is sealed below the carriage
+    (``linear_motor.sealed_shaft_of``); the line then names the shaft below the ground
+    'the shaft, open at the mouth,' instead of 'the vented shaft' at a track exit at or
+    below the ground (above a buried exit the flight goes on in the shaft up to the mouth:
+    fix round 3, P3H-m1), and at an exit above it 'the bore, which runs to the track exit
+    above the ground and is open there,' (the column acts over the whole stroke, so the
+    bore runs to the track exit; fix round 1, P1-m2) and
+    adds that the braking carriage still seals the bore below the vehicle, the cavity
+    between them left out, with the direction of each inferred effect (a base suction,
+    the speed after the release biased high; the exhaust of a stage lit there, the other
+    way; fix round 1, H-m5, P1-m3), and, only where the floor clause is written (the
+    parked carriage the flight's floor below the ground, the model's only fall back onto
+    the carriage), the cushion of the air compressed above the carriage under a vehicle
+    falling back onto it, such an impact's speed biased high (fix round 2, P2H-m1);
+    False (every vented and constant_accel push) leaves the line byte for byte as before
+    S5a.
 
     Inputs: v_release_mps [m/s]; the release position s_release_m [m] along the track
     and the track length length_m [m] (L - s of track are left above the vehicle); the
     release altitude z_release_m and the track exit's altitude z_exit_m [m] (+z-up datum
     frame, the ground at 0); aerodynamic, the flight model's (``PreludeLayout``): the
-    planar model flies in the vented shaft after the release (whether it leaves the shaft
+    planar model flies in the shaft after the release (whether it leaves the shaft
     or falls back in it; fix round 5, m2) as in the open atmosphere at its altitude
     (no shaft flow model, no walls; drag, q and Mach computed as in open air; stage 1
     may light and its kick begin there, with no clearance check), the 1-D model as it
     flies everywhere: drag-free, with no atmosphere, its thrust at its constant ambient
     pressure p_amb_pa [Pa] (vacuum thrust at 0, the value of every run ``sim.simulate``
     builds; fix round 2), and no kick. Below the ground (z_release < 0) the rest of the
-    track is the vented shaft; the track exit is called the silo mouth only when it is at
-    the ground (within ATOL_M). The carriage brakes from the release point (facility
-    max(L, s + d_brake), not L + d_brake: within the stroke left when s + d_brake <= L,
+    track is the shaft (vented, or sealed below the carriage: ``sealed``); the track
+    exit is called the silo mouth only when it is at the ground (within ATOL_M). The
+    carriage brakes from the release point (facility max(L, s + d_brake), not L +
+    d_brake: within the stroke left when s + d_brake <= L,
     else past the track end; fix round 4, H4-m4), and the ideal screening estimate is
     taken at the release speed, not at the speed the vehicle has at the track exit, which
     gravity (and drag, planar) over the rest of the track change, booked in the flight's
@@ -982,10 +1001,18 @@ def early_release_assumption(
         else f"the track exit at altitude {z_exit_m:g} m"
     )
     in_shaft = z_release_m < -ATOL_M
+    # at or below the ground (the exit above it has its own words below): above a buried
+    # exit the flight goes on in the shaft up to the mouth (fix round 3, P3H-m1)
+    shaft = "the shaft, open at the mouth," if sealed else "the vented shaft"
     if in_shaft and z_exit_m > ATOL_M:
-        rest = "in the vented shaft and on the track above the ground after the release"
+        rest = (
+            "in the bore, which runs to the track exit above the ground and is open there, "
+            "after the release"
+            if sealed
+            else "in the vented shaft and on the track above the ground after the release"
+        )
     elif in_shaft:
-        rest = "in the vented shaft after the release"
+        rest = f"in {shaft} after the release"
     else:
         rest = "over the rest of the track's length"
     if aerodynamic:
@@ -1019,7 +1046,8 @@ def early_release_assumption(
             "is in the flight's losses, the thrust in its delta-v)"
         )
     floor = ""
-    if in_shaft and floor_m is not None and floor_m < -ATOL_M:
+    on_floor = in_shaft and floor_m is not None and floor_m < -ATOL_M
+    if on_floor:
         floor = (
             f"; the floor of the flight model in the shaft is the parked carriage at z = "
             f"{floor_m:.6g} m: a fall back onto it, from inside the shaft or through the "
@@ -1028,6 +1056,22 @@ def early_release_assumption(
             "then ends at once at that apex (the model has no contact with the carriage on "
             "its braking path)"
         )
+    if sealed:
+        floor += (
+            "; below the vehicle the braking carriage still seals the bore, and the cavity "
+            "that opens between the vehicle's base and the carriage, fed only through the "
+            "annulus between the bore and the vehicle, is not modelled (inferred: a suction "
+            "on the vehicle's base, which would slow it, so its speed after the release is "
+            "biased high, and the exhaust of a stage lit in the cavity, which would act the "
+            "other way: the drive's line that starts 'linear_motor: sealed shaft, not "
+            "modelled after the release')"
+        )
+        if on_floor:  # the model's only fall back onto the carriage (fix round 2, P2H-m1)
+            floor += (
+                "; on a fall back onto the parked carriage the air the vehicle compresses "
+                "above the carriage, a cushion against the fall, is not modelled either "
+                "(inferred: the speed of that impact is biased high)"
+            )
     return (
         f"linear_motor: released at the release speed {v_release_mps:g} m/s at s = "
         f"{s_release_m:.6g} m, {left:.6g} m before the track end (L = {length_m:g} m; "
@@ -1422,6 +1466,7 @@ def fly_track(
                         shaft_floor_m(
                             z_release, track.phi(s_end), assist.braking_distance_m(sdot_end)
                         ),
+                        sealed=sealed_shaft_of(assist) is not None,
                     )
                 )
                 return TrackExit(

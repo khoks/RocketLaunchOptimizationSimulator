@@ -333,8 +333,9 @@ u = 0 exactly and the ambiguous jump of exactly -pi is taken as +pi, so the fall
 local horizontal (along v_rel in an unpowered phase, by convention, so it is unwrapped
 the same way); psi_rad, the angle
 between thrust and v_rel (alpha of q-alpha); m_kg; thrust_N (delivered, T_vac - p A_e
-clamped at 0), thrust_vac_N, drag_N; q_pa and mach (NaN on the track: the vented shaft
-has no air model); q_alpha_pa_rad = q psi; felt_axial_g and felt_lateral_g, the proper
+clamped at 0), thrust_vac_N, drag_N; q_pa and mach (NaN on the track: no air drag, q or
+Mach is computed for the vehicle on the push, vented or sealed); q_alpha_pa_rad = q psi;
+felt_axial_g and felt_lateral_g, the proper
 acceleration along and across the thrust axis (hold rows: 1 g_ref, clamped; track rows:
 (F_int + T)/m_v and the vehicle's track-normal load)."""
 PLANAR_QUADRATURE_COLUMNS: tuple[str, ...] = (
@@ -497,8 +498,9 @@ def _track_part(ts: np.ndarray, ys: np.ndarray, p: TrackParams, view: PlanarView
     the rows of ``metrics._track_rows`` (altitude, forces, felt g, normal loads) in the
     planar columns. speed_rel = |sdot|, gamma_rel = the track angle phi (pi/2 at rest),
     speed_inertial = |sdot t_hat + omega_p (r_datum + z) theta_hat|, pitch = phi,
-    psi = 0, no drag; q, Mach and q-alpha NaN (the vented shaft has no air model);
-    felt_lateral_g the vehicle's track-normal load [g0]; quadratures 0. Frame: the
+    psi = 0, no drag; q, Mach and q-alpha NaN (no air drag, q or Mach is computed for the
+    vehicle on the push, vented or sealed); felt_lateral_g the vehicle's track-normal load
+    [g0]; quadratures 0. Frame: the
     flat track frame, Earth-fixed."""
     part = _track_rows(ts, ys, p)
     lay = p.layout

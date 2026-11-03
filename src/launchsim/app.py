@@ -2894,6 +2894,22 @@ def panel_video_footer(
         return None
 
 
+def pair_shafts(
+    metrics: Mapping[str, Any], config: Mapping[str, Any], pair: Sequence[str]
+) -> dict[str, str | None]:
+    """Run name -> the shaft of its push (``scene.run_shafts``: vented, sealed, or None
+    for a run without a push) for the runs of a panel's ``pair`` (SP7 step S5a), a run
+    folder metrics.json does not describe read as None (``run_view`` lists it with a note
+    saying so), so the display-only list never fails on it."""
+    out: dict[str, str | None] = {}
+    for name in pair:
+        try:
+            out.update(scene.run_shafts(metrics, config, [name]))
+        except run_data.RunDataError:
+            out[name] = None
+    return out
+
+
 def results_panel(
     run_dir: Path,
     experiment: str,
@@ -2918,7 +2934,9 @@ def results_panel(
     (``panel_caveats``), what the scene draws that the model does not compute
     (scene.DISPLAY_ONLY, design 4.9; ``scene.display_only_for`` the pair's flags, whose
     carriage item says so when a run of the pair fell back inside the shaft, SP7 step S4a
-    fix round 4) and the caveat footer a video of the pair would
+    fix round 4, and the pair's shafts, ``pair_shafts``, whose plume item names each shaft
+    when a run of the pair has a sealed one, SP7 step S5a) and the caveat footer a video of
+    the pair would
     carry (``panel_video_footer``, for the page's fit check). Raises ValueError for a
     ``chosen`` that is not 1 to PANEL_RUNS distinct run folders."""
     rows = run_folders(run_dir, metrics)
@@ -2956,7 +2974,8 @@ def results_panel(
         "outcome": {"kind": kind, "message": message, "notes": list(notes)},
         **panel_caveats(run_dir, metrics, runs, pair, config),
         "display_only": scene.display_only_for(
-            next((r.get("flags") or [] for r in runs if r["name"] == n), []) for n in pair
+            (next((r.get("flags") or [] for r in runs if r["name"] == n), []) for n in pair),
+            pair_shafts(metrics, config, pair),
         ),
         "video_footer": panel_video_footer(run_dir, metrics, config, runs, pair),
     }

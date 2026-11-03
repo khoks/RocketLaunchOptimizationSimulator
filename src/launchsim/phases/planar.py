@@ -140,7 +140,7 @@ cutoff; split at the fairing event (the FAIRING map) and at the thrust kinks."""
 SHAFT_EXIT_EVENT = "shaft_exit"
 """The altitude crossing the ground altitude upward from below (SP7 step S4a; design
 4.7): a burn sub-phase that starts below the ground, rising (a push released at its
-release speed below the mouth, the vehicle still in the vented shaft), lists it with
+release speed below the mouth, the vehicle still in the shaft, vented or sealed), lists it with
 SHAFT_APEX_EVENT in place of the ground event (``PlanarPlanner._burn``), so the next
 sub-phase starts at the mouth with the ground event armed as on every other flight.
 Logged like every event of a planar phase (``_integrate``): where the vehicle passes
@@ -1565,7 +1565,7 @@ class PlanarPlanner:
     def _in_shaft(self, y: np.ndarray) -> bool:
         """True for a state more than ATOL_M below the ground altitude: a vehicle that
         began its flight below the ground and has not left it, released below the mouth
-        (SP7 step S4a, the vented shaft) or at a track exit below the ground. Never true
+        (SP7 step S4a; the shaft, vented or sealed) or at a track exit below the ground. Never true
         on a flight that starts at or above the ground (every pad, and every track
         released at an exit at or above it), where a fall below the ground is an
         impact first. Frame: planar ECI; altitudes above the datum."""

@@ -98,6 +98,13 @@ ShaftKind = Literal["vented", "sealed"]
 same set at the YAML boundary (a test keeps the two equal)."""
 SHAFT_SEALED: ShaftKind = "sealed"
 """The sealed shaft's ShaftKind (``from_config`` builds a SealedShaft for it)."""
+COLUMN_STALL_TEXT = (
+    "cannot hold the stack against the sealed shaft's trapped column at the track end"
+)
+"""The words of a sealed shaft's stall flag (``LinearMotorAssist.stall_reason``: the drive
+at F_max and the push-start thrust outweigh the stack's weight but not the weight and the
+column's force at the track end, F_p(L)); the readers (``replay.column_stall``) tell that
+stall from S4's by them (SP7 step S5a fix round 1)."""
 WORK_STATE = "W_piston_J"
 """The extra track state of a sealed-shaft push: W_p = int F_p sdot dt [J], the work done
 against the trapped column's net force F_p on the carriage, drive work the stack does
@@ -601,8 +608,8 @@ class LinearMotorAssist:
                 )
             )
             return (
-                f"drive_stall: the drive at F_max and the thrust at push start cannot hold "
-                f"the stack against the sealed shaft's trapped column at the track end: F_max "
+                f"drive_stall: the drive at F_max and the thrust at push start "
+                f"{COLUMN_STALL_TEXT}: F_max "
                 f"+ (1 - f_imp) T(0) = {lift:.6g} N <= M_0 g_eff sin phi + F_p(L) = "
                 f"{weight + b.column_end_N:.6g} N (F_max = {self.force_max_N:.6g} N, T(0) = "
                 f"{b.thrust_N:.6g} N, f_imp = {self.f_imp:g}, M_0 = {b.m_total_kg:.6g} kg, "
@@ -903,9 +910,14 @@ class LinearMotorAssist:
 
     def shaft_assumption(self) -> str:
         """The shaft line: vented (or, SP7 step S5, sealed below the carriage, its column
-        in ``sealed_assumptions``, and the vented shaft that a planar run's track-push
-        line names, and with a release speed an early-release line, read as the shaft
-        open above the carriage), no friction, and what the neglected air drag on the
+        in ``sealed_assumptions``, and open above the carriage, where the vehicle rides, at
+        its top: the silo mouth when the track exit is at or below the ground, since the
+        flight goes on in the shaft above a buried exit, and the track exit when that exit
+        is above it, since the column acts over the whole stroke, so the bore runs to the
+        track exit (SP7 step S5a fix round 3, P3H-m1); since SP7 step S5a a sealed
+        run's planar track-push line and early-release line state the sealed shaft
+        themselves, so this line no longer bridges a 'vented shaft' in them), no friction,
+        and what the neglected air drag on the
         vehicle in the shaft during the push would do under this control law (with a
         release speed, SP7 step S4a: what it would do to where the push reaches that
         speed, and to the speed of a push that releases at the track end without reaching
@@ -955,19 +967,12 @@ class LinearMotorAssist:
         if self.shaft is None:
             shaft = "shaft vented (no air column)"
         else:
-            named = (
-                "the track-push line of a planar run"
-                if self.release_speed_mps is None
-                else (
-                    "the track-push line of a planar run and the early-release line of a "
-                    "release before the track end"
-                )
-            )
             shaft = (
                 "shaft sealed below the carriage (its trapped air column: the three lines "
-                "that start 'linear_motor: sealed shaft'; above the carriage the shaft is "
-                f"open at the mouth: the vented shaft named by {named} is, for this run, that "
-                "open shaft above the carriage)"
+                "that start 'linear_motor: sealed shaft'; above the carriage, where the "
+                "vehicle rides, the shaft is open at its top, the silo mouth when the track "
+                "exit is at or below the ground and the track exit when that exit is above "
+                "it)"
             )
         if self.release_speed_mps is not None:
             return (
@@ -1118,7 +1123,8 @@ class LinearMotorAssist:
             "on, and a stopped carriage is pulled back down by about p_0 A + m_c g_eff sin "
             "phi, which the brake would have to hold; the bore is checked against the "
             "diameter sqrt(4 A_ref / pi) of the run's A_ref only (the main-body section in "
-            "the vehicle files), not the vehicle's largest section, so a wider fairing that "
+            "the vehicle files, or the section an override sets), not the vehicle's largest "
+            "section, so a wider fairing that "
             "starts below the mouth is not checked (the F9 class's 5.2 m fairing, 30.0 to "
             "43.1 m below the mouth of a 100 m silo, would not pass a 3.7 m bore, and a bore "
             "that clears it has more than (5.2 / 3.7)^2 = 1.975 times the area (3.58 times "
@@ -1158,3 +1164,12 @@ class LinearMotorAssist:
             "be stated from push_start (a release-referenced t_ign_s < 0 on a stage that "
             "lights is refused)",
         )
+
+
+def sealed_shaft_of(assist: object) -> SealedShaft | None:
+    """The sealed shaft of the drive ``assist`` that flies a push (SP7 step S5a): a
+    LinearMotorAssist's ``shaft`` (None when its shaft is vented), None for every other
+    drive and for a pad (constant_accel keeps its vented shaft, D-SP7-26). The run-level
+    lines (``sim.planar_assumptions``, ``prelude.early_release_assumption``) read it to
+    state the sealed shaft. Pure."""
+    return assist.shaft if isinstance(assist, LinearMotorAssist) else None

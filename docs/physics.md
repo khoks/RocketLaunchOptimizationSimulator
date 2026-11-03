@@ -6104,7 +6104,10 @@ force-law push at F_max).
   H4-m3, V4-2). Its shaft is said to have no air
   drag on the push only, in the drive caveat's one shaft clause (`_shaft_drag_clause`,
   fix round 2: "the shaft has no air drag (<runs>; on the push only for <early runs>)",
-  "on the push" alone when every vented run shown is an early release). The omissions are worded per run (`_motor_omission`, runs with the
+  "on the push" alone when every vented run shown is an early release; a selection with a
+  sealed-shaft run: one clause per shaft kind, the vented clause then "the vented shaft has
+  no air drag" beside the sealed clause, SP7 step S5a, "The sealed shaft", Run-level lines
+  and readers). The omissions are worded per run (`_motor_omission`, runs with the
   same words grouped): under the acceleration law with no cap bound, the massless
   carriage and the missing shaft drag do not change the push and bias the drive energy
   and peak power (and, for the drag, the interface force) low, as for the prescribed
@@ -6116,7 +6119,10 @@ force-law push at F_max).
   drive work low, as the run's shaft line says, and, with a massless carriage, the
   carriage biasing the release position and push time low (or the speed at release
   high) and the interface force high ("all of the drive force reaches the vehicle": N =
-  (m_v F - m_c (T - D))/M is the whole drive force at m_c = 0), the drag's interface
+  (m_v F - m_c (T - D))/M is the whole drive force at m_c = 0; the formula and the words
+  leave out the impinging thrust, - f_imp m_v T / M, so at m_c = 0 the vehicle receives F -
+  f_imp T on a push lit on the track with f_imp > 0: a known issue, the vented words kept
+  byte for byte, SP7 step S5a fix round 3, P3-m1; a sealed run's words name it), the drag's interface
   clause then limited to the power phase ("in the power phase only, without a carriage
   mass": at F_max the drag moves N by D m_c / M, zero then) (fix round 3, V3-2); the size
   is not established here; a push that stopped on the track has "(<law>, no release) ...
@@ -6256,8 +6262,10 @@ force-law push at F_max).
   release at the track end and the carriage to a release below the mouth, false for a
   release below the mouth whose carriage parks above the ground, which falls to z = 0,
   and for a buried track exit, which falls onto its carriage; and it gave the apex case
-  the carriage case's 'no contact' correction); every other selection, the gallery's
-  included, keeps DISPLAY_ONLY. `panel_caveats` adds `scene.fall_back_caveat` of each
+  the carriage case's 'no contact' correction); every other selection without a
+  sealed-shaft run, the gallery's included, keeps DISPLAY_ONLY (a selection with one:
+  `sealed_plume_item` in the plume item's place, SP7 step S5a; "The sealed shaft",
+  Run-level lines and readers). `panel_caveats` adds `scene.fall_back_caveat` of each
   shown run whose flight ended inside the shaft, through `early_release_lines_of` (fix
   round 5, M2).
 - plots.py: `write_drive_curve` writes plots/<run>_drive_curve.png for a linear-motor run
@@ -6359,7 +6367,8 @@ Modules: `assist/linear_motor.py` (`SealedShaft`, `ShaftKind`, `SHAFT_SEALED`,
 `body_diameter_m`, `_check_sealed_bore` in `resolve_run`), `losses.py` (`PistonWork`,
 `piston_work`, `assist_identity_residual_rel`), `metrics.py` (`SEALED_SHAFT_METRICS`,
 `sealed_shaft_piston`, `sealed_shaft_metrics`, `track_metrics`), `metrics_planar.py`
-(`planar_track_metrics`), `summary.py` (`SEALED_SHAFT_ROWS`). Tests:
+(`planar_track_metrics`), `summary.py` (`SEALED_SHAFT_ROWS`); the run-level lines and
+the readers of SP7 step S5a ("Run-level lines and readers" below). Tests:
 `tests/test_sealed_shaft.py`; two in `tests/test_structure_linear_motor.py`; the pins of
 `tests/vented_pins_support.py` (`tests/data/vented_pins.json`). Design 4.8, D-SP7-26,
 D-SP7-27, the S5 row of section 5; docs/phases/inputs/2026-10-08-SP7-sources.md section
@@ -6522,11 +6531,14 @@ p_atm(-100 m)), more than a 5 g0 brake's own m_c (a_b - g) = 0.78 MN on a 20 t c
 so the brake force, the brake energy and the facility length max(L, s_release + v^2/(2
 a_b)) of a sealed run are upper bounds; on a massless carriage (lm_fixed's) the column
 has no mass to act on; and a stopped carriage is pulled back down by about p_0 A + m_c g,
-which the brake would have to hold. The planar track-push line every planar run carries
-("no air drag in the vented shaft") and the early-release line ("in the vented shaft
-after the release") keep their vented wording byte for byte; a sealed run's shaft line
-reads them as the shaft open above the carriage, where the vehicle flies (S5 changes no
-line that a vented run prints).
+which the brake would have to hold. Since SP7 step S5a a sealed run's planar track-push
+line and its early-release line state the sealed shaft themselves, the shaft open above
+the carriage at its top (the silo mouth when the track exit is at or below the ground,
+the track exit when that exit is above it) with no air drag computed on the vehicle
+during the push, and the cavity under a vehicle released
+before the track end ("Run-level lines and readers"); in S5 they kept the vented wording
+and the sealed shaft line bridged it. Every vented and
+constant_accel run prints them byte for byte as before.
 
 **Stall against the column.** `at_push_start` binds F_p(L), the column's force at the
 track end, its largest on the stroke (`PushStart.column_end_N`, 0 vented), and
@@ -6640,13 +6652,26 @@ stop taper's line "at L the drive force is the holding force M g_eff sin phi - (
 f_imp) T plus the sealed shaft's column force F_p(L) at the track end", the force the
 code flies (the force law's taper is refused). The shaft line opens "linear_motor: shaft
 sealed below the carriage (its trapped air column: the three lines that start
-'linear_motor: sealed shaft'; above the carriage the shaft is open at the mouth: the
-vented shaft named by the track-push line of a planar run is, for this run, that open
-shaft above the carriage), no friction", and with a release speed "... named by the
-track-push line of a planar run and the early-release line of a release before the track
-end is ..." (it names only lines the run can carry; the drag clause as for the vented
-shaft: the vehicle above the carriage is in the open shaft). It points to the three
-lines by their opening words, not as "the next three lines": summary.md merges the lines
+'linear_motor: sealed shaft'; above the carriage, where the vehicle rides, the shaft is
+open at its top, the silo mouth when the track exit is at or below the ground and the
+track exit when that exit is above it), no friction", with or without a release speed
+(the drag clause as for the vented shaft: the vehicle above the carriage is in the open
+shaft). The column acts over the whole stroke, so the bore runs to the track exit: on a
+sealed track whose exit is above the ground (the config accepts one, a 30 m stroke
+exiting at 20 m in its tests) it runs above the ground too and is open at the track
+exit; at a track exit below the ground the flight model flies the vehicle on in the shaft
+above that exit up to the ground (`planar._in_shaft`, the `shaft_exit` event), so the
+shaft above the carriage is open at the silo mouth. "The mouth" in the three lines below,
+S5's words, is that open top: the silo mouth when the track exit is at or below the
+ground, the bore's open end at the track exit when that exit is above it (no committed
+experiment or config has a sealed shaft yet; SP7 step S5a fix round 1, P1-m2, fix round
+2, P2H-m2, and fix round 3, P3H-m1, which gave a buried exit the mouth again; the
+run-level lines S5a wrote say "the track exit" only where the exit is above the
+ground). Until SP7
+step S5a it also read the "vented shaft" of the run's track-push and early-release
+lines as that open shaft; those lines now state the sealed shaft themselves ("Run-level
+lines and readers"), so the bridge is gone. It points to the three lines by their
+opening words, not as "the next three lines": summary.md merges the lines
 of its runs in order of first appearance, and two sealed runs that differ in the shaft
 or column line but share a not-modelled line would break a positional pointer (review
 pass 3, P3H-m1). Then three lines (`sealed_assumptions`; the reference numbers in them
@@ -6711,7 +6736,8 @@ are the surveys' cases, labelled so, not this run's):
   leaves the column no mass to act on, and a stopped carriage is pulled back down by about
   p_0 A + m_c g_eff sin phi, which the brake would have to hold ("Push only"); the bore
   checked against the diameter sqrt(4 A_ref/pi) of the run's A_ref only (the main-body
-  section in the vehicle files), not the vehicle's largest section (the F9 class's 5.2 m
+  section in the vehicle files, or the section an override sets: SP7 step S5a fix round
+  1), not the vehicle's largest section (the F9 class's 5.2 m
   fairing, 30.0 to 43.1 m below the mouth of a 100 m silo, would not pass a 3.7 m bore; a
   bore that clears it has more than (5.2/3.7)^2 = 1.975 times the area, 3.58 times for the
   7.0 m shaft the scene draws, so more than 1.975 times p_0 A and W_p at the same gap: "The
@@ -6806,6 +6832,184 @@ everywhere, the digests in the capture environment (the golden tier's EXACT_ENV_
 The exact 1-D golden tier, the planar digest pin and output capture and the golden-dump
 field lists stand as before.
 
+**Run-level lines and readers (SP7 step S5a; KI-079, KI-077).** Modules:
+`assist/linear_motor.py` (`sealed_shaft_of`: a linear motor's SealedShaft, None for a
+vented one, constant_accel and a pad), `sim.py` (`PLANAR_TRACK_PUSH_ASSUMPTION`,
+`PLANAR_SEALED_TRACK_PUSH_ASSUMPTION`, `PLANAR_TRACK_PUSH_INDEX`, `planar_assumptions`,
+used by `planar_assumption_list`, `search_failed_result` and `guidance_failed_result`),
+`phases/prelude.py` (`early_release_assumption`'s `sealed`, passed by `fly_track`),
+`replay.py` (`SEALED_SHAFT`, `shaft_kind`, `is_sealed`, `sealed_shaft_settings`,
+`sealed_geometry_text`, `plain_figures`, `column_stall`, `COLUMN_STALL_CLAUSE`,
+`sealed_column_text`, `sealed_law_text`, `SEALED_CAVITY_TEXT`, `SEALED_CUSHION_TEXT` and
+`fell_onto_carriage` (fix round 2), `shaft_open_at_mouth` (fix round 3),
+`sealed_closeup_note`, `SHAFT_VENTED_NO_DRAG`, `SHAFT_SEALED_NO_DRAG`,
+`_shaft_drag_clause`'s `clause` (its runs `names`: fix round 3, P3C-m2),
+`drive_caveat`, `motor_acceleration_text`, `_motor_omission`'s `sealed`, `closeup_notes`,
+`assist_text`, `join_names`), `scene.py` (`DISPLAY_ONLY_PLUME_INDEX`,
+`sealed_plume_item`, `display_only_for`'s `shafts`, `run_shafts`, `sealed_run_note`,
+`SEALED_NOTE_MAX_CHARS`, `assist_settings`' `sealed_shaft`, `scene_payload`), `app.py`
+(`pair_shafts`, `results_panel`); `assist/linear_motor.py`'s `COLUMN_STALL_TEXT`, the
+words of the column stall's flag (fix round 1). Tests: the S5a section of
+`tests/test_sealed_shaft.py`. No metric records the shaft; the readers read it from
+resolved_config.yaml's `assist.shaft` (a linear-motor block without the key is vented)
+and quote the column's figures from metrics.json, never recomputed.
+
+- The planar lines (`sim.planar_assumptions`): a pad, constant_accel and a vented linear
+  motor carry PLANAR_ASSUMPTIONS itself, the same tuple, whose track-push line
+  (PLANAR_TRACK_PUSH_ASSUMPTION) is the text every planar run had ("... no Coriolis and
+  no air drag in the vented shaft: ..."; its sha256 is pinned). A sealed run's track-push
+  line is PLANAR_SEALED_TRACK_PUSH_ASSUMPTION, which says what the model does: the flat
+  1-DOF push with g_eff and the exit's ambient pressure, no Coriolis; the shaft sealed
+  below the carriage, the air column trapped there leaving the net pressure force F_p =
+  (p_0 - p(s)) A_bore, with p_0 the ambient pressure at the track start (the column
+  trapped at it, the open side above the carriage held at it; not the exit's pressure of
+  the thrust, 1.2% lower for a 100 m silo: fix round 3, P3-m2), on the carriage against
+  the motion from push start to the release (the drive's lines that start 'linear_motor:
+  sealed shaft'); above the carriage the shaft open at its top (the silo mouth when the
+  track exit is at or below the ground, the track exit when that exit is above it: fix
+  round 3, P3H-m1), where the model computes no air drag on the vehicle during the push, and no dynamic pressure or
+  Mach number (the track rows' q, Mach and q-alpha are NaN on the push in either shaft,
+  `metrics_planar._track_part`; what that drag would do: the drive's line that starts
+  'linear_motor: shaft sealed below the carriage'; the air pushed out of the open end: the
+  drive's line that starts 'linear_motor: sealed shaft, not modelled on the push'); the
+  bore checked against the diameter sqrt(4 A_ref/pi) of the run's A_ref only (the
+  main-body section in the vehicle files, or the section an override sets), not against
+  the vehicle's largest section, so a fairing wider than that section is not checked
+  (KI-076: the check stays as S5 built it; never "the body diameter", which an arm that
+  sets A_ref to the fairing's area, such as `aero_bound`, would make false: fix round 1).
+  summary.md then attributes the vented line to the other runs and the sealed line to the
+  sealed runs (by name, or "all variants" when every variant is sealed:
+  `summary.assumptions_section`), so neither reads [all runs].
+- The early-release line (`prelude.early_release_assumption(..., sealed)`; `fly_track`
+  passes `sealed_shaft_of(assist) is not None`): for a sealed push released below the
+  ground the vehicle flies "in the shaft, open at the mouth, after the release" in place
+  of "in the vented shaft after the release" at a track exit at or below the ground (above
+  a buried exit the flight goes on in the shaft up to the mouth: fix round 3, P3H-m1); at
+  an exit above it "in the bore, which runs to the track exit above the ground and is open
+  there, after the release" in place of "in the vented shaft and on the track above the
+  ground after the release" (fix round 1, P1-m2); and after the floor clause, for any sealed release before
+  the track end, "; below the vehicle the braking carriage still seals the bore, and the
+  cavity that opens between the vehicle's base and the carriage, fed only through the
+  annulus between the bore and the vehicle, is not modelled (inferred: a suction on the
+  vehicle's base, which would slow it, so its speed after the release is biased high, and
+  the exhaust of a stage lit in the cavity, which would act the other way: the drive's
+  line that starts 'linear_motor: sealed shaft, not modelled after the release')" (fix
+  round 1, H-m5 and P1-m3: the directions). Only where the floor clause is written (the
+  parked carriage the flight's floor below the ground, the model's only fall back onto the
+  carriage: a release above the ground, or one whose carriage parks at or above the
+  ground, falls on the obstacle-free path, no impact with the carriage modelled) it then adds
+  "; on a fall back onto the parked carriage the air the vehicle compresses above the
+  carriage, a cushion against the fall, is not modelled either (inferred: the speed of
+  that impact is biased high)" (fix round 2, P2H-m1: the cushion, which the drive's third
+  line does not name, had been said of every sealed early release). With `sealed` False,
+  every vented and constant_accel push, the line is as before (three digests pinned).
+- The replay: `shaft_kind` reads vented, sealed or not stated; `is_vented` is unchanged
+  (a sealed block is not vented) and `is_sealed` names the sealed blocks. The drive
+  caveat counts a sealed run in a clause of its own, "the sealed shaft has no air drag
+  above the carriage" ("on the push only" for a run released below the mouth, as the
+  vented clause words it), never among the vented runs, and on a page with a sealed run
+  the vented clause reads "the vented shaft has no air drag", so a mixed page names each;
+  a page without a sealed run keeps "the shaft has no air drag". A sealed run's drive
+  sentence adds "its shaft is sealed below the carriage: the trapped air column (a <d> m
+  bore over a <h_0> m gap: resolved_config.yaml) acted on the carriage against the motion
+  with up to <F> MN (piston_force_peak_N), and the push did <W> MJ of work against it,
+  drive work the stack does not receive (piston_work_J: not dissipated in the model)"
+  (four significant figures, never in exponent notation: `plain_figures`, fix round 1,
+  P1-m5; a stall's column "did no work, since the push never moved", and for a stall by
+  the sealed shaft's rule, `column_stall`, a flag carrying
+  `linear_motor.COLUMN_STALL_TEXT`, "; " and COLUMN_STALL_CLAUSE after it: the stall guard
+  counts the column's force at the track end, F_p(L), against the drive at F_max and the
+  push-start thrust, and stopped the run although they outweigh the stack's weight, a
+  conservative rule: such a push would have started, and "whether it would then have
+  stopped in the shaft or reached its release is not computed", the flag giving the
+  numbers and what the rule does not credit (fix round 2, P2-m1: not "might have reached
+  the track end", which a cold step push reaches only with a surplus over the weight of
+  at least W_p(L)/L, the column balancing a smaller surplus inside the stroke: in the
+  review's scratch probe lm_stall_sealed, not run by the suite, a cold 6.5 MN drive on a
+  20 t carriage with a 5.24 m bore over a 5 m gap at 100 m has a 0.743 MN surplus against
+  W_p(L)/L = 2.017 MN, and on the energy closed form a step push would stop at s = 3.83
+  m; P2H-m3, V2-2: a semicolon, not a chain of colons); the acceleration law's stall
+  sentence then says the drive and the thrust
+  "cannot hold the stack against the sealed shaft's column at the track end", not
+  "cannot lift the stack": fix round 1, P1-m4; a run with no push record says
+  metrics.json holds neither), then by its law ("Where it acts"; fix round 1, V2, V4,
+  H-m4): under the force law "the drive's force is set by its law, not by the column, so
+  the column slows the stack and lowers the interface force by (m_v/M) F_p against a
+  vented shaft at the same state"; under the acceleration law "the drive's force rises by
+  the column's F_p while no cap binds, so the stack's motion and the interface force are
+  those of a vented shaft at the same state", then by the run's push_cap_bound: "no cap
+  bound, so the column did not slow this push", "a cap bound on this push, and where it
+  bound the column slowed the stack", or, unrecorded, "where a cap binds the column slows
+  the stack"; nothing by law for a stall) and, after an early release, the cavity left
+  out (SEALED_CAVITY_TEXT, with the directions as in the early-release line) and, only for
+  a run whose flight ended on its parked carriage (`fell_onto_carriage`: an impact inside
+  the shaft that the run's shaft_fallback flag logs on the carriage), SEALED_CUSHION_TEXT,
+  "on its fall back onto the parked carriage the air the vehicle compressed above the
+  carriage, a cushion against the fall, is not modelled either (inferred: the speed of
+  that impact is biased high)" (fix round 2, P2H-m1); its missing shaft drag above the carriage is among its omissions, worded as a
+  vented run's, and on a massless carriage its interface clause reads "(the drive force
+  less the column's force F_p, and less the impinging thrust f_imp T on a push lit on the
+  track, reaches the vehicle)", F_int = F - F_p - f_imp T at m_c = 0 ("Where it acts"), a
+  sentence of its own beside a vented run's "(all of the drive force reaches the
+  vehicle)" (fix round 1, H2; fix round 3, P3-m1: the impinging thrust; its stall
+  sentence's carriage clause names the weight the guard counted with the column). The
+  close-up notes name the vented runs ("For <names> the shaft is treated as vented, ...")
+  when a sealed run is shown, and when every vented run shown was released below the
+  mouth say "after its release below the mouth" ("their release") rather than naming
+  them twice (fix round 3, V3-1); they give each sealed run a sentence: its shaft sealed
+  below the carriage, what the column did (as above), the shaft open above the carriage
+  at the mouth (`shaft_open_at_mouth`: a vertical silo whose track exit is at or below
+  the ground) or else at the track exit, above the ground, with no air drag, dynamic
+  pressure or Mach number computed in it on the push, and after an early release the
+  flight computed as in the open atmosphere (in the rest of the shaft below the mouth of
+  an exit at the ground, in the rest of the track and the shaft above it at a buried exit,
+  over the rest of the track at an exit above the ground: fix round 3, P3H-m1) and the
+  cavity left out (and the cushion, for a run whose flight ended on its parked carriage);
+  a stalled run's sentence ends after the column's text, since there was no push (fix
+  round 2, P2H-m3, V2-2). The detail line (and the app's push line) adds "sealed shaft
+  (a <d> m bore over a <h_0> m gap)". `join_names` is the run-list helper the scene shares
+  (fix round 1, C-m4).
+- The scene: the display-only list's plume item (DISPLAY_ONLY_PLUME_INDEX, "... the model
+  has a vented shaft ...") is replaced, for a selection with a sealed run, by
+  `sealed_plume_item`: no exhaust back-pressure, heating or exhaust flow on the carriage,
+  each pushed run's shaft by name (vented, or sealed below the carriage), the trapped
+  column acting on the carriage during the push ("the caveats give what it did"), the
+  pressure the exhaust of an engine lit on the track would build above the carriage, with
+  only the annulus to escape by, not modelled, and the shaft drawn display geometry, its
+  width from configs/display, not a sealed run's bore, the trapped gap below the carriage
+  not drawn (fix round 1, H-m3, P1-m4, V5). A sealed run's note, which the page draws in
+  its panel's note band, under the panel header and over the view, and so on every
+  captured frame (fix round 2, V2-1), gains `sealed_run_note`: "Sealed shaft:
+  the model's bore is <d> m over a <h_0> m gap (resolved_config.yaml); the <D> m shaft
+  drawn is display geometry, the gap not drawn." (D = 7 m, the F9 class's display file, a
+  drawing value the model never reads; 139 characters for a 5.24 m bore over a 5 m gap,
+  measured at 676 px in the page's 11 px canvas font, one canvas line, and a test holds
+  it to SEALED_NOTE_MAX_CHARS = 140; fix round 1, V1: the first wording took two lines).
+  Any run note costs the panel a band: measured in the built-in browser pane (scratch,
+  not run by the suite), a single panel with one, a sealed run's (lm_sealed_accel alone)
+  or an offload run's (silo_cold_s1 of results/silo_offload_2d/20261003T112934Z alone),
+  needs a 960 x 546 frame at the 960 px width and 504 px of height at 1280, while a vented
+  run without a note needs 520 and 478; so a sealed run alone, which fitted a 960 x 540
+  frame before S5a, no longer does (the app then asks for a wider frame), as no offload
+  run alone does, and 1280 x 720 and 1920 x 1080 fit, with the server's four footer lines
+  too (lm and lm_sealed: 532 and 560 px at 1280, 518 and 546 at 1920). Its push settings
+  gain `sealed_shaft` (payload data the frozen template does not draw). The display file's own shaft note, "the model
+  has a vented shaft and no shaft geometry", is payload data the page does not show;
+  configs/display is not edited here, since the gallery's scene page embeds it.
+  templates/scene.html is not edited.
+- The app: its results panel's display-only list reads the pair's shafts (`pair_shafts`,
+  a run folder metrics.json does not describe read as None), its caveats and push line
+  are the replay's, and its embedded scene carries the run notes. The form launches only
+  the committed constant_accel experiments, so the app starts no sealed run; it lists and
+  panels a directory that has one.
+
+Byte identity: a page or payload without a sealed run is worded as before (the gallery's
+six pages regenerate byte-identical; on the S5 smoke directory the replay data and scene
+payload of pad and lm compared equal before and after the change, a scratch check), and
+so are PLANAR_ASSUMPTIONS and the early-release line with `sealed` False (the S5a tests
+pin their digests from the commit before S5a, f120347). The vented pins, the exact 1-D
+golden tier and the planar digest pin and output capture stand as before.
+
 **Stays out of S5:**
 
 - a partly vented shaft (a pressure state `_pa`, which has no atol entry); heat transfer
@@ -6824,15 +7028,9 @@ field lists stand as before.
   flies, and whether a sealed variant can sit in a fairing-area bound arm such as
   `aero_bound` (the user's decision before S6b: "The bore and the vehicle's largest
   section");
-- the column in the readers. Replay, scene and the app do not name it, and
-  `replay.is_vented` reads a sealed block as not vented. On a page with sealed runs only,
-  the vented-shaft drag clause and close-up note are left out. On a page with vented and
-  sealed runs, the drag clause names the vented runs alone, which implies drag in the
-  sealed runs' shaft (there is none above the carriage), and the unnamed close-up note
-  ("the shaft is treated as vented") reads as covering the sealed runs. The scene's
-  display-only list says "the model has a vented shaft" on every page, and so does the
-  shaft note of configs/display/f9_class.yaml. Open: fix them, or refuse a directory with
-  a sealed run in the readers, before S6b publishes a sealed page;
+- the column in the readers: done in S5a ("Run-level lines and readers"), but for the
+  shaft note of configs/display/f9_class.yaml ("the model has a vented shaft"), payload
+  data the page does not show, left as it is (the gallery's scene page embeds it);
 - an exact stall rule (the guard above is conservative for every push);
 - the experiment variant lm_fixed_sealed (S6b).
 
@@ -10394,26 +10592,27 @@ over t_r = <t_r> s", or "stepping at push start (t_r = 0: infinite jerk)" for a 
     never reaches).
 - with a sealed shaft (SP7 step S5; "The sealed shaft", Assumption lines): the shaft line
   opens "linear_motor: shaft sealed below the carriage (its trapped air column: the three
-  lines that start 'linear_motor: sealed shaft'; above the carriage the shaft is open at
-  the mouth: the vented shaft named by the track-push line of a planar run is, for this
-  run, that open shaft above the carriage), no friction" (with a release speed "... of a
-  planar run and the early-release line of a release before the track end is ..."; the
-  rest as above), and three lines follow it (`sealed_assumptions`), thirteen lines in
-  all: linear_motor: sealed shaft: <the column: the bore, A, the gap, p_0, gamma and
-  whether it is assumed, the pressure law, the force and its bound from push start to
-  the release, the law's effect with its conditions, with a release speed the speed
-  peak inside the track and a release speed just below it passed over, the work done
-  against the column, drive work the stack does not receive, booked beside the
-  identity's terms, not as dissipated, p_0 A and W_p scaling with the bore's area>;
-  linear_motor: sealed shaft, not modelled on the push: <the air pushed out of the mouth,
-  survey 08's case; the open shaft's hydrostatic drop, F_p biased high; the non-uniform,
-  unsteady expansion of the cooled gas, first order, F_p biased low there; the exhaust of
-  an engine lit on the track>; linear_motor: sealed shaft, not modelled after the release
-  and in the geometry: <the column after the release, with a release speed the cavity
-  under a vehicle released before the track end and the exhaust of a stage lit in it,
-  inferred; the brake force, brake energy and facility length upper bounds; the bore
-  checked against the run's A_ref section only, the F9 class's 5.2 m fairing; the vents a
-  vented shaft needs, inferred, survey 07's case>.
+  lines that start 'linear_motor: sealed shaft'; above the carriage, where the vehicle
+  rides, the shaft is open at its top, the silo mouth when the track exit is at or below
+  the ground and the track exit when that exit is above it), no friction" (with or
+  without a release speed
+  since SP7 step S5a, which dropped its bridge to a "vented shaft" in the run's
+  track-push and early-release lines; the rest as above), and three lines follow it
+  (`sealed_assumptions`), thirteen lines in all: linear_motor: sealed shaft: <the column:
+  the bore, A, the gap, p_0, gamma and whether it is assumed, the pressure law, the force
+  and its bound from push start to the release, the law's effect with its conditions,
+  with a release speed the speed peak inside the track and a release speed just below it
+  passed over, the work done against the column, drive work the stack does not receive,
+  booked beside the identity's terms, not as dissipated, p_0 A and W_p scaling with the
+  bore's area>; linear_motor: sealed shaft, not modelled on the push: <the air pushed out
+  of the mouth, survey 08's case; the open shaft's hydrostatic drop, F_p biased high; the
+  non-uniform, unsteady expansion of the cooled gas, first order, F_p biased low there;
+  the exhaust of an engine lit on the track>; linear_motor: sealed shaft, not modelled
+  after the release and in the geometry: <the column after the release, with a release
+  speed the cavity under a vehicle released before the track end and the exhaust of a
+  stage lit in it, inferred; the brake force, brake energy and facility length upper
+  bounds; the bore checked against the run's A_ref section only, the F9 class's 5.2 m
+  fairing; the vents a vented shaft needs, inferred, survey 07's case>.
 - the track gravity (`LinearMotorAssist.track_gravity_assumption`, the form of
   constant_accel's): linear_motor: constant g_eff = <value> m/s^2 on the track, omega_p
   = 0, Coriolis neglected (every 1-D run); on a planar run linear_motor: constant g_eff =
@@ -10455,7 +10654,14 @@ drag-free, with vacuum thrust (no atmosphere; no shaft flow model, no walls)" an
 "gravity and any thrust over the rest of the track change (the gravity over it is in the
 flight's losses, the thrust in its delta-v)" (fix round 2). A track exit
 away from the ground reads "the track exit at altitude <z_exit> m", and a release above
-the ground "over the rest of the track's length".
+the ground "over the rest of the track's length". A push whose shaft is sealed (SP7 step
+S5a, `sealed`) reads "in the shaft, open at the mouth, after the release" in place of "in
+the vented shaft after the release" at a track exit at or below the ground ("in the
+bore, which runs to the track exit above the ground and is open there, after the
+release" at an exit above the ground) and adds, after the floor
+clause, the cavity clause with the direction of each inferred effect and, only where the
+floor clause is written, the cushion under a fall back onto the parked carriage ("The
+sealed shaft", Run-level lines and readers).
 
 The atmosphere module ("Atmosphere"): these three, plus the in-flight floor clamp,
 are exported as the `ATMOSPHERE_ASSUMPTIONS` tuple (exact texts in "Atmosphere,
@@ -10504,7 +10710,18 @@ exact texts are the tuple's; in summary:
   shaft: under a prescribed net acceleration (constant_accel) the drive force would
   absorb that drag, so the release speed is unchanged, and the drive energy, the peak
   drive power and the interface force are biased low (by int D v dt, D v_exit and D);
-  release from a vertical track only.
+  release from a vertical track only (`sim.PLANAR_TRACK_PUSH_ASSUMPTION`). A run whose
+  linear motor has a sealed shaft carries `sim.PLANAR_SEALED_TRACK_PUSH_ASSUMPTION` in
+  its place (`sim.planar_assumptions`, SP7 step S5a): the shaft sealed below the
+  carriage, the trapped column's net pressure force F_p on the carriage against the
+  motion from push start to the release (p_0 the ambient pressure at the track start),
+  the shaft open above the carriage at its top (the silo mouth when the track exit is at
+  or below the ground, the track exit when that exit is above it), where the model
+  computes no air
+  drag on the vehicle and no q or Mach on the push, the air pushed out of the open end
+  left out, and the bore checked against the diameter of the run's A_ref section only
+  (the main-body section in the vehicle files, or the section an override sets), not the
+  vehicle's largest section ("The sealed shaft", Run-level lines and readers).
 - staging is instantaneous and impulse-free; the fairing stays on through staging
   under the heating rule unless the criterion is already met there.
 - stage 2 flies linear-tangent steering (tan p = a - b tau in the local horizontal
@@ -11080,7 +11297,9 @@ so the gap drawn then is a drawing choice; nothing bounds the gap of a run not y
 so each page quotes the shown run's own; both fairing halves follow one path; a
 body still in flight when the run ends is drawn stopped there. The plume
 inside the shaft and the carriage beneath lit engines (the model has a vented shaft and
-one impingement fraction that moves only track forces and drive energy). The carriage
+one impingement fraction that moves only track forces and drive energy; a selection with
+a sealed-shaft run: `scene.sealed_plume_item` in its place, each shaft named, SP7 step S5a,
+"The sealed shaft", Run-level lines and readers). The carriage
 after release and where it brakes (the model gives a braking distance only); a failed
 ignition falling back along the obstacle-free path (no contact with the carriage, the
 mouth or the shaft). The code's rule, whatever the release trigger: after a release below
@@ -11520,16 +11739,23 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_sealed_shaft.py::test_assist_energy_identity_with_the_column` (force law cold and hot; acceleration law cold, hot capped by F_max, hot uncapped on a 20 t carriage) | "The sealed shaft", Energy, and "Assist energy identity": work_drive + work_thrust = delta_mech + massflow + dissipated + W_p recomputed from the fields; the budget's own residual is W_p; dissipated 0; `PistonWork` quadrature on its closed form W_p(s_end); the metric is the record's identity residual; W_p 3% to 6% of the supplied work; F_p < p_0 A at every step | 1e-9 (CLAUDE.md 1e-6) / 1e-12 / exact |
 | `test_sealed_shaft.py::test_column_share_of_the_interface_force` (the same five pushes) | "The sealed shaft", Where it acts: at every integrator step, at the same state, force law (cold and hot, both on a 20 t carriage): the drive force equal (bit for bit), F_int = F_int,vented - (m_v/M) F_p, felt g lower by F_p/(M g0); acceleration law, uncapped steps (more than five on each push but the one capped from push start): drive force + F_p, F_int unchanged; steps where the vented command already exceeds the cap (more than five on the cold push's power cap and on the hot push capped by F_max): the drive force equal (bit for bit), F_int lower by (m_v/M) F_p; the extra rate F_p sdot | 1e-9 of F_max and of the felt g; exact; the extra rate 1e-12 relative (1e-6 W absolute) |
 | `test_sealed_shaft.py::test_metrics_of_a_sealed_push_and_none_on_a_vented_one` | "The sealed shaft", Metrics: the sealed run's keys are the vented run's plus `SEALED_SHAFT_METRICS` after `LINEAR_MOTOR_METRICS`; piston_work_J the record's, piston_force_peak_N = F_p(s_release), bore_pressure_release_pa = p(s_release); none on the vented run (whose residual metric is `residual_rel()`); the sealed push exits slower with a lower F_int peak | exact / 1e-12 |
-| `test_sealed_shaft.py::test_a_sealed_push_released_at_a_target_speed` (no carriage, 20 t carriage) | "The sealed shaft", Push only, Metrics and Where it acts: the force law cold released at 50 m/s: trigger `target_speed`, s_release < L, the exit speed the release speed (1e-9), piston_force_peak_N = F_p(s_release) and bore_pressure_release_pa = p(s_release) (1e-12), piston_work_J = W_p(s_release) < W_p(L) (1e-9), the identity with the column (1e-9; the metric is the record's), the facility max(L, s_release + v^2/(2 a_b)); the vented twin releases at the same speed at a smaller position and push time; the column line names those, not the exit speed | 1e-9 / 1e-12 / exact |
+| `test_sealed_shaft.py::test_a_sealed_push_released_at_a_target_speed` (no carriage, 20 t carriage) | "The sealed shaft", Push only, Metrics and Where it acts: the force law cold released at 50 m/s: trigger `target_speed`, s_release < L, the exit speed the release speed (1e-9), piston_force_peak_N = F_p(s_release) and bore_pressure_release_pa = p(s_release) (1e-12), piston_work_J = W_p(s_release) < W_p(L) (1e-9), the identity with the column (1e-9; the metric is the record's), the facility max(L, s_release + v^2/(2 a_b)); the vented twin releases at the same speed at a smaller position and push time; the column line names those, not the exit speed; the flown run's early-release line 'in the shaft, open at the mouth, after the release' with the cavity clause and no 'vented', the vented twin's 'in the vented shaft after the release' without it (SP7 step S5a) | 1e-9 / 1e-12 / exact |
 | `test_sealed_shaft.py::test_a_sealed_push_s_speed_can_peak_and_fall_inside_the_track` | "The sealed shaft", Speed along the stroke (review pass 3, P3-m1): the force law cold, no carriage, F_max = m0 (3 g0 + g), a 2 m/s power corner (`fly_track`): the largest speed of the dense output (refined by a bounded search to 1e-12 s) at 1 m < s < L/2, more than 0.1 m/s above the exit speed, more than ten falling steps, and P_max/sdot = M g + F_p(s) there; a release speed 1e-3 m/s below the peak releases there (`target_speed`, at the release speed, before the peak's s, no flag), one 1e-6 m/s below it is passed over (released at L at the exit speed of the push with no release speed, one `release_speed_not_reached` flag): the miss the column line states | 1e-8 relative (measured 1.1e-9); 1e-9 relative; exact |
 | `test_sealed_shaft.py::test_stall_against_the_column_at_push_start` | "The sealed shaft", Stall: F_max = M g + F_p(L)/2 gives drive_stall with the column's flag (written out: the stack's momentum, a rising thrust and a falling mass not credited), zero work and peak force, no release pressure, F_int peak None; vented the same drive flies; (M g + F_p(L))(1 + 1e-3) reaches L; a step push with F_max - M g = 0.95 F_p(L), above W_p(L)/L so it would reach L, is refused (the guard's conservatism), and with a 3 m/s release speed too, its flag adding "a release at the release speed before the track end, where the column is below F_p(L)" to what is not credited (review pass 3, P3H-m2) | exact |
 | `test_sealed_shaft.py::test_assist_energy_budget_keeps_its_fields` | D-SP7-26, D-SP7-27: `AssistEnergyBudget`'s five fields; `PistonWork` (work_J, closed_form_J) frozen, not a subclass; no piston field on `sim.Result`; an empty push a zero record | exact |
 | `test_sealed_shaft.py::test_a_planar_sealed_push_closes_its_identity_and_writes_its_metrics` | "The sealed shaft", planar prelude (28.5 deg site, g_ref): the identity with the column, the quadrature on its closed form and the W_piston_J state on W_p(s) at every step; `planar_track_metrics` ends with `SEALED_SHAFT_METRICS`, its residual the record's | 1e-9 / exact / 1e-12 |
 | `test_sealed_shaft.py::test_sealed_config_validates_dumps_and_builds`, `::test_sealed_config_refusals` (15 cases), `::test_constant_accel_keeps_its_vented_shaft` | "The sealed shaft", Config: a sealed block validates, dumps its three keys and validates again; a vented dump has no shaft_* key; `config.ShaftKind` = the model's; `build_assist` traps the column at the ICAO pressure of the track start (-100 m; -10 m for a 30 m stroke exiting at 20 m); the acceleration law's taper accepted; at the ICAO floor (a 5,004 m stroke) the floor's pressure, `standard_atmosphere`'s, and below it the model raises (review pass 3, C3-m1), while a vented track that deep validates; refused: a sealed key on a vented shaft (a null too), a missing key, gamma 1 or a bool, a numeric-string bore, a zero bore, a NaN, infinite or negative gap, the force law's taper, a sealed track starting below the ICAO floor (a 6,000 m stroke, the message written out in part), an unknown shaft; constant_accel refuses a sealed shaft and a shaft key, its line unchanged | raises (message or type) / exact |
 | `test_sealed_shaft.py::test_a_bore_at_or_below_the_body_is_refused` | "The sealed shaft", Config: `resolve_run` refuses a bore at the diameter sqrt(4 A_ref/pi) = 3.6598 m of the run's A_ref (the main body) and at 3.6 m (the message names the run's A_ref section, never "body diameter", and says a wider section such as a fairing is not checked), a 3.7 m bore against an A_ref set to the 5.2 m fairing's section (21.24 m^2, d = 5.20035 m, `aero_bound`'s override), and a sealed shaft on a vehicle without an aero block; 3.7 m resolves, and 3.66 m (the nominal body A_ref's source rounds) too; `config.body_diameter_m`, which the check calls | raises (message) / exact |
-| `test_sealed_shaft.py::test_sealed_assumption_lines` | "The sealed shaft", Assumption lines: thirteen lines, the vented ten with the shaft line's opening changed (written out: the three lines named by their opening words 'linear_motor: sealed shaft', three such lines; the vented shaft named by a planar run's track-push line, and with a release speed by the early-release line, read as the open shaft above the carriage) and three after it: the column (written out in part: the values, gamma that of ICAO air, the bound, the law's effect and its condition, "on every push S5's tests and probes measured", the felt g falling on a cold force-law plateau, the work done against the column, no 'reversible'; with a release speed the release position and the push time, not the exit speed), not modelled on the push (survey 08's case, 77 kN plus 4 to 23 kN at 3 g0, 0.4% to 0.5%; the hydrostatic drop, biased high; the non-uniform, unsteady expansion of the gas cooled to 35 to 110 K, first order, biased low; the exhaust of an engine lit on the track, inferred), not modelled after the release and in the geometry (p_0 A, the braking metrics upper bounds, the massless carriage, the bore checked against the run's A_ref section only, the 5.2 m fairing, more than 1.975 times the area and p_0 A and W_p, the vents, inferred; the open shaft at the mouth after the release written out, no cavity); with a release speed, under either law, the column line's speed peak and passed-over release speed and the third line's cavity under a vehicle released before the track end (both written out; neither without a release speed); the acceleration law's effect, its control line with + F_p(s) and its taper line with F_p(L) (both written out against the vented lines); gamma 1.3 called assumed | exact |
+| `test_sealed_shaft.py::test_sealed_assumption_lines` | "The sealed shaft", Assumption lines: thirteen lines, the vented ten with the shaft line's opening changed (written out: the three lines named by their opening words 'linear_motor: sealed shaft', three such lines; above the carriage, where the vehicle rides, the shaft open at its top, the silo mouth when the track exit is at or below the ground and the track exit when that exit is above it (fix round 3, P3H-m1), the same with a release speed and no 'vented' in it since SP7 step S5a) and three after it: the column (written out in part: the values, gamma that of ICAO air, the bound, the law's effect and its condition, "on every push S5's tests and probes measured", the felt g falling on a cold force-law plateau, the work done against the column, no 'reversible'; with a release speed the release position and the push time, not the exit speed), not modelled on the push (survey 08's case, 77 kN plus 4 to 23 kN at 3 g0, 0.4% to 0.5%; the hydrostatic drop, biased high; the non-uniform, unsteady expansion of the gas cooled to 35 to 110 K, first order, biased low; the exhaust of an engine lit on the track, inferred), not modelled after the release and in the geometry (p_0 A, the braking metrics upper bounds, the massless carriage, the bore checked against the run's A_ref section only, the main-body section or the section an override sets, the 5.2 m fairing, more than 1.975 times the area and p_0 A and W_p, the vents, inferred; the open shaft at the mouth after the release written out, no cavity); with a release speed, under either law, the column line's speed peak and passed-over release speed and the third line's cavity under a vehicle released before the track end (both written out; neither without a release speed); the acceleration law's effect, its control line with + F_p(s) and its taper line with F_p(L) (both written out against the vented lines); gamma 1.3 called assumed | exact |
 | `test_sealed_shaft.py::test_summary_rows_of_a_sealed_shaft_run` | "The sealed shaft", Metrics: `SEALED_SHAFT_ROWS` (every `SEALED_SHAFT_METRICS` key) after `LINEAR_MOTOR_ROWS` in the 1-D and planar tables when a sealed run is in the table, none otherwise; '-' for the pad and a vented motor, n/a for a release item without a release and in every row of a sealed run without a push record (the rows still shown); the first row's label: the n/a key (every row: no push record; the pressure row: no release), work done against the trapped column, drive work the stack does not receive, not dissipated in the model, no 'reversible' | exact |
 | `test_sealed_shaft.py::test_vented_runs_keep_their_metric_keys`, `::test_vented_runs_match_their_pins` | "The sealed shaft", Byte identity of the rest: captured from the commit before S5, e12e524 (`SOURCE_COMMIT` and the JSON's `source_commit`, asserted equal; its `src` by `git archive e12e524 src`); the metric keys of five 1-D runs (force law cold, hot on a 20 t carriage; acceleration law with a taper; a release speed; constant_accel) and of the planar flown push's track metrics (everywhere); sha256 digests (the 1-D runs: integrator states, metrics, time series, events, assumptions, flags, status, budget; the planar flown push through the config: phases' states, events, flags, status, the drive's assumptions, its planar track metrics, sampled time series and budget) equal `tests/data/vented_pins.json` in the capture environment (skipped elsewhere unless LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) | exact |
+| `test_sealed_shaft.py::test_a_vented_run_keeps_its_run_level_lines` | "The sealed shaft", Run-level lines and readers, byte identity: sha256 of `sim.PLANAR_ASSUMPTIONS` joined by newlines equal to its digest from the commit before S5a (f120347); its track-push line (`PLANAR_TRACK_PUSH_ASSUMPTION`, at `PLANAR_TRACK_PUSH_INDEX`) written out; `planar_assumptions` the same tuple (identity) for `NoAssist`, a constant_accel drive and a vented linear motor, `sealed_shaft_of` None for each, and their `planar_assumption_list` (a stand-in trace and setup) PLANAR_ASSUMPTIONS, the run's line, ATMOSPHERE_ASSUMPTIONS and the drive's lines; `early_release_assumption` with `sealed` False equal to the default and to the three pre-S5a digests (a planar release below the mouth with its floor, one at an exit 20 m above the ground, a 1-D one at 101325 Pa) | exact |
+| `test_sealed_shaft.py::test_a_sealed_run_states_its_shaft_in_its_run_level_lines` | "The sealed shaft", Run-level lines and readers: `planar_assumptions` of a sealed linear motor PLANAR_ASSUMPTIONS with the track-push line replaced by `PLANAR_SEALED_TRACK_PUSH_ASSUMPTION` (written out: p_0 the ambient pressure at the track start, the shaft open above the carriage at its top, the silo mouth at an exit at or below the ground and the track exit at one above it (fix round 3, P3-m2, P3H-m1), the model computing no drag there, the bore checked against the run's A_ref section, the main-body section or the section an override sets; no 'vented', no 'body diameter'), nothing else changed; its `planar_assumption_list` without the vented line and without 'in the vented shaft', 'the vented shaft named' or 'shaft vented' in any line; the four drive lines it points to present once each by their opening words; `early_release_assumption(..., sealed=True)` for the three pinned cases and an exit 20 m below the ground: 'in the shaft, open at the mouth, after the release' at an exit at the ground and at one below it (fix round 3, P3H-m1) and 'in the bore, which runs to the track exit above the ground and is open there, after the release' above it, each for the vented wording, and the cavity clause (written out: the directions) before 'the carriage brakes', once, no 'vented'; the cushion clause (written out) after it only where the floor clause is written (the pinned release with its floor at -82 m and a buried exit with its floor at -30 m), not for a carriage parked 9.1 m above the mouth, a release with no floor or one above the ground (fix round 2, P2H-m1); a release above the ground gains the cavity clause alone | exact |
+| `test_sealed_shaft.py::test_failed_runs_carry_their_shaft_s_planar_lines` | "The sealed shaft", Run-level lines and readers (fix round 1, P1-m6): `sim.search_failed_result` and `sim.guidance_failed_result` of a sealed linear motor, a vented one and a pad (stand-in run config, vehicle, record and run lines, monkeypatched): `planar_assumptions` of the drive, the run's line, ATMOSPHERE_ASSUMPTIONS and the drive's lines; the sealed track-push line in the sealed run's list only, the vented one in the others' | exact |
+| `test_sealed_shaft.py::test_replay_names_the_sealed_shaft_and_keeps_a_vented_page` | "The sealed shaft", Run-level lines and readers, the replay (hand-made configs and metrics: a 5.24 m bore over a 5 m gap, 2.18 MN and 201.6 MJ, 2.15 MN and 120 MJ for the early release): `shaft_kind` (vented, sealed, None for constant_accel without the key and for a pad), `is_vented` and `is_sealed`; `assist_text` written out with and without 'sealed shaft (a 5.24 m bore over a 5 m gap)'; `sealed_shaft_settings`; `sealed_column_text` written out (the figures as recorded, four significant figures; a stall's 'did no work'; no push record); the drive caveat of pad, lm (vented), lm_sealed and lm_sealed_target (released below the mouth) written out in full: 'The vented shaft has no air drag (lm) and the sealed shaft has no air drag above the carriage (lm_sealed; on the push only for lm_sealed_target)', each sealed drive sentence with its column and the force law's effect, the early release's flight and cavity, the missing shaft drag among the omissions; the close-up notes' last three written out ('For lm the shaft is treated as vented ...' and one per sealed run); a sealed run alone: its clause, 'The drive', no vented clause or note, no 'vented' in its notes; a page without a sealed run: 'The shaft has no air drag.' and 'The shaft is treated as vented, ...' as before (written out). Fix round 1: `sealed_law_text` under the force law and under the acceleration law with no cap bound, a cap bound and unrecorded (written out), an acceleration-law sealed push with no cap bound saying the column did not slow it; a massless sealed run's interface clause in a sentence of its own beside the vented twin's '(all of the drive force reaches the vehicle)', since fix round 3 (P3-m1) '(the drive force less the column's force F_p, and less the impinging thrust f_imp T on a push lit on the track, reaches the vehicle)'; `column_stall` (the stall flag with `COLUMN_STALL_TEXT`, not S4's stall, not without the stall status) and the column stall's text (written out), the acceleration-law stall sentence for each; `plain_figures` (2.18, 201.7, 120, 12350, 0.00001234) and a 12350 MJ work with no exponent; `join_names`. Fix round 2: the column stall's text with 'did no work, since the push never moved;' and 'whether it would then have stopped in the shaft or reached its release is not computed', never 'might have reached'; a stalled run's close-up sentence ending after the column's text (column stall and S4's stall, written out); `fell_onto_carriage` and SEALED_CUSHION_TEXT (written out) in the drive caveat and close-up note of a sealed early release whose impact the shaft_fallback flag logs on the parked carriage, absent for one that stopped at its apex and for a run with no impact in the shaft. Fix round 3: a massless column stall's carriage clause 'a carriage mass would only add to the weight that the stall guard counted, with the column's force at the track end, against the drive' (written out, P3H-m4); `shaft_open_at_mouth` (an exit 20 m above the ground: False; at the ground, unset and 20 m below it: True) and the close-up sentence of a sealed run with a 30 m stroke exiting 20 m above the ground ('open at the track exit'; after an early release 'before the track end the flight over the rest of the track') and with an exit 20 m below it ('open at the mouth'; after an early release 'before the track end the flight in the rest of the track and the shaft above it'), written out (P3H-m1, P3H-m4); beside a sealed run, the vented note of one or two vented runs all released below the mouth ('For lm_v the shaft is ... after its release below the mouth', 'their release'), of a vented run released early beside one released at the track end ('... of lm_v'), and a vented-only page's note as before (V3-1) | exact |
+| `test_sealed_shaft.py::test_scene_and_app_name_the_sealed_shaft` | "The sealed shaft", Run-level lines and readers, the scene and the app: `scene.run_shafts` of pad, lm and lm_sealed (None, vented, sealed); `app.pair_shafts` with a run folder metrics.json does not describe (None); `display_only_for` DISPLAY_ONLY without shafts and with vented only, and with a sealed run its plume item (DISPLAY_ONLY_PLUME_INDEX) replaced by `sealed_plume_item` (written out), the other items unchanged, the fall-back carriage item still swapped beside it; `sealed_plume_item` naming two sealed runs (the pressure the exhaust of an engine lit on the track would build above the carriage not modelled: the docstring corrected in fix round 3, P3H-m3); `sealed_run_note` written out with the 7 m shaft drawn (at most `SEALED_NOTE_MAX_CHARS`) and without a drawn width, None for a vented run; `assist_settings`' `sealed_shaft` for the sealed run only | exact |
+| `test_sealed_shaft.py::test_summary_and_pages_of_a_sealed_shaft_directory` (slow; its fixture about 2 s) | "The sealed shaft", Run-level lines and readers, on a real fixed-guidance planar directory in a temporary root (pad, lm vented, lm_sealed and lm_sealed_target with a 5.24 m bore over a 5 m gap; silo_screening_2d's shared blocks): summary.md's vented track-push line attributed '[pad, lm]' and the sealed one '[lm_sealed, lm_sealed_target]', the early-release line '[lm_sealed_target]' with the sealed wording and the cavity clause, the cushion clause there exactly when the floor clause is (fix round 2, P2H-m1), no line a sealed run carries saying 'in the vented shaft'; the replay's drive caveat and close-up notes with each sealed run's force and work formatted from metrics.json and its bore and gap from the config; the detail line; a page of pad and lm with no 'sealed' in its data; the scene payload's display-only plume item, the sealed run's note with the 7 m shaft drawn, its `sealed_shaft` work equal to the metric; pad and lm's payload with DISPLAY_ONLY and empty notes; both pages written, ASCII; the pad and lm_sealed payload strict JSON | exact |
+| `test_sealed_shaft.py::test_the_app_lists_and_panels_a_sealed_shaft_directory` (slow) | "The sealed shaft", Run-level lines and readers, the app: the directory row (complete, playable, planar_2d); `results_panel` of lm and lm_sealed: the push line with the sealed shaft's bore and gap, the display-only plume item naming each shaft, the sealed clause among the caveats; of pad and lm: DISPLAY_ONLY, no caveat saying 'sealed' | exact |
 | `test_structure_linear_motor.py::test_a_sealed_push_lowers_the_flown_interface_peak_by_the_column_share` | "The sealed shaft", Where it acts, through "The flown push of a linear motor": a cold force-law push (30 m, F_max 22 MN, 20 t carriage) sealed and vented; both max-F_int and max-n cases at t_r; there F_int,sealed = (m_v/M) F_max - (m_v/M) F_p(s*) and = the vented drive at the sealed state less the share, n lower by F_p(s*)/(M g0), p_0 = p_atm(-30 m) | 1e-9 |
 | `test_structure_linear_motor.py::test_a_sealed_shaft_does_not_raise_the_structural_mass` | "The sealed shaft": SHORT sealed on the synthetic file at x = 20 t: the record's keys STRUCTURE_RECORD_KEYS, n_q, n_peak and F_peak below the vented push's, dm not larger (5,812 against 5,903 kg measured; synthetic) | exact (inequalities) |
 | `test_structure_reporting.py::test_payload_case_two_passes_contraction_and_flag`, `::test_payload_contraction_edge_cases` | the payload form on fake runs whose P* falls with the stage-1 dry mass (P* = P_ref + 0.5 - 0.25 (dry1 - 22,200 kg), a test rule): dm_0 the full-load sizing at P_ref, P_1* = P_ref + 0.5 - 0.25 dm_0, dm_1 the sizing at P_1* (smaller), P_2* on dm_1, c and the residual estimate recomputed from the record by their definitions, the flag off at the design's limits and fired when `STRUCTURE_PAYLOAD_CONTRACTION_MAX` is lowered below c (the run's and the record's flags, the run line carrying the estimate, the tolerance and c against the limit, the console line); the record's kind, keys ending with `STRUCTURE_RECORD_KEYS`, its `structure_dm_x0_kg` equal to dm_0 and to the offload case's `structure_dm_x0_kg` of the same variant and settings, the run written under the case's name with dm_1 restated under the full_load provenance, its note starting "structure payload case 'cold_pstar_st':" and no dict of either pass carrying "(solved)" or "offload case", the payload-case and structure assumption lines and no offload line, the pass-1 run among the checked runs, nothing under `cases`; a case whose P_2* search fails (status search_failed, `run` and `unconverged` null, `payload_kg` NaN, dm_1 recorded, no payload flag, nothing written and no figure) and one whose P_1* search fails (no second pass), the summary's two status rows, `STRUCTURE_PAYLOAD_NOT_WRITTEN` and `STRUCTURE_PAYLOAD_FLAG_NA` in their cells, the console lines; the edge cases (equal sizings 0, P_1* = P_ref inf, a hand case 0.1) ("Reporting the structure", The payload form) | 1e-12 relative; exact |

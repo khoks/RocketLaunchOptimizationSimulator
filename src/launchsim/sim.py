@@ -7,7 +7,8 @@ for byte): ``simulate`` (pure) runs one configuration through the 1-D planner
 gravity, g_eff = mu/R_E^2, ignition specs, the assist model and its track through
 ``assist.build_assist``). planar_2d (Phase 2): ``run_planar`` runs the shared search
 (``search.run_search``) or the fixed guidance and ``simulate_planar`` (pure) assembles
-the Result of the recorded run (``metrics_planar``; ``PLANAR_ASSUMPTIONS``; the
+the Result of the recorded run (``metrics_planar``; ``planar_assumptions``:
+PLANAR_ASSUMPTIONS, with a sealed shaft's own track-push line since SP7 step S5a; the
 per-run checks of the screening-beat rule, status ``bug_suspect``);
 ``rerun_resolved`` rebuilds an energy-only sensitivity case on a run already flown,
 ``matched_run`` executes the rung-2 runs of the matched-payload attribution for
@@ -106,7 +107,7 @@ from launchsim import structure
 from launchsim.assist import NoAssist, build_assist
 from launchsim.assist.base import AssistModel, TrackGeometry
 from launchsim.assist.constant_accel import ConstantAccelAssist
-from launchsim.assist.linear_motor import TAPER_START, LinearMotorAssist
+from launchsim.assist.linear_motor import TAPER_START, LinearMotorAssist, sealed_shaft_of
 from launchsim.atmosphere import ATMOSPHERE_ASSUMPTIONS, ambient_scalar
 from launchsim.compare import (  # re-exported
     ATTRIBUTION_TERMS,
@@ -508,9 +509,12 @@ __all__ = [
     "PLANAR_MODEL",
     "PLANAR_PLOT_PANELS",
     "PLANAR_REQUIRED_METRICS",
+    "PLANAR_SEALED_TRACK_PUSH_ASSUMPTION",
     "PLANAR_SWEEP_INDEX_METRICS",
     "PLANAR_SWEEP_INDEX_TEXT",
     "PLANAR_TIMESERIES_COLUMNS",
+    "PLANAR_TRACK_PUSH_ASSUMPTION",
+    "PLANAR_TRACK_PUSH_INDEX",
     "PLANAR_VARIANT_ROWS",
     "PLOT_ABSCISSA",
     "PLOT_ABSCISSA_LABEL",
@@ -648,6 +652,7 @@ __all__ = [
     "payload_yardstick_lines",
     "perturbed_value",
     "planar_assumption_list",
+    "planar_assumptions",
     "planar_bounds",
     "planar_comparisons",
     "planar_experiment_result",
@@ -1186,6 +1191,49 @@ def structure_block_needs_hold(pad: ResolvedRun) -> None:
 
 # -------------------------------------------------------------------- planar model
 
+PLANAR_TRACK_PUSH_ASSUMPTION = (
+    "the track push is flat and 1-DOF with g_eff = mu/R_E^2 - omega_p^2 R_E and the "
+    "constant ambient pressure of the exit; no Coriolis and no air drag in the vented "
+    "shaft: under a prescribed net acceleration (constant_accel) the drive force would "
+    "absorb that drag, so the release speed is unchanged, and the drive energy, the peak "
+    "drive power and the interface force are biased low (by int D v dt, D v_exit and D); "
+    "release from a vertical track only"
+)
+"""PLANAR_ASSUMPTIONS' track-push line, which every planar run but a sealed-shaft one
+carries (a pad, constant_accel and a vented linear motor: byte for byte as before SP7 step
+S5a); ``planar_assumptions`` puts PLANAR_SEALED_TRACK_PUSH_ASSUMPTION in its place for a
+sealed shaft."""
+PLANAR_SEALED_TRACK_PUSH_ASSUMPTION = (
+    "the track push is flat and 1-DOF with g_eff = mu/R_E^2 - omega_p^2 R_E and the "
+    "constant ambient pressure of the exit; no Coriolis; the shaft is sealed below the "
+    "carriage: the air column trapped there, expanding as the carriage rises, leaves a net "
+    "pressure force F_p = (p_0 - p(s)) A_bore, with p_0 the ambient pressure at the track "
+    "start (the column trapped at it, the open side above the carriage held at it), on the "
+    "carriage against the motion from push start to the release (the drive's lines that "
+    "start 'linear_motor: sealed shaft'); above the carriage the shaft is open at its top "
+    "(the silo mouth when the track exit is at or below the ground, the track exit when "
+    "that exit is above it), and the model computes no air drag on the vehicle there "
+    "during the push, and no dynamic pressure or Mach number (what that drag would do under the "
+    "drive's control law: the drive's line that starts 'linear_motor: shaft sealed below "
+    "the carriage'; the air the rising stack pushes out of the open end is not modelled "
+    "either: the drive's line that starts 'linear_motor: sealed shaft, not modelled on the "
+    "push'); the model checks the bore against the diameter sqrt(4 A_ref/pi) of the run's "
+    "A_ref only (the main-body section in the vehicle files, or the section an override "
+    "sets), not against the vehicle's largest section, so a fairing wider than that "
+    "section is not checked; release from a vertical track only"
+)
+"""The track-push line of a planar run whose linear motor has a sealed shaft (SP7 step
+S5a, KI-079; ``planar_assumptions``), in place of PLANAR_TRACK_PUSH_ASSUMPTION: what the
+model does there (the column's force on the carriage, p_0 named as the track start's
+ambient pressure, not the exit's of the thrust: fix round 3, P3-m2; above the carriage the
+shaft open at its top, the silo mouth when the track exit is at or below the ground, since
+the flight goes on in the shaft above a buried exit, and the track exit when that exit is
+above it, since the column acts over the whole stroke: fix round 3, P3H-m1; with no drag,
+q or Mach computed on the vehicle during the push; the bore checked against the diameter of the
+run's A_ref section only, ``config.body_diameter_m`` after the run's overrides, KI-076,
+never called 'the body diameter', which an override to a fairing's area would make
+false), never "vented"."""
+
 PLANAR_ASSUMPTIONS: tuple[str, ...] = (
     "planar ascent in the plane of the site and the launch azimuth, with omega_p = omega_E "
     "cos(lat) sin(az); the air's out-of-plane velocity omega_E sin(lat) r sin(theta) is "
@@ -1209,12 +1257,7 @@ PLANAR_ASSUMPTIONS: tuple[str, ...] = (
     "turn along v_rel; the kick starts at the first lit instant at which |v_rel| >= v_k "
     "while rising; delta is solved so that gamma_rel at MECO equals gamma* (searched per "
     "run, or the shared fixed value of fixed guidance)",
-    "the track push is flat and 1-DOF with g_eff = mu/R_E^2 - omega_p^2 R_E and the "
-    "constant ambient pressure of the exit; no Coriolis and no air drag in the vented "
-    "shaft: under a prescribed net acceleration (constant_accel) the drive force would "
-    "absorb that drag, so the release speed is unchanged, and the drive energy, the peak "
-    "drive power and the interface force are biased low (by int D v dt, D v_exit and D); "
-    "release from a vertical track only",
+    PLANAR_TRACK_PUSH_ASSUMPTION,
     "staging is instantaneous and impulse-free; the fairing stays on through staging under "
     "the heating rule unless the criterion is already met there",
     "stage 2 flies linear-tangent steering (tan p = a - b tau in the local horizontal "
@@ -1232,10 +1275,28 @@ PLANAR_ASSUMPTIONS: tuple[str, ...] = (
     "pi/2 with or without rotation; the apex itself reads pi/2 without rotation, the "
     "local-vertical fallback, and about pi with it)",
 )
-"""The assumptions every planar_2d run carries (plan section 5 and amendment 14); the
+"""The assumptions every planar_2d run carries (plan section 5 and amendment 14), a
+sealed-shaft run with its own track-push line (``planar_assumptions``, SP7 step S5a); the
 run-, vehicle- and site-dependent lines come from ``planar_run_assumptions`` (with
 SEARCH_ASSUMPTIONS or FIXED_GUIDANCE_ASSUMPTIONS), the atmosphere's from
 ``atmosphere.ATMOSPHERE_ASSUMPTIONS``."""
+PLANAR_TRACK_PUSH_INDEX = PLANAR_ASSUMPTIONS.index(PLANAR_TRACK_PUSH_ASSUMPTION)
+"""Where the track-push line sits in PLANAR_ASSUMPTIONS."""
+
+
+def planar_assumptions(assist: AssistModel) -> tuple[str, ...]:
+    """The planar lines every run carries, for a run whose push is flown by ``assist``:
+    PLANAR_ASSUMPTIONS itself (the same tuple) for a pad, constant_accel and a vented
+    linear motor; for a linear motor with a sealed shaft (``linear_motor.sealed_shaft_of``)
+    the same lines with PLANAR_SEALED_TRACK_PUSH_ASSUMPTION at PLANAR_TRACK_PUSH_INDEX (SP7
+    step S5a, KI-079: the line states the sealed shaft, never "vented"). Pure."""
+    if sealed_shaft_of(assist) is None:
+        return PLANAR_ASSUMPTIONS
+    lines = list(PLANAR_ASSUMPTIONS)
+    lines[PLANAR_TRACK_PUSH_INDEX] = PLANAR_SEALED_TRACK_PUSH_ASSUMPTION
+    return tuple(lines)
+
+
 SEARCH_ASSUMPTIONS: tuple[str, ...] = (
     "stage 2's (a, b) are solved by shooting for the target radius and zero radial velocity",
     "searches burn virtual stage-2 propellant past the real load, down to a mass floor "
@@ -1557,7 +1618,8 @@ def simulate_planar(
 def planar_assumption_list(
     trace: RunTrace, setup: PlanarSetup, run_assumptions: Sequence[str]
 ) -> list[str]:
-    """The assumptions of a planar run, in order: PLANAR_ASSUMPTIONS, the run's own
+    """The assumptions of a planar run, in order: PLANAR_ASSUMPTIONS
+    (``planar_assumptions``: a sealed shaft's own track-push line, SP7 step S5a), the run's own
     lines (``planar_run_assumptions``), ATMOSPHERE_ASSUMPTIONS, for a push the
     TRACK_ASSUMPTIONS and the track geometry, for a failed ignition whose coast ran
     PLANAR_FAILED_IGNITION_ASSUMPTIONS (PLANAR_FAILED_IGNITION_SHAFT_ASSUMPTIONS when it
@@ -1565,7 +1627,7 @@ def planar_assumption_list(
     PLANAR_FAILED_IGNITION_EARLY_ASSUMPTIONS otherwise after a release at the release
     speed, a ``target_speed`` event), the trace's own and the assist model's (with the
     track's actual g_eff and omega_p)."""
-    lines = [*PLANAR_ASSUMPTIONS, *run_assumptions, *ATMOSPHERE_ASSUMPTIONS]
+    lines = [*planar_assumptions(setup.assist), *run_assumptions, *ATMOSPHERE_ASSUMPTIONS]
     track = setup.track
     if track is not None and trace.assist_phases():
         lines += [
@@ -1643,7 +1705,7 @@ def search_failed_result(
         "run_checks_failed": None,
     }
     assumptions = [
-        *PLANAR_ASSUMPTIONS,
+        *planar_assumptions(setup.assist),
         *planar_run_assumptions(run_config, vehicle, setup),
         *ATMOSPHERE_ASSUMPTIONS,
         *setup.assist.assumptions(),
@@ -1698,7 +1760,7 @@ def guidance_failed_result(
     }
     flags = [*_run_flags(run_config), f"{GUIDANCE_FAILED_STATUS}: {kind}: {message}"]
     assumptions = [
-        *PLANAR_ASSUMPTIONS,
+        *planar_assumptions(setup.assist),
         *planar_run_assumptions(run_config, vehicle, setup),
         *ATMOSPHERE_ASSUMPTIONS,
         *setup.assist.assumptions(),

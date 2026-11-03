@@ -38,16 +38,25 @@ tests/test_atmosphere.py), V_0 = A h_0 and V = A (h_0 + s):
   S5 (tests/vented_pins_support.py, tests/data/vented_pins.json, captured from that
   code: exact in the capture environment, the metric keys everywhere; the planar pin
   covers the flown push's states, events, flags, status, lines, track metrics, time
-  series and budget).
+  series and budget);
+- SP7 step S5a: a sealed run's run-level lines (the planar track-push line, the
+  early-release line) state its shaft and a vented run's are unchanged (their pre-S5a
+  digests); the replay, scene and app readers name a sealed run's shaft and quote its
+  column's force and work from metrics.json and its bore and gap from the config, on
+  hand-made records and on a real planar directory in a temporary root (slow), and a
+  page without a sealed run keeps its words.
 
 Closed forms at 1e-9 relative with rtol 1e-11 (CLAUDE.md: <= 1e-9).
 """
 
 from __future__ import annotations
 
+import copy
 import dataclasses
+import hashlib
 import importlib.util
 import itertools
+import json
 import math
 import os
 import sys
@@ -62,17 +71,20 @@ from pydantic import ValidationError
 from scipy.integrate import quad
 from scipy.optimize import minimize_scalar
 
-from launchsim import config, sim, summary
+from launchsim import app, config, replay, scene, sim, summary
 from launchsim.assist import build_assist
+from launchsim.assist.constant_accel import ConstantAccelAssist
 from launchsim.assist.linear_motor import (
+    COLUMN_STALL_TEXT,
     SEALED_TAPER_REFUSAL,
     WORK_STATE,
     LinearMotorAssist,
     SealedShaft,
     ShaftKind,
+    sealed_shaft_of,
 )
 from launchsim.assist.track import VERTICAL, StraightTrack
-from launchsim.atmosphere import ambient_scalar, standard_atmosphere
+from launchsim.atmosphere import ATMOSPHERE_ASSUMPTIONS, ambient_scalar, standard_atmosphere
 from launchsim.config import ConstantAccelConfig, LinearMotorConfig, resolve_run
 from launchsim.constants import (
     ALT_AMBIANCE_MIN_M,
@@ -92,12 +104,13 @@ from launchsim.losses import (
 from launchsim.metrics import LINEAR_MOTOR_METRICS, SEALED_SHAFT_METRICS
 from launchsim.phases import ASSIST_KIND, IgnitionSpec, IntegratorSettings, PhaseResult
 from launchsim.phases.planar import PlanarEnvironment, PlanarPlanner
-from launchsim.phases.prelude import DRIVE_STALL, TrackExit, fly_track
+from launchsim.phases.prelude import DRIVE_STALL, TrackExit, early_release_assumption, fly_track
 from launchsim.phases.trace import RunTrace
 from launchsim.phases.vertical import VerticalPlanner
 from launchsim.vehicle import Vehicle
 
 REPO = Path(__file__).resolve().parents[1]
+DISPLAY_DIR = REPO / "configs" / "display"
 G = MU_EARTH_M3S2 / R_EARTH_M**2
 """The 1-D track's g_eff [m/s^2] (omega_p = 0)."""
 L = 100.0
@@ -552,7 +565,10 @@ def test_a_sealed_push_released_at_a_target_speed(m_c: float, f9_vehicle: Vehicl
     < 1e-9, the facility max(L, s_release + v^2/(2 a_b)); the stall guard, which uses
     F_p(L), lets this push fly. The same drive vented releases at the same speed nearer
     the track start and sooner: the sealed release position and push time are larger,
-    as the sealed column line says, and the line names them, not the exit speed."""
+    as the sealed column line says, and the line names them, not the exit speed. Since
+    SP7 step S5a the sealed run's early-release line says 'in the shaft, open at the
+    mouth, after the release' with the cavity under the vehicle and no 'vented', the
+    vented twin's 'in the vented shaft after the release' as before."""
     v_release = 50.0
     m = f9_vehicle.liftoff_mass_kg()
     f_max = m * (3.0 * G0_MPS2 + G)
@@ -583,6 +599,16 @@ def test_a_sealed_push_released_at_a_target_speed(m_c: float, f9_vehicle: Vehicl
     column = next(line for line in rs.assumptions if line.startswith("linear_motor: sealed shaft:"))
     assert "the release position and the push time are larger than in a vented shaft" in column
     assert "the exit speed is lower" not in column
+    # SP7 step S5a (KI-079): the flown run's early-release line states the sealed shaft and
+    # the cavity under the vehicle, the vented twin's keeps 'in the vented shaft'
+    early = "linear_motor: released at the release speed"
+    sealed_line = next(line for line in rs.assumptions if line.startswith(early))
+    vented_line = next(line for line in rv.assumptions if line.startswith(early))
+    assert "the vehicle flies in the shaft, open at the mouth, after the release" in sealed_line
+    assert "below the vehicle the braking carriage still seals the bore" in sealed_line
+    assert "vented" not in sealed_line
+    assert "the vehicle flies in the vented shaft after the release" in vented_line
+    assert "braking carriage still seals" not in vented_line
 
 
 def _dense_speed_peak(phases: list[PhaseResult]) -> tuple[float, float]:
@@ -933,9 +959,12 @@ def test_a_bore_at_or_below_the_body_is_refused(f9_vehicle_dict: dict[str, Any])
 def test_sealed_assumption_lines(f9_vehicle: Vehicle) -> None:
     """The sealed drive's lines are the vented drive's ten with the shaft line's opening
     naming the sealed shaft (pointing to its three lines by their opening words, which
-    hold in a summary that merges runs' lines; and reading the vented shaft that a
-    planar run's track-push line names, and with a release speed an early-release line,
-    as the shaft open above the carriage) and three lines after it: the column (bore,
+    hold in a summary that merges runs' lines; the shaft open above the carriage, where
+    the vehicle rides, at its top, the silo mouth when the track exit is at or below the
+    ground and the track exit when that exit is above it, fix round 3, P3H-m1;
+    since SP7 step S5a no 'vented' in it, the run's
+    track-push and early-release lines stating the sealed shaft themselves) and three
+    lines after it: the column (bore,
     gap, p_0, gamma, the pressure law, the bound, the law's effect with its conditions,
     the felt g falling on a cold force-law plateau, the work done against it); what is
     not modelled on the push (the air pushed out of the mouth, survey 08's case at 3 g0;
@@ -962,13 +991,13 @@ def test_sealed_assumption_lines(f9_vehicle: Vehicle) -> None:
     assert ls[:i] == lv[:i] and ls[i + 4 :] == lv[i + 1 :]
     bridge = (
         "shaft sealed below the carriage (its trapped air column: the three lines that "
-        "start 'linear_motor: sealed shaft'; above the carriage the shaft is open at the "
-        "mouth: the vented shaft named by the track-push line of a planar run{} is, for "
-        "this run, that open shaft above the carriage)"
+        "start 'linear_motor: sealed shaft'; above the carriage, where the vehicle rides, "
+        "the shaft is open at its top, the silo mouth when the track exit is at or below the "
+        "ground and the track exit when that exit is above it)"
     )
     assert sum(line.startswith("linear_motor: sealed shaft") for line in ls) == 3
-    assert ls[i] == lv[i].replace("shaft vented (no air column)", bridge.format(""))
-    assert "early-release" not in ls[i]
+    assert ls[i] == lv[i].replace("shaft vented (no air column)", bridge)
+    assert "early-release" not in ls[i] and "vented" not in ls[i]
     column, push, after = ls[i + 1], ls[i + 2], ls[i + 3]
     assert column.startswith(
         f"linear_motor: sealed shaft: the carriage seals the 3.7 m bore (A = {AREA_M2:.6g} "
@@ -1009,6 +1038,7 @@ def test_sealed_assumption_lines(f9_vehicle: Vehicle) -> None:
         "the brake force, the brake energy and the facility length are upper bounds",
         "a massless carriage leaves the column no mass to act on",
         "the bore is checked against the diameter sqrt(4 A_ref / pi) of the run's A_ref only",
+        "(the main-body section in the vehicle files, or the section an override sets)",
         "5.2 m fairing",
         "more than (5.2 / 3.7)^2 = 1.975 times the area (3.58 times",
         "so more than 1.975 times p_0 A and W_p at the same gap",
@@ -1022,13 +1052,15 @@ def test_sealed_assumption_lines(f9_vehicle: Vehicle) -> None:
     )
     assert open_mouth in after and "cavity" not in after
     assert "passed over" not in column
-    # a release speed: the bridge names the early-release line, and the force law's
-    # column line compares the release position and the push time, not the exit speed
+    # a release speed: the same opening (SP7 step S5a: the run's track-push and
+    # early-release lines state the sealed shaft themselves, so nothing is bridged), and
+    # the force law's column line compares the release position and the push time, not
+    # the exit speed
     target = dataclasses.replace(sealed, release_speed_mps=50.0)
     lt, ltv = target.assumptions(), dataclasses.replace(target, shaft=None).assumptions()
     assert lt[:i] == ltv[:i] and lt[i + 4 :] == ltv[i + 1 :]
-    early = " and the early-release line of a release before the track end"
-    assert lt[i] == ltv[i].replace("shaft vented (no air column)", bridge.format(early))
+    assert lt[i] == ltv[i].replace("shaft vented (no air column)", bridge)
+    assert "vented" not in lt[i]
     assert lt[i + 2] == ls[i + 2]
     # the third line: what a release before the track end leaves out (review pass 3,
     # P3-m2: the cavity under the departing vehicle, closed below by the carriage)
@@ -1201,3 +1233,980 @@ def test_vented_runs_match_their_pins() -> None:
         pytest.skip(reason)
     assert status == "run", reason
     assert vp.all_digests() == pins["digests"]
+
+
+# ------------------------------------- the run-level lines and the readers (SP7 step S5a)
+
+PLANAR_ASSUMPTIONS_SHA256 = "c5bf09e64dfd91c0689aaca258ec00d4b6da8c29bc4a585e550f58f1417c1881"
+"""sha256 of sim.PLANAR_ASSUMPTIONS joined by newlines, captured before S5a (f120347): the
+lines every pad, constant_accel and vented linear-motor planar run carries."""
+EARLY_RELEASE_ARGS: tuple[tuple[Any, ...], ...] = (
+    (60.0, 64.7, 100.0, -35.3, 0.0, True, 0.0, -82.0),
+    (60.0, 64.7, 100.0, -35.3, 20.0, True, 0.0, None),
+    (60.0, 64.7, 100.0, -35.3, 0.0, False, 101325.0, None),
+)
+"""early_release_assumption's arguments of three pinned lines: a planar release below the
+mouth with a floor below the ground, one below the ground at a track exit 20 m above it,
+and a 1-D release at 101325 Pa."""
+EARLY_RELEASE_SHA256 = (
+    "a0c4bb15aeaffdcf9a2eee0dfd8ba73d7f0eb741e5fa912c6c7aa76a01986d2f",
+    "ba7460ded3b45b38d311c24a8ab7d5d6a5341a0d5b3ec5830cc784eeaf7600a6",
+    "bb1d002a148e3d75a999bf69056b6fa73f5b108e6a80418267f684e2d69ae570",
+)
+"""sha256 of the three EARLY_RELEASE_ARGS lines, captured before S5a (f120347)."""
+VENTED_TRACK_PUSH = (
+    "the track push is flat and 1-DOF with g_eff = mu/R_E^2 - omega_p^2 R_E and the "
+    "constant ambient pressure of the exit; no Coriolis and no air drag in the vented "
+    "shaft: under a prescribed net acceleration (constant_accel) the drive force would "
+    "absorb that drag, so the release speed is unchanged, and the drive energy, the peak "
+    "drive power and the interface force are biased low (by int D v dt, D v_exit and D); "
+    "release from a vertical track only"
+)
+"""The track-push line of every planar run before S5a, written out."""
+SEALED_TRACK_PUSH = (
+    "the track push is flat and 1-DOF with g_eff = mu/R_E^2 - omega_p^2 R_E and the "
+    "constant ambient pressure of the exit; no Coriolis; the shaft is sealed below the "
+    "carriage: the air column trapped there, expanding as the carriage rises, leaves a net "
+    "pressure force F_p = (p_0 - p(s)) A_bore, with p_0 the ambient pressure at the track "
+    "start (the column trapped at it, the open side above the carriage held at it), on the "
+    "carriage against the motion from push start to the release (the drive's lines that "
+    "start 'linear_motor: sealed shaft'); above the carriage the shaft is open at its top "
+    "(the silo mouth when the track exit is at or below the ground, the track exit when "
+    "that exit is above it), and the model computes no air drag on the vehicle there "
+    "during the push, and no dynamic pressure or Mach number (what that drag would do under "
+    "the "
+    "drive's control law: the drive's line that starts 'linear_motor: shaft sealed below "
+    "the carriage'; the air the rising stack pushes out of the open end is not modelled "
+    "either: the drive's line that starts 'linear_motor: sealed shaft, not modelled on the "
+    "push'); the model checks the bore against the diameter sqrt(4 A_ref/pi) of the run's "
+    "A_ref only (the main-body section in the vehicle files, or the section an override "
+    "sets), not against the vehicle's largest section, so a fairing wider than that "
+    "section is not checked; release from a vertical track only"
+)
+"""The track-push line of a planar run with a sealed shaft (SP7 step S5a; fix round 1: the
+bore checked against the run's A_ref section, never 'the body diameter', which an
+override to a fairing's area would make false; fix round 3: p_0 named as the track start's
+ambient pressure, P3-m2, and the shaft open at its top, the silo mouth at an exit at or
+below the ground, P3H-m1), written out."""
+CAVITY_CLAUSE = (
+    "; below the vehicle the braking carriage still seals the bore, and the cavity that "
+    "opens between the vehicle's base and the carriage, fed only through the annulus "
+    "between the bore and the vehicle, is not modelled (inferred: a suction on the "
+    "vehicle's base, which would slow it, so its speed after the release is biased high, "
+    "and the exhaust of a stage lit in the cavity, which would act the other way: the "
+    "drive's line that starts 'linear_motor: sealed shaft, not modelled after the "
+    "release')"
+)
+"""What a sealed run's early-release line adds after its floor clause (SP7 step S5a; fix
+round 1: the direction of each inferred effect)."""
+CUSHION_CLAUSE = (
+    "; on a fall back onto the parked carriage the air the vehicle compresses above the "
+    "carriage, a cushion against the fall, is not modelled either (inferred: the speed of "
+    "that impact is biased high)"
+)
+"""What a sealed run's early-release line adds after CAVITY_CLAUSE only where its floor
+clause is written, the model's only fall back onto the carriage (fix round 2, P2H-m1)."""
+FLOOR_OPENING = "; the floor of the flight model in the shaft is the parked carriage"
+"""The opening words of the early-release line's floor clause."""
+
+
+def _planar_lines(model: Any) -> list[str]:
+    """``sim.planar_assumption_list`` of a planar run flown by ``model`` with no track push
+    in its trace (a stand-in trace and setup: the composition of the list, not a flight)."""
+    trace = SimpleNamespace(
+        assist_phases=lambda: [],
+        failed_stage=None,
+        t_fail_s=None,
+        flags=[],
+        assumptions=[],
+        first_event=lambda _name: None,
+    )
+    setup = SimpleNamespace(track=None, assist=model)
+    return sim.planar_assumption_list(trace, setup, ["the run's own line"])  # type: ignore[arg-type]
+
+
+def test_a_vented_run_keeps_its_run_level_lines() -> None:
+    """Every vented and constant_accel run's run-level lines are those of the code before
+    S5a: PLANAR_ASSUMPTIONS hashes to its pre-S5a digest and its track-push line is the old
+    text (written out); ``sim.planar_assumptions`` returns that same tuple for a pad, a
+    constant_accel drive and a vented linear motor, so their planar assumption lists are
+    PLANAR_ASSUMPTIONS, the run's lines, the atmosphere's and the drive's, as before; the
+    early-release line of a push that is not sealed (the default) hashes to its pre-S5a
+    digests (a planar release below the mouth with its floor, one below the ground at an
+    exit above it, a 1-D one). The 1-D runs' full lists are pinned by
+    ``test_vented_runs_match_their_pins`` and the planar output capture
+    (tests/test_planar_pipeline.py)."""
+    joined = "\n".join(sim.PLANAR_ASSUMPTIONS).encode("utf-8")
+    assert hashlib.sha256(joined).hexdigest() == PLANAR_ASSUMPTIONS_SHA256
+    assert sim.PLANAR_TRACK_PUSH_ASSUMPTION == VENTED_TRACK_PUSH
+    assert sim.PLANAR_ASSUMPTIONS[sim.PLANAR_TRACK_PUSH_INDEX] == VENTED_TRACK_PUSH
+    f = 6.0e6
+    vented = _model(f_max=f, p_max=f * 50.0, shaft=None)
+    accel = ConstantAccelAssist(
+        net_accel_mps2=3.0 * G0_MPS2, carriage_mass_kg=0.0, brake_decel_mps2=A_BRAKE
+    )
+    for model in (sim.NoAssist(), accel, vented):
+        assert sealed_shaft_of(model) is None
+        assert sim.planar_assumptions(model) is sim.PLANAR_ASSUMPTIONS
+        assert _planar_lines(model) == [
+            *sim.PLANAR_ASSUMPTIONS,
+            "the run's own line",
+            *ATMOSPHERE_ASSUMPTIONS,
+            *model.assumptions(),
+        ]
+    for args, digest in zip(EARLY_RELEASE_ARGS, EARLY_RELEASE_SHA256, strict=True):
+        line = early_release_assumption(*args)
+        assert line == early_release_assumption(*args, sealed=False)
+        assert hashlib.sha256(line.encode("utf-8")).hexdigest() == digest
+
+
+def test_a_sealed_run_states_its_shaft_in_its_run_level_lines() -> None:
+    """A sealed run's run-level lines state its shaft (SP7 step S5a, KI-079):
+    ``sim.planar_assumptions`` of a sealed linear motor is PLANAR_ASSUMPTIONS with the
+    track-push line replaced by the sealed one (written out: the column's force on the
+    carriage against the motion from push start to the release, p_0 the track start's
+    ambient pressure, the shaft open above the carriage at its top, the silo mouth at an exit
+    at or below the ground and the track exit at one above it (fix round 3, P3-m2, P3H-m1),
+    where the model computes no air drag on the vehicle during the
+    push and no q or Mach, the air pushed out of the open end left out, the bore checked
+    against the diameter of the run's A_ref section only, never 'body diameter') and
+    nothing else changed; its planar list carries no 'vented shaft' as its own (only the
+    drive's comparisons with one); the lines it points to exist by their opening words.
+    The early-release line with ``sealed``: 'the shaft, open at the mouth,' for 'the vented
+    shaft' below the ground at a track exit at or below the ground (fix round 3, P3H-m1: above
+    a buried exit the flight goes on in the shaft up to the mouth), 'the bore, which runs to
+    the track exit above the ground and is open there,' at an exit above it (fix round 1,
+    P1-m2), and the cavity clause after
+    the floor clause (written out), the cavity clause alone for a release above the
+    ground, for the planar and the 1-D model; the cushion clause (written out) after the
+    cavity clause only where the floor clause is written (a release below the ground whose
+    carriage parks below it), never for one whose carriage parks at or above the ground,
+    one with no floor, or one above the ground (fix round 2, P2H-m1)."""
+    f = 6.0e6
+    sealed = _model(f_max=f, p_max=f * 50.0)
+    assert sealed_shaft_of(sealed) is SHAFT
+    lines = sim.planar_assumptions(sealed)
+    k = sim.PLANAR_TRACK_PUSH_INDEX
+    assert lines[k] == SEALED_TRACK_PUSH == sim.PLANAR_SEALED_TRACK_PUSH_ASSUMPTION
+    assert (
+        lines[:k] == sim.PLANAR_ASSUMPTIONS[:k]
+        and lines[k + 1 :] == sim.PLANAR_ASSUMPTIONS[k + 1 :]
+    )
+    assert "vented" not in SEALED_TRACK_PUSH and "body diameter" not in SEALED_TRACK_PUSH
+    full = _planar_lines(sealed)
+    assert full == [*lines, "the run's own line", *ATMOSPHERE_ASSUMPTIONS, *sealed.assumptions()]
+    assert VENTED_TRACK_PUSH not in full
+    for phrase in ("in the vented shaft", "the vented shaft named", "shaft vented"):
+        assert not any(phrase in line for line in full), phrase
+    drive = sealed.assumptions()
+    for opening in (
+        "linear_motor: sealed shaft:",
+        "linear_motor: sealed shaft, not modelled on the push",
+        "linear_motor: sealed shaft, not modelled after the release",
+        "linear_motor: shaft sealed below the carriage",
+    ):
+        assert sum(line.startswith(opening) for line in drive) == 1, opening
+    # the early-release line
+    below = (60.0, 64.7, 100.0, -55.3, -20.0, True)  # a track exit 20 m below the ground
+    parked_above = (60.0, 64.7, 100.0, -35.3, 0.0, True, 0.0, 9.1)  # carriage above the mouth
+    parked_below = (60.0, 64.7, 100.0, -55.3, -20.0, True, 0.0, -30.0)  # buried exit, floor
+    for args in (*EARLY_RELEASE_ARGS, below, parked_above, parked_below):
+        vented_line = early_release_assumption(*args)
+        sealed_line = early_release_assumption(*args, sealed=True)
+        on_floor = FLOOR_OPENING in vented_line
+        assert on_floor == (len(args) > 7 and args[7] is not None and args[7] < 0.0)
+        cavity = f"{CAVITY_CLAUSE}{CUSHION_CLAUSE}" if on_floor else CAVITY_CLAUSE
+        if args[4] > 0.0:
+            old = "in the vented shaft and on the track above the ground after the release"
+            shaft = (
+                "in the bore, which runs to the track exit above the ground and is open "
+                "there, after the release"
+            )
+        else:
+            old = "in the vented shaft after the release"
+            shaft = "in the shaft, open at the mouth, after the release"  # at or below the ground
+        assert old in vented_line
+        expected = vented_line.replace(old, shaft).replace(
+            "; the carriage brakes from the release point",
+            f"{cavity}; the carriage brakes from the release point",
+        )
+        assert sealed_line == expected
+        assert "vented" not in sealed_line and sealed_line.count(CAVITY_CLAUSE) == 1
+        assert sealed_line.count("cushion") == (1 if on_floor else 0)
+    assert FLOOR_OPENING in early_release_assumption(*EARLY_RELEASE_ARGS[0])
+    assert FLOOR_OPENING in early_release_assumption(*parked_below)
+    above = (60.0, 99.0, 100.0, 5.0, 6.0, True)  # released above the ground
+    assert early_release_assumption(*above, sealed=True) == early_release_assumption(
+        *above
+    ).replace(
+        "; the carriage brakes from the release point",
+        f"{CAVITY_CLAUSE}; the carriage brakes from the release point",
+    )
+
+
+def test_failed_runs_carry_their_shaft_s_planar_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The two Results of a planar run with no recorded flight (``sim.search_failed_result``
+    and ``sim.guidance_failed_result``) carry ``planar_assumptions`` of their drive (SP7
+    step S5a fix round 1, P1-m6): a sealed linear motor's list holds the sealed track-push
+    line and not the vented one; a vented one's, and a pad's, PLANAR_ASSUMPTIONS as
+    before; then the run's lines, the atmosphere's and the drive's. Stand-in run config,
+    vehicle, search record and run lines (the composition of the list, not a flight)."""
+    monkeypatch.setattr(sim, "planar_run_assumptions", lambda *_a: ["the run's own line"])
+    monkeypatch.setattr(sim, "_run_flags", lambda _rc: [])
+    monkeypatch.setattr(sim, "search_metrics", lambda _r, _p: {})
+    search = SimpleNamespace(fixed_gamma_star_rad=0.3, fixed_ltg_a=0.75, fixed_ltg_b_per_s=2e-3)
+    run_config = SimpleNamespace(planar=SimpleNamespace(search=search))
+    vehicle = SimpleNamespace(liftoff_mass_kg=lambda: 1.0, payload_mass_kg=0.0)
+    record = SimpleNamespace(flags=[], failure_kind="edge", failure_message="stand-in")
+    f = 6.0e6
+    sealed = _model(f_max=f, p_max=f * 50.0)
+    vented = dataclasses.replace(sealed, shaft=None)
+    for model in (sealed, vented, sim.NoAssist()):
+        setup = SimpleNamespace(assist=model)
+        expected = [
+            *sim.planar_assumptions(model),
+            "the run's own line",
+            *ATMOSPHERE_ASSUMPTIONS,
+            *model.assumptions(),
+        ]
+        results = (
+            sim.search_failed_result(run_config, vehicle, setup, record),  # type: ignore[arg-type]
+            sim.guidance_failed_result(run_config, vehicle, setup, ValueError("x")),  # type: ignore[arg-type]
+        )
+        for result in results:
+            assert result.assumptions == expected
+            has_sealed = SEALED_TRACK_PUSH in result.assumptions
+            assert has_sealed is (model is sealed)
+            assert (VENTED_TRACK_PUSH in result.assumptions) is (model is not sealed)
+
+
+SEALED_CFG: dict[str, Any] = {
+    "model": "linear_motor",
+    "stroke_m": 100,
+    "control": "force",
+    "force_max_kN": 22430,
+    "power_max_MW": 1720,
+    "force_rise_time_s": 0.5,
+    "carriage_mass_t": 20,
+    "brake_decel_g": 5,
+    "track": {"angle_deg": 90, "exit_altitude_m": 0},
+    "shaft": "sealed",
+    "shaft_bore_m": 5.24,
+    "shaft_gap_m": 5.0,
+    "shaft_gamma": 1.4,
+}
+"""A sealed linear-motor block as resolved_config.yaml holds it (the bore of D-SP7-54)."""
+VENTED_CFG: dict[str, Any] = {k: v for k, v in SEALED_CFG.items() if not k.startswith("shaft")}
+"""The same drive with no shaft key: vented, its config's default."""
+VENTED_M: dict[str, Any] = {
+    "push_control_law": "force",
+    "push_force_max_N": 22.43e6,
+    "push_power_max_W": 1.72e9,
+    "push_rise_time_s": 0.5,
+    "push_accel_command_mps2": None,
+    "push_stop_taper_m": None,
+    "push_release_speed_mps": None,
+    "push_cap_bound": None,
+    "release_position_m": 100.0,
+    "release_trigger": "track_end",
+    "exit_speed_mps": 76.87,
+    "push_time_s": 2.83,
+    "stroke_m": 100.0,
+    "carriage_mass_kg": 20000.0,
+    "track_start_altitude_m": -100.0,
+    "flags": [],
+}
+"""A vented push's metrics, released at the track end (hand-made, not a run's)."""
+SEALED_M: dict[str, Any] = {
+    **VENTED_M,
+    "exit_speed_mps": 72.31,
+    "push_time_s": 2.95,
+    "piston_work_J": 2.016e8,
+    "piston_force_peak_N": 2.18e6,
+    "bore_pressure_release_pa": 1700.0,
+}
+"""A sealed push's metrics (hand-made figures; the readers format, never recompute, them)."""
+TARGET_SEALED_M: dict[str, Any] = {
+    **SEALED_M,
+    "push_release_speed_mps": 60.0,
+    "release_position_m": 64.28,
+    "release_trigger": "target_speed",
+    "exit_speed_mps": 60.0,
+    "push_time_s": 2.38,
+    "piston_work_J": 1.2e8,
+    "piston_force_peak_N": 2.15e6,
+}
+"""The sealed drive released at its 60 m/s release speed, 35.72 m below the mouth."""
+TARGET_EVENTS: list[dict[str, Any]] = [
+    {"t": -2.381, "name": "push_start", "alt_m": -100.0, "x_km": 0.0, "v": 0.0},
+    {"t": 0.0, "name": "release", "alt_m": -35.7, "x_km": 0.0, "v": 60.0},
+    {"t": 0.5, "name": "ignition", "alt_m": -6.9, "x_km": -0.0, "v": 55.11},
+    {"t": 0.5, "name": "kick_start", "alt_m": -6.9, "x_km": -0.0, "v": 55.11},
+    {"t": 0.627, "name": "shaft_exit", "alt_m": 0.0, "x_km": -0.0, "v": 53.86},
+]
+"""The early sealed run's events after its release (lit and kicked in the shaft)."""
+LM_CLAUSE = "a linear motor (force law, F_max 22.43 MN, P_max 1720 MW)"
+"""``replay.linear_motor_clause``'s drive of the hand-made force-law blocks, written out."""
+NOT_PRESCRIBED = (
+    "its acceleration is not prescribed: it follows from the force and power limits, the "
+    "mass and the thrust, so no single push acceleration is quoted"
+)
+"""``replay.motor_acceleration_text`` of a force-law push, written out."""
+FORCE_LAW_COLUMN = (
+    "under the force law the drive's force is set by its law, not by the column, so the "
+    "column slows the stack and lowers the interface force by (m_v/M) F_p against a vented "
+    "shaft at the same state"
+)
+"""What the column does under the force law (``replay.sealed_law_text``), written out."""
+SEALED_CAVITY = (
+    "the cavity between the vehicle's base and the braking carriage, which still seals the "
+    "bore below it, is not modelled (inferred: a suction on the vehicle's base, which would "
+    "slow it, so its speed after the release is biased high, and the exhaust of a stage lit "
+    "in the cavity, which would act the other way)"
+)
+"""``replay.SEALED_CAVITY_TEXT``, written out (no cushion since fix round 2, P2H-m1)."""
+SEALED_CUSHION = (
+    "on its fall back onto the parked carriage the air the vehicle compressed above the "
+    "carriage, a cushion against the fall, is not modelled either (inferred: the speed of "
+    "that impact is biased high)"
+)
+"""``replay.SEALED_CUSHION_TEXT``, written out (fix round 2, P2H-m1)."""
+COLUMN_STALL_WORDS = (
+    "the trapped air column (a 5.24 m bore over a 5 m gap: resolved_config.yaml) did no "
+    "work, since the push never moved; the stall guard counts the column's force at the "
+    "track end, F_p(L), against the drive at F_max and the thrust at push start, and it "
+    "stopped this run although they outweigh the stack's weight (a conservative rule: such "
+    "a push would have started, and whether it would then have stopped in the shaft or "
+    "reached its release is not computed; the run's drive_stall flag gives the numbers and "
+    "what the rule does not credit)"
+)
+"""``replay.sealed_column_text`` of a column stall with SEALED_CFG's bore and gap, written
+out (fix round 2, P2-m1, P2H-m3, V2-2)."""
+
+
+def _column(force_mn: str, work_mj: str) -> str:
+    """The column clause of a sealed run with SEALED_CFG's bore and gap, written out."""
+    return (
+        "the trapped air column (a 5.24 m bore over a 5 m gap: resolved_config.yaml) acted "
+        f"on the carriage against the motion with up to {force_mn} MN (piston_force_peak_N), "
+        f"and the push did {work_mj} MJ of work against it, drive work the stack does not "
+        "receive (piston_work_J: not dissipated in the model)"
+    )
+
+
+def _rec(name: str, assisted: bool = True, **fields: Any) -> dict[str, Any]:
+    """A replay record of ``drive_caveat`` and ``closeup_notes`` (the keys they read)."""
+    record = {
+        "key": name,
+        "assisted": assisted,
+        "payload_kg": None,
+        "role": replay.ROLE_RUN,
+        "events": [],
+        "start_alt_m": -100.0 if assisted else None,
+        "exit_speed_mps": None,
+        "push_s": None,
+        "vertical": assisted,
+        "phase": [],
+    }
+    record.update(fields)
+    return record
+
+
+def _sources(**runs: tuple[dict[str, Any], dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """run_source stand-ins: name -> its run block's assist and its metrics."""
+    return {name: {"config": {"assist": cfg}, "metrics": m} for name, (cfg, m) in runs.items()}
+
+
+def test_replay_names_the_sealed_shaft_and_keeps_a_vented_page() -> None:
+    """The replay's readers name a sealed shaft (SP7 step S5a, KI-077), never as vented:
+    ``shaft_kind`` (vented, sealed, not stated; a linear-motor block without the key is
+    vented), ``is_vented`` False and ``is_sealed`` True for a sealed block; the detail line
+    adds 'sealed shaft (a 5.24 m bore over a 5 m gap)'; ``sealed_column_text`` written out
+    (the bore and gap from the config, the peak force and work from the metrics,
+    formatted, a stall's 'did no work', a run with no push record); the drive caveat of
+    pad, a vented run, a sealed run and a sealed run released below the mouth written out
+    in full: each shaft in a clause of its own ('the vented shaft has no air drag (lm)',
+    'the sealed shaft has no air drag above the carriage (lm_sealed; on the push only for
+    lm_sealed_target)'), the sealed drive sentences with the column and the force law's
+    effect, the cavity after the early release, the missing shaft drag among the
+    omissions; the close-up notes: 'For lm the shaft is treated as vented ...' and one
+    sentence per sealed run (written out); a sealed run alone gets its clause and notes
+    with no vented note; a page without a sealed run keeps its pre-S5a text (written out,
+    'The shaft has no air drag.', 'The shaft is treated as vented, ...'). Fix round 1:
+    ``sealed_law_text`` by law and cap (written out); an acceleration-law sealed push with
+    no cap bound says the column did not slow it; on a massless carriage a sealed run's
+    interface clause takes the column's F_p off the drive force, in a sentence of its own
+    beside a vented twin's (H2); a stall by the sealed shaft's rule (``column_stall``)
+    says the guard counted the column's F_p(L) against the drive, S4's stall as before
+    (P1-m4); ``plain_figures`` never prints an exponent (P1-m5); ``join_names``. Fix round
+    2: the column stall's text written out (whether the push would have stopped in the
+    shaft or reached its release not computed, never 'might have reached the track end';
+    a semicolon after 'did no work, since the push never moved'), a stalled run's close-up
+    sentence ending after the column's text (P2-m1, P2H-m3, V2-2); the cushion of a fall
+    back onto the carriage (written out) in the drive caveat and close-up note of a sealed
+    early release whose flight ended on its parked carriage (``fell_onto_carriage``), not
+    of one that stopped at its apex below it, nor of one with no impact in the shaft
+    (P2H-m1). Fix round 3: the massless sealed clause also takes the impinging thrust f_imp
+    T of a push lit on the track off the drive force (P3-m1); a massless column stall's
+    carriage clause names the weight the guard counted with the column (P3H-m4); the
+    close-up sentence of a sealed run whose track exit is above the ground (the shaft open
+    at the track exit; after an early release the flight over the rest of the track) and
+    below it (the shaft open at the mouth; after an early release the flight in the rest of
+    the track and the shaft above it) (P3H-m1, P3H-m4); beside a sealed run, the vented
+    note of vented runs that were all released below the mouth names them once (V3-1)."""
+    assert replay.shaft_kind(VENTED_CFG) == replay.VENTED_SHAFT == "vented"
+    assert replay.shaft_kind(SEALED_CFG) == replay.SEALED_SHAFT == "sealed"
+    assert replay.shaft_kind({"model": "constant_accel"}) is None
+    assert replay.shaft_kind({"model": "none"}) is None
+    assert replay.is_vented(VENTED_CFG) and not replay.is_sealed(VENTED_CFG)
+    assert replay.is_sealed(SEALED_CFG) and not replay.is_vented(SEALED_CFG)
+    assert replay.assist_text(dict(VENTED_CFG), dict(VENTED_M)) == (
+        "vertical silo 100 m deep, linear motor (force law, F_max 22.43 MN, P_max 1720 MW), "
+        "20 t carriage, exit 76.9 m/s (measured)"
+    )
+    assert replay.assist_text(dict(SEALED_CFG), dict(SEALED_M)) == (
+        "vertical silo 100 m deep, linear motor (force law, F_max 22.43 MN, P_max 1720 MW), "
+        "sealed shaft (a 5.24 m bore over a 5 m gap), 20 t carriage, exit 72.3 m/s (measured)"
+    )
+    cfg = replay.sealed_shaft_settings(SEALED_CFG, SEALED_M)
+    assert cfg == {
+        "bore_m": 5.24,
+        "gap_m": 5.0,
+        "gamma": 1.4,
+        "force_peak_N": 2.18e6,
+        "work_J": 2.016e8,
+        "pressure_release_pa": 1700.0,
+    }
+    assert replay.sealed_column_text(cfg, SEALED_M) == _column("2.18", "201.6")
+    stalled = {**SEALED_M, "status": replay.DRIVE_STALL_STATUS}
+    assert replay.sealed_column_text(cfg, stalled) == (
+        "the trapped air column (a 5.24 m bore over a 5 m gap: resolved_config.yaml) did no "
+        "work, since the push never moved"
+    )
+    none = replay.sealed_shaft_settings({"model": "linear_motor", "shaft": "sealed"}, {})
+    assert replay.sealed_column_text(none, {}) == (
+        "the trapped air column acted on the carriage against the motion (its force and work "
+        "are not in metrics.json)"
+    )
+    # a mixed page: pad, a vented run, a sealed run and a sealed run released early
+    sources = _sources(
+        pad=({"model": "none"}, {}),
+        lm=(VENTED_CFG, VENTED_M),
+        lm_sealed=(SEALED_CFG, SEALED_M),
+        lm_sealed_target=(SEALED_CFG, TARGET_SEALED_M),
+    )
+    runs = [
+        _rec("pad", False),
+        _rec("lm", exit_speed_mps=76.87, push_s=2.83),
+        _rec("lm_sealed", exit_speed_mps=72.31, push_s=2.95),
+        _rec("lm_sealed_target", events=TARGET_EVENTS, exit_speed_mps=60.0, push_s=2.38),
+    ]
+    text = replay.drive_caveat(runs, sources, {})
+    assert text == (
+        "The vented shaft has no air drag (lm) and the sealed shaft has no air drag above the "
+        "carriage (lm_sealed; on the push only for lm_sealed_target). "
+        f"The drive of lm is {LM_CLAUSE}, released at the track end at a measured exit speed "
+        f"of 76.9 m/s; {NOT_PRESCRIBED}. "
+        f"The drive of lm_sealed is {LM_CLAUSE}, released at the track end at a measured exit "
+        f"speed of 72.3 m/s; {NOT_PRESCRIBED}; its shaft is sealed below the carriage: "
+        f"{_column('2.18', '201.6')}; {FORCE_LAW_COLUMN}. "
+        f"The drive of lm_sealed_target is {LM_CLAUSE}, released on reaching its release "
+        f"speed, 60.0 m/s measured, 35.7 m below the mouth; {NOT_PRESCRIBED}; its shaft is "
+        f"sealed below the carriage: {_column('2.15', '120')}; {FORCE_LAW_COLUMN}; it then "
+        "flew the rest of the shaft as in the open atmosphere (drag, dynamic pressure and "
+        "Mach number computed there; no shaft flow model, no walls), where stage 1 lit and "
+        f"its kick began; {SEALED_CAVITY}. "
+        "For lm and lm_sealed (linear_motor drive, force law) the missing shaft drag can "
+        "change the speed at release; the missing shaft drag biases the speed at release "
+        "high, and the interface force and drive work low; its size is not established here. "
+        "For lm_sealed_target (linear_motor drive, force law) the missing shaft drag can "
+        "change where the push reaches its release speed (the release position); the missing "
+        "shaft drag biases the release position and push time low, and the interface force "
+        "and drive work low; its size is not established here."
+    ), text
+    notes = replay.closeup_notes(runs, sources)
+    assert notes[-3:] == [
+        "For lm the shaft is treated as vented, so no air drag, dynamic pressure or Mach "
+        "number is computed inside it.",
+        f"For lm_sealed the shaft is sealed below the carriage: {_column('2.18', '201.6')}; "
+        "above the carriage the shaft is open at the mouth, and no air drag, dynamic "
+        "pressure or Mach number is computed inside it on the push.",
+        f"For lm_sealed_target the shaft is sealed below the carriage: "
+        f"{_column('2.15', '120')}; above the carriage the shaft is open at the mouth, and "
+        "no air drag, dynamic pressure or Mach number is computed inside it on the push; "
+        "after its release below the mouth the flight in the rest of the shaft is computed "
+        "as in the open atmosphere, with drag, dynamic pressure and Mach number (no shaft "
+        f"flow model, no walls), and {SEALED_CAVITY}.",
+    ], notes
+    # a sealed run alone: its own clause ('The drive'), no vented note
+    alone = replay.drive_caveat([runs[0], runs[2]], sources, {})
+    assert alone is not None and alone.startswith(
+        "The sealed shaft has no air drag above the carriage. The drive is "
+    )
+    assert "vented shaft has" not in alone and "treated as vented" not in alone
+    lone_notes = replay.closeup_notes([runs[0], runs[2]], sources)
+    assert not any("vented" in n for n in lone_notes)
+    assert lone_notes[-1].startswith("For lm_sealed the shaft is sealed below the carriage")
+    # a page without a sealed run: its pre-S5a text
+    plain = replay.drive_caveat(runs[:2], sources, {})
+    assert plain == (
+        f"The shaft has no air drag. The drive is {LM_CLAUSE}, released at the track end at "
+        f"a measured exit speed of 76.9 m/s; {NOT_PRESCRIBED}. For lm (linear_motor drive, "
+        "force law) the missing shaft drag can change the speed at release; the missing "
+        "shaft drag biases the speed at release high, and the interface force and drive work "
+        "low; its size is not established here."
+    ), plain
+    assert replay.closeup_notes(runs[:2], sources)[-1] == (
+        "The shaft is treated as vented, so no air drag, dynamic pressure or Mach number is "
+        "computed inside it."
+    )
+    # fix round 1 (V2, V4, H-m4): the column's effect by law and, under the acceleration
+    # law, by whether a cap bound
+    accel = (
+        "under the acceleration law the drive's force rises by the column's F_p while no cap "
+        "binds, so the stack's motion and the interface force are those of a vented shaft at "
+        "the same state"
+    )
+    assert replay.sealed_law_text("force") == FORCE_LAW_COLUMN
+    assert replay.sealed_law_text("force", True) == FORCE_LAW_COLUMN
+    assert replay.sealed_law_text("acceleration", False) == (
+        f"{accel}; no cap bound, so the column did not slow this push"
+    )
+    assert replay.sealed_law_text("acceleration", True) == (
+        f"{accel}; a cap bound on this push, and where it bound the column slowed the stack"
+    )
+    assert replay.sealed_law_text("acceleration") == (
+        f"{accel}, and where a cap binds the column slows the stack"
+    )
+    assert replay.sealed_law_text(None) is None
+    accel_m = {
+        **SEALED_M,
+        "push_control_law": "acceleration",
+        "push_accel_command_mps2": 2.5 * G0_MPS2,
+        "push_cap_bound": False,
+    }
+    accel_sources = _sources(pad=({"model": "none"}, {}), lm_sealed=(SEALED_CFG, accel_m))
+    accel_text = replay.drive_caveat([runs[0], runs[2]], accel_sources, {})
+    assert accel_text is not None
+    assert f"; {accel}; no cap bound, so the column did not slow this push." in accel_text
+    # fix round 1 (H2): a massless carriage passes the drive force less F_p to the vehicle
+    massless_sources = _sources(
+        pad=({"model": "none"}, {}),
+        lm=({**VENTED_CFG, "carriage_mass_t": 0}, {**VENTED_M, "carriage_mass_kg": 0.0}),
+        lm_sealed=({**SEALED_CFG, "carriage_mass_t": 0}, {**SEALED_M, "carriage_mass_kg": 0.0}),
+    )
+    massless = replay.drive_caveat(runs[:3], massless_sources, {})
+    assert massless is not None
+    vented_part = massless.split("For lm (", 1)[1].split(". ", 1)[0]
+    sealed_part = massless.split("For lm_sealed (", 1)[1].split(". ", 1)[0]
+    assert "the interface force high (all of the drive force reaches the vehicle)" in vented_part
+    assert (
+        "the interface force high (the drive force less the column's force F_p, and less the "
+        "impinging thrust f_imp T on a push lit on the track, reaches the vehicle)" in sealed_part
+    )
+    assert "For lm and lm_sealed" not in massless
+    # fix round 1 (P1-m4): a stall by the sealed shaft's rule, and S4's stall
+    flag = (
+        f"drive_stall: the drive at F_max and the thrust at push start {COLUMN_STALL_TEXT}: "
+        "F_max + (1 - f_imp) T(0) = 6.5e+06 N <= ..."
+    )
+    column_stall = {**SEALED_M, "status": replay.DRIVE_STALL_STATUS, "flags": [flag]}
+    assert replay.column_stall(column_stall) and not replay.column_stall(stalled)
+    assert not replay.column_stall({**SEALED_M, "flags": [flag]})  # no stall status
+    # fix round 2 (P2H-m1): the cushion only for a flight that ended on its parked carriage
+    fell_events = [
+        *TARGET_EVENTS[:2],
+        {"t": 1.2, "name": "apex", "alt_m": -12.0, "x_km": 0.0, "v": 0.0},
+        {"t": 3.0, "name": "impact", "alt_m": -82.0, "x_km": 0.0, "v": 22.0},
+    ]
+    on_carriage = f"FALL at t = 3 s: {replay.SHAFT_FALLBACK}: the vehicle fell back " + (
+        f"{replay.SHAFT_CARRIAGE_TEXT} at z = -82 m"
+    )
+    at_apex = f"FALL at t = 3 s: {replay.SHAFT_FALLBACK}: the vehicle {replay.SHAFT_APEX_TEXT}"
+    fell_rec = _rec("lm_fell", events=fell_events, exit_speed_mps=60.0, push_s=2.38)
+    for flag, cushion in ((on_carriage, True), (at_apex, False)):
+        fell_m = {**TARGET_SEALED_M, "flags": [flag]}
+        assert replay.fell_onto_carriage(fell_rec, [flag]) is cushion
+        fell_sources = _sources(pad=({"model": "none"}, {}), lm_fell=(SEALED_CFG, fell_m))
+        fell_text = replay.drive_caveat([runs[0], fell_rec], fell_sources, {})
+        fell_note = replay.closeup_notes([runs[0], fell_rec], fell_sources)[-1]
+        assert fell_text is not None and fell_text.count("cushion") == int(cushion)
+        assert fell_note.count("cushion") == int(cushion)
+        if cushion:
+            assert f"; {SEALED_CAVITY}; {SEALED_CUSHION}." in fell_text
+            assert fell_note.endswith(f", and {SEALED_CAVITY}; {SEALED_CUSHION}.")
+    assert not replay.fell_onto_carriage(runs[3], [on_carriage])  # no impact in the shaft
+    assert replay.sealed_column_text(cfg, column_stall) == COLUMN_STALL_WORDS
+    assert "might have reached" not in COLUMN_STALL_WORDS
+    # fix round 3 (P3H-m4): a massless column stall's carriage clause
+    massless_cfg = {**SEALED_CFG, "carriage_mass_t": 0}
+    massless_stall = {**column_stall, "carriage_mass_kg": 0.0}
+    stall_sources = _sources(pad=({"model": "none"}, {}), lm_sealed=(massless_cfg, massless_stall))
+    stall_text = replay.drive_caveat([runs[0], runs[2]], stall_sources, {})
+    assert stall_text is not None
+    assert (
+        "For lm_sealed (linear_motor drive, force law, stalled) the push never moved: the "
+        "missing shaft drag changes nothing and a carriage mass would only add to the weight "
+        "that the stall guard counted, with the column's force at the track end, against the "
+        "drive." in stall_text
+    ), stall_text
+    assert "the load the drive could not lift" not in stall_text
+    # fix round 3 (P3H-m1, P3H-m4): a sealed track exit away from the ground
+    raised = {**SEALED_CFG, "stroke_m": 30, "track": {"angle_deg": 90, "exit_altitude_m": 20}}
+    buried = {**SEALED_CFG, "track": {"angle_deg": 90, "exit_altitude_m": -20}}
+    assert not replay.shaft_open_at_mouth(raised) and replay.shaft_open_at_mouth(buried)
+    assert replay.shaft_open_at_mouth(SEALED_CFG) and replay.shaft_open_at_mouth(
+        {**SEALED_CFG, "track": {"angle_deg": 90}}
+    )
+    head = f"For lm_x the shaft is sealed below the carriage: {_column('2.18', '201.6')}; "
+    pushed = ", and no air drag, dynamic pressure or Mach number is computed inside it on the push"
+    early_tail = (
+        "is computed as in the open atmosphere, with drag, dynamic pressure and Mach number (no "
+        f"shaft flow model, no walls), and {SEALED_CAVITY}."
+    )
+    assert replay.sealed_closeup_note("lm_x", raised, SEALED_M, False) == (
+        f"{head}above the carriage the shaft is open at the track exit{pushed}."
+    )
+    assert replay.sealed_closeup_note("lm_x", raised, SEALED_M, True) == (
+        f"{head}above the carriage the shaft is open at the track exit{pushed}; after its "
+        f"release before the track end the flight over the rest of the track {early_tail}"
+    )
+    assert replay.sealed_closeup_note("lm_x", buried, SEALED_M, False) == (
+        f"{head}above the carriage the shaft is open at the mouth{pushed}."
+    )
+    assert replay.sealed_closeup_note("lm_x", buried, SEALED_M, True) == (
+        f"{head}above the carriage the shaft is open at the mouth{pushed}; after its release "
+        f"before the track end the flight in the rest of the track and the shaft above it "
+        f"{early_tail}"
+    )
+    # fix round 3 (V3-1): vented runs all released below the mouth, beside a sealed run
+    target_vented_m = {**TARGET_SEALED_M, "flags": []}
+    for key in ("piston_work_J", "piston_force_peak_N", "bore_pressure_release_pa"):
+        target_vented_m.pop(key)
+    vented_early = _rec("lm_v", events=TARGET_EVENTS, exit_speed_mps=60.0, push_s=2.38)
+    after = (
+        "treated as vented, so no air drag, dynamic pressure or Mach number is computed inside "
+        "it on the push; after {} the flight in the shaft is computed as in the open "
+        "atmosphere, with drag, dynamic pressure and Mach number (no shaft flow model, no "
+        "walls)."
+    )
+    mixed_sources = _sources(
+        pad=({"model": "none"}, {}),
+        lm_v=(VENTED_CFG, target_vented_m),
+        lm_v2=(VENTED_CFG, target_vented_m),
+        lm_sealed=(SEALED_CFG, SEALED_M),
+    )
+    vented_early2 = {**vented_early, "key": "lm_v2"}
+    one = replay.closeup_notes([runs[0], vented_early, runs[2]], mixed_sources)
+    assert "For lm_v the shaft is " + after.format("its release below the mouth") in one, one
+    two = replay.closeup_notes([runs[0], vented_early, vented_early2, runs[2]], mixed_sources)
+    assert "For lm_v and lm_v2 the shaft is " + after.format("their release below the mouth") in (
+        two
+    ), two
+    # a vented run released early beside a vented run released at the track end: named
+    part = replay.closeup_notes(
+        [runs[0], runs[1], vented_early, runs[2]], {**mixed_sources, **sources}
+    )
+    assert (
+        "For lm and lm_v the shaft is " + after.format("the release below the mouth of lm_v")
+        in part
+    ), part
+    # a vented-only page keeps its bytes
+    alone_v = replay.closeup_notes([runs[0], vented_early], mixed_sources)
+    assert "The shaft is " + after.format("the release below the mouth of lm_v") in alone_v
+    # fix round 2 (P2H-m3, V2-2): a stalled run's close-up sentence ends after the column
+    assert replay.sealed_closeup_note("lm_stall", SEALED_CFG, column_stall, False) == (
+        f"For lm_stall the shaft is sealed below the carriage: {COLUMN_STALL_WORDS}."
+    )
+    assert replay.sealed_closeup_note("lm_stall", SEALED_CFG, stalled, False) == (
+        "For lm_stall the shaft is sealed below the carriage: the trapped air column (a 5.24 "
+        "m bore over a 5 m gap: resolved_config.yaml) did no work, since the push never moved."
+    )
+    accel_settings = {"control": "acceleration", "accel_command_mps2": G0_MPS2}
+    assert "cannot hold the stack against the sealed shaft's column at the track end" in (
+        replay.motor_acceleration_text(accel_settings, column_stall)
+    )
+    assert "the thrust cannot lift the stack" in replay.motor_acceleration_text(
+        accel_settings, stalled
+    )
+    # fix round 1 (P1-m5, C-m4): figures never in exponent notation; one list helper
+    assert [replay.plain_figures(v) for v in (2.18, 201.65, 120.0, 12345.6, 1.234e-5)] == [
+        "2.18",
+        "201.7",
+        "120",
+        "12350",
+        "0.00001234",
+    ]
+    big = replay.sealed_column_text({**cfg, "work_J": 1.23456e10}, SEALED_M)
+    assert "12350 MJ of work" in big and "e+" not in big
+    assert replay.join_names(["a"]) == "a"
+    assert replay.join_names(["a", "b", "c"]) == "a, b and c"
+
+
+def test_scene_and_app_name_the_sealed_shaft() -> None:
+    """The scene and the app name a sealed shaft (SP7 step S5a, KI-077): ``run_shafts``
+    reads each run's shaft from resolved_config.yaml (None for the pad); the display-only
+    list is DISPLAY_ONLY for a selection without a sealed run (none given, or vented only)
+    and, with one, the same list with its plume item (DISPLAY_ONLY_PLUME_INDEX, which says
+    'the model has a vented shaft') replaced by ``sealed_plume_item`` (written out: each
+    shaft by run, the column on the carriage, the pressure the exhaust of an engine lit on
+    the track would build above the carriage not modelled, the shaft drawn display geometry,
+    not a sealed run's bore), the fall-back
+    carriage item still swapped beside it; ``sealed_run_note`` written out (the model's bore
+    and gap against the 7 m shaft drawn), None for a vented run; ``assist_settings`` gains
+    ``sealed_shaft`` for a sealed run only; ``app.pair_shafts`` reads a run folder that
+    metrics.json does not describe as None. Fix round 1: the plume item says what the
+    caveats give ('what it did'), the exhaust's pressure above the carriage not modelled,
+    and the trapped gap not drawn (H-m3, P1-m4, V5); the note, shortened to one canvas line
+    (V1), is at most SEALED_NOTE_MAX_CHARS long."""
+    metrics = {
+        "baseline": "pad",
+        "runs": {"pad": {}, "lm": VENTED_M, "lm_sealed": SEALED_M},
+    }
+    config = {
+        "runs": {
+            "pad": {"run": {"assist": {"model": "none"}}},
+            "lm": {"run": {"assist": VENTED_CFG}},
+            "lm_sealed": {"run": {"assist": SEALED_CFG}},
+        }
+    }
+    shafts = scene.run_shafts(metrics, config, ["pad", "lm", "lm_sealed"])
+    assert shafts == {"pad": None, "lm": "vented", "lm_sealed": "sealed"}
+    assert app.pair_shafts(metrics, config, ["lm_sealed", "stray"]) == {
+        "lm_sealed": "sealed",
+        "stray": None,
+    }
+    plain = list(scene.DISPLAY_ONLY)
+    assert scene.display_only_for([[], []]) == plain
+    assert scene.display_only_for([[], []], {"pad": None, "lm": "vented"}) == plain
+    assert "the model has a vented shaft" in scene.DISPLAY_ONLY[scene.DISPLAY_ONLY_PLUME_INDEX]
+    item = scene.sealed_plume_item(shafts)
+    assert item == (
+        "The plume inside the shaft and the carriage beneath lit engines: the model has one "
+        "impingement fraction that moves only track forces and drive energy; no exhaust "
+        "back-pressure, heating or exhaust flow on the carriage. The model's shaft is vented "
+        "for lm and sealed below the carriage for lm_sealed: a sealed shaft's trapped air "
+        "column acts on the carriage during the push (the caveats give what it did), and the "
+        "pressure that the exhaust of an engine lit on the track would build above the "
+        "carriage, with only the annulus between the bore and the vehicle to escape by, is "
+        "not modelled. The shaft drawn is display geometry, its width from configs/display, "
+        "not a sealed run's bore, and the trapped gap below the carriage is not drawn: each "
+        "sealed run's note gives the bore and the gap."
+    )
+    assert (
+        scene.sealed_plume_item({"pad": None, "a": "sealed", "b": "sealed"}).count(
+            "The model's shaft is sealed below the carriage for a and b:"
+        )
+        == 1
+    )
+    listed = scene.display_only_for([[], [], []], shafts)
+    k = scene.DISPLAY_ONLY_PLUME_INDEX
+    assert listed[k] == item and listed[:k] + listed[k + 1 :] == plain[:k] + plain[k + 1 :]
+    fell = f"FALL: {replay.SHAFT_FALLBACK}: the vehicle fell back {replay.SHAFT_CARRIAGE_TEXT}"
+    both = scene.display_only_for([[], [fell]], shafts)
+    assert both[k] == item
+    assert both[scene.DISPLAY_ONLY_CARRIAGE_INDEX] == scene.DISPLAY_ONLY_SHAFT_CARRIAGE_ITEM
+    note = scene.sealed_run_note(SEALED_CFG, SEALED_M, 7.0)
+    assert note == (
+        "Sealed shaft: the model's bore is 5.24 m over a 5 m gap (resolved_config.yaml); the "
+        "7 m shaft drawn is display geometry, the gap not drawn."
+    )
+    assert len(note) <= scene.SEALED_NOTE_MAX_CHARS
+    assert scene.sealed_run_note(SEALED_CFG, SEALED_M, None) == (
+        "Sealed shaft: the model's bore is 5.24 m over a 5 m gap (resolved_config.yaml); the "
+        "shaft drawn is display geometry, the gap not drawn."
+    )
+    assert scene.sealed_run_note(VENTED_CFG, VENTED_M, 7.0) is None
+    settings = scene.assist_settings(SEALED_CFG, SEALED_M)
+    assert settings is not None
+    assert settings["sealed_shaft"] == replay.sealed_shaft_settings(SEALED_CFG, SEALED_M)
+    assert settings["shaft"] == "sealed"
+    vented = scene.assist_settings(VENTED_CFG, VENTED_M)
+    assert vented is not None and "sealed_shaft" not in vented
+
+
+# ------------------------------------------- a real planar sealed-shaft directory (S5a)
+
+
+def _sealed_experiment() -> dict[str, Any]:
+    """A fixed-guidance planar experiment from silo_screening_2d's shared blocks (a 0.5 s
+    sample step, no sweeps, bounds or sensitivity): the pad, lm (a vented force-law linear
+    motor, 22.43 MN and 1720 MW, released at the track end), lm_sealed (the same drive with
+    a sealed shaft: a 5.24 m bore, the bore of D-SP7-54, over a 5 m gap, gamma 1.4) and
+    lm_sealed_target (lm_sealed released at 60 m/s below the mouth)."""
+    exp = yaml.safe_load((REPO / "experiments" / "silo_screening_2d.yaml").read_text("utf-8"))
+    exp = copy.deepcopy(exp)
+    exp["name"] = "shaft_readers"
+    exp["search"].update(
+        {
+            "figure_of_merit": "none",
+            "fixed_gamma_star_deg": 20.0,
+            "fixed_ltg_a": 0.75679,
+            "fixed_ltg_b_per_s": 2.19338e-3,
+        }
+    )
+    exp["baseline"]["integrator"]["sample_dt_s"] = 0.5
+    silo = exp["variants"]["silo_cold"]
+    base = {k: v for k, v in silo.items() if k != "assist"}
+    lm = {k: v for k, v in VENTED_CFG.items() if k != "carriage_mass_t"}
+    sealed = {**lm, **{k: v for k, v in SEALED_CFG.items() if k.startswith("shaft")}}
+    exp["variants"] = {
+        "lm": {**base, "assist": lm},
+        "lm_sealed": {**base, "assist": sealed},
+        "lm_sealed_target": {**base, "assist": {**sealed, "release_speed_mps": 60}},
+    }
+    for key in ("sweeps", "bounds", "sensitivity"):
+        exp.pop(key, None)
+    return exp
+
+
+@pytest.fixture(scope="module")
+def sealed_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The written results directory of ``_sealed_experiment`` (no plots) under a
+    temporary root, never results/."""
+    veh = yaml.safe_load(
+        (REPO / "configs" / "vehicles" / "generic_f9_class_2d.yaml").read_text("utf-8")
+    )
+    resolved = config.resolve_experiment(_sealed_experiment(), veh)
+    root = tmp_path_factory.mktemp("shaft_readers")
+    _er, out = sim.run_experiment(resolved, root, plots=False, repo_root=REPO)
+    return Path(out)
+
+
+def _mn(force_n: float) -> str:
+    """A force [N] in MN to four significant figures, as the readers quote it (the factor
+    1e6 written here, an oracle independent of units.n_to_mn)."""
+    return f"{force_n / 1.0e6:.4g}"
+
+
+def _mj(work_j: float) -> str:
+    """A work [J] in MJ to four significant figures, as the readers quote it (the factor
+    1e6 written here, an oracle independent of units.j_to_mj)."""
+    return f"{work_j / 1.0e6:.4g}"
+
+
+@pytest.mark.slow
+def test_summary_and_pages_of_a_sealed_shaft_directory(sealed_dir: Path, tmp_path: Path) -> None:
+    """A real planar directory with a vented and two sealed linear motors (SP7 step S5a):
+    summary.md attributes the vented track-push line to pad and lm and the sealed one to
+    the sealed runs (neither '[all runs]'), lm_sealed_target's early-release line states
+    the sealed shaft and the cavity, and no line a sealed run carries says 'in the vented
+    shaft'; the replay page's drive caveat names each shaft and quotes each sealed run's
+    column force and work as metrics.json records them and its bore and gap as the
+    resolved config does, and its close-up notes do the same; the scene payload's
+    display-only list names each shaft and a sealed run's note gives its bore against the
+    7 m shaft drawn (the F9 class's display file); a page of pad and lm has no 'sealed' in
+    its text, the vented notes and DISPLAY_ONLY as before; both pages are written, ASCII,
+    and the pad and lm_sealed payload encodes as strict JSON."""
+    metrics = json.loads((sealed_dir / "metrics.json").read_text(encoding="utf-8"))
+    runs_m = metrics["runs"]
+    for name in ("lm_sealed", "lm_sealed_target"):
+        assert runs_m[name]["status"] != "bug_suspect" and runs_m[name]["piston_work_J"] > 0.0
+    assert runs_m["lm_sealed_target"]["release_trigger"] == "target_speed"
+    text = (sealed_dir / "summary.md").read_text(encoding="utf-8")
+    assert f"- {VENTED_TRACK_PUSH} [pad, lm]" in text
+    assert f"- {SEALED_TRACK_PUSH} [lm_sealed, lm_sealed_target]" in text
+    early = next(
+        line for line in text.splitlines() if line.startswith("- linear_motor: released at")
+    )
+    assert early.endswith("[lm_sealed_target]")
+    assert "the vehicle flies in the shaft, open at the mouth, after the release" in early
+    assert CAVITY_CLAUSE in early and "vented" not in early
+    assert (CUSHION_CLAUSE in early) == (FLOOR_OPENING in early)  # fix round 2, P2H-m1
+    assert early.count("cushion") == early.count(CUSHION_CLAUSE)
+    for line in text.splitlines():
+        who = line.rsplit("[", 1)[-1]
+        if line.startswith("- ") and ("lm_sealed" in who or who.startswith("all ")):
+            assert "in the vented shaft" not in line and "the vented shaft named" not in line
+    # the replay page
+    data = replay.replay_data(sealed_dir, ["pad", "lm", "lm_sealed", "lm_sealed_target"])
+    caveats = " ".join(data["meta"]["caveats"])
+    assert "the vented shaft has no air drag (lm)" in caveats
+    assert (
+        "the sealed shaft has no air drag above the carriage (lm_sealed; on the push only "
+        "for lm_sealed_target)" in caveats
+    )
+    for name in ("lm_sealed", "lm_sealed_target"):
+        m = runs_m[name]
+        column = (
+            "the trapped air column (a 5.24 m bore over a 5 m gap: resolved_config.yaml) "
+            "acted on the carriage against the motion with up to "
+            f"{_mn(m['piston_force_peak_N'])} MN (piston_force_peak_N), and the push did "
+            f"{_mj(m['piston_work_J'])} MJ of work against it"
+        )
+        assert f"The drive of {name} is a linear motor" in caveats
+        assert f"its shaft is sealed below the carriage: {column}" in caveats
+        assert any(
+            n.startswith(f"For {name} the shaft is sealed below the carriage: {column}")
+            for n in data["meta"]["closeup_notes"]
+        )
+    assert "For lm the shaft is treated as vented" in " ".join(data["meta"]["closeup_notes"])
+    detail = {r["key"]: r["detail"] for r in data["runs"]}
+    assert "sealed shaft (a 5.24 m bore over a 5 m gap)" in detail["lm_sealed"]
+    assert "sealed" not in detail["lm"]
+    plain = replay.replay_data(sealed_dir, ["pad", "lm"])
+    assert "sealed" not in json.dumps(plain["meta"])
+    assert plain["meta"]["closeup_notes"][-1] == (
+        "The shaft is treated as vented, so no air drag, dynamic pressure or Mach number is "
+        "computed inside it."
+    )
+    # the scene payload
+    payload = scene.scene_payload(sealed_dir, ["pad", "lm_sealed"], display_dir=DISPLAY_DIR)
+    k = scene.DISPLAY_ONLY_PLUME_INDEX
+    assert payload["display_only"][k] == scene.sealed_plume_item(
+        {"pad": None, "lm_sealed": "sealed"}
+    )
+    note = {r["key"]: r["note"] for r in payload["runs"]}
+    assert note == {
+        "pad": "",
+        "lm_sealed": "Sealed shaft: the model's bore is 5.24 m over a 5 m gap "
+        "(resolved_config.yaml); the 7 m shaft drawn is display geometry, the gap not drawn.",
+    }
+    sealed_settings = payload["runs"][1]["assist"]["sealed_shaft"]
+    assert sealed_settings["work_J"] == runs_m["lm_sealed"]["piston_work_J"]
+    assert any("the sealed shaft has no air drag above" in c for c in payload["caveats"])
+    plain_payload = scene.scene_payload(sealed_dir, ["pad", "lm"], display_dir=DISPLAY_DIR)
+    assert plain_payload["display_only"] == list(scene.DISPLAY_ONLY)
+    assert [r["note"] for r in plain_payload["runs"]] == ["", ""]
+    assert "sealed" not in json.dumps(plain_payload["caveats"])
+    page = replay.write_replay_page(
+        sealed_dir, ["pad", "lm", "lm_sealed", "lm_sealed_target"], tmp_path / "replay.html"
+    )
+    assert page.read_text(encoding="utf-8").isascii()
+    scene_page = scene.write_scene_page(
+        sealed_dir,
+        ["lm", "lm_sealed"],
+        tmp_path / "scene.html",
+        cwd=tmp_path,
+        display_dir=DISPLAY_DIR,
+    )
+    assert scene_page.read_text(encoding="utf-8").isascii()
+    json.dumps(payload, allow_nan=False)
+
+
+@pytest.mark.slow
+def test_the_app_lists_and_panels_a_sealed_shaft_directory(sealed_dir: Path) -> None:
+    """The app's run browser row of the sealed directory (complete, playable, planar) and
+    its results panel for the pair lm and lm_sealed (SP7 step S5a): the push line is the
+    replay's detail with the sealed shaft's bore and gap, the display-only list names each
+    shaft, the caveats name the sealed clause; the panel of pad and lm keeps DISPLAY_ONLY
+    and no caveat says 'sealed'."""
+    exp, ts = sealed_dir.parent.name, sealed_dir.name
+    row = app.directory_row(sealed_dir, exp, ts, running=False)
+    assert row["state"] == app.DIR_COMPLETE and row["playable"] and row["model"] == "planar_2d"
+    metrics = json.loads((sealed_dir / "metrics.json").read_text(encoding="utf-8"))
+    cfg = yaml.safe_load((sealed_dir / "resolved_config.yaml").read_text(encoding="utf-8"))
+    basis = app.load_basis(REPO, app.take_server_start(REPO))
+    panel = app.results_panel(sealed_dir, exp, ts, basis, metrics, cfg, chosen=["lm", "lm_sealed"])[
+        "panel"
+    ]
+    assert panel["push"] is not None
+    assert "sealed shaft (a 5.24 m bore over a 5 m gap)" in panel["push"]["text"]
+    k = scene.DISPLAY_ONLY_PLUME_INDEX
+    assert panel["display_only"][k] == scene.sealed_plume_item(
+        {"lm": "vented", "lm_sealed": "sealed"}
+    )
+    assert any("the sealed shaft has no air drag above the carriage" in c for c in panel["caveats"])
+    plain = app.results_panel(sealed_dir, exp, ts, basis, metrics, cfg, chosen=["pad", "lm"])
+    assert plain["panel"]["display_only"] == list(scene.DISPLAY_ONLY)
+    assert not any("sealed" in c for c in plain["panel"]["caveats"])

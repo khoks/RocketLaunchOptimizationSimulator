@@ -1931,8 +1931,8 @@ class OffloadTag:
 class AnimationRun:
     """The series of one planar run the animation draws, on the time after release
     t_s [s]: altitude alt_m [m], downrange_m [m], Earth-relative speed [m/s], felt axial
-    acceleration [g0], dynamic pressure q_pa [Pa] (NaN in a vented shaft), mass m_kg [kg]
-    and the phase label per row; its drawn events; its payload [kg] and status from
+    acceleration [g0], dynamic pressure q_pa [Pa] (NaN on the push, vented or sealed),
+    mass m_kg [kg] and the phase label per row; its drawn events; its payload [kg] and status from
     metrics.json (``runs``, or ``offload.runs`` for a run of the offload block); whether
     it is the experiment's baseline; for a run of the offload block, its OffloadTag and,
     for a penalty row (an offload case whose record charges an assumed stage-1 dry mass
