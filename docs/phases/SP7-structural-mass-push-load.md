@@ -854,7 +854,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [x] | 460c4d6 |
 | S5a | Sealed-shaft wording at the sources and the readers (added at S5's gate: KI-077, KI-079) | sim.py, phases/prelude.py, replay.py, scene.py, physics.md | no vented or constant_accel byte moves; a scratch sealed run's summary, replay and scene pages name the sealed shaft; honesty and visual review | [x] | 2bd40bd |
 | (checkpoint 2) | the drive realism complete; an in-progress handoff point | docs/handoff/ | the handoff written at a step boundary, nothing running | [x] | cc16ec0 (the handoff commit follows) |
-| S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [ ] | |
+| S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [x] | 331891d |
 | S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [ ] | |
 | S7c | Program-level wording in code (replay, the app's headline caveat, site/build.py, the compare.py docstring); the pinned tests; the gallery regenerated | replay.py, app.py, compare.py, site/build.py | `git grep -n "no structural model exists"` only in dated or archived records; full suite; honesty review | [ ] | |
 | S8 | Public face: the demo record, a gallery entry for an SP7 run, the deck slides and PDF, the manual chapters, the landing page, CLAUDE.md layout, status and commands, the protocol's caveat line | docs/demos/SP7/, site/, docs/manual/, CLAUDE.md, docs/process/ | site build with no broken link; visual, honesty and compliance review | [ ] | |
@@ -1487,6 +1487,29 @@ option fairly with its cost)
   Resume point: S6b [ ], not started; its brief and the step-loop script are working
   notes outside the repository (handoff section 4). First command: the fast suite.
   Next: S6b, S7b, S7c, S8, C1, C2.
+- Step S6b closed (2026-11-03; registration commit 331891d). File B
+  (experiments/silo_drive_2d.yaml): silo_cold verbatim from file A, the nine linear-motor
+  variants of design 4.10 with every rule value computed from the sources' closed forms by
+  docs/findings/scripts/sp7_drive_rules.py (21 validity checks), 20 stage-1 offload cases and
+  the stage-1 pad control; no sweep, payload case or sensitivity arm (design 4.10 names
+  none). Part 2 of the pre-registration is the separate file
+  docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md, with a pointer paragraph in part
+  1's header. Two tests hold the YAML to the closed forms (1e-12, worst 3.7e-14) and to design
+  4.10's table. Workflow: one implementer; physics, compliance and honesty reviewers in four
+  passes (35, 17, 11 and 8 findings; 6, 1, 1 and 0 majors), four fix rounds (none rejected);
+  the independent gate: its own 60-digit recomputation of every rule value (within 2.4e-15)
+  and the 20 validity conditions, checks (1)-(4) by its own push-only flights, section 7's
+  expected values by its own implementation of the method, a mutation check of the rules test
+  (50 of 50 caught), fast suite 2214, ruff, the exact 1-D golden tier, the planar pins and
+  capture, the golden-dump field lists, the frozen files and replay.html's sha256: all pass.
+  The gate's verdict was not passed on one item: the full-load mass M was a choice the brief
+  had not made (compliance:M2). The orchestrator closed it as the gate prescribed, logging
+  D-SP7-55 (M at full precision) and citing it in the addendum's section 6, item 2, with no
+  value moved, and accepted the addendum's reading that KI-067 does not reach file B's hot
+  starts (neither holds on the clamp; the gate's flights give F_rest = m_v g_eff exactly)
+  (deviation 54). D-SP7-54's 5.24 m bore was registered as session-made; no answer from the
+  user had arrived. No run, sweep or solve of file B was made before the commit. KI-088
+  opened. Next: S7b (`run` B, alone, from this commit).
 
 ## 12. Deviations from the plan
 
@@ -2015,6 +2038,17 @@ Checkpoint 1 and step S6a (2026-10-16):
     workflow resumed from the journal (passes 1-2 replayed, pass 3 and the gate run live).
     Briefs, step scripts and reports now live outside the temp folder. Accepted by the
     session.
+54. **Step S6b's gate item closed by the orchestrator, its files beyond the row, and a reading
+    against the brief** (the S6b row names experiments/ and docs/phases/inputs/): the step
+    also added the committed rules script (docs/findings/scripts/sp7_drive_rules.py), file B's
+    tests (tests/test_config_planar.py; tests/test_config.py's file count) and physics.md's
+    rows, as the brief asked. The gate found every technical check passing and one item open:
+    the choice of M (full precision against the rounded 572,354.4 kg the brief and the
+    sources write). The orchestrator logged it as D-SP7-55 and cited it in the addendum, with
+    no value moved, and did not run the gate again. The brief named KI-067 an unconservative
+    bias of lm_cmd_hot and lm_fixed_hot; the addendum states that it does not reach them
+    (neither holds on the clamp before its push start), the gate's flights support it, and
+    the orchestrator accepted it. Accepted by the session.
 
 ## 13. Prompt to start this phase
 
