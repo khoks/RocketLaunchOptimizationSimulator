@@ -853,7 +853,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S4b | The structural transform on linear-motor pushes | sim.py, structure.py, physics.md | n_peak, F_peak and DLF against closed forms (both laws, cold and hot, target speed, taper); a slow coupled linear-motor solve with no `offload_nonmonotone`; linear-motor convergence < 0.1%; full suite | [x] | b0fcc31 |
 | S5 | The sealed shaft; the piston-work record | assist/linear_motor.py, dynamics.py, losses.py, physics.md | the adiabatic work closed form; F_p <= p_0 A; F_int lower by (m_v/M) F_p; the identity < 1e-9; `AssistEnergyBudget`'s fields unchanged; full suite | [x] | 460c4d6 |
 | S5a | Sealed-shaft wording at the sources and the readers (added at S5's gate: KI-077, KI-079) | sim.py, phases/prelude.py, replay.py, scene.py, physics.md | no vented or constant_accel byte moves; a scratch sealed run's summary, replay and scene pages name the sealed shaft; honesty and visual review | [x] | 2bd40bd |
-| (checkpoint 2) | the drive realism complete; an in-progress handoff point | | | | |
+| (checkpoint 2) | the drive realism complete; an in-progress handoff point | docs/handoff/ | the handoff written at a step boundary, nothing running | [x] | cc16ec0 (the handoff commit follows) |
 | S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [ ] | |
 | S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [ ] | |
 | S7c | Program-level wording in code (replay, the app's headline caveat, site/build.py, the compare.py docstring); the pinned tests; the gallery regenerated | replay.py, app.py, compare.py, site/build.py | `git grep -n "no structural model exists"` only in dated or archived records; full suite; honesty review | [ ] | |
@@ -1479,6 +1479,14 @@ option fairly with its cost)
   tests ran). A temp-folder cleanup deleted the step's brief and pass 1-2 reports while the
   workflow was paused at a usage limit (deviation 53). KI-077 and KI-079 closed; KI-081 to
   KI-087 opened. Next: checkpoint 2, S6b.
+- In-progress handoff at checkpoint 2 (2026-11-03; protocol section 10): the checkpoint-1
+  handoff moved to docs/handoff/archive/2026-10-16-SP7-checkpoint-1.md, a new
+  docs/handoff/NEXT_SESSION.md written as an in-progress handoff, and the Resume prompt of
+  section 13 replaced by checkpoint 2's (checkpoint 1's text stays in the archived
+  handoff's section 10). The tree is clean apart from these documents; nothing runs.
+  Resume point: S6b [ ], not started; its brief and the step-loop script are working
+  notes outside the repository (handoff section 4). First command: the fast suite.
+  Next: S6b, S7b, S7c, S8, C1, C2.
 
 ## 12. Deviations from the plan
 
@@ -2100,20 +2108,22 @@ docs/handoff/archive/2026-10-07-SP2.md, holds the same text. To resume SP7, use 
 > deployment confirmed. Report anything that undercuts the hypothesis, a modelled
 > structure that cancels most of the offload included, as plainly as the rest.
 
-**Resume SP7** (written 2026-10-16 at checkpoint 1, with the in-progress handoff; paste it
-into a fresh Claude Code session opened in this folder if this session ends before SP7 is
-complete; docs/handoff/NEXT_SESSION.md section 10 holds the same text, and this version
-wins if the two differ):
+**Resume SP7** (written 2026-11-03 at checkpoint 2, with the in-progress handoff; it
+replaces checkpoint 1's text of 2026-10-16, which stays in
+docs/handoff/archive/2026-10-16-SP7-checkpoint-1.md, section 10; paste it into a fresh
+Claude Code session opened in this folder if this session ends before SP7 is complete;
+docs/handoff/NEXT_SESSION.md section 10 holds the same text, and this version wins if the
+two differ):
 
 > Read docs/handoff/NEXT_SESSION.md first, then docs/process/SESSION_PROTOCOL.md,
 > docs/phases/README.md, docs/phases/SP7-structural-mass-push-load.md, CLAUDE.md, TODO.md,
 > README.md, and the memory index
 > (C:\Users\rahul\.claude\projects\D--DEV-ClaudeProjects-SpaceRocketOptimization\memory\MEMORY.md)
 > with the notes it links, then the inputs the phase file links:
-> docs/phases/inputs/2026-10-08-SP7-design.md (the approved design),
-> docs/phases/inputs/2026-10-08-SP7-sources.md (the source note) and
-> docs/phases/inputs/2026-10-15-SP7-preregistration.md (files A and C; its sections 1, 7,
-> 8, 9, 11 and 12 first).
+> docs/phases/inputs/2026-10-08-SP7-design.md (the approved design; section 4.10 is file B),
+> docs/phases/inputs/2026-10-08-SP7-sources.md (section 10: the drive rules) and
+> docs/phases/inputs/2026-10-15-SP7-preregistration.md (part 1 and Amendment 1), and the
+> draft note docs/findings/RQ1-structural-2d.md.
 >
 > We are resuming phase SP7 of launch-assist-sim, in progress since 2026-10-08: the
 > structural mass that the 4 g full-stack push needs, charged by a first-order station
@@ -2121,49 +2131,35 @@ wins if the two differ):
 > and the drive realism that interacts with it (a force- and power-limited linear motor
 > with carriage mass, braking functions, the sealed shaft). Resume SP7 from the step table
 > in section 7 of the phase file; the session log in section 11 holds the resume point and
-> section 12 the deviations. The step in hand is S7a: the three pre-registered commands
-> (`run` and `sweep` of experiments/silo_structure_2d.yaml, `run` of
-> experiments/silo_structure_2d_readme.yaml) were started together from the clean commit
-> 1b5f9d4 on 2026-10-16 between 17:15:10 and 17:15:26 UTC.
+> section 12 the deviations. Steps to S5a and checkpoint 2 are done; nothing is running.
+> The next step is S6b: file B (experiments/silo_drive_2d.yaml) and the pre-registration
+> addendum, built and committed before any run of file B (D-SP7-31: no run, sweep, offload
+> solve or coupled structural solve of any of its cases until then). D-SP7-54 (the sealed
+> bore of 5.24 m) is open to my change until that commit.
 >
 > Follow the session protocol for a phase in progress: the checks of its section 10, then
-> the start checklist of section 3 without the status change. Before any test suite, app or
-> other heavy job, find out whether the S7a commands are still running; nothing heavy runs
-> beside them (pre-registration sections 1 and 11). A finished directory has its top-level
-> summary.md and no FAILED.txt. The code writes FAILED.txt for any exception, Ctrl+C
-> included, so read its traceback. If it ends in KeyboardInterrupt, or a directory has
-> neither file and no live command, the command was interrupted: keep its directory (no
-> results directory is ever deleted or overwritten), re-run that command from a clean
-> commit that changes no code (pre-registration section 12), and log the interruption in
-> the session log. Any other exception means the command raised: re-run nothing and put it
-> to me with the traceback and a recommendation, because a fix changes code and needs a
-> logged decision or a pre-registration amendment first (handoff section 6, item 5). When
-> all three have finished, check each against the pre-registration's section 9 blocking
-> checks, then continue S7a: the convergence check of its section 1 (after the runs, never
-> beside them, by a script whose own commit changes no code and nothing in tests/; handoff
-> section 6, item 3), the frozen sets recomputed at the run's commit (1b5f9d4, or a later
-> commit with the same code and tests), the structural part of
-> docs/findings/RQ1-structural-2d.md with the honesty review, and the independent gate.
-> Then S4, S4a, S4b, S5, checkpoint 2, S6b, S7b, S7c, S8, C1 and C2.
+> the start checklist of section 3 without the status change. Then S6b; S7b (`run` B from
+> the clean registration commit, alone on a quiet machine, then the registered convergence
+> check, never beside it, and the note completed); S7c; S8; C1 and C2.
 >
 > Rules for the rest of the phase. The freeze D-SP7-31 holds: tests never solve a
 > pre-registered case, the structure files stay as frozen at S2's commit, and a change to a
-> structure file or to files A and C is a pre-registration amendment (its own commit, a
-> logged decision, the note extended, never rewritten). Plan mode, and docs/physics.md in
-> the same change, for anything touching the equations of motion, frames, events,
-> integrator settings or loss accounting (the linear motor, the target-speed release and
-> the sealed shaft do). Never choose a drive or structural parameter to make the assist
-> look better; the registered estimates and published claims are comparisons, never
-> targets. File B and its addendum are committed before it runs, from a clean commit. App
-> runs follow D-SP2-37. Keep SP1's penalty rows beside the modelled number. Run every step
-> through the loop: implementer; adversarial reviewers as section 7 of the phase file names
-> them; up to two fix rounds, and an extra round before the gate when the third review pass
-> still has majors (deviation 31); an independent gate that runs every command in the
-> foreground, in chunks under ten minutes, and never ends its turn on a running command,
-> with docs/physics.md in its file list (deviation 39); one commit per gate; the tracker
-> commit at once; then `git push origin main` and the Pages check. The standing gates of
-> section 7 hold on every code step. No validated number may move: the pad and silo_cold
-> payload capacities (26,054.3962 and 27,553.2271 kg) and SP1's headline with the
-> structural model off (41,262.908 kg). Close with the end checklist of the protocol's
-> section 7 (steps C1 and C2). Report anything that undercuts the hypothesis, a modelled
-> structure that cancels most of the offload included, as plainly as the rest.
+> structure file or to files A, B and C after their registration is a pre-registration
+> amendment (its own commit, a logged decision, the note extended, never rewritten). Plan
+> mode, and docs/physics.md in the same change, for anything touching the equations of
+> motion, frames, events, integrator settings or loss accounting. Never choose a drive or
+> structural parameter to make the assist look better: every value of file B comes from a
+> rule fixed in the design or the sources note, and if a rule cannot be applied as written,
+> stop and report it. The registered estimates and published claims are comparisons, never
+> targets. App runs follow D-SP2-37. Keep SP1's penalty rows beside the modelled number.
+> Run every step through the loop: implementer; adversarial reviewers as section 7 of the
+> phase file names them; fix rounds and verification passes while majors remain
+> (deviation 31); an independent gate that runs every command in the foreground, in chunks
+> under ten minutes, and never ends its turn on a running command, with docs/physics.md in
+> its file list (deviation 39); one commit per gate; the tracker commit at once; then
+> `git push origin main` and the Pages check. The standing gates of section 7 hold on every
+> code step. No validated number may move: the pad and silo_cold payload capacities
+> (26,054.3962 and 27,553.2271 kg) and SP1's headline with the structural model off
+> (41,262.908 kg). Close with the end checklist of the protocol's section 7 (steps C1 and
+> C2). Report anything that undercuts the hypothesis, a modelled structure that cancels
+> most of the offload included, as plainly as the rest.
