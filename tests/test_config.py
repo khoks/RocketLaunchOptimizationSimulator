@@ -1817,7 +1817,7 @@ def test_ki030_shipped_files_resolve_with_every_value_as_written(
 
     pinned = planar_pins.read_json(planar_pins.DIGESTS_FILE)["experiments"]
     files = sorted((repo_root / "experiments").glob("*.yaml"))
-    assert len(files) >= 9  # the seven of 22c62e9 and SP7's two structure files
+    assert len(files) >= 10  # the seven of 22c62e9, SP7's two structure files (S6a), file B (S6b)
     for path in files:
         resolved = cli.load_experiment(path)
         runs = planar_pins.resolved_runs(resolved)

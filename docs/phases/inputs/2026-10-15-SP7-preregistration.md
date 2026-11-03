@@ -12,6 +12,10 @@ SP1's pre-registration (docs/phases/inputs/2026-10-03-sp1-preregistration.md).
 Amendment 1 (2026-10-19, D-SP7-48; the sweep's no-offload record and the sweep's re-run) is
 at the end of this note.
 
+Part 2 (2026-11-03, step S6b: file B, experiments/silo_drive_2d.yaml) is the separate file
+docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md; this paragraph is the only text
+added to part 1 for it.
+
 Every expected value below is an estimate, and none is a target: a different result is
 reported as it is. Every structural number is a first-order station sizing (D-SP7-01), not
 a detailed structural design.

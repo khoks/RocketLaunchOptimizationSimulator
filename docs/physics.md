@@ -6419,8 +6419,12 @@ argument of the vented alternative changes (a 7.0 m bore around the 5.2 m fairin
 30 m pushes of the S4b tests keep the fairing above the mouth (the stack top at +40 m),
 where the body is the right check. The code keeps the pre-registered 3.7 m and states
 the gap in the run's lines; which bore lm_fixed_sealed (S6b) flies, or a check against a
-stated largest diameter, is the user's decision before S6b. The check already bites in
-the project's drag bound: an arm that sets A_ref to the fairing's section, such as
+stated largest diameter, is the user's decision before S6b. SP7 step S6b: file B's
+lm_fixed_sealed takes 5.24 m by D-SP7-54 (the 5.2 m fairing plus 3.7 - 3.66 m;
+session-made, open to the user's change before file B's registration commit; "The
+linear-motor rules of file B (SP7 step S6b)"), in place of the sources note's 3.7 m; the
+code's check is unchanged (KI-076). The check already bites in the project's drag bound:
+an arm that sets A_ref to the fairing's section, such as
 `aero_bound` of experiments/silo_screening_2d.yaml (21.24 m^2, d = 5.20035 m), makes the
 check see that section, so a sealed variant with a bore at or below 5.2 m cannot be in
 its `of`: `resolve_experiment` then refuses the whole experiment (review probe; the
@@ -7027,7 +7031,8 @@ golden tier and the planar digest pin and output capture stand as before.
 - a check of the bore against the vehicle's largest section, the bore lm_fixed_sealed
   flies, and whether a sealed variant can sit in a fairing-area bound arm such as
   `aero_bound` (the user's decision before S6b: "The bore and the vehicle's largest
-  section");
+  section"; S6b's file B flies 5.24 m by D-SP7-54, open to the user's change before its
+  registration commit, and the check stays the body's, KI-076);
 - the column in the readers: done in S5a ("Run-level lines and readers"), but for the
   shaft note of configs/display/f9_class.yaml ("the model has a vented shaft"), payload
   data the page does not show, left as it is (the gallery's scene page embeds it);
@@ -7898,8 +7903,9 @@ from its metrics.json, which git does not track. They are regression references 
 the search refactor of SP1 step 5, not validation.
 
 **The shipped Phase 2 experiments** (amendment 1: created with the schema, before any
-planar run), the two offload experiments of SP1 step 8 and the two structural experiments
-of SP7 step S6a (each pair pre-registered: committed before any run). All eight declare
+planar run), the two offload experiments of SP1 step 8, the two structural experiments
+of SP7 step S6a and the drive experiment of SP7 step S6b (each pre-registered: committed
+before any run). All nine declare
 identical shared blocks (a test compares them key for
 key; one `budget_id`): planar_2d; 28.5 deg, azimuth 90, rotation on; 200 km circular;
 v_k 50 m/s; the gamma* grid 8-36 deg step 2; search rtol 1e-8, final 1e-10.
@@ -7914,6 +7920,7 @@ v_k 50 m/s; the gamma* grid 8-36 deg step 2; search rtol 1e-8, final 1e-10.
 | `silo_offload_2d_readme.yaml` (SP1 step 8) | none | README-loads fork (set A) | the bridge of the headline (D-SP1-13): pad, silo_cold, the stage-1 case with its paired pad and pad control; no energy block |
 | `silo_structure_2d.yaml` (SP7 step S6a) | none | gate fork | pad, silo_cold, silo_cold_200m and silo_hot_ramp_on_track (silo_offload_2d's resolved runs) and silo_hot_full (silo_screening_2d's); a structure block (configs/structures/generic_f9_class_2d.yaml, frozen at S2's commit 45e39d4, D-SP7-31) with four payload cases (the central set, physics_high_mass, outer_high_mass, the step row); an offload block, all stage 1 at P_ref with the stage-1 pad control: the uncharged headline (no paired pad), SP1's +2 / +4 / +8.1 t rows, the central structural headline with its +/-10 % arms, the physics band's ends (the low-mass end also plausibility-scaled), the outer envelope's ends, the design-axis rows (quasi-static, step, full-load sizing, thrust-structure entry, margins 0.10 and 0.25, the 4.5 and 4.0 g0 envelope caps), both hot starts and silo_cold_200m uncharged and central, SP1's energy block; sweeps solving the uncharged and the central structural case at each point: stroke at 3 g0 (5), stroke at the fixed exit speed (4); docs/phases/inputs/2026-10-15-SP7-preregistration.md |
 | `silo_structure_2d_readme.yaml` (SP7 step S6a) | none | README-loads fork (set A) | pad, silo_cold; a structure block (configs/structures/generic_f9_class_2d_readme_loads.yaml, frozen at 45e39d4), no payload case; the uncharged and the central structural stage-1 case and the stage-1 pad control; no energy block |
+| `silo_drive_2d.yaml` (SP7 step S6b, file B) | none | gate fork | pad and silo_cold (silo_offload_2d's and file A's resolved runs); the nine linear-motor variants of design 4.10 on silo_cold's 100 m vertical silo (vented, with a massless carriage, unless stated; t_r 0.5 s, drive efficiency 0.5, impingement 0, brake 5 g0): lm_cmd, lm_cmd_taper and lm_cmd_hot (the acceleration law), lm_fixed, lm_fixed_target, lm_fixed_r07, lm_fixed_hot, lm_fixed_sled22 (a 22 t carriage) and lm_fixed_sealed (a sealed shaft, bore 5.24 m by D-SP7-54) (the force law), every rule value by "The linear-motor rules of file B" below; a structure block (the gate's file, frozen at 45e39d4), no payload case; an offload block at P_ref: for silo_cold and each variant the uncharged and the central structural stage-1 case at file A's headline settings, the stage-1 pad control, SP1's energy block; no sweep, sensitivity block or arm; docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md |
 
 Baseline identity (amendment 15): the resolved baseline run dicts of
 calibration_f9_2d and silo_screening_2d are identical except `integrator.sample_dt_s`
@@ -7928,6 +7935,104 @@ cases, bound runs and paired baselines before anything is written.
 An `ExperimentConfig` validates the raw experiment dict only: its `model_dump()`
 holds the injected baseline, which the raw form refuses, so a stored experiment is
 re-resolved from its raw dict, never from a dump.
+
+### The linear-motor rules of file B (SP7 step S6b)
+
+Script: `docs/findings/scripts/sp7_drive_rules.py` (it flies nothing; it prints every value
+at full precision and checks each closed form's validity, 21 conditions). Tests:
+`tests/test_config_planar.py::test_drive_rule_values_follow_their_closed_forms`, which
+recomputes every value and validity condition from the raw files and the constants (not
+through the script) and holds the YAML to 1e-12 relative (the largest difference measured
+is 3.7e-14, lm_cmd_hot's t_ign, the root's two forms differing by 1.2e-14), and
+`::test_drive_rule_pushes_reach_v_e_at_the_mouth_when_flown`, which flies five of the
+pushes alone on the code's model at the full load and ties the closed forms to it. Design
+4.10 fixes file B's drive numbers by rules applied before any run, never changed after one
+(D-SP7-24); the sources note (docs/phases/inputs/2026-10-08-SP7-sources.md, section 10)
+states the rules. Inputs: M, the pad's full-load stack at P_ref (the vehicle file's 22.2 +
+410.9 + 4.0 + 107.5 + 1.7 t plus SP1's P_ref 26,054.396243494975 kg: 572,354.3962434949
+kg; the sources round it to 572,354.4 kg, from which every force and power value would
+differ by 6.6e-9 relative); v_e = sqrt(2 x 3 g0 x 100 m) = 76.70717046013364 m/s; L = 100
+m; t_r = 0.5 s; g_eff = mu/R_E^2 - omega_p^2 R_E at the shared site (`dynamics.g_eff_track`,
+9.772091717511234 m/s^2); a vertical track (sin phi = 1), a cold start and no carriage
+unless stated.
+
+- **The plateau.** A net acceleration a(t) = a_p min(1, t/t_r) from rest ends its rise at
+  v_r = a_p t_r/2 and s_r = a_p t_r^2/6, then v = a_p (t - t_r/2), so v^2 = 2 a_p s - a_p^2
+  t_r^2/12. Reaching v_e at L:
+
+      a_p = [L - sqrt(L^2 - v_e^2 t_r^2/12)] / (t_r^2/12) = v_e^2 / (L + sqrt(L^2 - v_e^2 t_r^2/12))
+
+  (the smaller root; the script evaluates the cancellation-free second form, the test the
+  first), valid while the rise ends inside the stroke (a_p t_r^2/6 < L, a_p t_r/2 < v_e):
+  a_p = 29.51066660871779 m/s^2 (3.00925 g0), 1.23 m and 7.38 m/s at the rise's end. It is
+  design 4.2.1's plateau a' (`structure.ramped_plateau_accel_mps2`), the plateau the
+  constant_accel `rise_time` row charges, so lm_cmd flies the push file A's structural
+  headline charges (silo_cold itself flies an instant step).
+- **lm_cmd** (acceleration law): a_cmd = a_p; caps F_max = 1.10 M (a_cmd + g_eff) and P_max
+  = F_max v_e. On a stack of mass M' the command needs M' (a(t) + g_eff) - T_sys <= M' (a_p +
+  g_eff), below F_max while M' < 1.10 M (629.6 t), and at most M' (a_p + g_eff) v_e, below
+  P_max likewise, so no cap binds on any stack the solve flies (the push alone checked
+  before registration at the full load, at x = 0, 20, 40 and 60 t with the central dm
+  estimate and at P_ref + 1,498.8 kg, the variant runs' order of payload: no `drive_cap`
+  or `power_limit` event).
+- **lm_cmd_taper**: s_taper = v_e t_r = 38.354 m; under the position taper a = a_cmd (L -
+  s)/s_taper over the last s_taper metres, v dv/ds integrates to v_e^2 = 2 a_cmd (L -
+  s_taper/2) - a_cmd^2 t_r^2/12, the same root with L replaced by L - s_taper/2 (valid while
+  the rise ends before L - s_taper: 1.52 m against 61.65 m): a_cmd = 36.57276276174392
+  m/s^2 (3.72938 g0), so the taper's gentle stop raises the net command by 24% (felt 4.73
+  against 4.01 g0); caps by lm_cmd's rule with this a_cmd.
+- **lm_cmd_hot**: lm_cmd's a_cmd and caps; stage 1 lit t_ign = t_push - t_ramp after push
+  start (push_start reference), t_push = t_r/2 + v_e/a_cmd = 2.8493 s (exact while no cap
+  binds and the drive force stays positive, the drive never pulling back: at full vacuum
+  thrust, (m_release)(a_p + g_eff) - T_vac is 14.15 MN on the full load and 11.79 MN on a
+  stack offloaded by 60 t with no dm, zero only beyond an offload of 360 t) and t_ramp = 2
+  s (the vehicle file's), so the ramp ends at the release; t_ign = 0.8493 s, after the
+  command's rise. Its release state is silo_hot_ramp_on_track's (full
+  thrust at the mouth at v_e, the ramp's 2,697.46 kg burned on the track).
+- **lm_fixed** (force law, and lm_fixed_target, lm_fixed_hot, lm_fixed_sled22 and
+  lm_fixed_sealed with the same limits): F_max = M (a_p + g_eff), so the law ramping from
+  the holding force F_0 = M g_eff flies a_p min(1, t/t_r) on the full-load stack and
+  reaches v_e at L; P_max = r F_max v_e with r = 1, the corner speed P_max/F_max = v_e, so
+  the full load meets the power limit at the exit and a lighter stack before it.
+  lm_fixed_target releases at v_release = v_e (its corner speed: on any stack lighter than
+  M the power limit never binds before its release; on a heavier one, such as its variant
+  run's recorded run at its P* above P_ref or a structural case carrying dm at a small
+  offload, the push reaches L below v_e and releases there with
+  `release_speed_not_reached`, lm_fixed's flight), lm_fixed_hot lights stage 1 at push
+  start (t_ign 0, push_start reference),
+  lm_fixed_sled22 carries a 22 t carriage, lm_fixed_sealed flies the sealed shaft with the
+  bore 5.24 m (D-SP7-54: the 5.2 m fairing plus the design's clearance 3.7 - 3.66 m,
+  nominal since 3.7 m is also SpaceX's rounding of the 3.66 m body; it replaces the
+  sources' 3.7 m), the gap 5 m and gamma 1.4 (`atmosphere.KAPPA_AIR`).
+- **lm_fixed_r07**: r = 0.7, so v_c = P_max/F_max = 0.7 v_e. On the full-load stack the
+  rise and the force plateau a' = F_max/M - g_eff reach v_c at s_c = (v_c^2 + a'^2
+  t_r^2/12)/(2 a'); then F = P_max/v and dv/dt = g (v_inf - v)/v with v_inf = P_max/(M g),
+  so ds = v^2 dv/(g (v_inf - v)) and
+
+      s(v) - s_c = (1/g) [-(v^2 - v_c^2)/2 - v_inf (v - v_c) - v_inf^2 ln((v_inf - v)/(v_inf - v_c))]
+
+  F_max is the root of s(v_e) = L, bracketed between lm_fixed's F_max (s(v_e) - L = +17.0
+  m) and twice it (-50.6 m): `scipy.optimize.brentq` in the script, bisection in the test;
+  F_max = 25,236,147.32 N, a' = 34.32 m/s^2, s_c = 42.36 m. Valid while the rise ends
+  below v_c (a' t_r/2 = 8.58 m/s < 53.70 m/s), the plateau reaches v_c inside the stroke
+  (s_c < L) and v_e < v_inf (242.3 m/s).
+
+What the flown pushes do with these values (each push flown alone, the track only,
+before registration; docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md, section
+5): lm_fixed and lm_fixed_r07 reach v_e at L on the full-load stack to 3.7e-16 and 9.3e-16
+relative; lm_fixed_target releases at v_e before L on every lighter stack (86.6 to 99.98 m
+along the stroke for 60 t to 0.1 t of offload); each variant's own run is a payload
+search whose recorded run, at its P* above P_ref, flies a stack heavier than M (about
+P_ref + 1.5 t), on which the cold force-law pushes exit at L below v_e (76.574 m/s for
+lm_fixed and lm_fixed_target alike, the latter with `release_speed_not_reached`) and the
+acceleration law's still reach v_e; the search's gamma* grid and first payload bracket fly
+the vehicle file's 22.8 t payload and 20.8 and 24.8 t, stacks lighter than M, where
+lm_fixed_target releases early at v_e (99.25 m at 22.8 t, where lm_fixed exits at L at
+77.00 m/s), so its grid and P0 figures differ from lm_fixed's and its P* is expected to
+equal lm_fixed's within the payload search's tolerance (0.05 kg), not to the bit;
+lm_fixed_hot and lm_cmd_hot hold nothing on the clamp (their thrust is zero at push
+start, so the rest at push start that `structure.single_mode_bound` takes is exact for
+them).
 
 ## Structural sizing of the push load (first order)
 
@@ -11364,7 +11469,7 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_aero.py::test_fork_numbers_all_have_provenance`, `::test_fork_masses_and_launch_mass_closure`, `::test_readme_fork_masses_are_the_one_d_files`, `::test_forks_differ_only_in_masses`, `::test_gate_fork_inputs` | the three 2-D forks: every number sourced or assumed; masses and launch mass without payload (546.3 / 519.77 / 549.9 t) from the YAML numbers; set A = the 1-D file's masses and provenance; identical apart from the five masses; the gate's Braeunig table, A_ref = pi 3.66^2/4 (0.01 m^2), heating rule 1,135 W/m^2, 11 s coast, stage-2 A_e 8.6 m^2 | exact; 1e-12 relative |
 | `test_config.py::test_f9_converts_to_si`, `::test_engine_exit_area_rules`, `::test_constant_accel_units` | unit conversion at the boundary: 542,570 kg, 9 x 914.1 kN, A_e = (T_vac - T_sl)/P_SL, 3 g0 = 29.41995 m/s^2 | 1e-12 relative |
 | `test_config.py` (every other test) | config rules: bare numbers and provenance in vehicle files, unknown keys, Phase 2 and Phase 3 gates, `fails` requires `end: impact`, `push_start` needs an assist, merge and override semantics, the shipped and tiny experiments resolve | structural / raises |
-| `test_config_planar.py::test_shipped_planar_experiments_resolve`, `::test_shared_blocks_are_identical_across_the_planar_experiments`, `::test_calibration_and_silo_baselines_differ_only_in_sample_dt`, `::test_shipped_blocks_state_every_threshold`, `::test_every_shipped_planar_experiment_is_checked`, `::test_shipped_planar_cap_is_explicit_and_shared`, `::test_planar_cap_may_not_differ_between_runs`, `::test_planar_cap_is_finite_and_positive` | "Experiment schema (planar)": the shipped planar experiments (`PLANAR_EXPERIMENTS`: the four of Phase 2, since SP1 step 8 silo_offload_2d and silo_offload_2d_readme, and since SP7 step S6a silo_structure_2d and silo_structure_2d_readme) resolve (cases through a CLI-style vehicle loader); identical shared blocks and one `budget_id`; amendment 15 baseline identity; every search, LTG, checks and guidance field written out; every planar_2d experiment in experiments/ is one of those checked; `integrator.planar_max_step_s` stated as 2 s in each and carried by every run (baseline, variants, sweep points and paired baselines, sensitivity cases, bounds, calibration cases); a per-run value refused in a variant, sweep, sensitivity parameter or bound (a message naming the setting) and unreachable from a case; the cap finite and > 0 ("Integrator") | exact / structural |
+| `test_config_planar.py::test_shipped_planar_experiments_resolve`, `::test_shared_blocks_are_identical_across_the_planar_experiments`, `::test_calibration_and_silo_baselines_differ_only_in_sample_dt`, `::test_shipped_blocks_state_every_threshold`, `::test_every_shipped_planar_experiment_is_checked`, `::test_shipped_planar_cap_is_explicit_and_shared`, `::test_planar_cap_may_not_differ_between_runs`, `::test_planar_cap_is_finite_and_positive` | "Experiment schema (planar)": the shipped planar experiments (`PLANAR_EXPERIMENTS`: the four of Phase 2, since SP1 step 8 silo_offload_2d and silo_offload_2d_readme, since SP7 step S6a silo_structure_2d and silo_structure_2d_readme, and since SP7 step S6b silo_drive_2d) resolve (cases through a CLI-style vehicle loader); identical shared blocks and one `budget_id`; amendment 15 baseline identity; every search, LTG, checks and guidance field written out; every planar_2d experiment in experiments/ is one of those checked; `integrator.planar_max_step_s` stated as 2 s in each and carried by every run (baseline, variants, sweep points and paired baselines, sensitivity cases, bounds, calibration cases); a per-run value refused in a variant, sweep, sensitivity parameter or bound (a message naming the setting) and unreachable from a case; the cap finite and > 0 ("Integrator") | exact / structural |
 | `test_config_planar.py::test_m2_role_defaults_to_diagnostic_and_is_explicit`, `::test_m2_role_may_not_differ_between_runs` | `checks.m2_role`: default diagnostic, blocking accepted, any other value refused; written out as diagnostic in every shipped planar experiment and carried by every resolved run; a variant's own `checks` refused as a shared block ("Screening-beat rule (2-D)", "Experiment schema (planar)") | exact / raises |
 | `test_config_planar.py::test_phase1_resolved_run_dicts_are_byte_identical`, `::test_inject_shared_is_a_plain_copy_when_nothing_is_declared` | no injection for a 1-D experiment: every run, sweep-point and sensitivity run dict of both 1-D golden sets equals the golden, key order included | exact (JSON text) |
 | `test_config.py::test_exclusive_family_table_is_the_design_and_is_scoped_by_key_name`, `::test_merge_keeps_one_family_per_group` (every ordered pair of families of a group), `::test_merge_drops_only_what_the_given_key_displaces`, `::test_set_path_applies_the_family_rule_to_run_paths_only`, `::test_sweep_axis_exit_speed_over_a_net_accel_parent`, `::test_shipped_experiments_use_the_first_family_only` | "Experiment schema (planar)", merge rule: the table is the design's (written out in the test), no key in two families, and only ConstantAccelConfig and IgnitionConfig have fields of those names; an override giving family B over a base using family A ends with B's keys, none of A's and every unrelated key in place, in `merge_run_dicts` and in the dotted-path form alike (same family: today's per-key merge, in place); one key of a two-key family keeps its partner; other stages and non-family keys untouched; `_set_path` applies the rule to run paths, never to vehicle paths; a sweep point `assist.exit_speed_mps` over the shipped silo_cold holds only the exit speed and the rest of the parent's dict unchanged; the five experiments shipped before SP1 name no key of a second family | exact (dicts and key order written out in the test) |
@@ -11653,7 +11758,10 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_offload_pipeline.py::test_sweep_index_records_each_point_solves_gamma_star_and_flags`, `::test_payload_sensitivity_note_for_an_empty_of_points_to_the_offload_arms`, `::test_calibration_caveat_of_the_readme_loads_fork`, `::test_stage2_caveat_does_not_assume_a_stage1_offload_maximises_total_tonnes` | SP1 step 8a: OFFLOAD_SWEEP_COLUMNS is step 7's twelve (written out in the test, in order) followed by `solve_gamma_star_rad` and `n_flags` (and, since SP7 step S3c, `dv_shortfall_mps`: the next row); a point's solved case records its solve's gamma*_ref (23.4 deg), not the point's payload-search gamma* (22.0 deg), and its two flags; a fixed case none and 0, a reference_failed point none and none, a search_failed solve NaN and 0; read back from the CSV, gamma*_ref within half a unit of its 12th significant digit; the Checks section lists each point's flags ("; "-joined, `none`, the no-list note, a search_failed solve's "none (solve search_failed: bracket)" and a failed fixed case's payload-search status) after the decomposition lines, and nothing new without offload cases; the payload Sensitivity note of a block with an empty `of` (the full texts written out: with the offload arms, with `--no-offload`, without arms, and with arms none of which ran because their case's variant did not, whose offload record has no arms and whose offload section no arms table) and the notes kept without a block, for a block naming runs and with `--no-sensitivity`, carried by `planar_experiment_result` and printed by the table; the README-loads fork's offload caveat 100 (24,700/22,800 - 1) = +8.3% high with its masses; the stage-2 caveat written out, never "cannot beat the headline" (pre-registration Amendment 1, item 4) ("Reporting definitions (planar)", "Propellant saved at fixed payload", "Calibration notes (build step 26)") | exact; 5e-12 relative (CSV) |
 | `test_offload_pipeline.py::test_sweep_index_and_summary_report_each_no_offload_point` | SP7 step S3c (pre-registration section 9, last bullet; section 6, item 5), on synthetic records: `dv_shortfall_mps` is OFFLOAD_SWEEP_COLUMNS' last column, after `n_flags` in every case's group (the structure columns of a structural case follow the last case's plain group); it holds the record's `solve.dv_shortfall_mps`: empty for an ok solve (NaN), a fixed case (no solve), a reference_failed point and a search_failed solve (NaN; no summary line either), the shortfall for a no_offload solve, structural or not (37.1234567891 m/s at the structural end, every one of its 12 significant digits in the CSV text; 2.5 times it at the uncharged end, read back within 5e-12); `summary.sweep_no_offload_lines` prints `SWEEP_NO_OFFLOAD_HEAD` and one line per (point, case) that ended no_offload, in point order, written out word for word: the structural end with "carrying dm 6526.53 kg", the uncharged end without the clause, each with its shortfall to 6 significant digits, the column that holds it and "payload deficit at the full load not flown (a payload case flies a variant, not a sweep point)", never "0 t"; `planar_sweep_summary` prints them after `sweep_structure_lines` and before the Assumptions; KI-042 (closed in SP7 step S4a): the table's `<case>.offload_kg`, `<case>.stage1_fraction` and `<case>.total_fraction` cells of a no_offload point read `SWEEP_NO_OFFLOAD_CELL` ("n/a: no offload"; `summary.sweep_table_rows`), an ok point's its number, a reference_failed point's n/a, while the index keeps the solver's 0; a sweep without a no_offload end gets no line and no heading, its index the one empty column and its summary table the column's header over an `n/a` cell ("Reporting definitions (planar)", "Propellant saved at fixed payload", Sweeps) | exact; 5e-12 relative (CSV) |
 | `test_config_planar.py::test_offload_reports_name_the_arms_and_the_bridge_calibration` | on the pre-registered files (nothing run): silo_offload_2d's empty `of` with offload arms gives the note that points to "Propellant saved at fixed payload", never "no sensitivity block declared"; the bridge's fork has a record with 100 (P*/reference - 1) within 10%, and its offload caveat states P* instead of "no calibration record"; the bridge, with no sensitivity block, keeps that note (SP1 step 8a) | exact |
-| `test_config_planar.py::test_structure_experiments_load_as_the_cli_does_with_the_frozen_files` (2 cases), `::test_structure_experiments_fly_the_runs_sp1_flew` (2 cases), `::test_structure_experiment_declares_the_design_table`, `::test_structure_bridge_is_the_structural_headline_on_the_readme_loads_fork` | the pre-registered structural experiments of SP7 step S6a (nothing flown or solved, D-SP7-31; docs/phases/inputs/2026-10-15-SP7-preregistration.md): both load through `cli.load_experiment` (the structure loader, the result-name check and the preflight `sim.check_resolved`), their structure block names the vehicle's structure file, which `cli.load_structure` loads to the same model and whose bytes have the sha256 frozen at S2's commit 45e39d4, the file every structural and payload case resolves against; the pad and every variant resolve to the run and vehicle dicts of the experiments they are copied from (silo_offload_2d, silo_screening_2d, silo_offload_2d_readme), key order included; file A's cases are design 4.10's table plus the plausibility-scaled twin (D-SP7-41), the 4.0 g0 envelope-cap row (design 4.2.6) and silo_cold_200m's pair, in the file's order, every structure key written out and resolved to its row's settings (the outer sets at their recorded margin and cap), SP1's penalty rows, silo_hot_ramp_s1 and silo_cold_200m_s1 unchanged and silo_cold_s1 SP1's without its paired pad; the stage-1 pad control, the eight arms on the structural headline, SP1's sensitivity params and energy block; four payload cases (full-load sizings, every key written out), one at the settings of each case the pre-registration expects to end no_offload (physics_high_mass, outer_high_mass, the step row); the two sweeps solving the uncharged and the central case on each point's run; every derived name valid; file C is SP1's bridge case without its paired pad and file A's headline settings, with the stage-1 pad control and nothing else | exact |
+| `test_config_planar.py::test_structure_experiments_load_as_the_cli_does_with_the_frozen_files` (3 cases: files A and C, and since SP7 step S6b file B), `::test_structure_experiments_fly_the_runs_sp1_flew` (2 cases), `::test_structure_experiment_declares_the_design_table`, `::test_structure_bridge_is_the_structural_headline_on_the_readme_loads_fork` | the three pre-registered structural experiments, files A and C of SP7 step S6a (docs/phases/inputs/2026-10-15-SP7-preregistration.md) and, in the load test only, file B of S6b (docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md); nothing flown or solved, D-SP7-31: each loads through `cli.load_experiment` (the structure loader, the result-name check and the preflight `sim.check_resolved`), its structure block names the vehicle's structure file, which `cli.load_structure` loads to the same model and whose bytes have the sha256 frozen at S2's commit 45e39d4, the file every structural and payload case resolves against; the pad and every variant resolve to the run and vehicle dicts of the experiments they are copied from (silo_offload_2d, silo_screening_2d, silo_offload_2d_readme), key order included; file A's cases are design 4.10's table plus the plausibility-scaled twin (D-SP7-41), the 4.0 g0 envelope-cap row (design 4.2.6) and silo_cold_200m's pair, in the file's order, every structure key written out and resolved to its row's settings (the outer sets at their recorded margin and cap), SP1's penalty rows, silo_hot_ramp_s1 and silo_cold_200m_s1 unchanged and silo_cold_s1 SP1's without its paired pad; the stage-1 pad control, the eight arms on the structural headline, SP1's sensitivity params and energy block; four payload cases (full-load sizings, every key written out), one at the settings of each case the pre-registration expects to end no_offload (physics_high_mass, outer_high_mass, the step row); the two sweeps solving the uncharged and the central case on each point's run; every derived name valid; file C is SP1's bridge case without its paired pad and file A's headline settings, with the stage-1 pad control and nothing else | exact |
+| `test_config_planar.py::test_drive_rule_values_follow_their_closed_forms` | "The linear-motor rules of file B (SP7 step S6b)": every rule value of silo_drive_2d recomputed from the raw vehicle file, SP1's record (P_ref), the site block and the constants, not through the committed script: M = the vehicle's stage and fairing masses plus P_ref; v_e = sqrt(2 a g0 L) of silo_cold, equal to silo_cold_200m's written 76.70717046013364 m/s; g_eff = mu/R_E^2 - (omega_E cos(lat) sin(az))^2 R_E; the plateau a_p in the sources' own form [L - sqrt(L^2 - v_e^2 t_r^2/12)]/(t_r^2/12) with 2 a_p L - a_p^2 t_r^2/12 = v_e^2 (1e-13); lm_cmd's and lm_cmd_hot's a_cmd/g0 and caps 1.10 M (a + g) and F_max v_e; lm_cmd_taper's s_taper = v_e t_r and its command at L - s_taper/2; lm_cmd_hot's t_ign = t_r/2 + v_e/a_p - t_ramp (push_start, after t_r); lm_fixed's F_max = M (a_p + g) and P_max = F_max v_e on the five variants that share them (each corner speed v_e); lm_fixed_r07's F_max by bisection of s(v_e) = L (the ramp, the force plateau to 0.7 v_e and the power-phase closed form), P_max = 0.7 F_max v_e; the release speed v_e, the push-start ignition at 0, the 22 t carriage, D-SP7-54's bore (the display file's 5.2 m fairing, read for the decision's provenance only, plus 3.7 - 3.66 m), gap 5 m and gamma 1.4; each closed form's validity condition as the addendum lists it: the plateau's rise inside the stroke and below v_e, the taper's rise before the taper and its closed form returning v_e at L (1e-13), lm_cmd_hot lit after t_r with its drive force positive at full vacuum thrust (count x thrust_vac_kN, mass flow T_vac/(g0 Isp_vac)) at its release on the full load and offloaded by 60 t with no dm, lm_fixed_r07's bracket, a' t_r/2 < v_c, s_c < L and v_e < v_inf, the sealed bore above sqrt(4 A_ref/pi), gamma = `atmosphere.KAPPA_AIR`, F_max > M g + F_p(L) with p_0 from `atmosphere.standard_atmosphere(-L)`, and the sled's F_max > (M + m_c) g | 1e-12 relative (measured at most 3.7e-14) |
+| `test_config_planar.py::test_drive_rule_pushes_reach_v_e_at_the_mouth_when_flown` | "The linear-motor rules of file B (SP7 step S6b)", the rules' premise on the code's model: lm_cmd, lm_cmd_taper, lm_cmd_hot, lm_fixed and lm_fixed_r07 flown alone (`sim.flown_push_trace`, the track only, no ascent) on the full-load vehicle at SP1's P_ref release at L at v_e, with no flag, and the lm_cmd family logs no `drive_cap` or `power_limit` event (the addendum's section 5: check 3's full-load exits of lm_fixed and lm_fixed_r07, and check 2 at the full load for the lm_cmd family) | 1e-9 relative on the exit speed and the release position (measured at most 9.3e-16) |
+| `test_config_planar.py::test_drive_experiment_declares_the_design_table` | the pre-registered drive experiment of SP7 step S6b (nothing flown or solved, D-SP7-31; docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md): the pad and silo_cold resolve to the run and vehicle dicts of silo_offload_2d and file A, key order included, silo_cold written as file A writes it; the nine linear-motor variants of design 4.10 in its order on silo_cold's silo (100 m vertical stroke exiting at the mouth, drive efficiency 0.5, impingement 0, brake 5 g0, t_r 0.5 s; vented with a massless carriage unless stated), the acceleration law on the lm_cmd family and the force law on the rest, the stop taper, release speed, 22 t carriage and sealed shaft each on its own variant only, silo_cold's cold ignition except on the two hot starts (push_start, a stage-1 entry with t_ign_s and reference only); for silo_cold and each variant the uncharged and the central structural stage-1 case at file A's headline settings, silo_cold's two case dicts equal to file A's; the stage-1 pad control, SP1's energy block; no sweep, sensitivity block, arm or payload case; every derived name valid | exact |
 | `test_animate.py::test_calibration_record_matches_its_findings_note`, `::test_calibration_footnote_says_inside_the_band_when_it_is`, `::test_calibration_band_includes_both_edges`, `test_replay.py::test_calibration_caveat_says_within_the_band_for_the_readme_loads_fork` | every calibration record (the gate and, since SP1 step 8a, the README-loads fork): its vehicle is the case of tests/data/calibration_record.json whose vehicle file carries that name, its P* that case's recorded P* to 0.1 kg, and the findings note's results row of the case prints P* to 0.1 kg, 100 (P*/22,800 - 1) % to two decimals and inside or outside the 10% band; the gate's one-paragraph result; the footnote keeps the gate's sentence word for word, says "+8.3% high ... inside the +/-10% band" for the README-loads fork (not "Gate vehicle"), and each record's line ends left of the frame's right edge at 1280 px; both edges of the band, 22,800 +/- 2,280 kg, read inside (P*/22,800 - 1 rounds above 0.1 at the upper one) and 0.1 kg beyond either reads outside; the replay page says the fork lies within the gate band, never a miss, and keeps the gate's sentence word for word ("Calibration notes (build step 26)") | exact (0.1 kg; 0.01 percentage points) |
 | `test_structure.py::test_structure_imports_no_io_module` | structure.py imports only the standard library (math, operator, bisect, collections, dataclasses, typing, itertools), numpy, scipy.optimize, constants and units; no open, print or file read | exact (source scan) |
 | `test_structure.py::test_hydrostatic_pressure_against_hand_values` | p = p_u + rho n g0 max(h, 0): 20 m of LOX at 3.996 g0 under 3 bar; the ullage pressure above the surface; a negative n lowering p below 0 (column separation) ("Structural sizing of the push load", Hydrostatic pressure) | 1e-12 relative |

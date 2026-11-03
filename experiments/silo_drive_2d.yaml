@@ -1,0 +1,336 @@
+# RQ1 with a modelled structure and a real drive (SP7,
+# docs/phases/SP7-structural-mass-push-load.md; design
+# docs/phases/inputs/2026-10-08-SP7-design.md, sections 4.6 to 4.10, file B): with the
+# payload and the 200 km circular orbit held fixed, how much stage-1 propellant does a vertical
+# 100 m silo push leave out when a force- and power-limited linear motor flies it in place of
+# the prescribed constant acceleration, uncharged and once the structure sized for the flown
+# push is charged (docs/physics.md, "Linear motor" and "The flown push of a linear motor")?
+# Each linear-motor variant isolates one property of the drive (design 4.10's "Isolates"
+# column, beside each variant below) and is read against silo_cold's pair, file A's
+# headline settings. Gate vehicle generic_f9_class_2d.yaml (mass set C), which calibrates
+# +14.3% high (docs/findings/CAL-f9-leo-2d.md; accepted 2026-09-30). The structure file is
+# configs/structures/generic_f9_class_2d.yaml, frozen at SP7 step S2's commit 45e39d4
+# (D-SP7-31): a first-order station sizing (D-SP7-01), not a detailed structural design.
+# The reference payload P_ref is the pad baseline's payload capacity P*; each solved case
+# removes stage-1 propellant until its assisted run carries exactly P_ref to the same orbit
+# (docs/physics.md, "Figures of merit (planar)"). A structural case adds the modelled mass
+# dm(x), re-sized at every offload x the solve evaluates (a linear-motor push flown afresh in
+# every sizing), to the assisted run's dry masses only; the pad keeps its vehicle (D-SP7-02,
+# D-SP7-35; docs/physics.md, "Coupling the structure to the offload solve").
+#
+# Pre-registered (SP7 step S6b): committed before any run. What each case is for, the
+# checks of the rule values, the expected values (estimates; none is a target), the reading
+# rules, the checks that block a citation and the runtime estimate are in
+# docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md (part 2 of
+# docs/phases/inputs/2026-10-15-SP7-preregistration.md). Never edit after the
+# pre-registration commit: a change is an amendment (its own commit, logged).
+#
+# Shared blocks (dynamics, site, target_orbit, guidance, search, checks) and the baseline
+# with its integrator: copied verbatim from experiments/silo_offload_2d.yaml (a test pins
+# the shared blocks and the budget id across every planar experiment). Bare numbers there,
+# as in the other experiment files; the vehicle file carries the vehicle's sources, the
+# structure file the structure's, and the variants and the offload block below their own.
+name: silo_drive_2d
+vehicle: configs/vehicles/generic_f9_class_2d.yaml
+dynamics: planar_2d
+site: {latitude_deg: 28.5, azimuth_deg: 90, include_rotation: true}
+target_orbit: {kind: circular, altitude_km: 200}
+guidance:
+  kick: {v_kick_mps: 50, mode: hold_to_alignment, max_duration_s: 60, deadline_s: 60}
+  stage1: gravity_turn
+  stage2: {law: linear_tangent, frame: local_horizontal, cutoff: energy}
+search:
+  figure_of_merit: payload
+  gamma_grid_deg: [8, 36, 2]
+  gamma_refine_halfwidth_deg: 4
+  gamma_xatol_deg: 0.01
+  gamma_refine_maxiter: 30
+  gamma_root_tol_deg: 0.01
+  delta_bracket_deg: [0.1, 45]
+  delta_step_deg: 0.25
+  delta_xtol_rad: 1.0e-10
+  payload_half_bracket_t: 2.0
+  payload_max_expand: 6
+  payload_backoff_max: 4
+  payload_xtol_kg: 0.5
+  brentq_rtol: 8.881784197001252e-16         # 4 eps, scipy brentq's floor
+  final_payload_xtol_kg: 0.05
+  final_bracket_kg: [20, 1000]
+  search_rtol: 1.0e-8
+  search_atol_scale: 10
+  final_rtol: 1.0e-10
+  penalty: {base_kg: 1.0e6, per_deg_kg: 1.0e4}
+  ltg: {accept_r_m: 1.0, accept_vr_mps: 1.0e-3, r_scale_m: 1.0e4, vr_scale_mps: 100,
+        fd_step_search: 1.0e-4, fd_step_final: 1.0e-5, max_iters: 25, max_halvings: 6,
+        grid_max_rungs: 2, p0_offset_deg: 5, pf_deg: -1, steep_p0_deg: 35,
+        shallow_guess: [0.3, 0.3], pitch_bounds_deg: [-45, 75], tau_max_factor: 2.0,
+        mass_floor_factor: 0.5}
+checks:
+  closure_tol_mps: 1.0e-5
+  identity_tol_mps: 1.0e-5                 # 2-D loss-identity residual (plan section 11)
+  insertion_e_max: 1.0e-6                  # insertion eccentricity (plan section 11)
+  grav_ratio_bounds: [0.33, 3.0]
+  bp_ratio_bounds: [0.33, 3.0]
+  min_term_mps: 1.0
+  max_drag_steer_share: 0.5
+  anchor_margin_kg: 1.5
+  search_final_flag_rel: 1.0e-4
+  maxq_scan_points: 256
+  maxq_xatol_s: 1.0e-6
+  unconstrained_kick_mps: 120
+  vk_margin_kg: 5
+  convergence: {rel_tol: 1.0e-3, loss_floor_mps: 1.0e-3, margin_floor_kg: 0.5,
+                gamma_resolution_deg: 0.1, tighten_factor: 10, max_step_factor: 0.5}
+  gamma_sensitivity_step_deg: 0.5          # gamma*-sensitivity diagnostic step h (never changes a verdict)
+  m2_role: diagnostic                      # M2 reported, never bug_suspect (user decision 2026-09-30)
+baseline:                                  # pad: held down, full thrust exactly at release
+  name: pad
+  assist: {model: none}
+  ignition: {stage1: {t_ign_s: -2.0, reference: release}, stage2: {t_ign_s: 0.0}}
+  end: insertion
+  integrator: {method: DOP853, rtol: 1.0e-10, planar_max_step_s: 2.0, sample_dt_s: 0.05}
+# Variants. silo_cold is file A's (experiments/silo_structure_2d.yaml), copied verbatim with
+# its comment (file A's "The headline variant."; in file B it is the comparison basis): the
+# same resolved run and vehicle dicts as there and in silo_offload_2d (a test), so its pair
+# below is the cross-commit check against run A. The nine linear-motor variants (design
+# 4.10's table; docs/physics.md, "Linear motor") fly silo_cold's silo unless a variant's own
+# comment says otherwise (lm_fixed_sled22's 22 t carriage, lm_fixed_sealed's sealed shaft): a
+# vertical 100 m vented stroke exiting at the mouth (z = 0), drive efficiency 0.5 (assumed;
+# SP1's value, the sources' central), exhaust impingement 0.0 (SP1's: the exhaust is assumed
+# to miss the carriage), a 5 g0 total carriage brake (SP1's), a massless carriage, and the
+# drive's rise time t_r = 0.5 s (the force rising linearly from the holding force, or the
+# command from 0, over t_r). Each variant's own run is a payload-capacity search, so its
+# recorded run flies the full load plus its payload gain (about +1.5 t: SP1's silo_cold P*
+# was P_ref + 1,498.8 kg), a stack heavier than M (its gamma* grid flies the vehicle file's
+# 22.8 t payload and its first payload bracket 20.8 and 24.8 t, lighter stacks); its cases
+# fly offloaded stacks, the structural ones carrying dm (lighter than M only where x
+# exceeds dm).
+# Every value a rule fixes is computed by docs/findings/scripts/sp7_drive_rules.py from the
+# closed forms of docs/phases/inputs/2026-10-08-SP7-sources.md, section 10, and written at
+# full precision (Python repr) with its rule named beside it; a test
+# (tests/test_config_planar.py) and step S6b's gate recompute each independently to 1e-12
+# relative; nothing changes after any run (D-SP7-24). The rules' inputs:
+#   M = 572354.3962434949 kg, the pad's full-load vehicle at P_ref: 22.2 + 410.9 + 4.0 + 107.5
+#     + 1.7 t from the vehicle file plus P_ref = 26054.396243494975 kg, SP1's pad P*
+#     (tests/data/silo_offload_2d_record.json); the sources write M as 572,354.4 kg, its
+#     rounding (a recomputation from it differs by 6.6e-9 relative on every force and power
+#     value);
+#   v_e = 76.70717046013364 m/s, SP1's exit speed sqrt(2 x 3 g0 x 100 m); L = 100 m;
+#     t_r = 0.5 s;
+#   g_eff = mu/R_E^2 - omega_p^2 R_E = 9.772091717511234 m/s^2 at the shared site
+#     (dynamics.g_eff_track);
+#   a_p = 29.51066660871779 m/s^2, the plateau: the smaller root of v_e^2 = 2 a_p L -
+#     a_p^2 t_r^2 / 12, so that a net acceleration a_p min(1, t / t_r) from rest reaches v_e
+#     at L (valid: the ramp ends inside the stroke, a_p t_r^2 / 6 = 1.23 m < L and a_p t_r /
+#     2 = 7.38 m/s < v_e).
+# Every variant is a cold start (stage 1 lit 0.5 s after its release with the vehicle's 2 s
+# ramp, silo_cold's ignition) unless stated.
+variants:
+  # silo_screening_2d's silo_cold (same resolved run dict): 3 g0 net, exit 76.707 m/s =
+  # sqrt(2 x 3 g0 x 100 m), stage 1 lit 0.5 s after release. The headline variant.
+  silo_cold:
+    assist: {model: constant_accel, net_accel_g: 3.0, stroke_m: 100, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_cmd (isolates constant_accel with a flown ramp; its uncharged x* is pre-registered to
+  # equal SP1's within 0.25 kg): the acceleration law, the net command a(t) = a_cmd min(1,
+  # t / t_r), mass-independent while no cap binds, so every stack reaches v_e at L in t_push
+  # = t_r / 2 + v_e / a_cmd = 2.849 s; release at L. Rules (sources section 10, lm_cmd's
+  # row): accel_command_g = a_p / g0; force_max_kN = 1.10 M (a_cmd + g_eff) / 1e3 and
+  # power_max_MW = force_max_kN v_e / 1e3 (a_cmd in m/s^2): caps 10% above the full-load
+  # need, binding only on a stack above 1.10 M (629.6 t); a cap that binds is logged as
+  # drive_cap and the case read as flown (D-SP7-24).
+  lm_cmd:
+    assist: {model: linear_motor, stroke_m: 100, control: acceleration,
+             accel_command_g: 3.0092505196695907, force_max_kN: 24732.025367046735,
+             power_max_MW: 1897.1236856544033, force_rise_time_s: 0.5, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_cmd_taper (isolates the cost of a gentle stop against the release flag): lm_cmd with a
+  # stop taper over the last s_taper = v_e t_r = 38.354 m (stop_taper_m, sources section 10),
+  # the command scaled by (L - s) / s_taper to zero net acceleration at L, and a_cmd re-solved
+  # (lm_cmd_taper's row): accel_command_g = a_t / g0, a_t = 36.57276276174392
+  # m/s^2 the smaller root of v_e^2 = 2 a_t (L - s_taper / 2) - a_t^2 t_r^2 / 12 (valid: the
+  # ramp ends 1.52 m up, before the taper's start at 61.65 m); caps by lm_cmd's rule with a_t.
+  lm_cmd_taper:
+    assist: {model: linear_motor, stroke_m: 100, control: acceleration,
+             accel_command_g: 3.7293839141545706, force_max_kN: 29178.249324913388,
+             power_max_MW: 2238.1809446944103, force_rise_time_s: 0.5,
+             stop_taper_m: 38.35358523006682, carriage_mass_t: 0, brake_decel_g: 5,
+             drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0, shaft: vented,
+             track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_cmd_hot (isolates the hot start under a structure-protecting drive: thrust replaces
+  # motor force): lm_cmd's command and caps, stage 1 lit on the track so that its 2 s ramp
+  # (the vehicle file's t_ramp_s, assumed there) ends at the release: t_ign_s = t_push - 2.0 s
+  # after push start (sources section 10, lm_cmd_hot's row), t_push = t_r / 2 + v_e / a_cmd =
+  # 2.8493032105033325 s, lm_cmd's exact push time while no cap binds and the drive force
+  # stays positive (the drive force at full vacuum thrust: 14.15 MN on the full load, 11.79
+  # MN on a stack offloaded by 60 t; zero only beyond an offload of 360 t). The thrust lowers
+  # the drive's need (impingement 0: the whole thrust is credited against the drive force),
+  # so the caps do not bind; it is lit 0.35 s after the command's rise has ended.
+  lm_cmd_hot:
+    assist: {model: linear_motor, stroke_m: 100, control: acceleration,
+             accel_command_g: 3.0092505196695907, force_max_kN: 24732.025367046735,
+             power_max_MW: 1897.1236856544033, force_rise_time_s: 0.5, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.8493032105033325, reference: push_start}}
+  # lm_fixed (isolates a facility sized for the full load, run at full force on a lighter
+  # stack): the force law, the force rising from the holding force F_0 = M_0 g_eff at push
+  # start over t_r to F_max, then F = min(F_max, P_max / sdot); release at L. Rules (sources
+  # section 10, lm_fixed's row): force_max_kN = M (a_p + g_eff) / 1e3, so the full-load stack
+  # flies the net acceleration a_p min(1, t / t_r) and reaches v_e at L; power_max_MW = r
+  # force_max_kN v_e / 1e3 with r = 1: the corner speed P_max / F_max equals v_e, so the
+  # power limit is reached exactly at the exit for the full load and earlier on any lighter
+  # stack, which exits faster than v_e.
+  lm_fixed:
+    assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 22483.65942458794,
+             power_max_MW: 1724.6578960494573, force_rise_time_s: 0.5, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_fixed_target (isolates the same exit speed from a fixed facility): lm_fixed's F_max and
+  # P_max, released where the speed reaches v_e (release_speed_mps = v_e, sources section 10):
+  # a lighter stack releases below the mouth and flies the rest of the shaft in the open
+  # atmosphere (D-SP7-51); the full-load stack reaches v_e at L itself (the power limit's
+  # corner), and a heavier one (the variant's recorded run at its P* above P_ref, or a
+  # structural case carrying dm at a small offload) reaches L below v_e and releases there
+  # with the flag release_speed_not_reached: the variant run's recorded flight is then
+  # lm_fixed's (its gamma* grid flies the vehicle file's 22.8 t payload, a lighter stack,
+  # and releases there early at v_e).
+  lm_fixed_target:
+    assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 22483.65942458794,
+             power_max_MW: 1724.6578960494573, force_rise_time_s: 0.5,
+             release_speed_mps: 76.70717046013364, carriage_mass_t: 0, brake_decel_g: 5,
+             drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0, shaft: vented,
+             track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_fixed_r07 (isolates a power-limited drive): r = P_max / (F_max v_e) = 0.7, F_max
+  # re-solved so that the full-load stack still reaches v_e at L (sources section 10,
+  # lm_fixed_r07's row): the ramp to t_r, the force plateau to the corner v_c = 0.7 v_e =
+  # 53.695 m/s at s_c = (v_c^2 + a'^2 t_r^2 / 12) / (2 a') = 42.36 m (a' = F_max / M - g_eff),
+  # then the power phase on the vertical track, s(v) - s_c = (1/g)[-(v^2 - v_c^2)/2 - v_inf
+  # (v - v_c) - v_inf^2 ln((v_inf - v)/(v_inf - v_c))], v_inf = P_max / (M g_eff);
+  # force_max_kN = F_max / 1e3, F_max the bracketed root (brentq) of s(v_e) = L;
+  # power_max_MW = 0.7 force_max_kN v_e / 1e3 (valid: a' t_r / 2 = 8.58 m/s < v_c, s_c =
+  # 42.36 m < L and v_e < v_inf = 242.3 m/s).
+  lm_fixed_r07:
+    assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 25236.147321379234,
+             power_max_MW: 1355.0554180366573, force_rise_time_s: 0.5, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_fixed_hot (isolates the force-limited hot start; pre-registered to raise the
+  # upper-stack flag): lm_fixed's F_max and P_max, stage 1 lit at push start (t_ign_s = 0,
+  # push_start reference; sources section 10) with its 2 s ramp on the track; with
+  # impingement 0 the whole thrust adds to the drive force, so the stack accelerates harder
+  # than lm_fixed's (felt g and dm rise) and burns propellant on the track. Nothing models
+  # the exhaust in the shaft (back-pressure, heating, the carriage in the plume), which
+  # favours the hot starts (SP1's caveat).
+  lm_fixed_hot:
+    assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 22483.65942458794,
+             power_max_MW: 1724.6578960494573, force_rise_time_s: 0.5, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.0, reference: push_start}}
+  # lm_fixed_sled22 (isolates the carriage mass at a fixed force): lm_fixed's F_max and P_max
+  # with a 22 t carriage (carriage_mass_t, sources section 10: silo_screening_2d's
+  # silo_sled_22t, "MagLifter ~4% of liftoff"; Schultz et al. 2001 not opened: assumed); the
+  # holding force is then (M + m_c) g_eff and the full-load stack exits below v_e.
+  lm_fixed_sled22:
+    assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 22483.65942458794,
+             power_max_MW: 1724.6578960494573, force_rise_time_s: 0.5, carriage_mass_t: 22.0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+  # lm_fixed_sealed (isolates the air column): lm_fixed's F_max and P_max in a sealed shaft
+  # (SP7 step S5; docs/physics.md, "The sealed shaft"): the carriage seals the bore above a
+  # gap h_0 of air trapped at p_0 = p_atm(-100 m) = 102.5 kPa, F_p(s) = p_0 A (1 - (h_0 /
+  # (h_0 + s))^gamma) against the motion, 2.18 MN at L of the bound p_0 A = 2.21 MN.
+  # shaft_bore_m 5.24 by D-SP7-54 (TODO.md; it replaces sources section 10's 3.7 m, which the
+  # vehicle's 5.2 m fairing could not pass): the fairing's diameter (spacex.com, as
+  # configs/display/f9_class.yaml records it) plus the design's diametral clearance over the
+  # body, 3.7 - 3.66 = 0.04 m (nominal: 3.7 m is also SpaceX's rounding of the 3.66 m body;
+  # 2 cm radial around the fairing). shaft_gap_m 5.0 (sources section 10's central; assumed,
+  # a facility choice) and shaft_gamma 1.4 (the ICAO adiabatic index atmosphere.py carries,
+  # atmosphere.KAPPA_AIR; the rules script and the test check it).
+  lm_fixed_sealed:
+    assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 22483.65942458794,
+             power_max_MW: 1724.6578960494573, force_rise_time_s: 0.5, carriage_mass_t: 0,
+             brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+             shaft: sealed, shaft_bore_m: 5.24, shaft_gap_m: 5.0, shaft_gamma: 1.4,
+             track: {angle_deg: 90, exit_altitude_m: 0}}
+    ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+# The structure block (SP7 step S3; design 4.3, D-SP7-21): the gate's structure file, frozen
+# at S2's commit 45e39d4 (D-SP7-31; its sha256 is in the pre-registration). No payload case:
+# design 4.10 names none for file B.
+structure:
+  file: configs/structures/generic_f9_class_2d.yaml
+# The offload block (design 4.10): for silo_cold and every linear-motor variant one uncharged
+# and one central structural stage-1 solve at P_ref, the stage-1 pad control and SP1's energy
+# block. No sweep, no payload case and no sensitivity arm: design 4.10 names none for file B
+# (CLAUDE.md's headline arms are file A's, on silo_cold_s1_st).
+offload:
+  reference: pad                           # P_ref = the full-load pad's payload capacity P*
+  pad_control: true                        # the stage-1 solve also on the pad (the solver's consistency test)
+  cases:
+    # silo_cold's pair, file A's verbatim: the uncharged case reproduces SP1's 41,262.908 kg
+    # and the central case run A's 11,420.247 kg, each within 0.002 kg (design 4.10's
+    # cross-commit check). The central structure at file A's headline settings: the central
+    # set, sized for the offloaded stack flown (Q2, D-SP7-02), the dynamic factor from the
+    # rise time (Q7, D-SP7-09), an aft ring (Q5, D-SP7-05), zero margin (Q3, D-SP7-03), no
+    # envelope cap.
+    - {name: silo_cold_s1, of: silo_cold, solve: stage1}
+    - {name: silo_cold_s1_st, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    # Each linear-motor variant, uncharged and with the central structure at the same
+    # settings (design 4.10). On a linear-motor push the dynamic factor takes the drive's own
+    # force_rise_time_s (0.5 s here; the structure file's assumed real-drive rise time does
+    # not act), and the charged load is the larger of the rise formula and the single-mode
+    # bound of the flown history (D-SP7-52; docs/physics.md, "The flown push of a linear
+    # motor").
+    - {name: lm_cmd_s1, of: lm_cmd, solve: stage1}
+    - {name: lm_cmd_s1_st, of: lm_cmd, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_cmd_taper_s1, of: lm_cmd_taper, solve: stage1}
+    - {name: lm_cmd_taper_s1_st, of: lm_cmd_taper, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_cmd_hot_s1, of: lm_cmd_hot, solve: stage1}
+    - {name: lm_cmd_hot_s1_st, of: lm_cmd_hot, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_fixed_s1, of: lm_fixed, solve: stage1}
+    - {name: lm_fixed_s1_st, of: lm_fixed, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_fixed_target_s1, of: lm_fixed_target, solve: stage1}
+    - {name: lm_fixed_target_s1_st, of: lm_fixed_target, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_fixed_r07_s1, of: lm_fixed_r07, solve: stage1}
+    - {name: lm_fixed_r07_s1_st, of: lm_fixed_r07, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_fixed_hot_s1, of: lm_fixed_hot, solve: stage1}
+    - {name: lm_fixed_hot_s1_st, of: lm_fixed_hot, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_fixed_sled22_s1, of: lm_fixed_sled22, solve: stage1}
+    - {name: lm_fixed_sled22_s1_st, of: lm_fixed_sled22, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+    - {name: lm_fixed_sealed_s1, of: lm_fixed_sealed, solve: stage1}
+    - {name: lm_fixed_sealed_s1_st, of: lm_fixed_sealed, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+  energy:
+    fuel_mass_t:                           # RP-1 of each full load; the LOX is the rest of the stage's propellant
+      stage1: {value: 123.5, source: "Espace & Exploration No.39 via Wikipedia Falcon 9 Full Thrust (en.wikipedia.org/wiki/Falcon_9_Full_Thrust, first-stage propellant 287.4 LOX + 123.5 RP-1); the gate vehicle file's own propellant source"}
+      stage2: {value: 32.3, source: "Espace & Exploration No.39 via Wikipedia Falcon 9 Full Thrust (en.wikipedia.org/wiki/Falcon_9_Full_Thrust, second-stage propellant 75.2 LOX + 32.3 RP-1); the gate vehicle file's own propellant source"}
+    heating_value_MJ_per_kg: {value: 43.03, source: "MIL-DTL-25576E (14 April 2006), Propellant, Rocket Grade Kerosene: RP-1 net heat of combustion 18,500 Btu/lb minimum by ASTM D240, x 2.326 kJ/kg per Btu/lb (International Table Btu, exact) = 43,031 kJ/kg; a specification minimum (delivered lots run slightly higher), which slightly lowers the heat-to-electricity ratio; docs/phases/inputs/2026-10-02-source-rp1-heating-value.md"}

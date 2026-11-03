@@ -14,8 +14,13 @@ README-loads fork): they resolve as the CLI resolves them (the structure loader 
 preflight included), name the structure files frozen at S2's commit, fly the runs SP1
 flew and declare the cases of the design's table with the additions the pre-registration
 records (the plausibility-scaled twin, the 4.0 g0 envelope-cap row, silo_cold_200m's pair
-and the payload cases of the rows expected to end no_offload); nothing here solves an
-offload (D-SP7-31). Expected numbers are computed here from the YAML inputs."""
+and the payload cases of the rows expected to end no_offload); so is SP7 step S6b's file B
+(silo_drive_2d: silo_cold and the nine linear-motor variants of design 4.10), whose rule
+values and their validity conditions are recomputed here from the closed forms of the
+sources note (section 10) to 1e-12 relative, and five of whose pushes are flown alone at
+the full load (the track only, no ascent) to tie the closed forms to the model; nothing
+here solves an offload (D-SP7-31). Expected numbers are computed here from the YAML
+inputs."""
 
 from __future__ import annotations
 
@@ -27,12 +32,14 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import numpy as np
 import pytest
 import yaml
 from pydantic import ValidationError
 
 from launchsim import cli, plots, results_io, sim, summary
 from launchsim.assist.constant_accel import ConstantAccelAssist
+from launchsim.atmosphere import KAPPA_AIR, standard_atmosphere
 from launchsim.config import (
     BLOCKING_ROLE,
     BRENTQ_MIN_RTOL,
@@ -46,6 +53,7 @@ from launchsim.config import (
     GuidanceConfig,
     IntegratorConfig,
     KickConfig,
+    LinearMotorConfig,
     LtgConfig,
     OffloadCaseConfig,
     PenaltyConfig,
@@ -65,6 +73,7 @@ from launchsim.config import (
 from launchsim.constants import G0_MPS2, MU_EARTH_M3S2, OMEGA_EARTH_RADS, R_EARTH_M
 from launchsim.phases import IntegratorSettings
 from launchsim.results_io import check_name
+from launchsim.vehicle import with_payload
 
 PLANAR_EXPERIMENTS = (
     "calibration_f9_2d",
@@ -75,6 +84,7 @@ PLANAR_EXPERIMENTS = (
     "silo_offload_2d_readme",
     "silo_structure_2d",
     "silo_structure_2d_readme",
+    "silo_drive_2d",
 )
 SITE_LAT_DEG = 28.5
 KM = 1000.0
@@ -1408,11 +1418,15 @@ def test_offload_reports_name_the_arms_and_the_bridge_calibration(
 
 STRUCTURE_EXPERIMENT = "silo_structure_2d"
 STRUCTURE_BRIDGE = "silo_structure_2d_readme"
+DRIVE_EXPERIMENT = "silo_drive_2d"
+"""File B of SP7 (step S6b; design 4.10): silo_cold and the nine linear-motor variants."""
 STRUCTURE_HEADLINE_CASE = "silo_cold_s1_st"
-"""The structural headline case of both structural experiments (design 4.10)."""
+"""The structural headline case of files A and C (design 4.10); in file B (S6b) the same
+case is the comparison basis and the cross-commit check against run A."""
 STRUCTURE_FILE_OF = {
     STRUCTURE_EXPERIMENT: "configs/structures/generic_f9_class_2d.yaml",
     STRUCTURE_BRIDGE: "configs/structures/generic_f9_class_2d_readme_loads.yaml",
+    DRIVE_EXPERIMENT: "configs/structures/generic_f9_class_2d.yaml",
 }
 """The structure file each structural experiment names, as the records quote it."""
 STRUCTURE_FILES_AT_S2 = {
@@ -1535,17 +1549,18 @@ def _settings(structure_case: Any) -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("name", [STRUCTURE_EXPERIMENT, STRUCTURE_BRIDGE])
+@pytest.mark.parametrize("name", [STRUCTURE_EXPERIMENT, STRUCTURE_BRIDGE, DRIVE_EXPERIMENT])
 def test_structure_experiments_load_as_the_cli_does_with_the_frozen_files(
     repo_root: Path, name: str
 ) -> None:
-    """Both structural experiments load through cli.load_experiment (the vehicle, the
-    structure file through ``load_structure``, the result-name check and the preflight
-    sim.check_resolved, which also refuses a structure block whose pad does not hold down
-    under thrust); the block names its vehicle's structure file, which cli.load_structure
-    loads on its own to the same model, whose ``applies_to`` names the vehicle and whose
-    bytes have the sha256 frozen at S2's commit (D-SP7-31), the file every structural case
-    and payload case resolves against. Nothing is flown."""
+    """The three structural experiments (files A and C of SP7 step S6a, file B of S6b) load
+    through cli.load_experiment (the vehicle, the structure file through ``load_structure``,
+    the result-name check and the preflight sim.check_resolved, which also refuses a
+    structure block whose pad does not hold down under thrust); the block names its
+    vehicle's structure file, which cli.load_structure loads on its own to the same model,
+    whose ``applies_to`` names the vehicle and whose bytes have the sha256 frozen at S2's
+    commit (D-SP7-31), the file every structural case and payload case resolves against.
+    Nothing is flown."""
     path = _experiment_path(repo_root, name)
     resolved = cli.load_experiment(path)
     sim.check_resolved(resolved)
@@ -1704,3 +1719,377 @@ def test_structure_bridge_is_the_structural_headline_on_the_readme_loads_fork(
     assert block.config.energy is None and "sensitivity" not in mine
     assert mine["vehicle"] == raw[OFFLOAD_BRIDGE]["vehicle"]
     assert raw[STRUCTURE_EXPERIMENT]["vehicle"] == raw[OFFLOAD_EXPERIMENT]["vehicle"]
+
+
+# ----------------------------- SP7 step S6b: the pre-registered drive experiment (file B)
+
+DRIVE_LM_VARIANTS = (
+    "lm_cmd",
+    "lm_cmd_taper",
+    "lm_cmd_hot",
+    "lm_fixed",
+    "lm_fixed_target",
+    "lm_fixed_r07",
+    "lm_fixed_hot",
+    "lm_fixed_sled22",
+    "lm_fixed_sealed",
+)
+"""File B's linear-motor variants in the file's order (design 4.10's table)."""
+DRIVE_SHARED_RUNS: dict[str, tuple[str, ...]] = {
+    OFFLOAD_EXPERIMENT: ("pad", "silo_cold"),
+    STRUCTURE_EXPERIMENT: ("pad", "silo_cold"),
+}
+"""The runs file B shares with the experiments it copies them from (silo_cold is file A's
+verbatim, itself silo_offload_2d's)."""
+DRIVE_SILO: dict[str, Any] = {
+    "model": "linear_motor",
+    "stroke_m": 100,
+    "force_rise_time_s": 0.5,
+    "brake_decel_g": 5,
+    "drive_efficiency": 0.5,
+    "exhaust_impingement_fraction": 0.0,
+    "track": {"angle_deg": 90, "exit_altitude_m": 0},
+}
+"""Every linear-motor variant's silo settings as written: silo_cold's 100 m vertical stroke
+exiting at the mouth, the sources' drive and facility values (section 10: drive efficiency
+0.5, impingement 0, brake 5 g0) and the drive's rise time t_r 0.5 s. The shaft and the
+carriage are not in it: the design-table test asserts them separately (vented and massless
+except lm_fixed_sealed's sealed shaft and lm_fixed_sled22's 22 t carriage)."""
+DRIVE_COLD = {"stage1": {"t_ign_s": 0.5, "reference": "release"}}
+"""silo_cold's ignition (stage 1 lit 0.5 s after the release), every cold variant's."""
+DRIVE_HOT = ("lm_cmd_hot", "lm_fixed_hot")
+"""File B's two hot starts (stage 1 lit on the track, push_start references)."""
+DRIVE_CAP_FACTOR = 1.10
+"""The acceleration law's caps over the full-load need (sources section 10, lm_cmd)."""
+DRIVE_R_FIXED, DRIVE_R_POWER = 1.0, 0.7
+"""r = P_max / (F_max v_e) of lm_fixed and of lm_fixed_r07 (sources section 10)."""
+DRIVE_RISE_S = 0.5
+"""The rules' t_r [s] (sources section 10)."""
+DRIVE_SLED_T = 22.0
+"""lm_fixed_sled22's carriage [t] (sources section 10)."""
+DRIVE_BORE_CLEARANCE_M = 3.7 - 3.66
+"""D-SP7-54's diametral clearance [m]: the sources' 3.7 m bore over the 3.66 m body
+(nominal: 3.7 m is also SpaceX's rounding of the 3.66 m body)."""
+DRIVE_GAP_M, DRIVE_GAMMA = 5.0, 1.4
+"""lm_fixed_sealed's gap [m] and ratio of specific heats (sources section 10)."""
+DRIVE_HOT_LIGHTEST_KG = 60.0e3
+"""The largest offload [kg] of the checks before registration (check 2), at which
+lm_cmd_hot's drive force is checked with no dm (the lightest stack there)."""
+DRIVE_RULE_REL = 1e-12
+"""The registered tolerance of a rule value against its closed form (design 4.10)."""
+DRIVE_IDENTITY_REL = 1e-13
+"""An algebraic identity re-evaluated in floating point (the plateau's residual, the
+taper returning v_e at L): ten times tighter than the registered tolerance."""
+DRIVE_FLOWN_REL = 1e-9
+"""The flown push's exit speed against v_e and its release position against L (measured
+at most 9.3e-16 at the pre-registration; the integrator's final tolerance is 1e-10)."""
+DRIVE_FLOWN = ("lm_cmd", "lm_cmd_taper", "lm_cmd_hot", "lm_fixed", "lm_fixed_r07")
+"""The pushes the rules make reach v_e exactly at L on the full-load stack, flown alone."""
+DRIVE_CAP_EVENTS = ("drive_cap", "drive_cap_end", "power_limit", "power_limit_end")
+"""The cap and power events the lm_cmd family must not log (E2's premise)."""
+DRIVE_BISECTIONS = 200
+"""Bisection steps for lm_fixed_r07's F_max (the bracket halves until it stops shrinking)."""
+DRIVE_R07_BRACKET_HIGH = 2.0
+"""lm_fixed_r07's bracket high end as a multiple of lm_fixed's F_max (its low end): a
+bracket, not a tuned value; both ends are asserted to straddle L, and s(v_e) falls
+monotonically with F_max, so any straddling bracket gives the same root."""
+KG_PER_T, N_PER_KN, W_PER_MW = 1000.0, 1000.0, 1.0e6
+"""The YAML-side units of the rule values (t, kN, MW)."""
+
+
+def _drive_assist(raw_exp: dict[str, Any], variant: str) -> dict[str, Any]:
+    """A raw variant's assist block."""
+    return raw_exp["variants"][variant]["assist"]
+
+
+def _plateau_textbook(v_e_mps: float, length_m: float, t_r_s: float) -> float:
+    """The smaller root [L - sqrt(L^2 - v_e^2 t_r^2 / 12)] / (t_r^2 / 12) [m/s^2] of
+    v_e^2 = 2 a L - a^2 t_r^2 / 12, as the sources write it (sources section 10); v_e_mps
+    [m/s], length_m [m], t_r_s [s]."""
+    k = t_r_s * t_r_s / 12.0
+    return (length_m - math.sqrt(length_m * length_m - v_e_mps * v_e_mps * k)) / k
+
+
+def _drive_p_ref_kg(repo_root: Path) -> float:
+    """SP1's P_ref [kg] (tests/data/silo_offload_2d_record.json, gate.reference_payload_kg)."""
+    record = json.loads(
+        (repo_root / "tests" / "data" / "silo_offload_2d_record.json").read_text(encoding="utf-8")
+    )
+    return float(record["gate"]["reference_payload_kg"])
+
+
+def test_drive_rule_values_follow_their_closed_forms(
+    repo_root: Path, raw: dict[str, dict[str, Any]]
+) -> None:
+    """Every rule value file B writes equals its closed form (sources section 10; design
+    4.10) to 1e-12 relative, recomputed here from the raw files and the constants, not by
+    the committed script: M the pad's full-load vehicle (the vehicle file's stage and
+    fairing masses plus SP1's P_ref), v_e = sqrt(2 a g0 L) of silo_cold (silo_cold_200m's
+    unrounded speed), g_eff = mu/R_E^2 - omega_p^2 R_E at the site block, the plateau a_p
+    (the smaller root, in the sources' own form), lm_cmd's command and caps (1.10 M (a +
+    g) and F_max v_e), lm_cmd_taper's s_taper = v_e t_r and its command re-solved with L
+    less s_taper / 2, lm_cmd_hot's t_ign = t_r / 2 + v_e / a_p - t_ramp, lm_fixed's F_max =
+    M (a_p + g) and P_max = F_max v_e, lm_fixed_r07's F_max by bisection of the ramp,
+    plateau and power-phase closed form s(v_e) = L with P_max = 0.7 F_max v_e, the variants
+    that share lm_fixed's limits, the release speed, the push-start ignition, the 22 t
+    carriage and D-SP7-54's bore (the 5.2 m fairing plus 3.7 - 3.66 m) with the sources'
+    gap and gamma. And every closed form's validity condition holds, as the addendum
+    (section 5) lists them: the plateau's rise inside the stroke and below v_e; the taper's
+    rise before the taper and its closed form returning v_e at L; lm_cmd_hot lit after the
+    command's rise, with its drive force positive at full vacuum thrust (the vehicle file's
+    count x thrust_vac_kN, mass flow T_vac / (g0 Isp_vac)) at its release on the full load
+    and offloaded by 60 t with no dm; lm_fixed_r07's bracket, a' t_r / 2 < v_c, s_c < L and
+    v_e < v_inf; the sealed bore above sqrt(4 A_ref / pi), gamma the ICAO adiabatic index
+    (atmosphere.KAPPA_AIR), F_max above M g + F_p(L) with p_0 = p_atm(-L)
+    (atmosphere.standard_atmosphere); the sled's F_max above (M + m_c) g. The display
+    file's fairing diameter is read for D-SP7-54's provenance only: the model reads file
+    B's literal 5.24 m, and an edit of the display value fails this test because the
+    registered bore would no longer follow its stated rule."""
+    mine = raw[DRIVE_EXPERIMENT]
+    veh = _load(repo_root / mine["vehicle"])
+    s1, s2 = veh["stages"]
+    p_ref = _drive_p_ref_kg(repo_root)
+    tonnes = (
+        s1["dry_mass_t"]["value"]
+        + s1["propellant_mass_t"]["value"]
+        + s2["dry_mass_t"]["value"]
+        + s2["propellant_mass_t"]["value"]
+        + veh["fairing_mass_t"]["value"]
+    )
+    m_full = tonnes * KG_PER_T + p_ref
+    lat = math.radians(mine["site"]["latitude_deg"])
+    az = math.radians(mine["site"]["azimuth_deg"])
+    omega_p = OMEGA_EARTH_RADS * math.cos(lat) * math.sin(az)
+    g_mps2 = MU_EARTH_M3S2 / R_EARTH_M**2 - omega_p**2 * R_EARTH_M
+    cold = _drive_assist(mine, "silo_cold")
+    length_m = float(cold["stroke_m"])
+    v_e = math.sqrt(2.0 * cold["net_accel_g"] * G0_MPS2 * length_m)
+    assert v_e == _drive_assist(raw[OFFLOAD_EXPERIMENT], "silo_cold_200m")["exit_speed_mps"]
+    t_r, t_ramp = DRIVE_RISE_S, s1["startup"]["t_ramp_s"]["value"]
+
+    def close(written: float, expected: float, what: str) -> None:
+        """Assert a written rule value equals its closed form to the registered 1e-12."""
+        assert math.isclose(written, expected, rel_tol=DRIVE_RULE_REL, abs_tol=0.0), (
+            what,
+            written,
+            expected,
+        )
+
+    a_p = _plateau_textbook(v_e, length_m, t_r)
+    assert a_p * t_r**2 / 6.0 < length_m and a_p * t_r / 2.0 < v_e
+    residual = 2.0 * a_p * length_m - a_p**2 * t_r**2 / 12.0
+    assert residual == pytest.approx(v_e**2, rel=DRIVE_IDENTITY_REL)
+
+    def caps(a_mps2: float) -> tuple[float, float]:
+        """lm_cmd's caps for a command a_mps2 [m/s^2]: (force_max_kN, power_max_MW)."""
+        f_n = DRIVE_CAP_FACTOR * m_full * (a_mps2 + g_mps2)
+        return f_n / N_PER_KN, f_n * v_e / W_PER_MW
+
+    for name in ("lm_cmd", "lm_cmd_hot"):
+        lm = _drive_assist(mine, name)
+        f_kn, p_mw = caps(a_p)
+        close(lm["accel_command_g"], a_p / G0_MPS2, f"{name} accel_command_g")
+        close(lm["force_max_kN"], f_kn, f"{name} force_max_kN")
+        close(lm["power_max_MW"], p_mw, f"{name} power_max_MW")
+    taper = _drive_assist(mine, "lm_cmd_taper")
+    s_taper = v_e * t_r
+    a_t = _plateau_textbook(v_e, length_m - s_taper / 2.0, t_r)
+    assert a_t * t_r**2 / 6.0 < length_m - s_taper
+    v_taper_start_sq = 2.0 * a_t * (length_m - s_taper) - a_t**2 * t_r**2 / 12.0
+    assert math.sqrt(v_taper_start_sq + a_t * s_taper) == pytest.approx(v_e, rel=DRIVE_IDENTITY_REL)
+    f_kn, p_mw = caps(a_t)
+    close(taper["stop_taper_m"], s_taper, "lm_cmd_taper stop_taper_m")
+    close(taper["accel_command_g"], a_t / G0_MPS2, "lm_cmd_taper accel_command_g")
+    close(taper["force_max_kN"], f_kn, "lm_cmd_taper force_max_kN")
+    close(taper["power_max_MW"], p_mw, "lm_cmd_taper power_max_MW")
+    hot = mine["variants"]["lm_cmd_hot"]["ignition"]["stage1"]
+    assert hot["reference"] == "push_start"
+    t_ign = t_r / 2.0 + v_e / a_p - t_ramp
+    assert t_ign >= t_r
+    close(hot["t_ign_s"], t_ign, "lm_cmd_hot t_ign_s")
+    engine = s1["engine"]
+    t_vac_n = engine["count"]["value"] * engine["thrust_vac_kN"]["value"] * N_PER_KN
+    burned_kg = t_vac_n / (G0_MPS2 * engine["isp_vac_s"]["value"]) * t_ramp / 2.0
+    for offload_kg in (0.0, DRIVE_HOT_LIGHTEST_KG):
+        release_kg = m_full - offload_kg - burned_kg
+        assert release_kg * (a_p + g_mps2) - t_vac_n > 0.0, offload_kg
+
+    f_fixed_n = m_full * (a_p + g_mps2)
+    shared = ("lm_fixed", "lm_fixed_target", "lm_fixed_hot", "lm_fixed_sled22", "lm_fixed_sealed")
+    for name in shared:
+        lm = _drive_assist(mine, name)
+        close(lm["force_max_kN"], f_fixed_n / N_PER_KN, f"{name} force_max_kN")
+        close(
+            lm["power_max_MW"], DRIVE_R_FIXED * f_fixed_n * v_e / W_PER_MW, f"{name} power_max_MW"
+        )
+        corner_mps = lm["power_max_MW"] * W_PER_MW / (lm["force_max_kN"] * N_PER_KN)
+        close(corner_mps, v_e, f"{name} corner speed")
+    assert _drive_assist(mine, "lm_fixed_target")["release_speed_mps"] == v_e
+    assert mine["variants"]["lm_fixed_hot"]["ignition"]["stage1"] == {
+        "t_ign_s": 0.0,
+        "reference": "push_start",
+    }
+    sled = _drive_assist(mine, "lm_fixed_sled22")
+    assert sled["carriage_mass_t"] == DRIVE_SLED_T
+    assert f_fixed_n > (m_full + DRIVE_SLED_T * KG_PER_T) * g_mps2
+    sealed = _drive_assist(mine, "lm_fixed_sealed")
+    display = _load(repo_root / "configs" / "display" / "f9_class.yaml")["vehicle"]
+    close(
+        sealed["shaft_bore_m"],
+        display["fairing_diameter_m"]["value"] + DRIVE_BORE_CLEARANCE_M,
+        "lm_fixed_sealed shaft_bore_m",
+    )
+    assert (sealed["shaft_gap_m"], sealed["shaft_gamma"]) == (DRIVE_GAP_M, DRIVE_GAMMA)
+    assert sealed["shaft_gamma"] == KAPPA_AIR
+    a_ref_m2 = veh["aero"]["reference_area_m2"]["value"]
+    assert sealed["shaft_bore_m"] > math.sqrt(4.0 * a_ref_m2 / math.pi)
+    p0_pa = float(standard_atmosphere(-length_m).p_pa)
+    area_m2 = math.pi * sealed["shaft_bore_m"] ** 2 / 4.0
+    gap_m = sealed["shaft_gap_m"]
+    f_p_end_n = p0_pa * area_m2 * (1.0 - (gap_m / (gap_m + length_m)) ** sealed["shaft_gamma"])
+    assert f_fixed_n > m_full * g_mps2 + f_p_end_n
+
+    def r07_stroke(f_n: float) -> float:
+        """s(v_e) [m] of the full-load force-law push with F_max f_n [N] and P_max = 0.7
+        F_max v_e: the ramp and the force plateau to v_c = 0.7 v_e, then the power phase
+        (m_full [kg], g_mps2 [m/s^2], v_e [m/s] and t_r [s] from the enclosing test)."""
+        a = f_n / m_full - g_mps2
+        v_c = DRIVE_R_POWER * v_e
+        v_inf = DRIVE_R_POWER * f_n * v_e / (m_full * g_mps2)
+        s_c = (v_c**2 + a**2 * t_r**2 / 12.0) / (2.0 * a)
+        power = (
+            v_inf**2 * math.log((v_inf - v_c) / (v_inf - v_e))
+            - v_inf * (v_e - v_c)
+            - (v_e**2 - v_c**2) / 2.0
+        ) / g_mps2
+        return s_c + power
+
+    lo_n, hi_n = f_fixed_n, DRIVE_R07_BRACKET_HIGH * f_fixed_n
+    assert r07_stroke(lo_n) > length_m > r07_stroke(hi_n)
+    for _ in range(DRIVE_BISECTIONS):
+        mid_n = 0.5 * (lo_n + hi_n)
+        if mid_n in (lo_n, hi_n):
+            break
+        lo_n, hi_n = (mid_n, hi_n) if r07_stroke(mid_n) > length_m else (lo_n, mid_n)
+    f_r07_n = 0.5 * (lo_n + hi_n)
+    a_r07 = f_r07_n / m_full - g_mps2
+    v_c, v_inf = DRIVE_R_POWER * v_e, DRIVE_R_POWER * f_r07_n * v_e / (m_full * g_mps2)
+    s_c = (v_c**2 + a_r07**2 * t_r**2 / 12.0) / (2.0 * a_r07)
+    assert a_r07 * t_r / 2.0 < v_c and v_e < v_inf and s_c < length_m
+    r07 = _drive_assist(mine, "lm_fixed_r07")
+    close(r07["force_max_kN"], f_r07_n / N_PER_KN, "lm_fixed_r07 force_max_kN")
+    close(
+        r07["power_max_MW"], DRIVE_R_POWER * f_r07_n * v_e / W_PER_MW, "lm_fixed_r07 power_max_MW"
+    )
+
+
+def test_drive_rule_pushes_reach_v_e_at_the_mouth_when_flown(
+    repo_root: Path, raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """The rules' premise on the code's model (SP7 step S6b; the addendum's section 5: check
+    3's full-load exits of lm_fixed and lm_fixed_r07, and check 2 at the full load for the
+    lm_cmd family): lm_cmd, lm_cmd_taper, lm_cmd_hot, lm_fixed and lm_fixed_r07, each flown alone
+    (``sim.flown_push_trace``: the track phase only, no ascent; D-SP7-31 allows it) on the
+    full-load vehicle at SP1's P_ref, release at the track end L at v_e = sqrt(2 a g0 L)
+    to 1e-9 relative with no flag, and the lm_cmd family logs no ``drive_cap`` or
+    ``power_limit`` event. A change to the vented shaft (drag, a column), the holding-force
+    convention or the ramp shape that broke the closed forms' premise fails here."""
+    mine = raw[DRIVE_EXPERIMENT]
+    cold = _drive_assist(mine, "silo_cold")
+    length_m = float(cold["stroke_m"])
+    v_e = math.sqrt(2.0 * cold["net_accel_g"] * G0_MPS2 * length_m)
+    p_ref = _drive_p_ref_kg(repo_root)
+    for name in DRIVE_FLOWN:
+        run = resolved[DRIVE_EXPERIMENT].runs[name]
+        v0 = run.to_vehicle()
+        setup = sim.planar_setup(run.run, v0)
+        ctx = sim.search_context(setup, v0, run.run.end)
+        trace = sim.flown_push_trace(ctx, with_payload(v0, p_ref))
+        last = trace.assist_phases()[-1]
+        layout = last.spec.params.layout
+        y_end = np.asarray(last.y_end, dtype=float)
+        exit_mps = float(layout.get(y_end, "sdot_mps"))
+        release_m = float(layout.get(y_end, "s_m"))
+        assert exit_mps == pytest.approx(v_e, rel=DRIVE_FLOWN_REL), name
+        assert release_m == pytest.approx(length_m, rel=DRIVE_FLOWN_REL), name
+        assert not trace.flags, (name, trace.flags)
+        if name.startswith("lm_cmd"):
+            events = {e.name for e in trace.events if e.phase == "ASSIST"}
+            assert not events & set(DRIVE_CAP_EVENTS), (name, events)
+
+
+def test_drive_experiment_declares_the_design_table(
+    raw: dict[str, dict[str, Any]], resolved: dict[str, ResolvedExperiment]
+) -> None:
+    """File B (design 4.10): the pad and silo_cold resolve to the run and vehicle dicts of
+    silo_offload_2d and file A, key order included (silo_cold written verbatim from file
+    A); the nine linear-motor variants in design 4.10's order, each on silo_cold's silo
+    (DRIVE_SILO: a 100 m vertical stroke exiting at the mouth, drive efficiency 0.5,
+    impingement 0, brake 5 g0, t_r 0.5 s; the shaft and the carriage asserted separately:
+    vented and massless except lm_fixed_sealed's sealed shaft and lm_fixed_sled22's 22 t
+    carriage), the acceleration law on the lm_cmd family and the force law on the rest, a
+    stop taper only on lm_cmd_taper, a release speed only on lm_fixed_target, and
+    silo_cold's cold ignition except on the two hot starts (push_start references, stage 1
+    only, no other ignition key); for silo_cold and each variant an uncharged and a central
+    structural stage-1 case at file A's headline settings, silo_cold's two case dicts equal
+    to file A's; the stage-1 pad control, SP1's energy block, and no sweep, sensitivity
+    block, arm or payload case; every derived name a valid results name."""
+    r = resolved[DRIVE_EXPERIMENT]
+    mine = raw[DRIVE_EXPERIMENT]
+    for source, runs in DRIVE_SHARED_RUNS.items():
+        for run in runs:
+            new, old = r.runs[run], resolved[source].runs[run]
+            assert json.dumps(new.run_dict) == json.dumps(old.run_dict), (source, run)
+            assert json.dumps(new.vehicle_dict) == json.dumps(old.vehicle_dict), (source, run)
+    assert mine["variants"]["silo_cold"] == raw[STRUCTURE_EXPERIMENT]["variants"]["silo_cold"]
+    assert list(r.runs) == ["pad", "silo_cold", *DRIVE_LM_VARIANTS]
+    rules = {"control", "accel_command_g", "force_max_kN", "power_max_MW"}
+    special = {"stop_taper_m", "release_speed_mps", "carriage_mass_t", "shaft"}
+    sealed_keys = {"shaft_bore_m", "shaft_gap_m", "shaft_gamma"}
+    for name in DRIVE_LM_VARIANTS:
+        lm = _drive_assist(mine, name)
+        law = "acceleration" if name.startswith("lm_cmd") else "force"
+        silo = {k: v for k, v in lm.items() if k not in rules | special | sealed_keys}
+        assert silo == DRIVE_SILO, name
+        assert lm["control"] == law and ("accel_command_g" in lm) == (law == "acceleration"), name
+        assert ("stop_taper_m" in lm) == (name == "lm_cmd_taper"), name
+        assert ("release_speed_mps" in lm) == (name == "lm_fixed_target"), name
+        assert lm["carriage_mass_t"] == (DRIVE_SLED_T if name == "lm_fixed_sled22" else 0), name
+        assert lm["shaft"] == ("sealed" if name == "lm_fixed_sealed" else "vented"), name
+        assert (sealed_keys <= set(lm)) == (name == "lm_fixed_sealed"), name
+        ignition = mine["variants"][name]["ignition"]
+        if name in DRIVE_HOT:
+            assert set(ignition) == {"stage1"}, name
+            assert set(ignition["stage1"]) == {"t_ign_s", "reference"}, name
+            assert ignition["stage1"]["reference"] == "push_start", name
+        else:
+            assert ignition == DRIVE_COLD, name
+        assist = r.runs[name].run.assist
+        assert isinstance(assist, LinearMotorConfig), name
+        assert assist.track.phi_rad == pytest.approx(math.pi / 2.0, rel=1e-15), name
+    block = r.offload
+    assert block is not None and r.structure is not None
+    variants = ("silo_cold", *DRIVE_LM_VARIANTS)
+    assert [c.name for c in block.cases] == [n for v in variants for n in (f"{v}_s1", f"{v}_s1_st")]
+    for case in block.cases:
+        of = case.name.removesuffix("_st").removesuffix("_s1")
+        assert (case.config.of, case.config.solve) == (of, "stage1"), case.name
+        assert not case.config.paired_pad and case.pad_start is None, case.name
+        assert case.config.stage1_dry_mass_added_t is None and case.config.fixed is None
+        if case.name.endswith("_st"):
+            written = next(c for c in mine["offload"]["cases"] if c["name"] == case.name)
+            assert written["structure"] == STRUCTURE_HEADLINE_SETTINGS, case.name
+            assert case.structure is not None, case.name
+            assert _settings(case.structure) == STRUCTURE_HEADLINE_SETTINGS, case.name
+        else:
+            assert case.config.structure is None and case.structure is None, case.name
+    for name in (HEADLINE_CASE, STRUCTURE_HEADLINE_CASE):
+        assert _case_dump(mine, name) == _case_dump(raw[STRUCTURE_EXPERIMENT], name), name
+    assert block.pad_control_modes == ("stage1",) and not block.arms
+    assert "sensitivity_of" not in mine["offload"] and "sensitivity" not in mine
+    assert not r.sweeps and not r.sensitivity and "sweeps" not in mine
+    assert not r.structure.payload_cases and "payload_cases" not in mine["structure"]
+    assert mine["offload"]["energy"] == raw[STRUCTURE_EXPERIMENT]["offload"]["energy"]
+    assert mine["vehicle"] == raw[STRUCTURE_EXPERIMENT]["vehicle"]
+    for name in offload_run_names(block.config, r.baseline.name):
+        check_name(name, "derived offload run name")
