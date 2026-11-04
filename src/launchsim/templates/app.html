@@ -855,7 +855,8 @@ details.sp1 > summary { font-size: 0.92rem; font-weight: 600; color: var(--ink);
   }
   function sp1FoldTitle(h, exploratory) {
     // the folded box of SP1's headline in a results panel: what it is, and for an app run what the launch reproduces
-    // of it (only the case's x*: every other number of the headline comes from SP1's runs)
+    // of it (only the case's x*: every other number comes from SP1's note: its runs, or, in the Structure group, SP7's
+    // run quoted in its pointer section)
     const n = Array.isArray(h.caveats) ? h.caveats.length : 0;
     const inside = " Its text and its " + plural(n, "caveat group", "caveat groups") + ".";
     if (!exploratory) return "SP1's headline: this directory is SP1's own run of its case (" + h.case + ")." + inside;

@@ -1428,8 +1428,10 @@ def offload_matched_run(
 def _offload_masses(variant: Vehicle, baseline: Vehicle) -> dict[str, float]:
     """The propellant [kg] the variant's vehicle carries less than the baseline's: per
     stage (index 0 is ``xv_stage1``, index 1 ``xv_stage2``) and in total (the offload;
-    negative for more), and the total dry-mass change [kg], variant - baseline (an assumed
-    structural penalty). Both vehicles have two stages (the closure needs them)."""
+    negative for more), and the total dry-mass change [kg], variant - baseline (a penalty
+    row's assumed stage-1 dry mass, or a structural case's modelled increment dm1 + dm2,
+    SP7's first-order station sizing). Both vehicles have two stages (the closure needs
+    them)."""
     per_stage = [
         b.propellant_mass_kg - v.propellant_mass_kg
         for v, b in zip(variant.stages, baseline.stages, strict=True)

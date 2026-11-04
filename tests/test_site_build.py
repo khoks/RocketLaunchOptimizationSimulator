@@ -14,7 +14,7 @@ from types import ModuleType
 
 import pytest
 
-from launchsim import scene
+from launchsim import replay, scene
 
 REPO = Path(__file__).resolve().parents[1]
 BUILD = REPO / "site" / "build.py"
@@ -139,3 +139,26 @@ def test_check_scene_source_without_a_data_block(build: ModuleType) -> None:
     assert log.errors == ["x: scene page without a readable data block (no source path)"]
     assert build.scene_source("<html></html>") is None
     assert build.scene_data(_scene_page(RECORDED)) == RECORDED
+
+
+def test_offload_structure_addition_ends_with_the_replay_pointer(build: ModuleType) -> None:
+    """SP7 step S7c fix round 1 (P1-05, H-S7c-P1-08): the gallery's editorial addition to
+    the structure caveat of the two offload pages (``REPLAY_OFFLOAD_STRUCTURE``) replaces
+    a sentence each committed page carries word for word and ends with the pointer a
+    penalty row's own sentence carries (replay.PENALTY_MODEL_POINTER), so a rewording of
+    that constant cannot leave the gallery quoting a stale pointer; the built copy carries
+    it once and the build logs no warning."""
+    source, replacement = build.REPLAY_OFFLOAD_STRUCTURE
+    assert replacement.startswith(source + " ")
+    assert replacement.endswith(
+        f"; these are assumptions, not a sized structure, and {replay.PENALTY_MODEL_POINTER}."
+    )
+    assert "no structural model" not in replacement.lower()
+    for page in ("pad-vs-silo-offload.html", "offload-vs-paired-pad.html"):
+        assert build.REPLAY_OFFLOAD_STRUCTURE in build.REPLAY_PAGE_FIXES[page], page
+        text = (REPO / "site" / "examples" / page).read_text(encoding="utf-8")
+        assert source in text and replay.PENALTY_MODEL_POINTER not in text, page
+        log = build.BuildLog()
+        fixed = build.fix_replay_text(text, f"site/examples/{page}", log)
+        assert log.warnings == [] and log.errors == [], page
+        assert fixed.count(replay.PENALTY_MODEL_POINTER) == 1, page

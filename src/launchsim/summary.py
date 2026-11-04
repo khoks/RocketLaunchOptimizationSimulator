@@ -3258,24 +3258,6 @@ def structure_run_record(
     return record
 
 
-def offload_charges_modelled(offload: Mapping[str, Any] | None) -> bool:
-    """Whether an offload record charges a modelled structural mass anywhere (fix round 2,
-    H-S3a-P2-03): a ``structure_inputs`` record (a block with a structure block), or a
-    record of ``cases``, ``structure_payload_cases`` or ``sensitivity`` that is
-    ``structure_charged``. The replay caveat drops SP1's program-level "no structural
-    model exists" of a penalty row for any such directory, so a page never carries it
-    beside the directory's block caveat that names the model."""
-    if not offload:
-        return False
-    if isinstance(offload.get("structure_inputs"), Mapping):
-        return True
-    return any(
-        isinstance(c, Mapping) and structure_charged(c)
-        for key in ("cases", "structure_payload_cases", "sensitivity")
-        for c in offload.get(key) or []
-    )
-
-
 def structure_band_ends(inputs: Mapping[str, Any] | None) -> tuple[float, float] | None:
     """The physics band's ends in dm [kg] at the structure file's headline push from a
     block's ``structure_inputs`` record (``sim.offload_structure_inputs``: the structure

@@ -1392,7 +1392,15 @@ after release, as summary.md labels it)."""
 class HeadlineCaveat:
     """One caveat group beside SP1's headline: the note's own bold ``title``, a short
     ``text``, the ``numbers`` it quotes and the ``phrases`` it must keep from the note
-    (each found verbatim in the note and in the text by a test)."""
+    (each found verbatim in the note and in the text by a test). The "Structure." group
+    (SP7 step S7c) also quotes SP7's structural note, docs/findings/RQ1-structural-2d.md
+    (its status and date named in the text), through the dated pointer section at the top
+    of SP1's note ("Since this note: the push's structure charged"), so its numbers are in
+    both notes: each one but "4 g0" (SP1's headline) and each phrase in that section (the
+    assumed 0.5 s rise time with the step clause that follows it, and the band's ends in
+    their order, among them). Its sizing basis (the offloaded stack's push, as SP7's
+    headline sizes it) comes from SP7's note, and its gloss on the zero margin, the
+    adverse choice for the assist, quotes it."""
 
     title: str
     text: str
@@ -1477,10 +1485,29 @@ SP1_HEADLINE = Headline(
         ),
         HeadlineCaveat(
             "Structure.",
-            "The penalty rows are the only stand-in for the structure a 4 g0 full-stack push "
-            "needs, and the needed mass is unknown: no structural model exists. They are "
-            "assumptions, not a sized structure.",
-            ("4 g0",),
+            "SP1's 41.26 t is computed with no structure charged for the 4 g0 full-stack "
+            "push; its penalty rows are assumptions, not a sized structure. SP7's central "
+            "first-order structure, sized for the offloaded stack's push and charged at "
+            "every offload the solve tries, leaves 11.42 t of the 41.26 t (27.7%; "
+            "docs/findings/RQ1-structural-2d.md, preliminary, 2026-11-03): a first-order "
+            "station sizing, not a structural design, with an assumed 0.5 s drive rise "
+            "time that the constant-acceleration trajectory does not fly (the step it "
+            "flies leaves no offload), the pad's unthrottled envelope, zero margin and an "
+            "instant release flagged but not sized (the zero margin is the adverse choice "
+            "for the assist, not a missing safety factor: a margin is capacity the push can "
+            "use), on the same gate vehicle (+14.3%), sweep-optimized and unthrottled; its "
+            "physics band runs from no offload to 28.57 t (23.68 t before its plausibility "
+            "scaling).",
+            ("41.26 t", "4 g0", "11.42 t", "27.7%", "0.5 s", "+14.3%", "28.57 t", "23.68 t"),
+            (
+                "a first-order station sizing, not a structural design",
+                "an assumed 0.5 s drive rise time that the constant-acceleration trajectory "
+                "does not fly (the step it flies leaves no offload",
+                "the pad's unthrottled envelope, zero margin and an instant release flagged "
+                "but not sized",
+                "sweep-optimized and unthrottled",
+                "to 28.57 t (23.68 t before its plausibility scaling)",
+            ),
         ),
         HeadlineCaveat(
             "Part of it is the lighter stack, not the push.",
@@ -1540,7 +1567,9 @@ SP1_HEADLINE = Headline(
     ),
 )
 """SP1's headline and its six caveat groups, from docs/findings/RQ1-fuel-offload-2d.md
-('Headline' and 'Caveats that sit beside this number'); shown only with its caveats
+('Headline' and 'Caveats that sit beside this number'; the "Structure." group since SP7
+step S7c from the note's dated pointer section, which quotes SP7's structural note
+docs/findings/RQ1-structural-2d.md, HeadlineCaveat); shown only with its caveats
 (D-SP2-36). tests/test_app_server.py finds the headline text verbatim in the note (only
 the groups paraphrase), each group's title and numbers in it, and ``offload_kg`` as the
 note's '41,262.908 kg'."""

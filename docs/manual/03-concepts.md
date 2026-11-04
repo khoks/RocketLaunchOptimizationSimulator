@@ -76,8 +76,9 @@ Two conventions matter when you read a difference:
   +1,498.8 kg (README, "Against the hypothesis").
 - **Under a prescribed acceleration, thrust on the track buys no exit speed.** The drive
   supplies whatever force the prescribed acceleration needs, so a hot start only trades
-  propellant for drive energy and peak power. The hot-start question waits for a
-  force-limited drive (README roadmap Phase 3).
+  propellant for drive energy and peak power. SP7's force- and power-limited linear-motor
+  cases, two hot starts among them, are reported separately
+  ([RQ1-structural-2d](../findings/RQ1-structural-2d.md)).
 
 ## Figures of merit
 
@@ -180,8 +181,14 @@ Every summary reports, against the pad:
   5 g gives 160 m.
 
 Rockets normally see 4 g only near burnout, with nearly empty tanks. No structural mass is
-charged for that load in any result so far, except as assumed penalty rows in the offload
-experiment; it is the caveat that could cancel the gain (README roadmap Phase 3, backlog
-B-004).
+charged for that load in any result except SP7's structural cases (and, as an
+assumption, the offload experiment's penalty rows); it is the caveat that could cancel
+the gain. SP7's structural cases charge a first-order structure sized for the push (a
+first-order estimate with stated ranges, not a structural design). At SP7's central
+coefficients, with an assumed drive rise time that the constant-acceleration push does not
+fly, it cancels most of SP1's offload; across the physics coefficients, at the same design
+choices, the offload kept runs from none to more than half, so those coefficients alone do
+not decide whether more than half survives; sized for the instant step that push does fly,
+it cancels all of it ([RQ1-structural-2d](../findings/RQ1-structural-2d.md)).
 
 Next: [4. Experiment files](04-experiments.md)

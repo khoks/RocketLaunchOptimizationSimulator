@@ -128,7 +128,7 @@
                 <tr class="extra"><td>about 8.5 t</td><td class="n">0</td><td class="n" colspan="2">extrapolated</td></tr>
               </tbody>
             </table>
-            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure: no structural model exists yet (phase SP7, next).</p>
+            <p>Each tonne takes 4.5–5.1 t off the offload, and the erosion steepens. These are assumptions, not a sized structure; SP7's first-order structural model is reported separately (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-structural-2d.md">RQ1-structural-2d</a>).</p>
           </section>
           <section class="fcard" aria-labelledby="fc-pair">
             <h4 id="fc-pair">Head start or lighter stack?</h4>
@@ -188,7 +188,7 @@
         <span class="n">Step 1</span>
         <h3>The push</h3>
         <p>The rocket stands in an underground shaft lined with electromagnetic rings that act as a vertical linear motor. In the reference case the drive pushes the full stack 100 m at 3 g net and releases it at 76.7 m/s after 2.6 s. Engines light in the shaft (a hot start) or just after release (a cold start).</p>
-        <p class="src">Today the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; a force- and power-limited linear motor is planned for phase SP7, the next phase.</p>
+        <p class="src">In the reference case the drive imposes a prescribed acceleration (<code>constant_accel</code>) with an unbounded force and a massless carriage; SP7's linear-motor cases fly a force- and power-limited linear motor (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-structural-2d.md">RQ1-structural-2d</a>).</p>
       </li>
       <li class="step">
         <svg class="ill" viewBox="0 0 300 170" role="img" aria-labelledby="ill2-t">
@@ -289,7 +289,7 @@
         <h3>Lighting the engines after release</h3>
         <p class="big">−327.1 kg</p>
         <p class="sub">(<span class="num">34.74 m/s</span>) given back by the cold start against an instant start: 18% of the instant start's gain and 2.37× the <span class="nb">1-D</span> formula. A 3 s lag after the same 0.5 s delay gives back 781 kg. Lighting on the carriage, with the ramp ending at release, is the best physical variant: +235.0 kg over the cold start, paid for with 2.7 t burned on the track.</p>
-        <p class="caveat"><strong>Caveat:</strong> under a prescribed acceleration a hot start cannot add exit speed, so the hot-start question waits for a force-limited drive. The hot ramp has no sensitivity run.</p>
+        <p class="caveat"><strong>Caveat:</strong> under a prescribed acceleration a hot start cannot add exit speed; SP7's force- and power-limited linear-motor cases, two hot starts among them, are reported separately (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-structural-2d.md">RQ1-structural-2d</a>). The hot ramp has no sensitivity run.</p>
         <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ2-ignition-timing-2d.md">RQ2-ignition-timing-2d</a></p>
       </article>
 
@@ -313,7 +313,7 @@
         <h3>Loads on the full stack</h3>
         <p class="big">4.0 g felt</p>
         <p class="sub">by the fully fuelled stack during the push: 3.996 g and 22.49 MN at the interface on the 573.9 t <span class="nb">2-D</span> stack. Rockets normally see such g only near burnout, with nearly empty tanks (the <span class="nb">1-D</span> stage 1 feels 5.71 g at burnout, at 146.87 t).</p>
-        <p class="caveat"><strong>Caveat:</strong> there is no structural model yet. The strengthening this load needs is the open item that decides whether the gain survives (phase SP7, next).</p>
+        <p class="caveat"><strong>Caveat:</strong> these runs charge no structure for this load. SP7's first-order structural model (a first-order sizing, not a structural design) finds that, at its central coefficients and with an assumed drive rise time that the constant-acceleration push does not fly, the structure sized for the push cancels most of SP1's offload and leaves the silo marginal in payload terms, its one payload gain an upper bound. Across its physics coefficients, at the same design choices, the offload kept runs from none to more than half, so those coefficients alone do not decide whether more than half survives. Sized for the instant step that push does fly, the structure cancels all of the offload, and in payload terms the silo carries less than the pad (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-structural-2d.md">RQ1-structural-2d</a>).</p>
         <p class="src">Source: <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-2d.md">RQ3-silo-screening-2d</a>, <a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ3-silo-screening-1d.md">RQ3-silo-screening-1d</a></p>
       </article>
 
@@ -350,10 +350,10 @@
         <li>Nothing is throttled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds.</li>
         <li>The kick is free: there is no angle-of-attack aerodynamics.</li>
         <li>The gate vehicle's +14.3% calibration miss carries into every number.</li>
-        <li>No structural mass is charged for the 4 g full-stack load.</li>
-        <li>The drive is prescribed-acceleration (<code>constant_accel</code>), with an unbounded drive force. A hot start therefore cannot add exit speed, and carriage mass and drive efficiency move only energy and power.</li>
-        <li>The carriage has zero mass except in the 22 t sled variant.</li>
-        <li>There is no air drag in the vented shaft.</li>
+        <li>No structural mass is charged for the 4 g full-stack load, except in SP7's structural cases, which charge a first-order modelled structure (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-structural-2d.md">RQ1-structural-2d</a>).</li>
+        <li>The drive is prescribed-acceleration (<code>constant_accel</code>), with an unbounded drive force, except in SP7's linear-motor cases, which fly a linear motor with force and power limits under an acceleration law or a force law. Under the prescribed drive a hot start cannot add exit speed, and carriage mass and drive efficiency move only energy and power.</li>
+        <li>The carriage has zero mass except in the 22 t sled variant and SP7's 22 t carriage case.</li>
+        <li>There is no air drag in the vented shaft; SP7's one sealed-shaft case models the air column.</li>
         <li>The model is a planar point mass with a generic C<sub>D</sub>(Mach) table.</li>
       </ul>
     </div>
@@ -366,7 +366,7 @@
     </div>
     <h3 class="against-h">Propellant at fixed payload (SP1)</h3>
     <ul class="against-list">
-      <li><strong>Structure can cancel the offload.</strong> Each tonne of assumed <span class="nb">stage-1</span> strengthening takes 4.5–5.1 t off the 41.26 t. At +8.1 t only 1.98 t (0.48% of stage 1) remains, and about 8.5 t (extrapolated) takes all of it. How much structure a 4 g full-stack push needs is unknown in this model.</li>
+      <li><strong>Structure can cancel the offload.</strong> Each tonne of assumed <span class="nb">stage-1</span> strengthening takes 4.5–5.1 t off the 41.26 t. At +8.1 t only 1.98 t (0.48% of stage 1) remains, and about 8.5 t (extrapolated) takes all of it. SP1's runs did not size the structure a 4 g full-stack push needs. SP7's first-order structural model (a first-order sizing, not a structural design) sizes one: at SP7's central coefficients, with an assumed drive rise time that the constant-acceleration push does not fly, it cancels most of the offload (across the physics coefficients the offload kept runs from none to more than half, so those alone do not decide whether more than half survives), and sized for the instant step that push does fly, it cancels all of it (<a href="https://github.com/khoks/RocketLaunchOptimizationSimulator/blob/main/docs/findings/RQ1-structural-2d.md">RQ1-structural-2d</a>).</li>
       <li><strong>Part of the headline is not the push.</strong> 14.4 m/s of the 228.2 m/s of ideal <span class="nb">delta-v</span> saved (6.3%) is the pad's clamped hold-down burn, a baseline convention. By a difference between runs, another 28–29% is the lighter stack's own thrust-to-weight gain, which the push makes usable but does not produce; read as pre-registered, most of the offload is the lighter stack.</li>
       <li><strong>The <span class="nb">max-Q</span> benefit disappears.</strong> The full-load silo's 16% lower <span class="nb">max-Q</span> becomes 3.35% above the pad's once the push is cashed in as propellant, and up to 12.5% above at a 300 m stroke; <span class="nb">q-alpha</span> at the kick is 3.0× the pad's. Nothing throttles or limits either.</li>
       <li><strong>Diminishing returns with depth.</strong> The offload per m/s of exit speed falls from 622 to 429 kg as the stroke grows from 25 to 300 m at 3 g. At a fixed exit speed a gentler push costs up to 71% more electricity and a longer facility for the same offload.</li>

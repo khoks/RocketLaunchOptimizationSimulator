@@ -1406,8 +1406,10 @@ def test_structure_note_words_a_modelled_run_from_its_own_record(
     run_data.OFFLOAD_STRUCTURE_PAYLOAD, a note saying it flies its own payload capacity
     P_2* on the full load carrying its modelled structural mass (never 'a run of the
     offload block'), and the page's comparison caveat gives it its own sentence; on this
-    mixed selection (a penalty row beside modelled runs) no caveat says 'no structural
-    model exists' (H-S3a-02). The pure function: the run's metrics decide before the case
+    mixed selection (a penalty row beside modelled runs) no caveat carries the penalty
+    row's program-level pointer, replay.PENALTY_MODEL_POINTER (H-S3a-02; SP7 step S7c),
+    while the penalty row shown without a modelled run keeps it beside the block caveats
+    (SP7 step S7c fix round 1). The pure function: the run's metrics decide before the case
     record, a run with no push gets None, and a record without the keys falls back to the
     uncharged and penalty branches unchanged."""
     pushed = _pushed_structural_dir(derived_dir, tmp_path / "pushed_structural")
@@ -1450,15 +1452,18 @@ def test_structure_note_words_a_modelled_run_from_its_own_record(
         "the Structure subsection's payload cases)."
     ) in comparison
     assert "light_s1 and light_s1_dry+8.1t fly P_ref" in comparison
-    assert not any("no structural model exists" in c for c in payload["caveats"])
-    # the penalty row shown without a modelled run in this directory of structural runs
-    # (fix round 2, H-S3a-P2-03): no program-level clause beside the block's caveats either
+    assert not any(replay.PENALTY_MODEL_POINTER in c for c in payload["caveats"])
+    # the penalty row shown without a modelled run in this directory of structural runs:
+    # the pointer stays beside the block's caveats, which it does not contradict (SP7 step
+    # S7c fix round 1 withdrew fix round 2's directory rule, H-S3a-P2-03)
     penalty_only = scene.scene_payload(
         pushed, ["pad", "light_s1_dry+8.1t"], display_dir=DISPLAY_DIR
     )
     alone = next(c for c in penalty_only["caveats"] if c.startswith("An assumed +8.1 t of"))
-    assert alone.endswith(": a parametric assumption, not a sized structure.")
-    assert not any("no structural model exists" in c for c in penalty_only["caveats"])
+    assert alone.endswith(
+        f": a parametric assumption, not a sized structure; {replay.PENALTY_MODEL_POINTER}."
+    )
+    assert sum(replay.PENALTY_MODEL_POINTER in c for c in penalty_only["caveats"]) == 1
     structure = next(c for c in payload["caveats"] if c.startswith("An assumed +8.1 t of"))
     assert ", and on light_pstar (" in structure and structure.count(MODELLED_CORE) == 2
     assert "a parametric assumption, not a sized structure. The modelled" in structure

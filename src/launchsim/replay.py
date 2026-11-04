@@ -97,7 +97,6 @@ from launchsim.summary import (
     UPPER_BOUND_REASONS,
     modelled_mass_split_text,
     modelled_structure_text,
-    offload_charges_modelled,
     plausibility_scale_text,
     structure_charged,
     structure_run_record,
@@ -1938,6 +1937,17 @@ def uncharged_structure_sentence(
     return text + "."
 
 
+PENALTY_MODEL_POINTER = (
+    "SP7's first-order structural model is reported separately (docs/findings/RQ1-structural-2d.md)"
+)
+"""The program-level closing clause of a penalty row's sentence (SP7 step S7c): the
+penalty is an assumption, and the modelled case is reported in SP7's findings note. It
+replaced SP1's closing claim about the whole program (docs/physics.md, "Program-level
+sentences"), which SP7's first-order structural model made false for every page, old
+directories included. The pointer is true on every page, so only a modelled run shown
+beside the penalty row drops it (``structure_caveat``)."""
+
+
 def penalty_structure_sentence(
     charged: Sequence[dict[str, Any]],
     penalties: Mapping[str, float],
@@ -1950,18 +1960,19 @@ def penalty_structure_sentence(
     'Structural penalty rows and break-even'), each with its own flown load and peak felt
     g: 'An assumed +8.1 t of stage-1 dry mass is charged on silo_cold_s1_dry+8.1t (578.5 t
     at push start, 1.98 t less propellant, up to 4.0 g during the push): a parametric
-    assumption, not a sized structure; no structural model exists.' Runs with the same
-    penalty are grouped; another penalty follows as 'and an assumed +2 t of stage-1 dry
-    mass on ...'. ``penalties``: ``penalty_added_kg`` per run key. The closing clause
-    '; no structural model exists' is the program-level claim of SP1 (S7c's to reword
-    once the findings note exists); ``program_clause`` False drops it, which
-    ``structure_caveat`` does when the selection also holds a run that charges a modelled
-    structural mass (SP7 step S3a fix round 1, H-S3a-02: the next sentence would
-    contradict it) or the directory's offload record charges one anywhere
-    (summary.offload_charges_modelled; fix round 2, H-S3a-P2-03: the block caveat beside
-    it on the scene page and in the app's panel names the model), so a penalty-only
-    selection of a directory without a structural record keeps SP2's text word for
-    word."""
+    assumption, not a sized structure; SP7's first-order structural model is reported
+    separately (docs/findings/RQ1-structural-2d.md).' Runs with the same penalty are
+    grouped; another penalty follows as 'and an assumed +2 t of stage-1 dry mass on ...'.
+    ``penalties``: ``penalty_added_kg`` per run key. The closing clause
+    (``PENALTY_MODEL_POINTER``, SP7 step S7c) is the program-level pointer from the
+    assumed penalty to the modelled case; ``program_clause`` False drops it, which
+    ``structure_caveat`` does only when the selection also holds a run that charges a
+    modelled structural mass (SP7 step S3a fix round 1, H-S3a-02: the modelled sentence
+    follows it), so every selection without a modelled run carries the pointer, in any
+    directory. Fix round 2's directory rule (H-S3a-P2-03), which also dropped SP1's old
+    closing claim wherever the directory charged a modelled mass, was withdrawn with that
+    claim (SP7 step S7c fix round 1): the pointer is true beside the block caveat that
+    names the model, and the replay page prints no block caveat."""
     groups: dict[float, list[str]] = {}
     for r in charged:
         bits = flown_load_bits(r, sources[r["key"]], offload)
@@ -1979,7 +1990,7 @@ def penalty_structure_sentence(
         if len(charged) == 1
         else "parametric assumptions, not sized structures"
     )
-    tail = "; no structural model exists." if program_clause else "."
+    tail = f"; {PENALTY_MODEL_POINTER}." if program_clause else "."
     return f"{text[0].upper()}{text[1:]}: {closing}{tail}"
 
 
@@ -2031,8 +2042,9 @@ def structure_caveat(
     (``uncharged_structure_sentence``); for a penalty row (an offload case whose record
     charges an assumed stage-1 dry mass, ``penalty_added_kg``), that this assumed mass is
     charged on it, an assumption and not a sized structure, and, unless a modelled run is
-    shown beside it or the directory charges a modelled mass anywhere, that no structural
-    model exists (``penalty_structure_sentence``; H-S3a-02, H-S3a-P2-03); for a run whose
+    shown beside it, that SP7's first-order structural model is reported separately
+    (``penalty_structure_sentence``, ``PENALTY_MODEL_POINTER``; H-S3a-02, SP7 step S7c
+    and its fix round 1); for a run whose
     own metrics record charges a modelled structural mass (``structure_charged``, SP7
     step S3a), what it is (``modelled_structure_sentence``); then, when sensitivity cases
     give dP*/d(stage-1 dry mass), the extra stage-1 structure that would cancel each
@@ -2065,7 +2077,7 @@ def structure_caveat(
                 penalties,
                 sources,
                 offload,
-                program_clause=not (modelled or offload_charges_modelled(offload)),
+                program_clause=not modelled,
             )
         )
     if modelled:

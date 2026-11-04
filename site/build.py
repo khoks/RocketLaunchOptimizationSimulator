@@ -216,7 +216,10 @@ REPLAY_SHAFT_BIAS = (
 )
 # The structure caveat names the pushed run's own load; the gallery adds the size of the
 # structure that would cancel the offload (findings note, "Structural penalty rows and
-# break-even"), which no run on the page measures.
+# break-even"), which no run on the page measures, and, since SP7 step S7c (which retired
+# the addition's old program-level closing, false once SP7 modelled a structure), where
+# SP7's modelled structure is reported: the pointer a penalty row's sentence carries
+# (replay.PENALTY_MODEL_POINTER).
 REPLAY_OFFLOAD_STRUCTURE_SOURCE = (
     "No structural mass is charged for the assist load case: silo_cold_s1 (531.1 t at push "
     "start, 41.26 t less propellant) feels up to 4.0 g during the push."
@@ -224,8 +227,10 @@ REPLAY_OFFLOAD_STRUCTURE_SOURCE = (
 REPLAY_OFFLOAD_STRUCTURE = (
     REPLAY_OFFLOAD_STRUCTURE_SOURCE,
     REPLAY_OFFLOAD_STRUCTURE_SOURCE + " An assumed +8.1 t of stage-1 dry mass leaves 1.98 t of "
-    "the offload, and about 8.5 t (extrapolated) leaves nothing; no structural model exists yet "
-    "(docs/findings/RQ1-fuel-offload-2d.md, 'Structural penalty rows and break-even').",
+    "the offload, and about 8.5 t (extrapolated) leaves nothing "
+    "(docs/findings/RQ1-fuel-offload-2d.md, 'Structural penalty rows and break-even'); these "
+    "are assumptions, not a sized structure, and SP7's first-order structural model is "
+    "reported separately (docs/findings/RQ1-structural-2d.md).",
 )
 # The comparison caveat says what the offload run measures; the gallery adds the
 # pre-registered reading of the paired pad and, on the headline page, the bridge to the

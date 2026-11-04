@@ -350,14 +350,16 @@ stage-1 column D-SP7-39's comparison with the pad's own MECO, which the same sin
 step treatment takes through the full stage-2 LOX column; and that it is a first-order
 estimate with its stated ranges, not a detailed structural design; never "assumed").
 A run that charges nothing keeps the sentence "No structural mass is charged for the assist load case: ..."
-word for word; a penalty row's sentence keeps its "no structural model exists" only
-in a directory with no structural record at all (no structural case, payload case or
-arm, no `structure_inputs`): beside a modelled run, or on a page whose block caveat
-names the model, it would be contradicted.
+word for word; a penalty row's sentence calls its mass an assumption, not a sized
+structure, and, since SP7 step S7c, ends "; SP7's first-order structural model is
+reported separately (docs/findings/RQ1-structural-2d.md)" in any directory, unless a run
+that charges a modelled structural mass is shown beside it: the modelled sentence then
+follows it, and it ends at "not a sized structure.".
 The site's copies of the shipped pages add editorial sentences only (the pre-registered
 reading of the paired pad's shortfall, the bridge to the README-loads vehicle, the +8.1 t
-structure sentence and the size of the shaft-drag bias) and three canvas-label patches of
-the replay template (`site/build.py`). `animate` draws the same runs
+structure sentence with its pointer to SP7's structural note, and the size of the
+shaft-drag bias) and three canvas-label patches of the replay template (`site/build.py`).
+`animate` draws the same runs
 when named and labels them from the same offload record: its legend gives a solved case's
 or pad control's payload as "flies P_ref" with the propellant it carries less, and a paired
 pad's or fixed case's own P\* with its difference from P_ref. The stage-1 pad control,

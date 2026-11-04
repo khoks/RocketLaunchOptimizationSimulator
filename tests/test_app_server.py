@@ -115,6 +115,7 @@ sup = _load_support()
 REPO = sup.REPO_ROOT
 DISPLAY_DIR = REPO / "configs" / "display"
 FINDINGS_NOTE = REPO / "docs" / "findings" / "RQ1-fuel-offload-2d.md"
+STRUCTURAL_NOTE = REPO / "docs" / "findings" / "RQ1-structural-2d.md"
 LOGO = REPO / "assets" / "brand" / "logo-mark.svg"
 FAVICON = REPO / "assets" / "brand" / "favicon.svg"
 CLEAN = {"hash": "0123456789ab", "dirty": False, "error": None}
@@ -3080,8 +3081,11 @@ def test_panel_of_a_modelled_structural_case(
     by the replay note (HEADLINE_STRUCTURE_PAYLOAD: its own P_2* on the full load, a
     payload change, not propellant saved; never 'a run of the offload block' or 'flies
     P_ref'), and worded as modelled in the structure caveat; a penalty row chosen beside
-    a modelled run (H-S3a-02), or alone in this directory of structural runs (fix round 2,
-    H-S3a-P2-03), gets a structure caveat with no 'no structural model exists'."""
+    a modelled run (H-S3a-02) gets a structure caveat without the penalty row's
+    program-level pointer (replay.PENALTY_MODEL_POINTER, SP7 step S7c), and one chosen
+    alone in this directory of structural runs keeps it beside the block caveats that name
+    the model (SP7 step S7c fix round 1, which withdrew fix round 2's directory rule,
+    H-S3a-P2-03: the pointer is true beside them)."""
     p_ref = 26_000.0
     record = {**_case("silo_st", p_ref), **STRUCTURE_KEYS}
     base_edit = with_case(record)
@@ -3189,18 +3193,18 @@ def test_panel_of_a_modelled_structural_case(
     assert len(structure) == 1
     assert structure[0].startswith("An assumed +8.1 t of stage-1 dry mass is charged on silo_pen (")
     assert "a parametric assumption, not a sized structure. The modelled structural" in structure[0]
-    assert "no structural model exists" not in structure[0]
-    # a penalty row shown alone in a directory that holds structural runs (fix round 2,
-    # H-S3a-P2-03): no program-level clause either, since the directory charges a modelled
-    # mass and the panel's block caveats sit beside it
+    assert replay.PENALTY_MODEL_POINTER not in structure[0]
+    # a penalty row shown alone in a directory that holds structural runs: the pointer
+    # stays beside the panel's block caveats, which it does not contradict (SP7 step S7c
+    # fix round 1 withdrew fix round 2's directory rule, H-S3a-P2-03)
     penalty_only = app.results_panel(
         run_dir, "app", run_dir.name, basis, metrics, config, chosen=["pad", "silo_pen"]
     )["panel"]
     structure = [c for c in penalty_only["caveats"] if "sized structure" in c]
     assert len(structure) == 1 and structure[0].endswith(
-        ": a parametric assumption, not a sized structure."
+        f": a parametric assumption, not a sized structure; {replay.PENALTY_MODEL_POINTER}."
     )
-    assert not any("no structural model exists" in c for c in penalty_only["caveats"])
+    assert sum(replay.PENALTY_MODEL_POINTER in c for c in penalty_only["caveats"]) == 1
 
 
 def test_sp1_headline_matches_the_findings_note() -> None:
@@ -3235,6 +3239,112 @@ def test_sp1_headline_matches_the_findings_note() -> None:
         "drive efficiency moves only the electricity",
         "No ullage, centre-of-gravity or residual effect is modelled",
     )
+
+
+def test_sp1_structure_caveat_quotes_sp7s_structural_note() -> None:
+    """SP7 step S7c: the headline's "Structure." group says that SP1's 41.26 t is computed
+    with no structure charged and that SP7's central first-order structure leaves 11.42 t,
+    with its caveats in one clause and the physics band, and no longer that the needed
+    mass is unknown. Its numbers are quoted from the findings, not computed: each is in
+    SP7's note (docs/findings/RQ1-structural-2d.md, whose status and date the text names)
+    and, but "4 g0" (SP1's headline), in SP1's dated pointer section ("Since this note",
+    up to "The question"), with every phrase of the group; the note's headline carries the
+    11.42 t, the 41.26 t it is read against and the band's scaled and unscaled high end;
+    the caveat's key words (the first-order station sizing, not a structural design; the
+    assumed 0.5 s rise time the constant-acceleration trajectory does not fly; the
+    unthrottled envelope, zero margin and the instant release flagged, not sized (fix
+    round 1); sweep-optimized; unthrottled) are in SP7's note too. Fix round 2: the
+    phrases include the step clause and the band's ends in their order ("to 28.57 t
+    (23.68 t before its plausibility scaling)"), so a deleted or altered step clause or
+    swapped ends fail; the gloss on the zero margin (the adverse choice for the assist, not
+    a missing safety factor; a margin is capacity the push can use) is in the text and,
+    word for word, in SP7's note. Fix round 3: the five phrases join the rise time, its
+    antecedent and the step clause in one ("an assumed 0.5 s drive rise time that the
+    constant-acceleration trajectory does not fly (the step it flies leaves no offload"),
+    so a moved step clause or another rise time ("10.5 s") fails; the sizing basis ("sized
+    for the offloaded stack's push and charged at every offload the solve tries") stands
+    before the 11.42 t, as SP7's headline sizes it ("sized for the offloaded stack only"),
+    so a full-load basis or a dropped one fails; and "on the same gate vehicle (+14.3%)"
+    stays named, as SP1's pointer section names it."""
+    note = " ".join(STRUCTURAL_NOTE.read_text(encoding="utf-8").split())
+    sp1_note = " ".join(FINDINGS_NOTE.read_text(encoding="utf-8").split())
+    pointer = sp1_note[sp1_note.index("## Since this note") : sp1_note.index("## The question")]
+    structure = next(c for c in app.SP1_HEADLINE.caveats if c.title == "Structure.")
+    text = " ".join(structure.text.split())
+    assert text.startswith(
+        "SP1's 41.26 t is computed with no structure charged for the 4 g0 full-stack push; its "
+        "penalty rows are assumptions, not a sized structure. SP7's central first-order "
+        "structure"
+    )
+    assert (
+        "leaves 11.42 t of the 41.26 t (27.7%; docs/findings/RQ1-structural-2d.md, "
+        "preliminary, 2026-11-03)"
+    ) in text
+    assert note.startswith(
+        "# RQ1 (structural, 2-D): the stage-1 offload once the push load's structure is "
+        "charged Status: preliminary, 2026-11-03 "
+    )
+    assert "no structural model" not in text.lower() and "unknown" not in text
+    assert structure.numbers == (
+        "41.26 t",
+        "4 g0",
+        "11.42 t",
+        "27.7%",
+        "0.5 s",
+        "+14.3%",
+        "28.57 t",
+        "23.68 t",
+    )
+    for number in structure.numbers:
+        assert number in note, number
+        assert number in text, number
+        assert number == "4 g0" or number in pointer, number
+    assert "4 g0" not in pointer and "4 g0" in sp1_note
+    assert len(structure.phrases) == 5
+    assert (
+        "an assumed 0.5 s drive rise time that the constant-acceleration trajectory does not "
+        "fly (the step it flies leaves no offload"
+    ) in structure.phrases
+    assert "to 28.57 t (23.68 t before its plausibility scaling)" in structure.phrases
+    for phrase in structure.phrases:
+        assert phrase in pointer, phrase
+        assert phrase in text, phrase
+    assert "(the step it flies leaves no offload)" in text
+    assert "on the same gate vehicle (+14.3%)" in text
+    assert "on the same gate vehicle (+14.3% calibration miss)" in pointer
+    assert text.endswith(
+        "its physics band runs from no offload to 28.57 t (23.68 t before its plausibility "
+        "scaling)."
+    )
+    for gloss in (
+        "is the adverse choice for the assist, not a missing safety factor",
+        "a margin is capacity the push can use",
+    ):
+        assert gloss in text and gloss in note, gloss
+    assert text.index("zero margin") < text.index("the adverse choice for the assist")
+    for words in (
+        "first-order station sizing",
+        "not a structural design",
+        "an assumed real-drive rise time of 0.5 s",
+        "which the constant_accel trajectory does not fly",
+        "the model's unthrottled envelope; zero margin",
+        "the instant release flagged, not sized",
+        "sweep-optimized",
+        "unthrottled",
+    ):
+        assert words in note, words
+    headline = note[note.index("## Headline") : note.index("## Caveats (read first)")]
+    # fix round 3: the sizing basis, which favours the assist (sized once for the full load
+    # the row leaves 10.59 t), stays the offloaded stack's, the headline's first condition
+    sizing = "sized for the offloaded stack's push and charged at every offload the solve tries"
+    assert sizing in text and text.index(sizing) < text.index("leaves 11.42 t")
+    assert "With a first-order structure sized for the offloaded stack only" in headline
+    assert "leaves out 11.42 t of stage-1 propellant (2.78% of stage 1) against SP1's 41.26 t" in (
+        headline
+    )
+    assert "the physics band gives no offload" in headline and "to 28.57 t" in headline
+    assert "23.68 t unscaled" in headline and "with a step push no offload" in headline
+    assert "11.42 t of its 41.26 t (27.7%)" in sp1_note
 
 
 # ------------------------------------------------------------------ resources

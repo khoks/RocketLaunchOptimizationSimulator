@@ -384,6 +384,112 @@ def test_replay_template_is_frozen_for_sp2() -> None:
     assert hashlib.sha256(template.read_bytes()).hexdigest() == REPLAY_TEMPLATE_SHA256
 
 
+# ------------------------------------------------- the program-level wording (SP7 step S7c)
+
+RETIRED_PROGRAM_CLAIMS = ("no structural model", "unknown in this model")
+"""The words of the program-level claims SP7's first-order structural model made false for
+every page, retired at their sources by SP7 step S7c: SP1's "no structural model exists"
+(replay, the app, the gallery addition and index, the manual) and its variants "there is
+no structural model yet" and "is unknown in this model" (the landing page). Quotations:
+the test below asserts each is absent, in any tense."""
+PENALTY_POINTER = (
+    "SP7's first-order structural model is reported separately (docs/findings/RQ1-structural-2d.md)"
+)
+"""A penalty row's program-level closing clause since SP7 step S7c, written out here
+(replay.PENALTY_MODEL_POINTER must equal it)."""
+PROGRAM_CLAIM_SOURCES = (
+    "src/launchsim/*.py",
+    "src/launchsim/*/*.py",
+    "src/launchsim/templates/*.html",
+    "site/build.py",
+    "site/index.html",
+    "site/examples/*.html",
+    "docs/manual/*.md",
+)
+"""Where a present-tense program claim would be read (code, its page templates, the site's
+build, landing page and gallery, the manual). Left out: docs/physics.md (it records the
+retirement), docs/findings/ and docs/phases/ (dated records), and two texts S8 rewrites at
+SP7's close: site/deck/, whose slides and PDF are re-printed together, and README.md, whose
+one hit is its SP1 bullet's past-tense "No structural model existed then" (S7b's, true of
+that record)."""
+LITERAL_JOIN_RE = re.compile(r"[\"']\s*\+?\s*(?:#[^\n]*)?\n\s*[rbfuRBFU]{0,2}[\"']")
+"""A string literal split over lines and joined implicitly or with '+', with or without a
+trailing comment on the first line, the second with any prefix (``"... no "  # x`` then
+``rf"structural ..."``): joined in the scan's second reading (``_scan_texts``)."""
+LINE_MARKER_RE = re.compile(r"\n[ \t]*[#>][ \t]?")
+"""A comment or a Markdown blockquote wrapped over lines: the next line's leading ``#`` or
+``>`` is dropped before the scan."""
+MARKUP_RE = re.compile(r"<[^<>\n]*>|&nbsp;|&#160;")
+"""An HTML tag or a no-break space between the words (``no <span>structural</span>``):
+read as a space before the scan."""
+
+
+def _scan_texts(text: str) -> tuple[str, str]:
+    """``text`` as the program-claim scan reads it, twice: with wrapped comment and
+    blockquote markers dropped (``LINE_MARKER_RE``) and tags and no-break spaces read as
+    spaces (``MARKUP_RE``), then the same with split literals joined first
+    (``LITERAL_JOIN_RE``, which drops a trailing comment between them: the first reading
+    keeps it)."""
+
+    def clean(s: str) -> str:
+        return MARKUP_RE.sub(" ", LINE_MARKER_RE.sub("\n", s))
+
+    return clean(text), clean(LITERAL_JOIN_RE.sub(" ", text))
+
+
+def _claim_patterns() -> list[re.Pattern[str]]:
+    """One pattern per ``RETIRED_PROGRAM_CLAIMS`` entry: its words with any whitespace
+    between them, case-insensitive."""
+    return [
+        re.compile(r"\s+".join(re.escape(w) for w in claim.split()), re.IGNORECASE)
+        for claim in RETIRED_PROGRAM_CLAIMS
+    ]
+
+
+def test_no_source_claims_the_program_has_no_structural_model() -> None:
+    """SP7 step S7c (design 4.5, exit criterion 8): no source in ``PROGRAM_CLAIM_SOURCES``
+    states any of ``RETIRED_PROGRAM_CLAIMS``, matched case-insensitively across line breaks
+    and the forms ``_scan_texts`` reads through (each form caught on a sample below, so the
+    scan does what its docstrings say); a penalty row's sentence now closes with the pointer to
+    SP7's note (``replay.PENALTY_MODEL_POINTER``, written out here as ``PENALTY_POINTER``),
+    whose file exists."""
+    root = Path(__file__).resolve().parents[1]
+    patterns = _claim_patterns()
+    samples = (
+        "there is no structural model yet",
+        "No structural model existed",
+        '"... no "\n    "structural model yet"',
+        '"... no "  # wrapped\n    rf"structural model yet"',
+        '"... no " +\n    "structural model yet"',
+        '"..."  # no structural model yet\n    "..."',
+        "# ... no\n    # structural model yet",
+        "> ... no\n> structural model yet",
+        'no <span class="nb">structural</span> model',
+        "no&nbsp;structural model",
+        "needs is unknown\nin this model",
+    )
+    for sample in samples:
+        assert any(p.search(s) for p in patterns for s in _scan_texts(sample)), sample
+    files = sorted({p for glob in PROGRAM_CLAIM_SOURCES for p in root.glob(glob)})
+    assert root / "src" / "launchsim" / "replay.py" in files
+    assert root / "site" / "build.py" in files and root / "src" / "launchsim" / "app.py" in files
+    assert root / "site" / "index.html" in files
+    assert root / "docs" / "manual" / "09-reading-results.md" in files
+    assert len(files) > 60
+    hits: set[str] = set()
+    for path in files:
+        hits.update(
+            f"{path.relative_to(root)}: {m.group(0)!r}"
+            for text in _scan_texts(path.read_text(encoding="utf-8"))
+            for pattern in patterns
+            for m in pattern.finditer(text)
+        )
+    assert sorted(hits) == []
+    assert replay.PENALTY_MODEL_POINTER == PENALTY_POINTER
+    assert (root / "docs" / "findings" / "RQ1-structural-2d.md").is_file()
+    assert "(docs/findings/RQ1-structural-2d.md)" in PENALTY_POINTER
+
+
 # ---------------------------------------------------------------- the drive caveat
 
 
@@ -975,13 +1081,14 @@ def test_structure_caveat_words_a_modelled_run_from_its_own_record(tmp_path: Pat
     the block's structure_inputs: the mass by stage, the model, the layer and set, the
     file, the physics band's ends at the structure file's headline push, the run's own
     fired flags (none here) and that it is a first-order estimate with its stated ranges,
-    not a detailed structural design; never "assumed", never "bounds", never "no structural model
-    exists". Beside an uncharged run the uncharged sentence stays word for word and the
-    modelled sentence follows; alone, no "No structural mass" sentence is printed; beside
-    a penalty row the three sentences come in that order (uncharged, penalty, modelled),
-    and the penalty sentence drops its program-level closing "; no structural model
-    exists" (fix round 1, H-S3a-02: the modelled sentence beside it would contradict it;
-    a penalty-only selection keeps it, test_structure_caveat_says_what_a_penalty_row_charges).
+    not a detailed structural design; never "assumed", never "bounds", never the penalty
+    row's program-level pointer. Beside an uncharged run the uncharged sentence stays word
+    for word and the modelled sentence follows; alone, no "No structural mass" sentence is
+    printed; beside a penalty row the three sentences come in that order (uncharged,
+    penalty, modelled), and the penalty sentence drops its program-level closing clause
+    (replay.PENALTY_MODEL_POINTER since SP7 step S7c; fix round 1, H-S3a-02: the modelled
+    sentence follows it; a selection without a modelled run keeps it,
+    test_structure_caveat_says_what_a_penalty_row_charges).
     The run's detail carries the modelled mass after how the propellant was taken out
     (replay.structure_clause), as a penalty row's carries its assumed mass. The core of
     the sentence is summary.modelled_structure_text, the one source every reader quotes."""
@@ -997,7 +1104,7 @@ def test_structure_caveat_words_a_modelled_run_from_its_own_record(tmp_path: Pat
     alone = next(c for c in _caveats(run_dir, ["pad", "silo_s1_st"]) if "structur" in c)
     assert alone.startswith(modelled)
     assert "No structural mass" not in alone and "assumed" not in alone
-    assert "bounds" not in alone and "no structural model exists" not in alone
+    assert "bounds" not in alone and PENALTY_POINTER not in alone
     both = next(c for c in _caveats(run_dir, ["pad", "silo_s1", "silo_s1_st"]) if "structur" in c)
     assert both.startswith(
         "No structural mass is charged for the assist load case: silo_s1 (532.7 t at push "
@@ -1011,7 +1118,7 @@ def test_structure_caveat_words_a_modelled_run_from_its_own_record(tmp_path: Pat
     modelled_at = three.index(modelled)
     assert uncharged_at < penalty_at < modelled_at
     assert three.count("silo_s1_st") == 1
-    assert "no structural model exists" not in three
+    assert PENALTY_POINTER not in three
     assert (
         "up to 4.0 g during the push): a parametric assumption, not a sized structure. The "
         "modelled structural mass"
@@ -1019,7 +1126,7 @@ def test_structure_caveat_words_a_modelled_run_from_its_own_record(tmp_path: Pat
     penalties_too = _caveats(run_dir, ["silo_s1_dry", "silo_s1_dry2", "silo_s1_st"])
     two_penalties = next(c for c in penalties_too if "structur" in c)
     assert "parametric assumptions, not sized structures. The modelled" in two_penalties
-    assert "no structural model exists" not in two_penalties
+    assert PENALTY_POINTER not in two_penalties
     detail = replay.replay_data(run_dir, ["pad", "silo_s1_st"])["runs"][1]["detail"]
     assert detail.startswith(
         "offload case silo_s1_st of silo: 41.26 t less propellant (solved with 9,100.3 kg of "
@@ -1515,34 +1622,45 @@ def test_a_fired_release_flag_carries_the_meco_comparison(tmp_path: Path) -> Non
     assert note is not None and comparison in note
 
 
-def test_a_penalty_row_of_a_structural_directory_drops_the_program_clause(
+def test_a_penalty_row_of_a_structural_directory_keeps_the_pointer(
     tmp_path: Path,
 ) -> None:
-    """Fix round 2, H-S3a-P2-03: the penalty sentence's "; no structural model exists" is
-    dropped for any directory whose offload record charges a modelled mass anywhere
-    (summary.offload_charges_modelled: a structure_inputs record, or a structural case,
-    payload case or arm), not only beside a modelled run in the selection, since the
-    scene page and the app's panel print the block caveat that names the model beside
-    it; a directory without a structural record keeps SP2's text word for word."""
+    """SP7 step S7c fix round 1 (V1, H-S7c-P1-04): the penalty sentence's program-level
+    closing clause, the pointer to SP7's note (replay.PENALTY_MODEL_POINTER), is dropped
+    only beside a run that charges a modelled structural mass (H-S3a-02: the modelled
+    sentence follows it). A penalty row shown without one keeps it in a directory whose
+    offload record charges a modelled mass elsewhere (structural runs and a
+    structure_inputs record), as in one without a structural record: the pointer is true
+    on every page, and the replay page prints no block caveat that names the model. Fix
+    round 2's directory rule (H-S3a-P2-03), which kept SP1's old closing claim off such
+    pages, was withdrawn with that claim, and summary.offload_charges_modelled with it."""
     run_dir = _make_dir(tmp_path)
     _add_offload(run_dir)
     _add_penalty_rows(run_dir)
     plain = next(c for c in _caveats(run_dir, ["pad", "silo_s1_dry"]) if "structur" in c)
-    assert plain.endswith("not a sized structure; no structural model exists.")
+    assert plain.endswith(
+        "not a sized structure; SP7's first-order structural model is reported separately "
+        "(docs/findings/RQ1-structural-2d.md)."
+    )
     _add_structural_runs(run_dir)
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert "structure_inputs" in metrics["offload"]
     only = next(c for c in _caveats(run_dir, ["pad", "silo_s1_dry"]) if "structur" in c)
     assert only == (
         "An assumed +8.1 t of stage-1 dry mass is charged on silo_s1_dry (580.1 t at push "
         "start, 1.98 t less propellant, up to 4.0 g during the push): a parametric assumption, "
-        "not a sized structure."
+        "not a sized structure; SP7's first-order structural model is reported separately "
+        "(docs/findings/RQ1-structural-2d.md)."
     )
+    assert only == plain
     two = next(c for c in _caveats(run_dir, ["silo_s1_dry", "silo_s1_dry2"]) if "structur" in c)
-    assert "no structural model exists" not in two
-    assert not summary.offload_charges_modelled(None)
-    assert not summary.offload_charges_modelled({"cases": [{"assumed_penalty": True}]})
-    assert summary.offload_charges_modelled({"structure_inputs": {"file": "x"}})
-    for key in ("cases", "structure_payload_cases", "sensitivity"):
-        assert summary.offload_charges_modelled({key: [{"structure_charged": True}]}), key
+    assert two.endswith(f"parametric assumptions, not sized structures; {PENALTY_POINTER}.")
+    beside = next(
+        c for c in _caveats(run_dir, ["pad", "silo_s1_dry", "silo_s1_st"]) if "structur" in c
+    )
+    assert PENALTY_POINTER not in beside
+    assert "a parametric assumption, not a sized structure. The modelled" in beside
+    assert not hasattr(summary, "offload_charges_modelled")
 
 
 def test_replay_meta_says_when_the_git_state_is_unknown(tmp_path: Path) -> None:
@@ -1582,10 +1700,12 @@ def test_structure_caveat_says_what_a_penalty_row_charges(tmp_path: Path) -> Non
     """A penalty row charges an assumed stage-1 dry mass on its run (its record's
     ``stage1_dry_mass_added_kg`` > 0, ``assumed_penalty`` true), so the caveat must not
     open 'No structural mass is charged' for it: it says the assumed mass is charged, an
-    assumption and not a sized structure, and that no structural model exists, with the
-    run's own load and peak g; the uncharged sentence stays, word for word, for the runs
-    without a penalty, and is dropped when every pushed run shown is a penalty row. The
-    row's note names the penalty beside how the propellant was taken out."""
+    assumption and not a sized structure, and (SP7 step S7c, which retired SP1's closing
+    program-level claim) that SP7's first-order structural model is reported separately
+    in docs/findings/RQ1-structural-2d.md, with the run's own load and peak g; the
+    uncharged sentence stays, word for word, for the runs without a penalty, and is
+    dropped when every pushed run shown is a penalty row. The row's note names the
+    penalty beside how the propellant was taken out."""
     run_dir = _make_dir(tmp_path)
     _add_offload(run_dir)
     _add_penalty_rows(run_dir)
@@ -1595,13 +1715,15 @@ def test_structure_caveat_says_what_a_penalty_row_charges(tmp_path: Path) -> Non
         "start, 41.26 t less propellant) feels up to 4.0 g during the push. An assumed +8.1 t of "
         "stage-1 dry mass is charged on silo_s1_dry (580.1 t at push start, 1.98 t less "
         "propellant, up to 4.0 g during the push): a parametric assumption, not a sized "
-        "structure; no structural model exists."
+        "structure; SP7's first-order structural model is reported separately "
+        "(docs/findings/RQ1-structural-2d.md)."
     )
     alone = next(c for c in _caveats(run_dir, ["pad", "silo_s1_dry"]) if "structur" in c)
     assert alone == (
         "An assumed +8.1 t of stage-1 dry mass is charged on silo_s1_dry (580.1 t at push "
         "start, 1.98 t less propellant, up to 4.0 g during the push): a parametric assumption, "
-        "not a sized structure; no structural model exists."
+        "not a sized structure; SP7's first-order structural model is reported separately "
+        "(docs/findings/RQ1-structural-2d.md)."
     )
     assert "No structural mass" not in alone
     two = next(c for c in _caveats(run_dir, ["silo_s1_dry", "silo_s1_dry2"]) if "structur" in c)
@@ -1609,8 +1731,9 @@ def test_structure_caveat_says_what_a_penalty_row_charges(tmp_path: Path) -> Non
         "An assumed +8.1 t of stage-1 dry mass is charged on silo_s1_dry (580.1 t at push "
         "start, 1.98 t less propellant, up to 4.0 g during the push) and an assumed +2 t of "
         "stage-1 dry mass on silo_s1_dry2 (543.7 t at push start, 32.29 t less propellant, up "
-        "to 4.0 g during the push): parametric assumptions, not sized structures; no "
-        "structural model exists."
+        "to 4.0 g during the push): parametric assumptions, not sized structures; SP7's "
+        "first-order structural model is reported separately "
+        "(docs/findings/RQ1-structural-2d.md)."
     )
     detail = replay.replay_data(run_dir, ["pad", "silo_s1_dry"])["runs"][1]["detail"]
     assert detail.startswith(

@@ -372,16 +372,21 @@ that sit beside it:
 
 ## The caveats, and why each matters
 
-These apply to every 2-D number so far (README, "Caveats that apply to every 2-D number").
+These apply to every 2-D number so far (README, "Caveats that apply to every 2-D number"),
+with three rows changed for SP7's own cases: its structural cases charge a first-order
+modelled structure (the first row), and its nine linear-motor variants fly a linear motor
+under an acceleration law or a force law, one with a 22 t carriage and one in a sealed
+shaft (the drive and carriage rows). Its note, [RQ1-structural-2d](../findings/RQ1-structural-2d.md),
+carries their caveats.
 
 | Caveat | Why it matters |
 |---|---|
-| No structural mass is charged for the 4 g full-stack push | At about 184 kg of payload per tonne of stage-1 dry mass, about 8.1 t of silo-only strengthening would cancel the whole silo_cold gain (a linear extrapolation, not a sized structure). In offload terms each assumed tonne takes 4.5 to 5.1 t off the 41.26 t, and about 8.5 t (extrapolated) takes all of it. This decides whether the headline survives (README roadmap Phase 3, backlog B-004) |
+| No structural mass is charged for the 4 g full-stack push (except in SP7's structural cases) | At about 184 kg of payload per tonne of stage-1 dry mass, about 8.1 t of silo-only strengthening would cancel the whole silo_cold gain (a linear extrapolation, not a sized structure). In offload terms each assumed tonne takes 4.5 to 5.1 t off the 41.26 t, and about 8.5 t (extrapolated) takes all of it. SP7's first-order structural model (a first-order sizing, not a structural design) finds that at its central coefficients, with an assumed drive rise time that the constant-acceleration push does not fly, the structure sized for the push cancels most of the offload and leaves the silo marginal in payload terms, its one payload gain an upper bound. Across its physics coefficients, at the same design choices, the offload kept runs from none to more than half, so those coefficients alone do not decide whether more than half survives. Sized for the instant step that push does fly, the structure cancels all of the offload, and in payload terms the silo carries less than the pad ([RQ1-structural-2d](../findings/RQ1-structural-2d.md)) |
 | The gate vehicle calibrates +14.3% high (accepted, documented) | Every 2-D number inherits the miss. On a vehicle calibrated to 22.8 t the gain would be expected near 1.3 t (derived by proportion, not run); the offload's README-loads bridge gives 9.10% of stage 1 against 10.04% |
 | Guidance is sweep-optimized, not optimal control | The trajectory part of the gain (34% of silo_cold's) is the part a better pad ascent could change, in either direction (README roadmap Phase 5) |
 | Nothing is throttled; the kick is free | Max-Q and q-alpha are upper bounds; q-alpha at the kick is above the pad's in every silo variant |
-| Prescribed acceleration, unbounded drive force | A hot start cannot add exit speed; carriage mass and drive efficiency move only energy and power |
-| Massless carriage (except `silo_sled_22t`), no air drag in the vented shaft | Energy, power and interface force are slightly low |
+| Prescribed acceleration, unbounded drive force (except in SP7's linear-motor cases) | A hot start cannot add exit speed; carriage mass and drive efficiency move only energy and power. SP7's force-law cases are not bound by this: their hot start adds exit speed, and their carriage mass and sealed shaft move the offload |
+| Massless carriage (except `silo_sled_22t` and SP7's 22 t carriage case), no air drag in the vented shaft (SP7's one sealed shaft models the air column) | Energy, power and interface force are slightly low (under SP7's force law the drive force is fixed, so a massless carriage or a vented shaft raises the interface force instead, leaves the peak power equal or higher and moves the offload; the drive row) |
 | Planar point mass with a generic C_D(Mach) table | Not Falcon 9 aerodynamics; 3-D dynamics come in phases SP3 to SP6 |
 | The pad's hold-down burn is part of the baseline | 130.7 kg gross (83.1 kg net) of the gain; against a pad lit at release the gain is +1,415.8 kg |
 

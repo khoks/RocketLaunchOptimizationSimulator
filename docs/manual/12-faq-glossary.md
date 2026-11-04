@@ -105,8 +105,9 @@ the result "not a payload result". Use the 2-D model for payload.
 
 **Why are the hot starts not better than the cold start?**
 Under a prescribed acceleration the drive supplies whatever force the push needs, so thrust on
-the track buys no exit speed; it only trades propellant for drive energy and peak power. The
-hot-start question waits for a force-limited drive (Phase 3). In the offload runs every hot
+the track buys no exit speed; it only trades propellant for drive energy and peak power.
+SP7's force- and power-limited linear-motor cases, two hot starts among them, are reported
+separately ([RQ1-structural-2d](../findings/RQ1-structural-2d.md)). In the offload runs every hot
 start beats lighting at the mouth, and lighting 75 m deep removes the most (46.96 t), but
 lighting at the shaft floor removes 2.6 t less than that: the extra propellant burned on the
 track buys nothing under this drive.

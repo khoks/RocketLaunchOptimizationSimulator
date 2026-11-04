@@ -23,9 +23,13 @@ in both themes, is [docs/demos/SP2/](../demos/SP2/README.md)).
   variant or offload case says so on the page ("a reproduction, not new evidence").
 - **The numbers it shows beside recorded directories are the findings' numbers**, with the
   caveats those notes carry: the gate vehicle calibrates +14.3% high, no structural mass is
-  charged for the push, guidance is sweep-optimized and unthrottled, the drive is a
-  prescribed acceleration in a vented shaft. The results panel prints them beside every
-  number ([9. Reading results](09-reading-results.md#the-caveats-and-why-each-matters)).
+  charged for the push (except in SP7's structural cases, whose modelled mass the panel
+  names; the Structure caveat beside SP1's headline quotes SP7's note), guidance is
+  sweep-optimized and unthrottled, the drive is a prescribed acceleration in a vented shaft
+  (SP7's linear-motor cases fly a linear motor capped by its force and power limits, under
+  an acceleration law or a force law, one in a sealed shaft). The results panel prints
+  them beside every number
+  ([9. Reading results](09-reading-results.md#the-caveats-and-why-each-matters)).
 - **The scene replays, it does not simulate.** The vehicle's path, thrust, mass and (while
   the engines run) attitude come from `timeseries.csv` and `events.csv`. Everything else it
   draws is a display-only reconstruction, named as such on the page (below, "What the scene
