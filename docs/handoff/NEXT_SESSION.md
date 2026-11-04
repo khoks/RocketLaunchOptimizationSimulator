@@ -105,7 +105,8 @@ checkpoint 1 with S6a, S7a with S3c, S4, S4a, S4b, S5, S5a.
 | S5a | the sealed shaft's wording at the sources and the readers | [x] | 2bd40bd (cc16ec0) |
 | checkpoint 2 | this handoff | [x] | this commit |
 | S6b | file B and the addendum (after this snapshot) | [x] | 331891d |
-| S7b, S7c, S8, C1, C2 | `run` B and the note completed, the program-level wording, the public face, the close | [ ] | |
+| S7b | `run` B and the note completed (after this snapshot) | [x] | e5f64b3 |
+| S7c, S8, C1, C2 | the program-level wording, the public face, the close | [ ] | |
 
 **S7a's result** (docs/findings/RQ1-structural-2d.md, draft of 2026-10-19): with the
 central first-order structure charged, 11,420.2 kg of SP1's 41,262.9 kg stage-1 offload

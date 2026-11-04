@@ -855,7 +855,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S5a | Sealed-shaft wording at the sources and the readers (added at S5's gate: KI-077, KI-079) | sim.py, phases/prelude.py, replay.py, scene.py, physics.md | no vented or constant_accel byte moves; a scratch sealed run's summary, replay and scene pages name the sealed shaft; honesty and visual review | [x] | 2bd40bd |
 | (checkpoint 2) | the drive realism complete; an in-progress handoff point | docs/handoff/ | the handoff written at a step boundary, nothing running | [x] | cc16ec0 (the handoff commit follows) |
 | S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [x] | 331891d |
-| S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [ ] | |
+| S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [x] | e5f64b3 (scripts b291518) |
 | S7c | Program-level wording in code (replay, the app's headline caveat, site/build.py, the compare.py docstring); the pinned tests; the gallery regenerated | replay.py, app.py, compare.py, site/build.py | `git grep -n "no structural model exists"` only in dated or archived records; full suite; honesty review | [ ] | |
 | S8 | Public face: the demo record, a gallery entry for an SP7 run, the deck slides and PDF, the manual chapters, the landing page, CLAUDE.md layout, status and commands, the protocol's caveat line | docs/demos/SP7/, site/, docs/manual/, CLAUDE.md, docs/process/ | site build with no broken link; visual, honesty and compliance review | [ ] | |
 | C1 | Documents: this file, the board, TODO.md, SP3's file fact-checked, the handoff, memory | docs/, TODO.md, memory | compliance review | [ ] | |
@@ -1510,6 +1510,40 @@ option fairly with its cost)
   (deviation 54). D-SP7-54's 5.24 m bore was registered as session-made; no answer from the
   user had arrived. No run, sweep or solve of file B was made before the commit. KI-088
   opened. Next: S7b (`run` B, alone, from this commit).
+- Step S7b closed (2026-11-03; note commit e5f64b3, scripts b291518). `run` B
+  (results/silo_drive_2d/20261103T231946Z) ran alone from 642e11e (no code change against
+  331891d), 2026-11-03T23:19:44Z to 2026-11-04T00:01:31Z, exit 0, 388 files, no FAILED.txt,
+  dirty false; other projects' processes (a Blender MCP server, a VideoSearchDB server and
+  two celery workers) were running on the machine and are recorded in the note. Part 1
+  (b291518, documents only): docs/findings/scripts/sp7_s7b_checks.py (the 11 blocking checks of
+  part 2's section 9, E1 and E2, the fixed sentences) and sp7_lm_convergence.py (the
+  registered linear-motor convergence check in seven parts); physics, compliance and honesty
+  reviewers in three passes (32, 15 and 10 findings; no major), three fix rounds, the
+  independent gate passed. The convergence check then ran alone from b291518
+  (2026-11-04T02:57:04Z to 03:03:48Z, parts 33-104 s): lm_fixed_s1_st's x* moved +0.0274 kg
+  (2.4e-6 relative, against 0.1%), the shipped chain equal to run B's x*; it leaves
+  TRACK_PEAK_SCAN_POINTS and sample_dt_s untightened (KI-089). The blocking checks: 11 of 11
+  pass (silo_cold_s1_st 0.0 kg from run A's and from SP1's; lm_cmd's uncharged x* +0.0014 kg
+  from SP1's; no `bug_suspect`; every verification within 1e-4 P_ref); E1 and E2 met. Part 2
+  (the note, docs/findings/RQ1-structural-2d.md, status preliminary): the drive-cases table
+  (silo_cold and the nine linear-motor variants, uncharged and central), the 25 fixed
+  sentences filled by the checks script, the departures from section 7's estimates stated
+  plainly (lm_fixed_hot 7.35 t against 3.75 t estimated, +96%), What goes against and Limits
+  extended, the headline paragraph kept; three figures by
+  docs/findings/scripts/sp7_drive_figures.py; the committed copies of the checks output; a
+  dated pointer in RQ1-fuel-offload-2d.md; README results and the findings index; physics.md's
+  S7b research notes (the measured dm' chord signs). Physics, compliance, honesty and visual
+  reviewers in three passes (46, 25 and 12 findings; 5, 0 and 0 majors), three fix rounds;
+  the independent gate: its own trace scripts (759 and 231 checks, 0 failed; every one of the
+  1,801 numbers in the added lines resolved), the 25 sentences filled independently, the
+  figures spot-checked and looked at, the site built with no broken link, fast suite 2214,
+  ruff, the exact 1-D golden tier, the planar pins and capture, the golden-dump field lists,
+  the frozen files and replay.html's sha256, run B's directory byte-identical: all pass.
+  Result: every central case cancels most of its offload, 2.48 t (lm_cmd_taper) to 18.27 t
+  (lm_cmd_hot, a hot start the unmodelled exhaust favours); on the same 100 m silo the two
+  drives that exit faster than silo_cold keep less (lm_fixed_hot 4.07 t less, lm_fixed 82 kg
+  less); the stop taper costs 8.94 t. A wall-clock test failed in 2 of 3 [p-z] chunk runs and
+  passed alone 9 of 9 (KI-090). KI-089 and KI-090 opened. Next: S7c.
 
 ## 12. Deviations from the plan
 
@@ -2049,6 +2083,15 @@ Checkpoint 1 and step S6a (2026-10-16):
     bias of lm_cmd_hot and lm_fixed_hot; the addendum states that it does not reach them
     (neither holds on the clamp before its push start), the gate's flights support it, and
     the orchestrator accepted it. Accepted by the session.
+55. **Step S7b in two parts with two commits, and its files beyond the row's folders** (the
+    S7b row names results/ and docs/findings/): part 1's two check scripts were committed
+    first (b291518, documents only) so that the registered convergence check ran from committed
+    scripts and from run B's code (`git diff --quiet 642e11e b291518 -- src configs experiments
+    pyproject.toml uv.lock tests` exits 0); the orchestrator ran the convergence check and the
+    blocking checks between the parts; part 2's note followed (e5f64b3). Part 2 also changed
+    README.md (its results section, and the SP1 bullet's "No structural model exists yet.",
+    which the new SP7 subsection below it made false) and docs/physics.md (its S7b research
+    notes), both named in the row's text. Accepted by the session.
 
 ## 13. Prompt to start this phase
 
