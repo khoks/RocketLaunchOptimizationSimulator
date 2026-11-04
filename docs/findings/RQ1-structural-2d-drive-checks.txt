@@ -1,0 +1,286 @@
+docs/findings/scripts/sp7_s7b_checks.py: SP7 step S7b, the pre-registration part 2's section 9 checks, section 8's expectations and fixed sentences (read-only; checks, never findings)
+HEAD b291518c8955
+  beside (provenance, not a check): this script's sha256 b138e487a865a01eae40da0bce2246e057410952bc5848b45ec7b378c3451dfa; its blob at HEAD b291518c8955: equal; in the working tree: clean
+run B results/silo_drive_2d/20261103T231946Z (git 642e11e3851d, dirty False, experiment silo_drive_2d, timestamp 20261103T231946Z)
+  beside (provenance, not a check): metrics.json sha256 08278d414db0063e9c4dcf641ae9f5ddca91ce87229cc908a8bce29cbaf7b488; tree sha256 c67572aaca8832a5f703be8da498c952a656e67325f25813c2de2da30dc54f7d (388 files); both equal to the record at the run's end: True
+  beside (provenance, not a check): configs/vehicles/generic_f9_class_2d.yaml at run B's commit a8ea5203da658b6d86d690ea26b784fa6004f2b990fe2f4b7f829c9a799e59a9: equal to section 12's
+  run A results/silo_structure_2d/20261016T171513Z; SP1 results/silo_offload_2d/20261003T112934Z (the cross-commit check, read only)
+  convergence report: (outside the repository) convergence/report.json (sha256 91a2b6ab76a13739186c077e6f1c9beea24e947710c3a919436f8ba9cf9705fa)
+
+A. Checks that block a citation (section 9, in its order)
+
+[1] no run or comparison bug_suspect
+    summary.md: 'No run and no comparison is bug_suspect.' x1; blocked-findings lines: 0
+    metrics.json: 2981 string values read, none 'bug_suspect'; screening_status x10 (ok 10); decomposition_status x20 (explained 20); xv_status x20 (explained 20)
+    run checks (closure, loss identity, insertion e): 32 runs (variants, pad, cases, pad control), run_checks_failed empty on 32
+    cross-vehicle decompositions: 20 residuals, worst |r| 8.578e-11 m/s against closure_tol_mps 1e-05 m/s
+    -> PASS (blocks: the number it touches; this script's reading of section 9's general rule ('a number is not cited until each check that touches it passes or is explained'))
+
+[2] the pad not reference_failed, its P* within 0.002 kg of P_ref
+    pad: P* 26054.396243494975 kg against P_ref 26054.396243494975 kg, diff +0.000e+00 kg, |.| <= 0.002 kg: yes (status inserted, search ok)
+    offload.reference 'pad', reference_payload_kg 26054.396243494975 kg, diff +0.000e+00 kg against the registered P_ref
+    every case's reference_payload_kg equal to it: True (20 cases)
+    -> PASS (blocks: every number; this script's reading of section 9's general rule ('a number is not cited until each check that touches it passes or is explained'))
+
+[3] the stage-1 pad control passes its consistency test
+    pad__offload_stage1: status no_offload, x_pad 0.0 kg, m_res(0) -0.00163769 kg, dv_margin -0.000185962 m/s, bound 1.6178 kg, within_bound None, resolution effect True, flags 0: consistency pass
+    summary.md: no pad-control blocked-findings line
+    -> PASS (blocks: every offload number; this script's reading of section 9's general rule ('a number is not cited until each check that touches it passes or is explained'))
+
+[4] the cross-commit check: silo_cold_s1 vs SP1's, silo_cold_s1_st vs run A's (0.002 kg)
+    silo_cold_s1: run B x* 41262.90803733282 kg against SP1's 41262.90803733282 kg (section 3), diff +0.000e+00 kg, |.| <= 0.002 kg: yes; against SP1's record 41262.90803733282 kg (results/silo_offload_2d/20261003T112934Z/metrics.json, git b3150c1754ee, status ok), diff +0.000e+00 kg
+    silo_cold_s1_st: run B x* 11420.246638573297 kg against run A's 11420.246638573297 kg (section 3), diff +0.000e+00 kg, |.| <= 0.002 kg: yes; against run A's record 11420.246638573297 kg (results/silo_structure_2d/20261016T171513Z/metrics.json, git 1b5f9d46d31c, status ok), diff +0.000e+00 kg
+    run B's git 642e11e3851d (dirty False); run A's 1b5f9d46d31c; SP1's b3150c1754ee
+    -> PASS (blocks: every number of run B until explained; section 9's words)
+
+[5] lm_cmd's uncharged x* within 0.25 kg of SP1's 41,262.908 kg
+    lm_cmd_s1: x* 41262.909435299975 kg against SP1's 41262.90803733282 kg (section 9: 41,262.908 kg), diff +0.001398 kg, |.| <= 0.25 kg: yes
+    -> PASS (blocks: every linear-motor number until explained; section 9's words)
+
+[6] structural verification within 1e-4 P_ref, or flagged offload_verify_mismatch
+    silo_cold_s1_st (ok): verified P - P_ref +0.001441 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_cmd_s1_st (ok): verified P - P_ref +0.001280 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_cmd_taper_s1_st (ok): verified P - P_ref +0.000757 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_cmd_hot_s1_st (ok): verified P - P_ref +0.001666 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_fixed_s1_st (ok): verified P - P_ref +0.001324 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_fixed_target_s1_st (ok): verified P - P_ref +0.001305 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_fixed_r07_s1_st (ok): verified P - P_ref +0.000827 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_fixed_hot_s1_st (ok): verified P - P_ref +0.000380 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_fixed_sled22_s1_st (ok): verified P - P_ref +0.001407 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    lm_fixed_sealed_s1_st (ok): verified P - P_ref +0.001389 kg, |.| <= 2.6054 kg: yes (recorded passed True, status ok)
+    beside (not this check: uncharged cases): 10 verifications, the largest |P - P_ref| 0.6820 kg
+    -> PASS (blocks: the case is flagged and reported as a bound; section 9's words)
+
+[7] xv_dry_mass_delta_kg = dm1 + dm2 at x* within 1e-6 kg
+    silo_cold_s1_st (ok): xv_dry_mass_delta 6305.185585283194 kg against structure_dm_kg 6305.185585283194 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6305.185585 kg); diff +0.0e+00 kg, |.| <= 1e-06 kg: yes
+    lm_cmd_s1_st (ok): xv_dry_mass_delta 6305.18552099997 kg against structure_dm_kg 6305.185520999969 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6305.185521 kg); diff +9.1e-13 kg, |.| <= 1e-06 kg: yes
+    lm_cmd_taper_s1_st (ok): xv_dry_mass_delta 8003.015344355466 kg against structure_dm_kg 8003.0153443554655 kg (dm1 + dm2 as recorded: dm2 0.928221 kg, so dm1 = dm - dm2 = 8002.087123 kg); diff +9.1e-13 kg, |.| <= 1e-06 kg: yes
+    lm_cmd_hot_s1_st (ok): xv_dry_mass_delta 6210.049383625017 kg against structure_dm_kg 6210.049383625016 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6210.049384 kg); diff +9.1e-13 kg, |.| <= 1e-06 kg: yes
+    lm_fixed_s1_st (ok): xv_dry_mass_delta 6377.263265780974 kg against structure_dm_kg 6377.263265780975 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6377.263266 kg); diff -1.8e-12 kg, |.| <= 1e-06 kg: yes
+    lm_fixed_target_s1_st (ok): xv_dry_mass_delta 6376.829308147044 kg against structure_dm_kg 6376.829308147043 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6376.829308 kg); diff +9.1e-13 kg, |.| <= 1e-06 kg: yes
+    lm_fixed_r07_s1_st (ok): xv_dry_mass_delta 7397.530376533468 kg against structure_dm_kg 7397.530376533473 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 7397.530377 kg); diff -4.5e-12 kg, |.| <= 1e-06 kg: yes
+    lm_fixed_hot_s1_st (ok): xv_dry_mass_delta 9006.022216835816 kg against structure_dm_kg 9006.022216835818 kg (dm1 + dm2 as recorded: dm2 131.196263 kg, so dm1 = dm - dm2 = 8874.825954 kg); diff -1.8e-12 kg, |.| <= 1e-06 kg: yes
+    lm_fixed_sled22_s1_st (ok): xv_dry_mass_delta 6079.698969851113 kg against structure_dm_kg 6079.698969851112 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6079.698970 kg); diff +9.1e-13 kg, |.| <= 1e-06 kg: yes
+    lm_fixed_sealed_s1_st (ok): xv_dry_mass_delta 6192.409654185456 kg against structure_dm_kg 6192.409654185455 kg (dm1 + dm2 as recorded: dm2 0.000000 kg, so dm1 = dm - dm2 = 6192.409654 kg); diff +9.1e-13 kg, |.| <= 1e-06 kg: yes
+    beside (not a gate; the independent sum): the element sums stage1.* + stage2.* equal dm, and stage2.* equals dm2, to 0.0e+00 kg at most
+    -> PASS (blocks: the case: a bug; section 9's words ('a bug'); 'the case' is this script's reading of its general rule)
+
+[8] structure files' sha256 at run B's commit and as recorded equal section 12's
+    configs/structures/generic_f9_class_2d.yaml: registered a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232; at run B's commit 642e11e3851d: a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232: equal
+      beside (not this check): working tree equal, HEAD b291518c8955 equal
+    configs/structures/generic_f9_class_2d_readme_loads.yaml: registered a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997; at run B's commit 642e11e3851d: a850de94ae24ab28941789d7a17da3c3ff5b48f51b762373fc99b6e22edc2997: equal
+      beside (not this check): working tree equal, HEAD b291518c8955 equal
+    run B's recorded structure digests: 21 x metrics.json: configs/structures/generic_f9_class_2d.yaml equal; 1 x resolved_config.yaml: configs/structures/generic_f9_class_2d.yaml equal
+    -> PASS (blocks: every structural number; section 9's words)
+
+[9] the linear-motor convergence check of section 1 (0.1%)
+    report (outside the repository) convergence/report.json (sha256 91a2b6ab76a13739186c077e6f1c9beea24e947710c3a919436f8ba9cf9705fa)
+    case lm_fixed_s1_st of experiments/silo_drive_2d.yaml (sha256 7513d74bfa488125f9a14da091b0bfedb5e59516cb8ce27e21531cb0f5a68ee5, equal to experiments/silo_drive_2d.yaml at run B's commit)
+    shipped: P_ref 26054.396243494975 kg, x* 11338.21677533504 kg (status ok), dm 6377.263265780975 kg
+    tightened: P_ref 26054.395519976406 kg, x* 11338.244185975396 kg (status ok), dm 6377.26328685691 kg
+    tightened - shipped x* +0.027411 kg, relative +2.418e-06, |.| < 0.001: yes
+    shipped - run B x* +0.000e+00 kg (run B's record 11338.21677533504 kg), |.| <= 0.002 kg: yes
+    the registered rule (section 1's pass rule: both solves ok, the tightened x* within 0.1% of the shipped one, the shipped one within 0.002 kg of run B's): PASS
+    x* confirmed (section 1: each chain's x* checked by an independent payload search at its own budget; recomputed from each chain's recorded status and P* against its P_ref): yes
+      shipped verification: status ok, P - P_ref +0.001324 kg, |.| <= 0.0001 of its P_ref (2.6054 kg): yes (the report's P - P_ref 0.0013239366853667889 kg, tolerance 2.6054396243494975 kg, passed True: agree)
+      tightened verification: status ok, P - P_ref +0.000539 kg, |.| <= 0.0001 of its P_ref (2.6054 kg): yes (the report's P - P_ref 0.000539232340088347 kg, tolerance 2.6054395519976405 kg, passed True: agree)
+    run as registered (section 1's method): yes (verification_x_and_dm_as_solved True, pad_searches_ok True, pad_budget_equals_solve True, push_contexts_as_registered True, same_code True, scripts_as_committed True)
+      each verification flew its solve's x* and dm (the recorded values compared here): shipped True, tightened True (the report's own: shipped True, tightened True)
+      pads: shipped search ok, its budget equal to the solve's True; tightened search ok, its budget equal to the solve's True
+      push contexts tightened (solve, verification): shipped False, False; tightened True, True; budgets equal to their searches' (solve, verification): shipped True, True; tightened True, True (the tightened flags as the report records them, computed there against a freshly tightened context; the budget equalities recomputed here)
+      same code as run B, recomputed here: git diff --quiet <run B's commit 642e11e3851d> <head> -- src configs experiments pyproject.toml uv.lock tests, run now for each HEAD the parts recorded: b291518c8955 quiet; the code paths clean at both readings in the 6 parts (as the report records them): yes (the report's own same_code.passed True)
+      scripts as committed, recomputed here: in each of the 7 parts, each script's sha256 at import, at record and its blob's at the part's HEAD equal, one sha256 per script across the parts (the parts' readings as the report records them), and git show of each script at each recorded HEAD (b291518c8955; run now) equal to it: docs/findings/scripts/sp7_lm_convergence.py 4a23ded6c344db7a21ba627f5141f0684be1effb099245172931e08e5b216a4b; docs/findings/scripts/sp7_convergence.py 6352190ae4fecaf3058fe575f13b077029b75ebfba2622012e189b6f3413576f (the report's own scripts.passed True)
+        beside (not part of the check): at this script's HEAD b291518c8955 now: docs/findings/scripts/sp7_lm_convergence.py equal; docs/findings/scripts/sp7_convergence.py equal
+    the report's own verdicts: registered rule True, x* confirmed True, run as registered True, passed True: agree
+    beside: the push at x* logged ['push_start', 'drive_ramp_end', 'power_limit', 'release'] (shipped) and ['push_start', 'drive_ramp_end', 'power_limit', 'release'] (tightened)
+    beside: not tightened in either chain (the report's not_tightened: among what neither chain tightens, not exhaustive; the check does not bound x*'s dependence on them):
+      - the LTG finite-difference steps, the brackets, the penalties and the false-root guard (SearchBudget.tightened leaves them unchanged)
+      - the gamma* grid (15 points), the gamma* refine's iteration cap (refine_maxiter 30) and the payload search's backoff cap (payload_backoff_max 4) (SearchBudget.tightened leaves them unchanged)
+      - brentq_rtol 8.881784197001252e-16 (SearchBudget.tightened leaves it unchanged; config.BRENTQ_MIN_RTOL, the floor no configuration goes below, is 8.881784197001252e-16)
+      - the track-peak scan resolution (metrics.TRACK_PEAK_SCAN_POINTS, 256 points per sub-phase), on which KI-071's dm step depends
+      - the time-series sampling interval (integrator.sample_dt_s, 0.05 s), whose rows give the envelope's load cases
+      - the structure's fixed-point tolerance (sim.STRUCTURE_FIXED_POINT_TOL_KG, 1e-06 kg; section 1) and its iteration cap (sim.STRUCTURE_FIXED_POINT_MAX_ITERATIONS, 25)
+    -> PASS (blocks: every linear-motor number until explained; section 9's words)
+
+[10] no unexplained offload_nonmonotone, capped gamma* refine or fired fixed-point cap
+    fired flag names found in metrics.json, with their records:
+      release_speed_not_reached (1): lm_fixed_target
+      structure_payload_limit (8): lm_cmd_s1_st, lm_fixed_hot_s1_st, lm_fixed_r07_s1_st, lm_fixed_s1_st, lm_fixed_sealed_s1_st, lm_fixed_sled22_s1_st, lm_fixed_target_s1_st, silo_cold_s1_st
+      structure_release_unload (10): lm_cmd_hot_s1_st, lm_cmd_s1_st, lm_cmd_taper_s1_st, lm_fixed_hot_s1_st, lm_fixed_r07_s1_st, lm_fixed_s1_st, lm_fixed_sealed_s1_st, lm_fixed_sled22_s1_st, lm_fixed_target_s1_st, silo_cold_s1_st
+      structure_upper_stack_exceeded (2): lm_cmd_taper_s1_st, lm_fixed_hot_s1_st
+    structure_fixed_point_cap records (fired or not): 20, fired 0; summary.md mentions: offload_nonmonotone x0, refine_capped x0, structure_fixed_point_cap x0
+    blocking flags (offload_nonmonotone, refine_capped, structure_fixed_point_cap): none
+    -> PASS (blocks: the number: explained before it is quoted; section 9's words)
+
+[11] every no_offload case reported with its shortfall and 'payload deficit not flown'
+    no case ended no_offload (of 20); the stage-1 pad control is the solver's consistency test (check 3)
+    -> PASS (blocks: the case's report (a reporting defect to fix first); part 1, section 9's words (the addendum's section 9 states none))
+
+B. Registered expectations (section 8; met or not met, never a check)
+
+E1 (design 4.10): lm_fixed_hot_s1_st raises the upper-stack flag at its x*: met.
+    lm_fixed_hot_s1_st (ok, x* 7347.470380831219 kg): structure_upper_stack_exceeded fired True: the push's upper-stack load 8114270.666477089 N against the envelope's 7095039.662921093 N; dm2 131.1962627026916 kg
+    beside: the flag fired on lm_cmd_taper_s1_st, lm_fixed_hot_s1_st
+
+E2 (sources section 10; D-SP7-24): no drive_cap on the lm_cmd family (the variant runs and the six cases' runs at their x*): met.
+    lm_cmd (variant run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013358 m/s
+    lm_cmd_s1 (case run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013358 m/s
+    lm_cmd_s1_st (case run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013358 m/s
+    lm_cmd_taper (variant run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013365 m/s
+    lm_cmd_taper_s1 (case run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013363 m/s
+    lm_cmd_taper_s1_st (case run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013364 m/s
+    lm_cmd_hot (variant run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013361 m/s
+    lm_cmd_hot_s1 (case run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013361 m/s
+    lm_cmd_hot_s1_st (case run): drive_cap events 0, drive_cap_end 0, push_cap_bound False, cap flags 0; speed at release 76.70717046013361 m/s
+
+C. Fixed sentences of section 8 that fire (word for word; beside: context only, never a reading)
+
+RB [cancels most] lm_cmd_s1_st (constant_accel with a flown ramp (its uncharged x* equals SP1's within 0.25 kg for a cold start: pre-registered by the design)) cancels most of it: 11.42 t is left (27.7%).
+    beside: 27.7% of its own uncharged 41.26 t (lm_cmd_s1)
+    x* 11420.251235034633 kg against the threshold 20631.45 kg: -9211.2 kg
+
+RB [cancels most] lm_cmd_taper_s1_st (the cost of a gentle stop against the release flag) cancels most of it: 2.48 t is left (6.0%).
+    beside: 6.0% of its own uncharged 41.26 t (lm_cmd_taper_s1)
+    x* 2479.019577835982 kg against the threshold 20631.45 kg: -18152.4 kg
+
+RB [cancels most] lm_cmd_hot_s1_st (the hot start under a structure-protecting drive (thrust replaces motor force)) cancels most of it: 18.27 t is left (44.3%).
+    beside: 39.7% of its own uncharged 46.01 t (lm_cmd_hot_s1)
+    x* 18273.91702877732 kg against the threshold 20631.45 kg: -2357.5 kg
+
+RB [cancels most] lm_fixed_s1_st (a facility sized for the full load, run at full force on a lighter stack) cancels most of it: 11.34 t is left (27.5%).
+    beside: 26.2% of its own uncharged 43.32 t (lm_fixed_s1)
+    x* 11338.21677533504 kg against the threshold 20631.45 kg: -9293.2 kg
+
+RB [cancels most] lm_fixed_target_s1_st (the same exit speed from a fixed facility) cancels most of it: 11.05 t is left (26.8%).
+    beside: 26.8% of its own uncharged 41.22 t (lm_fixed_target_s1)
+    x* 11046.353370925328 kg against the threshold 20631.45 kg: -9585.1 kg
+
+RB [cancels most] lm_fixed_r07_s1_st (a power-limited drive) cancels most of it: 5.66 t is left (13.7%).
+    beside: 13.2% of its own uncharged 42.76 t (lm_fixed_r07_s1)
+    x* 5658.716977491199 kg against the threshold 20631.45 kg: -14972.7 kg
+
+RB [cancels most] lm_fixed_hot_s1_st (the force-limited hot start (pre-registered to raise the upper-stack flag)) cancels most of it: 7.35 t is left (17.8%).
+    beside: 13.9% of its own uncharged 52.73 t (lm_fixed_hot_s1)
+    x* 7347.470380831219 kg against the threshold 20631.45 kg: -13284.0 kg
+
+RB [cancels most] lm_fixed_sled22_s1_st (carriage mass at a fixed force) cancels most of it: 11.64 t is left (28.2%).
+    beside: 27.6% of its own uncharged 42.22 t (lm_fixed_sled22_s1)
+    x* 11643.330183687483 kg against the threshold 20631.45 kg: -8988.1 kg
+
+RB [cancels most] lm_fixed_sealed_s1_st (the air column) cancels most of it: 9.05 t is left (21.9%).
+    beside: 22.2% of its own uncharged 40.70 t (lm_fixed_sealed_s1)
+    x* 9049.83730163565 kg against the threshold 20631.45 kg: -11581.6 kg
+
+LM [same] lm_cmd_s1_st (constant_accel with a flown ramp (its uncharged x* equals SP1's within 0.25 kg for a cold start: pre-registered by the design)) leaves 11.42 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: the same within the resolution (uncharged 41.26 t against 41.26 t; the structure's offload cost U - X 29.84 t against 29.84 t).
+    beside: X - X_c +0.0046 kg against R 3.4 kg: within R
+    U - U_c +0.0014 kg against R 2.55 kg: within R
+    cost - cost_c -0.0032 kg against R 6 kg: within R
+
+LM [less] lm_cmd_taper_s1_st (the cost of a gentle stop against the release flag) leaves 2.48 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 8.94 t less (uncharged 41.26 t against 41.26 t; the structure's offload cost U - X 38.78 t against 29.84 t).
+    beside: X - X_c -8941.2271 kg against R 3.4 kg: beyond R
+    U - U_c +0.0636 kg against R 2.55 kg: within R
+    cost - cost_c +8941.2907 kg against R 6 kg: beyond R
+
+LM [more] lm_cmd_hot_s1_st (the hot start under a structure-protecting drive (thrust replaces motor force)) leaves 18.27 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 6.85 t more (uncharged 46.01 t against 41.26 t; the structure's offload cost U - X 27.74 t against 29.84 t).
+    beside: X - X_c +6853.6704 kg against R 3.4 kg: beyond R
+    U - U_c +4750.5307 kg against R 2.55 kg: beyond R
+    cost - cost_c -2103.1397 kg against R 6 kg: beyond R
+
+LM [less] lm_fixed_s1_st (a facility sized for the full load, run at full force on a lighter stack) leaves 11.34 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 0.08 t less (uncharged 43.32 t against 41.26 t; the structure's offload cost U - X 31.98 t against 29.84 t).
+    beside: X - X_c -82.0299 kg against R 3.4 kg: beyond R
+    U - U_c +2059.0479 kg against R 2.55 kg: beyond R
+    cost - cost_c +2141.0778 kg against R 6 kg: beyond R
+
+LM [less] lm_fixed_target_s1_st (the same exit speed from a fixed facility) leaves 11.05 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 0.37 t less (uncharged 41.22 t against 41.26 t; the structure's offload cost U - X 30.17 t against 29.84 t).
+    beside: X - X_c -373.8933 kg against R 3.4 kg: beyond R
+    U - U_c -46.7689 kg against R 2.55 kg: beyond R
+    cost - cost_c +327.1244 kg against R 6 kg: beyond R
+
+LM [less] lm_fixed_r07_s1_st (a power-limited drive) leaves 5.66 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 5.76 t less (uncharged 42.76 t against 41.26 t; the structure's offload cost U - X 37.10 t against 29.84 t).
+    beside: X - X_c -5761.5297 kg against R 3.4 kg: beyond R
+    U - U_c +1497.9949 kg against R 2.55 kg: beyond R
+    cost - cost_c +7259.5246 kg against R 6 kg: beyond R
+
+LM [less] lm_fixed_hot_s1_st (the force-limited hot start (pre-registered to raise the upper-stack flag)) leaves 7.35 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 4.07 t less (uncharged 52.73 t against 41.26 t; the structure's offload cost U - X 45.38 t against 29.84 t).
+    beside: X - X_c -4072.7763 kg against R 3.4 kg: beyond R
+    U - U_c +11464.5783 kg against R 2.55 kg: beyond R
+    cost - cost_c +15537.3546 kg against R 6 kg: beyond R
+
+LM [more] lm_fixed_sled22_s1_st (carriage mass at a fixed force) leaves 11.64 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 0.22 t more (uncharged 42.22 t against 41.26 t; the structure's offload cost U - X 30.57 t against 29.84 t).
+    beside: X - X_c +223.0835 kg against R 3.4 kg: beyond R
+    U - U_c +955.1726 kg against R 2.55 kg: beyond R
+    cost - cost_c +732.0891 kg against R 6 kg: beyond R
+
+LM [less] lm_fixed_sealed_s1_st (the air column) leaves 9.05 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 2.37 t less (uncharged 40.70 t against 41.26 t; the structure's offload cost U - X 31.65 t against 29.84 t).
+    beside: X - X_c -2370.4093 kg against R 3.4 kg: beyond R
+    U - U_c -559.7382 kg against R 2.55 kg: beyond R
+    cost - cost_c +1810.6711 kg against R 6 kg: beyond R
+
+HS [more] lm_cmd_hot_s1_st keeps more offload than lm_cmd_s1_st with the same drive and the same structure settings: +6.85 t (uncharged +4.75 t; the structure's offload cost 27.74 t against 29.84 t) (nothing models the exhaust in the shaft: back-pressure, heating, the carriage in the plume, which favours the hot starts).
+    beside: X_hot - X_cold +6853.6658 kg against R 3.4 kg: beyond R
+    U_hot - U_cold +4750.5293 kg against R 2.55 kg: beyond R
+    D_hot - D_cold -2103.1365 kg against R 6 kg: beyond R
+    the sentence's fixed words against the run (the drive from metrics.json's variant runs and from resolved_config.yaml's assist blocks, the structure settings from the case records): lm_cmd_hot's drive settings against lm_cmd's ('with the same drive'; push_control_law, push_force_max_N, push_power_max_W, push_rise_time_s, push_accel_command_mps2, push_stop_taper_m, push_release_speed_mps, carriage_mass_kg, stroke_m): equal; lm_cmd_hot's assist block against lm_cmd's in resolved_config.yaml's runs, every key ('with the same drive'; accel_command_g, brake_decel_g, carriage_mass_t, control, drive_efficiency, exhaust_impingement_fraction, force_max_kN, force_rise_time_s, model, power_max_MW, shaft, stroke_m, track.angle_deg, track.exit_altitude_m): equal; lm_cmd_hot_s1_st's structure settings against lm_cmd_s1_st's ('the same structure settings'; structure_file, structure_set, structure_sizing, structure_dynamic, structure_entry, structure_margin, structure_envelope_cap_g, structure_overrides, structure_plausibility_scaled): equal
+
+HS [less] lm_fixed_hot_s1_st keeps less offload than lm_fixed_s1_st with the same drive and the same structure settings: -3.99 t (uncharged +9.41 t; the structure's offload cost 45.38 t against 31.98 t) (nothing models the exhaust in the shaft: back-pressure, heating, the carriage in the plume, which favours the hot starts).
+    beside: X_hot - X_cold -3990.7464 kg against R 3.4 kg: beyond R
+    U_hot - U_cold +9405.5304 kg against R 2.55 kg: beyond R
+    D_hot - D_cold +13396.2768 kg against R 6 kg: beyond R
+    the sentence's fixed words against the run (the drive from metrics.json's variant runs and from resolved_config.yaml's assist blocks, the structure settings from the case records): lm_fixed_hot's drive settings against lm_fixed's ('with the same drive'; push_control_law, push_force_max_N, push_power_max_W, push_rise_time_s, push_accel_command_mps2, push_stop_taper_m, push_release_speed_mps, carriage_mass_kg, stroke_m): equal; lm_fixed_hot's assist block against lm_fixed's in resolved_config.yaml's runs, every key ('with the same drive'; brake_decel_g, carriage_mass_t, control, drive_efficiency, exhaust_impingement_fraction, force_max_kN, force_rise_time_s, model, power_max_MW, shaft, stroke_m, track.angle_deg, track.exit_altitude_m): equal; lm_fixed_hot_s1_st's structure settings against lm_fixed_s1_st's ('the same structure settings'; structure_file, structure_set, structure_sizing, structure_dynamic, structure_entry, structure_margin, structure_envelope_cap_g, structure_overrides, structure_plausibility_scaled): equal
+
+TS [less] Released where its speed reaches v_e (98.92 m up the 100 m stroke at x*), lm_fixed_target leaves 11.05 t against lm_fixed's 11.34 t released at the track end at 77.15 m/s: 0.29 t less (uncharged 41.22 t against 43.32 t).
+    beside: X_T - X_L -291.8634 kg against R 3.4 kg: beyond R
+    U_T - U_L -2105.8168 kg against R 2.55 kg: beyond R
+    the sentence's fixed words against the run: lm_fixed_target_s1_st release_trigger 'target_speed' against 'target_speed' ('Released where its speed reaches v_e'): equal; its speed at release 76.70717046013364 m/s against v_e 76.70717046013364 m/s (push_release_speed_mps), within 1e-09 m/s: equal; lm_fixed_target_s1_st stroke_m 100.0 against 100.0 ('the 100 m stroke'): equal; lm_fixed_s1_st release_trigger 'track_end' against 'track_end' ('released at the track end'): equal; lm_fixed_s1_st release_position_m 100.0 against its stroke_m 100.0: equal
+
+CM [more] With a 22 t carriage at the same F_max and P_max, lm_fixed_sled22 leaves 11.64 t against lm_fixed's 11.34 t: 0.31 t more (uncharged 42.22 t against 43.32 t; at x* an exit speed of 75.27 m/s against 77.15 m/s and a peak interface force of 21.644 MN against 22.484 MN).
+    beside: X - X_F +305.1134 kg against R 3.4 kg: beyond R
+    U - U_F -1103.8753 kg against R 2.55 kg: beyond R
+    the sentence's fixed words against the run: lm_fixed_sled22's carriage_mass_kg 22000.0 against 22000.0 ('a 22 t carriage'): equal; lm_fixed_sled22_s1_st's carriage_mass_kg (the run at x*) 22000.0 against 22000.0 ('a 22 t carriage'): equal; F_max and P_max equal to lm_fixed's ('at the same F_max and P_max'): equal
+    speed_at_release_mps and peak_interface_force_N of the recorded runs at x*: 75.27279741759251 and 21643563.864807855; lm_fixed's 77.14919057370867 and 22483659.42458794
+
+SS [less] In the sealed shaft (bore 5.24 m, gap 5 m) the same drive leaves 9.05 t against the vented lm_fixed's 11.34 t: 2.29 t less (uncharged 40.70 t against 43.32 t; at x* the column's peak force 2.180 MN and its work 201.7 MJ, and an exit speed of 72.22 m/s against 77.15 m/s).
+    beside: X - X_F -2288.3795 kg against R 3.4 kg: beyond R
+    U - U_F -2618.7861 kg against R 2.55 kg: beyond R
+    the sentence's fixed words against the run (the shaft from resolved_config.yaml's runs, the drive from metrics.json's variant runs and from resolved_config.yaml's assist blocks): lm_fixed_sealed shaft 'sealed' against 'sealed' ('In the sealed shaft'): equal; lm_fixed_sealed shaft_bore_m '5.24' against 5.24 ('bore 5.24 m'): equal; lm_fixed_sealed shaft_gap_m '5.0' against 5.0 ('gap 5 m'): equal; lm_fixed_sealed shaft_gamma '1.4' against 1.4 (section 4's 'gamma 1.4'; not in the sentence): equal; lm_fixed shaft 'vented' against 'vented' ('the vented lm_fixed'): equal; lm_fixed_sealed's drive settings against lm_fixed's ('the same drive'; push_control_law, push_force_max_N, push_power_max_W, push_rise_time_s, push_accel_command_mps2, push_stop_taper_m, push_release_speed_mps, carriage_mass_kg, stroke_m): equal; lm_fixed_sealed's assist block against lm_fixed's in resolved_config.yaml's runs, every key but shaft, shaft_bore_m, shaft_gap_m, shaft_gamma (compared on their own) ('the same drive'; brake_decel_g, carriage_mass_t, control, drive_efficiency, exhaust_impingement_fraction, force_max_kN, force_rise_time_s, model, power_max_MW, stroke_m, track.angle_deg, track.exit_altitude_m): equal
+    piston_force_peak_N 2179966.3291616407, piston_work_J 201650738.59938323 (the recorded run at x*)
+
+TP [less] The stop taper leaves 2.48 t against lm_cmd's 11.42 t: 8.94 t less; at x* its release flag fires (the stage-1 LOX bottom at -230 kPa absolute against lm_cmd's -896 kPa; the release swing -1.95 g0 against -4.39 g0) and its payload-limit flag does not fire.
+    beside: X - X_c -8941.2317 kg against R 3.4 kg: beyond R
+    lm_cmd's release flag fires and payload-limit flag fires; the payload-limit flag's numbers: taper n_peak 5.2006998577600045 g0 and swing -1.946155534638339 g0 against the limits 6.0 and -2.0 g0; lm_cmd n_peak 4.388876231740761 g0, swing -4.388876231740761 g0; MECO's swing -5.1954747362886655 g0
+
+PL [less] The power-limited drive (r = 0.7, F_max 25.236 MN) leaves 5.66 t against lm_fixed's 11.34 t (F_max 22.484 MN): 5.68 t less.
+    beside: X - X_F -5679.4998 kg against R 3.4 kg: beyond R
+    the sentence's fixed words against the run: r = P_max / (F_max v_e) 0.7000000000000001 against 0.7 ('r = 0.7'): equal (relative tolerance 1e-12; v_e = lm_fixed's corner speed 76.70717046013364 m/s)
+
+D. Read beside (section 8; not expectations of their own)
+    lm_cmd_s1_st 11420.251235034633 kg - silo_cold_s1_st 11420.246638573297 kg = +0.0046 kg against R 3.4 kg: within R
+    lm_cmd_hot_s1 46013.43873926586 kg - run A's silo_hot_ramp_s1 46013.43730748323 kg (section 8: 46,013.437 kg) = +0.0014 kg against R 2.55 kg: within R
+    lm_cmd_hot_s1_st 18273.91702877732 kg - run A's silo_hot_ramp_s1_st 18273.91698895459 kg (section 8: 18,273.917 kg) = +0.0000 kg against R 3.4 kg: within R
+
+E. Not blocking (section 9), reported beside
+    silo_cold_s1_st: fired structure_release_unload, structure_payload_limit; release swing -4.389 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.389 g0 against 6.0 g0, stage-1 LOX bottom -896 kPa absolute
+    lm_cmd_s1_st: fired structure_release_unload, structure_payload_limit; release swing -4.389 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.389 g0 against 6.0 g0, stage-1 LOX bottom -896 kPa absolute
+    lm_cmd_taper_s1_st: fired structure_release_unload, structure_upper_stack_exceeded; release swing -1.946 g0 against -2.0 g0 (MECO's -5.195), n_peak 5.201 g0 against 6.0 g0, stage-1 LOX bottom -230 kPa absolute
+    lm_cmd_hot_s1_st: fired structure_release_unload; release swing -1.607 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.389 g0 against 6.0 g0, stage-1 LOX bottom -114 kPa absolute
+    lm_fixed_s1_st: fired structure_release_unload, structure_payload_limit; release swing -4.505 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.429 g0 against 6.0 g0, stage-1 LOX bottom -928 kPa absolute
+    lm_fixed_target_s1_st: fired structure_release_unload, structure_payload_limit; release swing -4.426 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.426 g0 against 6.0 g0, stage-1 LOX bottom -907 kPa absolute
+    lm_fixed_r07_s1_st: fired structure_release_unload, structure_payload_limit; release swing -3.767 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.929 g0 against 6.0 g0, stage-1 LOX bottom -737 kPa absolute
+    lm_fixed_hot_s1_st: fired structure_release_unload, structure_upper_stack_exceeded, structure_payload_limit; release swing -2.670 g0 against -2.0 g0 (MECO's -5.195), n_peak 5.936 g0 against 6.0 g0, stage-1 LOX bottom -418 kPa absolute
+    lm_fixed_sled22_s1_st: fired structure_release_unload, structure_payload_limit; release swing -4.263 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.263 g0 against 6.0 g0, stage-1 LOX bottom -860 kPa absolute
+    lm_fixed_sealed_s1_st: fired structure_release_unload, structure_payload_limit; release swing -4.053 g0 against -2.0 g0 (MECO's -5.195), n_peak 4.307 g0 against 6.0 g0, stage-1 LOX bottom -809 kPa absolute
+    release_speed_not_reached in metrics.json: lm_fixed_target (variant run). Section 9: not blocking on an unrecorded evaluation or on lm_fixed_target's variant run; section 7 expects it on lm_fixed_target's variant run and on none of its two cases' recorded runs at x* or their verifications
+
+F. Section 8's 'what would undercut' and 'what would favour', from the numbers (beside; not fixed sentences)
+    silo_cold_s1_st: X 11420.246638573297 kg, speed at release at x* 76.70717046013367 m/s
+    undercut (a drive that gains exit speed over silo_cold and still leaves less offload once charged): lm_fixed_s1_st (+0.442 m/s, -82.0 kg), lm_fixed_hot_s1_st (+12.530 m/s, -4072.8 kg)
+    undercut (a gentler release whose cost the model measures and whose benefit it reports only as flags): lm_cmd_taper_s1_st - lm_cmd_s1_st -8941.2 kg at release speeds 76.70717046013364 and 76.70717046013358 m/s: yes
+    undercut (a drive that exits slower and still leaves more offload once charged): lm_fixed_sled22_s1_st (-1.434 m/s, +223.1 kg)
+      beside it: lm_fixed_sled22_s1_st against lm_fixed_s1_st -1.876 m/s, +305.1 kg
+    undercut (the payload-limit flag on the linear-motor central cases): 7 of 9 (lm_cmd, lm_fixed, lm_fixed_target, lm_fixed_r07, lm_fixed_hot, lm_fixed_sled22, lm_fixed_sealed), beside part 1's MECO caveat
+    every linear-motor row below half of SP1's 41.26 t: yes
+    favour (lm_fixed's faster exit paying for its structure beyond R against silo_cold_s1_st): +0.442 m/s, -82.0 kg: no
+    favour (any linear-motor row above half): no
+      (any faster-and-more row beyond R: none)
+
+SUMMARY: PASS: all 11 checks pass

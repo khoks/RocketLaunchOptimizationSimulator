@@ -8,6 +8,24 @@ an optimal-control solution; Phase 5), unthrottled. Pre-registered in commit c2a
 below comes from runs made from the clean commit b3150c1 (b3150c1754ee); comparison
 numbers from earlier notes and from validation are cited where they appear.
 
+## Since this note: the push's structure charged (2026-11-03)
+
+The structural note, [RQ1-structural-2d.md](RQ1-structural-2d.md) (SP7), sets a structure
+sized for the push and charged at every offload beside this note's assumed penalty rows. At
+the central structure, the 3 g0, 100 m cold-start silo of this note's headline leaves out
+11.42 t of its 41.26 t (27.7%). Caveat: that is a first-order station sizing, not a
+structural design, at central coefficients with an assumed 0.5 s drive rise time that the
+constant-acceleration trajectory does not fly (the step it flies leaves no offload:
+125.2 m/s of delta-v short of the pad's payload with nothing offloaded, payload
+deficit -1,087 kg, an upper bound on the payload change because its run kicks above the
+pad's q-alpha), the pad's unthrottled envelope, zero margin and an instant release flagged
+but not sized, on the same gate vehicle (+14.3% calibration miss), sweep-optimized and
+unthrottled. Its physics band runs from no offload (243.7 m/s short, payload
+deficit -2,080 kg, an upper bound by the same rule) to 28.57 t (23.68 t before its
+plausibility scaling), and its linear-motor drive cases, at the central structure only,
+all cancel most of the offload too. Nothing below this section changes: it stays the
+record of the uncharged offload.
+
 ## The question
 
 README research question 1, "Net benefit", asks how payload or propellant changes with

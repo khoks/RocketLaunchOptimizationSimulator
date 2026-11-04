@@ -1,21 +1,26 @@
 # RQ1 (structural, 2-D): the stage-1 offload once the push load's structure is charged
 
-Status: draft of 2026-10-19 (SP7 step S7a). This is the structural part, on files A
-(experiments/silo_structure_2d.yaml, the gate vehicle) and C
+Status: preliminary, 2026-11-03 (SP7 step S7b). The structural part was drafted at step S7a
+(2026-10-19) on files A (experiments/silo_structure_2d.yaml, the gate vehicle) and C
 (experiments/silo_structure_2d_readme.yaml, the README-loads fork), constant_accel pushes
-only. The drive cases of file B (the linear motor) are pending S7b. Planar 2-D model,
-sweep-optimized guidance (not an optimal-control solution; Phase 5), unthrottled.
-Pre-registered in commit cbbd7bc (docs/phases/inputs/2026-10-15-SP7-preregistration.md, "the
-pre-registration" below, its sections cited as "section n"), with its Amendment 1 (74eb3c8,
-D-SP7-48: the sweep's no-offload record and the sweep's re-run). Every new number comes from
-run A and run C, made from the clean commit 1b5f9d4 (1b5f9d46d31c), from the sweep's re-run
-under Amendment 1 (from 2b343d7; it reproduces the first sweep of 1b5f9d4 cell for cell and
-adds the no-offload points' shortfalls; its git record reads dirty, by the session's
-account from 13 untracked draft documents of this note, a departure from the clean commit
-Amendment 1 names, deviation 45), from the convergence check of section 1 and from two
-sizing-only scripts, all named under "Provenance" and "Reproduction". Every structural
-number is a first-order station sizing of the push load (D-SP7-01): a first-order estimate
-with its stated ranges, not a detailed structural design.
+only. Step S7b added the drive cases of file B (experiments/silo_drive_2d.yaml): silo_cold
+and the nine linear-motor variants, each uncharged and with the central structure ("The
+drive cases"). Planar 2-D model, sweep-optimized guidance (not an optimal-control solution;
+Phase 5), unthrottled. Files A and C were pre-registered in commit cbbd7bc
+(docs/phases/inputs/2026-10-15-SP7-preregistration.md, "the pre-registration" or "part 1"
+below; its sections are cited as "section n"), with its Amendment 1 (74eb3c8, D-SP7-48: the
+sweep's no-offload record and the sweep's re-run). File B was pre-registered in commit
+331891d (docs/phases/inputs/2026-11-03-SP7-preregistration-part2.md, "part 2"; its sections
+are cited as "part 2, section n"). Every new number comes from run A and run C, made from
+the clean commit 1b5f9d4 (1b5f9d46d31c), from the sweep's re-run under Amendment 1 (from
+2b343d7; it reproduces the first sweep of 1b5f9d4 cell for cell and adds the no-offload
+points' shortfalls; its git record reads dirty, by the session's account from 13 untracked
+draft documents of this note, a departure from the clean commit Amendment 1 names,
+deviation 45), from run B, made from the clean commit 642e11e (642e11e3851d, dirty false),
+from the convergence checks of section 1 and part 2, section 1, and from two sizing-only
+scripts, all named under "Provenance" and "Reproduction". Every structural number is a
+first-order station sizing of the push load (D-SP7-01): a first-order estimate with its
+stated ranges, not a detailed structural design.
 
 ## The question
 
@@ -29,7 +34,9 @@ stage-1 dry-mass penalties of +2, +4 and +8.1 t left 32.29, 22.88 and 1.98 t, an
 structure: a first-order sizing of what the fully fuelled stack needs to survive the push,
 charged to the assisted run at every offload the solve evaluates. It asks how much of SP1's
 41.26 t survives, and whether "every m/s of assist helps" still holds once the push's
-structure is paid for.
+structure is paid for. File B then asks how the drive changes the answer: a linear motor
+under an acceleration law or a force law, a stop taper, hot starts, a 22 t carriage and a
+sealed shaft, each on the same silo and the same central structure.
 
 ## Headline
 
@@ -188,6 +195,14 @@ vehicle masses more than the calibration difference suggests"; and no arm of A i
 fork tests fired the opposite way to their pre-registered estimates (section 7 said the
 estimates do not decide them; "How each pre-registered reading came out").
 
+File B's drive cases (run B, same caveats, at the central structure only: no physics band
+and no +/-10% arm on file B): all nine linear-motor central cases cancel most of SP1's
+uncharged offload, from 2.48 t (6.0%, lm_cmd_taper_s1_st) to 18.27 t (44.3%,
+lm_cmd_hot_s1_st, a hot start favoured by the unmodelled exhaust), and neither of the two
+drives that exit faster than silo_cold at x* on the same 100 m silo (lm_fixed,
+lm_fixed_hot) keeps more once charged; every fixed sentence of part 2 that fired is under
+"The drive cases", word for word.
+
 ## Caveats (read first)
 
 - **What the headline assumes.** The structure file's central coefficients; an assumed
@@ -316,10 +331,16 @@ estimates do not decide them; "How each pre-registered reading came out").
   vehicle and adds dm: an under-filled vehicle carrying a strengthening increment, not one
   redesigned around the smaller load (RQ7). The mixture ratio is kept; no ullage, residual
   or centre-of-gravity effect.
-- **Drive.** A prescribed constant acceleration with no force or power limit, a massless
-  carriage, a vented shaft and no model of the exhaust in the shaft (which favours the hot
-  starts). File B's linear motor is pending S7b.
-- **The flags, with their numbers** (reported beside, never a gate; section 9). The release
+- **Drive.** Files A and C: a prescribed constant acceleration with no force or power
+  limit, a massless carriage, a vented shaft and no model of the exhaust in the shaft
+  (which favours the hot starts). File B: silo_cold's constant_accel push and a linear
+  motor capped by F_max and P_max only (P_max a mechanical cap at the carriage; no
+  thermal, current or voltage limit), flying its own 0.5 s rise, with a massless carriage
+  except one 22 t lumped carriage, a vented shaft except one sealed shaft (a uniform
+  adiabat), an instant release, and the same unmodelled exhaust ("The drive cases";
+  "Limits").
+- **The flags, with their numbers** (reported beside, never a gate; section 9; files A and
+  C here, file B's under "The drive cases"). The release
   flag (`structure_release_unload`) fires on every structural case of both files, every
   sweep point, every payload case and all eight arms of the headline: at the central, a
   release swing of -4.389 g0 against the pad's MECO -5.195 g0 under the same single-mode
@@ -350,7 +371,12 @@ estimates do not decide them; "How each pre-registered reading came out").
   and the short strokes at no offload (section 2(e), section 7), and S0's central values and
   range ends were set after the planning probe had shown which coefficients matter (the
   disclosure quoted in section 2(b)). What was fixed in advance is the design around these
-  numbers and how each result is read.
+  numbers and how each result is read. File B's answer was largely placed before run B too
+  (part 2, section 2): lm_cmd and lm_cmd_hot fly the ramped plateau that file A's
+  rise_time rows charge (by construction), so they were expected to reproduce run A's
+  silo_cold_s1_st and silo_hot_ramp_s1_st, and part 2's
+  sizing-only estimates placed every case (part 2, section 7). Run B re-measured them
+  with full solves and independent verifications.
 - **The sweep's no-offload record: failed on the first sweep, fixed, re-run.** The first
   sweep (results/silo_structure_2d/20261016T171522Z, from 1b5f9d4) ended sweep 1's 25 and
   50 m points and sweep 2's 50 m point at no_offload, as estimated, but wrote no delta-v
@@ -409,7 +435,17 @@ estimates do not decide them; "How each pre-registered reading came out").
   20,631.45 kg; "survives" if the physics band's adverse end keeps more than that, "cancels
   most" if the central x* is below it, "undecided" if the band straddles it or either end is
   no_offload, "cancels all" if the central is no_offload; the same tests on the bound rows.
-  File C is read against its own uncharged x*.
+  File C is read against its own uncharged x*. File B's fixed sentences (part 2, section 8)
+  read each linear-motor central case against the same 20,631.45 kg (RB) and against file
+  B's silo_cold_s1_st (LM), and the pairs within file B (HS, TS, CM, SS, TP, PL).
+- **A linear-motor push** (file B; docs/physics.md, "Linear motor (SP7 step S4)"): the
+  drive force rises over t_r 0.5 s to its plateau. Under the acceleration law the plateau is
+  the command a_cmd (the net acceleration), capped by F_max and P_max / sdot. Under the
+  force law it is F_max until the power limit P_max / sdot binds above the corner speed
+  P_max / F_max. The push releases at the track end (`track_end`) or where its speed first
+  reaches a set release speed (`target_speed`); "release position" is the distance along
+  the 100 m stroke there. "Exit speed at x*" is the speed at release of the case's recorded
+  run at x*, carrying its dm.
 
 ## Provenance
 
@@ -419,6 +455,7 @@ estimates do not decide them; "How each pre-registered reading came out").
 | `sweep experiments/silo_structure_2d.yaml` (sweep A, first) | results/silo_structure_2d/20261016T171522Z | 1b5f9d46d31c, clean | the sweep's own pad; sweep 1 (stroke 25-300 m at 3 g0) and sweep 2 (stroke 50-300 m at 76.71 m/s), 9 points, an uncharged and a central structural stage-1 solve at each, each ok solve verified (6 of the 9 structural ones; the three no-offload points carry no verification); no shortfall column (the reporting defect); on record, superseded by the re-run for every sweep number |
 | `sweep experiments/silo_structure_2d.yaml` (sweep A, re-run under Amendment 1) | results/silo_structure_2d/20261019T172327Z | 2b343d7f25eb, dirty true (below) | the same 9 points and solves, every pre-existing index column equal to the first sweep's cell for cell; adds `<case>.dv_shortfall_mps` and the summary's no-offload lines; the source of every sweep number here |
 | `run experiments/silo_structure_2d_readme.yaml` (run C) | results/silo_structure_2d_readme/20261016T171529Z | 1b5f9d46d31c, clean | the README-loads fork: pad, silo_cold, the uncharged and the central structural stage-1 case, the stage-1 pad control |
+| `run experiments/silo_drive_2d.yaml` (run B) | results/silo_drive_2d/20261103T231946Z | 642e11e3851d, clean | file B: pad; silo_cold and the nine linear-motor variants; 20 stage-1 cases (for each variant one uncharged and one central structural); the stage-1 pad control; SP1's energy block; no sweep, no sensitivity block, no arm, no payload case |
 
 - Commits: the pre-registration and both experiment files at cbbd7bc; run A, the first sweep
   and run C from 1b5f9d4, its tracker commit, whose src/, configs/, experiments/, tests/,
@@ -511,6 +548,38 @@ estimates do not decide them; "How each pre-registered reading came out").
   in all, 0 differing. The new columns are each case's `dv_shortfall_mps` (empty for an ok
   solve). So every number the first sweep wrote is the re-run's too, including the
   reproduction of SP1's uncharged sweep points and the verifications above.
+- **Run B** (file B). Part 2, file B, the rules script and their tests were committed at
+  331891d (the registration commit). Run B ran from 642e11e, S6b's tracker commit, whose
+  src/, configs/, experiments/, tests/, pyproject.toml and uv.lock equal 331891d's (`git
+  diff --quiet 331891d 642e11e -- ...` exits 0). Its metrics.json records git 642e11e3851d,
+  dirty false: 388 files, no FAILED.txt. Fingerprints at the run's end: metrics.json
+  sha256 08278d414db0063e9c4dcf641ae9f5ddca91ce87229cc908a8bce29cbaf7b488; the sorted
+  per-file sha256 list of the directory hashes to
+  c67572aaca8832a5f703be8da498c952a656e67325f25813c2de2da30dc54f7d (`find DIR -type f |
+  sort | xargs sha256sum | sha256sum` in Git Bash). Both equal at the checks' run (its
+  provenance line) and at this note's writing. Files at 642e11e and at this note's HEAD:
+  experiments/silo_drive_2d.yaml sha256
+  7513d74bfa488125f9a14da091b0bfedb5e59516cb8ce27e21531cb0f5a68ee5;
+  configs/structures/generic_f9_class_2d.yaml
+  a0516875d3c3b64de32f8ed1ceeb1f71a6c67694f7b07306b242522dd3cc8232 (part 1 and part 2,
+  section 12; unchanged since 45e39d4, and named by all 22 of run B's digest records);
+  configs/vehicles/generic_f9_class_2d.yaml
+  a8ea5203da658b6d86d690ea26b784fa6004f2b990fe2f4b7f829c9a799e59a9 (part 2, section 12).
+  The README-loads structure file (a850de94...) is not used by file B.
+- **Run B's blocking checks.** The eleven checks of part 2, section 9, the registered
+  expectations E1 and E2 and the fixed sentences of part 2, section 8 are evaluated by
+  docs/findings/scripts/sp7_s7b_checks.py. It reads run B, run A's and SP1's directories
+  for the cross-commit check and the convergence report, and it is read-only. It was
+  committed at b291518 with the convergence script; that commit holds documents only
+  (`git diff --quiet 642e11e b291518 -- src configs experiments pyproject.toml uv.lock
+  tests` exits 0). It ran at b291518 on 2026-11-04 at 03:03:48Z, after the convergence
+  check, and exited 0: "SUMMARY: PASS: all 11 checks pass". Its text and JSON output are
+  committed unchanged, byte for byte, as docs/findings/RQ1-structural-2d-drive-checks.txt
+  (sha256 d026442b19614eacb4ba5c4f9b6e14bc26091c14ae20cafac5be7fcaf9d8d673) and
+  docs/findings/RQ1-structural-2d-drive-checks.json
+  (7e11ce57018e8efc9233ca08f9b610c5f5dc8daa5925010ca11eb14a9462faa5). File B's numbers
+  are copied from run B's summary.md and metrics.json (named where they appear); derived
+  numbers say "derived".
 
 ## The headline table: SP1's assumed rows beside the modelled rows
 
@@ -965,10 +1034,359 @@ summary.md (variants table, offload table, Structure subsection, Flags) and metr
 
 ## The drive cases
 
-Pending S7b. File B (experiments/silo_drive_2d.yaml: the linear motor under a force law and
-an acceleration law, a stop taper, hot starts, a 22 t carriage and the sealed shaft, each
-with an uncharged and a central structural stage-1 solve; design 4.10) is pre-registered at
-S6b and run at S7b, which completes this section.
+File B (experiments/silo_drive_2d.yaml, registered with part 2 of the pre-registration at
+331891d; run B, results/silo_drive_2d/20261103T231946Z, from 642e11e, which changes no code
+against 331891d) keeps file A's pad, P_ref (26,054.396243494975 kg, run B's own pad P* to
+0.0 kg) and central structure (set central, sizing flown, dynamic rise_time, entry
+aft_ring, margin 0, no cap, no override), and changes only the drive. silo_cold is file
+A's constant_accel push, copied verbatim as the comparison basis; the nine linear-motor
+variants are design 4.10's (part 2, section 4). Each has an uncharged (`<variant>_s1`) and
+a central structural (`<variant>_s1_st`) stage-1 solve. All share silo_cold's silo: a
+vertical 100 m stroke exiting at the mouth, a vented shaft, a massless carriage, a 5 g0
+carriage brake, drive efficiency 0.5 (assumed; it moves only the electricity) and exhaust
+impingement 0, unless the variant says otherwise; stage 1 is lit 0.5 s after the release
+with its 2 s ramp unless the variant is a hot start. The linear motor flies its own 0.5 s
+rise. Its structure is charged the larger of the rise formula and the flown history's
+single-mode bound (D-SP7-52), where file A's constant_accel rows charge an assumed rise
+their step push does not fly. Two drive laws:
+
+- **The acceleration law** (lm_cmd, lm_cmd_taper, lm_cmd_hot) commands the net
+  acceleration whose ramped profile reaches v_e = 76.71 m/s at L = 100 m (a_cmd 3.009 g0;
+  3.729 g0 with the taper). Its caps, F_max = 1.10 M (a_cmd + g_eff) and P_max = F_max v_e,
+  never bound (E2 below), so its push does not depend on the stack's mass.
+- **The force law** (lm_fixed and its relatives) pushes at F_max = M (a_p + g_eff) =
+  22.48 MN, the force that brings the full-load stack (M = 572,354.4 kg, the pad's) to v_e
+  at L, with P_max = F_max v_e (r = 1; lm_fixed_r07: r = 0.7 and F_max 25.24 MN for the
+  same full-load exit). A lighter stack, such as one offloaded by more than its dm, exits
+  faster unless it is released at v_e (lm_fixed_target).
+
+The rule values (a_cmd, F_max, P_max, the hot starts' ignition times) were computed in
+closed form before the run and written into file B (part 2, section 5); nothing changed
+after it. All eleven blocking checks of part 2, section 9 pass (the table below), so
+every number of run B here may be cited. The note's caveats apply to all of them
+(Caveats: the calibration miss, sweep-optimized, unthrottled, the free kick, partly
+filled tanks, a first-order sizing), with the drive's own limits ("Limits").
+
+File B is solved at the central structure only. No physics band, no outer envelope and no
++/-10% sensitivity arm was run on it (part 2, section 6, item 4: design 4.10 names none,
+and no file-B number is the headline); CLAUDE.md's headline arms are file A's (8.55 to
+15.07 t, "Headline"). Every difference between drives below is therefore a difference at
+the central coefficients. How it would move across the headline's own band (from no
+offload to 28.57 t) is not measured, so a difference of 0.22 t or 82 kg is read at the
+central structure and nowhere else.
+
+**The cases** (exit criterion 7). Source: run B's metrics.json. Structural values come
+from `offload.cases`: x*, `structure_dm_kg`, `structure_dm_stage2_kg`, `structure_dlf`,
+`structure_n_peak_g` and `structure_F_peak_N`. Push values come from `offload.runs` for the
+recorded run at x* of each case: `felt_g_track_peak`, `peak_interface_force_N`,
+`release_position_m`, `speed_at_release_mps`, `electrical_energy_kWh`,
+`peak_drive_power_W`, `electrical_power_peak_W` and `facility_length_m`. % of 41.26 t: x*
+over SP1's uncharged 41,262.9 kg (part 2, section 8). On a linear-motor structural row the
+felt g equals the largest flown quasi-static load n_q (`structure_n_q_g`). silo_cold_s1_st's
+n_q is instead the ramped plateau its structure is charged, 4.006 g0, 0.23% above the
+3.996 g0 its instant step flies (Caveats, "What the headline assumes"). DLF and n_peak are
+the charged values (n_peak = n_rest + DLF (n_q - n_rest)), F_peak is the charged peak
+interface force, and "F_int" is the flown peak interface force. silo_cold's constant_accel
+runs record no release position and no electrical peak: their release is at L by
+construction, and the electrical peak in brackets is the recorded mechanical peak over the
+efficiency 0.5 (derived). The electricity is the push's positive drive work over the
+efficiency 0.5.
+
+| case | drive; release | x* [kg] | % of 41.26 t | dm1 + dm2 at x* [kg] | felt g, flown peak [g0] | DLF; n_peak [g0] | F_peak [MN] | F_int, flown peak [MN] | release: position [m]; speed [m/s] | electricity [kWh] | peak power, mechanical; electrical [GW] | facility with braking [m] |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| silo_cold_s1 | constant_accel 3 g0 (no force or power limit); at L | 41,262.9 | 100.0% | uncharged | 3.996 | n/a | n/a | 20.81 | 100 (L); 76.71 | 1,156.4 | 1.597; n/a (3.193 derived) | 160.0 |
+| **silo_cold_s1_st** | constant_accel 3 g0 (no force or power limit); at L | 11,420.2 | 27.7% | 6,305.2 + 0 | 3.996 | 1.1273; 4.389 | 24.41 | 22.23 | 100 (L); 76.71 | 1,235.1 | 1.705; n/a (3.411 derived) | 160.0 |
+| lm_cmd_s1 | acceleration law; track_end | 41,262.9 | 100.0% | uncharged | 4.006 | n/a | n/a | 20.86 | 100; 76.71 | 1,156.4 | 1.600; 3.201 | 160.0 |
+| lm_cmd_s1_st | acceleration law; track_end | 11,420.3 | 27.7% | 6,305.2 + 0 | 4.006 | 1.1273; 4.389 | 24.41 | 22.28 | 100; 76.71 | 1,235.1 | 1.709; 3.418 | 160.0 |
+| lm_cmd_taper_s1 | acceleration law, 38.35 m stop taper; track_end | 41,263.0 | 100.0% | uncharged | 4.726 | n/a | n/a | 24.61 | 100; 76.71 | 1,156.4 | 1.648; 3.295 | 160.0 |
+| lm_cmd_taper_s1_st | acceleration law, 38.35 m stop taper; track_end | 2,479.0 | 6.0% | 8,002.1 + 0.9 | 4.726 | 1.1273; 5.201 | 29.47 | 26.78 | 100; 76.71 | 1,258.2 | 1.793; 3.586 | 160.0 |
+| lm_cmd_hot_s1 | acceleration law, lit 0.849 s into the push; track_end | 46,013.4 | 111.5% | uncharged | 4.006 | n/a | n/a | 20.68 | 100; 76.71 | 914.9 | 0.994; 1.989 | 160.0 |
+| lm_cmd_hot_s1_st | acceleration law, lit 0.849 s into the push; track_end | 18,273.9 | 44.3% | 6,210.0 + 0 | 4.006 | 1.1273; 4.389 | 24.12 | 22.01 | 100; 76.71 | 988.9 | 1.097; 2.193 | 160.0 |
+| lm_fixed_s1 | force law (r = 1); track_end | 43,322.0 | 105.0% | uncharged | 4.334 | n/a | n/a | 22.48 | 100; 80.64 | 1,242.7 | 1.725; 3.449 | 166.3 |
+| lm_fixed_s1_st | force law (r = 1); track_end | 11,338.2 | 27.5% | 6,377.3 + 0 | 4.041 | 1.1274; 4.429 | 24.64 | 22.48 | 100; 77.15 | 1,246.1 | 1.725; 3.449 | 160.7 |
+| lm_fixed_target_s1 | force law (r = 1); target_speed | 41,216.1 | 99.9% | uncharged | 4.317 | n/a | n/a | 22.48 | 90.70; 76.71 | 1,129.6 | 1.725; 3.449 | 150.7 |
+| lm_fixed_target_s1_st | force law (r = 1); target_speed | 11,046.4 | 26.8% | 6,376.8 + 0 | 4.039 | 1.1273; 4.426 | 24.64 | 22.48 | 98.92; 76.71 | 1,232.7 | 1.725; 3.449 | 158.9 |
+| lm_fixed_r07_s1 | force law (r = 0.7); track_end | 42,760.9 | 103.6% | uncharged | 4.859 | n/a | n/a | 25.24 | 100; 79.56 | 1,218.6 | 1.355; 2.710 | 164.5 |
+| lm_fixed_r07_s1_st | force law (r = 0.7); track_end | 5,658.7 | 13.7% | 7,397.5 + 0 | 4.482 | 1.1281; 4.929 | 27.75 | 25.24 | 100; 76.60 | 1,247.3 | 1.355; 2.710 | 159.8 |
+| lm_fixed_hot_s1 | force law (r = 1), lit at push start; track_end | 52,727.5 | 127.8% | uncharged | 5.939 | n/a | n/a | 22.48 | 100; 93.85 | 1,202.8 | 1.725; 3.449 | 189.8 |
+| lm_fixed_hot_s1_st | force law (r = 1), lit at push start; track_end | 7,347.5 | 17.8% | 8,874.8 + 131.2 | 5.378 | 1.1273; 5.936 | 24.64 | 22.48 | 100; 89.24 | 1,221.1 | 1.725; 3.449 | 181.2 |
+| lm_fixed_sled22_s1 | force law (r = 1), 22 t carriage; track_end | 42,218.1 | 102.3% | uncharged | 4.152 | n/a | n/a | 21.59 | 100; 78.52 | 1,245.4 | 1.725; 3.449 | 162.9 |
+| lm_fixed_sled22_s1_st | force law (r = 1), 22 t carriage; track_end | 11,643.3 | 28.2% | 6,079.7 + 0 | 3.894 | 1.1273; 4.263 | 23.69 | 21.64 | 100; 75.27 | 1,246.3 | 1.692; 3.385 | 157.8 |
+| lm_fixed_sealed_s1 | force law (r = 1), sealed shaft; track_end | 40,703.2 | 98.6% | uncharged | 4.193 | n/a | n/a | 21.86 | 100; 75.65 | 1,245.9 | 1.701; 3.402 | 158.4 |
+| lm_fixed_sealed_s1_st | force law (r = 1), sealed shaft; track_end | 9,049.8 | 21.9% | 6,192.4 + 0 | 3.921 | 1.1319; 4.307 | 24.05 | 21.90 | 100; 72.22 | 1,246.2 | 1.624; 3.247 | 153.2 |
+
+- Every case is ok and verified (the structural cases by part 2, section 9's check 6; the
+  uncharged ones reported beside it). On the structural cases the independent payload search
+  returns P_ref +0.0004 to +0.0017 kg; on the uncharged cases +0.0060 to +0.0094 kg, except
+  lm_fixed_hot_s1's +0.6820 kg (tolerance 2.605 kg; `verification.delta_kg`). That gap is 73
+  to 115 times the other uncharged cases' and corresponds to about 18 kg of U (derived:
+  0.682 kg times the case's own chord of 27.0 kg of offload per kg of payload, its U of
+  52,727.5 kg over its full-load run's payload gain of 1,949.6 kg over the pad,
+  `runs.lm_fixed_hot.payload_kg`), about 7 times the uncharged R of 2.55 kg. So
+  lm_fixed_hot's U, and its cost U - X, are uncertain by about that much, beyond a cost's R
+  of 6 kg, and are not read to 0.1 kg; no reading moves (HS's +9.41 t uncharged, the cost's
+  45.38 t). No case ended no_offload, so no delta-v shortfall or payload deficit is reported
+  for file B (check 11).
+- silo_cold_s1_st reproduces run A's 11,420.246638573297 kg to the bit (0.0 kg), and
+  silo_cold_s1 SP1's 41,262.90803733282 kg (check 4, the cross-commit check). Between run
+  A (1b5f9d4) and run B the code gained the linear motor, the target-speed release, the
+  flown structural push and the sealed shaft, and silo_cold's numbers did not move (bit for
+  bit; the check compares results, not the code on their path).
+- Against the README's ideal-screening estimate at each case's own release speed
+  (`offload.cases` `screening_offload_kg`, `screening_ratio` and `beats_screening`;
+  summary.md's "stage-1 offload / screening offload"), 11 of the 20 cases beat it: all ten
+  uncharged ones, at 2.752 (lm_fixed_target_s1) to 3.072 times it (lm_cmd_hot_s1), and one
+  structural case, lm_cmd_hot_s1_st, at 1.220 times the 14,976.6 kg at 76.71 m/s (its
+  18.27 t is the top of the drive range). CLAUDE.md asks that a beat be explained: each of
+  the 11 has a closing decomposition ("explained"), and each beats it through the
+  gravity + steering term of the cross-vehicle decomposition
+  (`decomposition.xv_gravity_steering_mps`), as file A's rows and SP1's uncharged headline
+  (124.7 m/s) do: 84.5 m/s on lm_cmd_hot_s1_st against silo_cold_s1_st's 36.0, and 122.7
+  to 194.3 m/s on the uncharged cases. The other nine structural cases do not beat it,
+  silo_cold_s1_st among them (0.763): 0.166 (lm_cmd_taper_s1_st) to 0.792
+  (lm_fixed_sled22_s1_st), with lm_fixed_hot_s1_st at 0.423 of its own 17.39 t at
+  89.24 m/s.
+- The electricity of the cold pushes at x* is 1,232.7 to 1,258.2 kWh. The two hot starts
+  need less, for different reasons. lm_cmd_hot (988.9 kWh) needs less because under the
+  acceleration law its thrust replaces motor force: its drive force falls from 22.01 MN on
+  the plateau to 14.30 MN at the release (`drive_force_peak_N`; the last ASSIST row's
+  `drive_force_N`). lm_fixed_hot (1,221.1 kWh, against lm_fixed's 1,246.1 kWh) needs less
+  because its faster stack meets the power cap 26.0 m below the mouth and flies its last
+  0.313 s at P_max, its force falling from 22.48 to 19.33 MN (its `power_limit` event and
+  last ASSIST row; lm_fixed meets the cap 1.14 m below the mouth). Under the force law its
+  drive holds F_max whatever the thrust, which adds on top rather than replacing motor
+  force; its drive work is 2.198 against lm_fixed's 2.243 GJ (`drive_work_in_J`). The
+  electricity is a lower bound for the hot starts (impingement 0, no plume). The peak
+  electrical power at x* is 2.19 to 3.59 GW. The facility, the release position plus the
+  carriage's braking distance at 5 g0, is 153.2 to 181.2 m long, the longest for
+  lm_fixed_hot's 89.24 m/s exit.
+- The 22 t carriage's brake takes 0.864 MN and 49.9 MJ at x* (`brake_force_N`,
+  `brake_energy_J` of lm_fixed_sled22_s1_st's run). The sealed column on
+  lm_fixed_sealed_s1_st peaks at 2.180 MN and takes 201.7 MJ of the drive's work
+  (`piston_force_peak_N`, `piston_work_J`); the column's absolute pressure below the
+  vehicle at the release is 1,444.6 Pa, 1.4% of its initial p_0 (`bore_pressure_release_pa`,
+  p_0 (h_0/(h_0 + s))^gamma; the share derived).
+
+**The structural cost of each drive.** Source: run B's metrics.json `offload.cases`
+(`offload_kg`, `structure_n_q_g`, `structure_dm_x0_kg`, `structure_iterations`, the
+`structure_fixed_point_cap` flag's `contraction`, `verification.delta_kg` and
+`solve.n_evaluations`). U - X is the structure's offload cost and X / U the share of the
+push's own uncharged offload that the structure leaves (both derived).
+
+| variant | uncharged U [kg] | structural X [kg] | X - silo_cold_s1_st's [kg] | U - X [kg] | X / U | n_q at x* [g0] | dm at x = 0 [kg] | sizings at x*; contraction | verification P* - P_ref [kg] | solve evaluations (uncharged) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| silo_cold | 41,262.9 | 11,420.2 | 0 (the basis) | 29,842.7 | 27.7% | 4.006 | 6,467.0 | 6; 0.0056 | +0.0014 (uncharged +0.0085) | 40 (42) |
+| lm_cmd | 41,262.9 | 11,420.3 | +0.0046 | 29,842.7 | 27.7% | 4.006 | 6,467.0 | 6; 0.0056 | +0.0013 (uncharged +0.0084) | 40 (42) |
+| lm_cmd_taper | 41,263.0 | 2,479.0 | -8,941.2 | 38,784.0 | 6.0% | 4.726 | 8,052.8 | 6; 0.0061 | +0.0008 (uncharged +0.0060) | 38 (44) |
+| lm_cmd_hot | 46,013.4 | 18,273.9 | +6,853.7 | 27,739.5 | 39.7% | 4.006 | 6,467.0 | 6; 0.0056 | +0.0017 (uncharged +0.0087) | 41 (42) |
+| lm_fixed | 43,322.0 | 11,338.2 | -82.0 | 31,983.7 | 26.2% | 4.041 | 6,375.3 | 6; 0.0089 | +0.0013 (uncharged +0.0060) | 40 (44) |
+| lm_fixed_target | 41,216.1 | 11,046.4 | -373.9 | 30,169.8 | 26.8% | 4.039 | 6,375.3 | 6; 0.0087 | +0.0013 (uncharged +0.0094) | 40 (42) |
+| lm_fixed_r07 | 42,760.9 | 5,658.7 | -5,761.5 | 37,102.2 | 13.2% | 4.482 | 7,400.3 | 7; 0.0115 | +0.0008 (uncharged +0.0062) | 39 (42) |
+| lm_fixed_hot | 52,727.5 | 7,347.5 | -4,072.8 | 45,380.0 | 13.9% | 5.378 | 8,944.3 | 7; 0.0211 | +0.0004 (uncharged +0.6820) | 44 (45) |
+| lm_fixed_sled22 | 42,218.1 | 11,643.3 | +223.1 | 30,574.8 | 27.6% | 3.894 | 6,081.9 | 6; 0.0075 | +0.0014 (uncharged +0.0060) | 40 (42) |
+| lm_fixed_sealed | 40,703.2 | 9,049.8 | -2,370.4 | 31,653.3 | 22.2% | 3.921 | 6,193.2 | 6; 0.0079 | +0.0014 (uncharged +0.0060) | 40 (42) |
+
+**Beside every number** (part 2, section 9's list). Source: run B's metrics.json:
+`offload.runs` (`max_q_pa`, `peak_q_alpha`), `runs.pad` for the pad's, and each structural
+case's `structure_flags` (`structure_release_unload`: `release_swing_g`,
+`lox_bottom_pressure_min_abs_pa`; `structure_payload_limit`: `n_peak_g`,
+`release_swing_g`; `structure_upper_stack_exceeded`: `push_n_upper_N` against
+`envelope_n_upper_N`; `structure_flight_exceedance`: `total_kg`). The flags are reported,
+never a gate. The release flag's comparison is the pad's own MECO under the same
+single-mode instant step (D-SP7-39).
+
+| variant | max-Q, uncharged; structural [Pa] (pad 37,191.4) | peak q-alpha, uncharged; structural [Pa rad] (pad 74.7) | release flag: swing [g0] (the pad's MECO -5.195); stage-1 LOX bottom [kPa absolute] | payload-limit flag (+6.0 / -2.0 g0): n_peak; swing | upper-stack flag: push against the envelope's 7.095 MN | flight check [kg] |
+|---|---|---|---|---|---|---|
+| silo_cold | 38,438.5; 32,130.7 | 226.9; 140.9 | fires: -4.389; -896 | fires: 4.389; -4.389 | does not fire: 5.994 MN | 0.0 |
+| lm_cmd | 38,438.4; 32,130.6 | 226.9; 140.9 | fires: -4.389; -896 | fires: 4.389; -4.389 | does not fire: 5.994 MN | 0.0 |
+| lm_cmd_taper | 38,437.4; 30,512.4 | 226.9; 120.9 | fires: -1.946; -230 | does not fire: 5.201; -1.946 | fires: 7.102 MN | 0.0 |
+| lm_cmd_hot | 39,712.6; 33,445.8 | 393.0; 268.5 | fires: -1.607; -114 | does not fire: 4.389; -1.607 | does not fire: 5.994 MN | 0.0 |
+| lm_fixed | 38,616.3; 32,082.3 | 284.8; 144.2 | fires: -4.505; -928 | fires: 4.429; -4.505 | does not fire: 6.048 MN | 0.0 |
+| lm_fixed_target | 38,473.6; 32,065.2 | 226.9; 140.1 | fires: -4.426; -907 | fires: 4.426; -4.426 | does not fire: 6.044 MN | 0.0 |
+| lm_fixed_r07 | 38,566.2; 31,082.8 | 268.0; 127.0 | fires: -3.767; -737 | fires: 4.929; -3.767 | does not fire: 6.731 MN | 0.0 |
+| lm_fixed_hot | 40,882.9; 31,123.0 | 846.1; 409.2 | fires: -2.670; -418 | fires: 5.936; -2.670 | fires: 8.114 MN | 0.0 |
+| lm_fixed_sled22 | 38,518.7; 32,281.1 | 252.5; 130.4 | fires: -4.263; -860 | fires: 4.263; -4.263 | does not fire: 5.821 MN | 0.0 |
+| lm_fixed_sealed | 38,391.0; 32,035.1 | 212.9; 104.1 | fires: -4.053; -809 | fires: 4.307; -4.053 | does not fire: 5.882 MN | 0.0 |
+
+- Every uncharged run flies a max-Q above the pad's, and every structural run one below
+  it (unthrottled, unconstrained: not a load benefit the model can claim, Caveats). Every
+  offloaded run kicks free into a q-alpha above the pad's 74.7 Pa rad: the structural
+  runs 1.39 to 5.48 times it (104.1 Pa rad on lm_fixed_sealed to 409.2 on lm_fixed_hot),
+  the uncharged runs 2.85 to 11.32 times (212.9 to 846.1 Pa rad, derived ratios).
+  lm_fixed_hot_s1 kicks at its release, at 93.85 m/s, into 846.1 Pa rad.
+- The payload-limit flag fires on seven of the nine linear-motor central cases, as on
+  silo_cold. It fires on the swing everywhere (beyond -2.0 g0), and never on n_peak:
+  lm_fixed_hot's 5.936 g0 comes nearest to +6.0 g0, 0.064 g0 inside it (0.190 g0 against
+  the flown history's own bound of 5.810 g0, which the charged rise formula exceeds there:
+  "Limits"). The pad's own MECO swings the stack to -5.195 g0 under the same treatment, so
+  the flag measures the model's step treatment as much as the push. It does not fire on
+  lm_cmd_taper (swing -1.946 g0, 0.054 g0 inside the limit) or on lm_cmd_hot (-1.607 g0).
+- The upper-stack flag fires on lm_cmd_taper_s1_st (7.102 against 7.095 MN, 0.10% over;
+  stage 2 sized by 0.9 kg) and on lm_fixed_hot_s1_st (8.114 against 7.095 MN; stage 2
+  sized by 131.2 kg), and on no other case. The release flag fires on all ten
+  structural cases. Even the taper's gentle stop leaves the stage-1 LOX bottom at
+  -230 kPa absolute, below zero absolute. Half of the taper's -1.946 g0 swing is not the
+  release step itself: -0.996 g0 is the step (the felt load falling from about 1 g0 to 0,
+  `release_swing_plateau_g`) and 0.950 g0 the flown history's single-mode bound on the
+  undamped residual of the rise and of the taper's start, carried to the release
+  phase-free (`release_bound_residual_g`; D-SP7-52, KI-070). Any structural damping would
+  shrink that residual, and with it the swing and the LOX-bottom depth, widening the
+  0.054 g0 margin to the payload limit; none is modelled.
+- `release_speed_not_reached` fires once, on lm_fixed_target's variant run (a stack
+  heavier than M flying its own P*: it released at the track end at 76.574 m/s, below
+  v_e). Part 2 expected it there and calls it not blocking; it fires on neither of
+  lm_fixed_target's two cases. That variant run's P* equals lm_fixed's to 3.1e-6 kg
+  (derived from `runs.<variant>.payload_kg`; expected within 0.05 kg, part 2, section 5).
+
+**Every fixed sentence that fired** (part 2, section 8, word for word as
+docs/findings/scripts/sp7_s7b_checks.py fills them from the run: its output, section C, in
+docs/findings/RQ1-structural-2d-drive-checks.txt). The bracket names the sentence and the
+branch that fired; text in brackets after "beside:" is printed beside, not read. A
+difference is read against part 2, section 3's resolution R: about 3.4 kg for x*, 2.55 kg
+for an uncharged x*, 6 kg for a cost.
+
+- [RB, cancels most] lm_cmd_s1_st (constant_accel with a flown ramp (its uncharged x* equals SP1's within 0.25 kg for a cold start: pre-registered by the design)) cancels most of it: 11.42 t is left (27.7%). [beside: 27.7% of its own uncharged 41.26 t (lm_cmd_s1)]
+- [RB, cancels most] lm_cmd_taper_s1_st (the cost of a gentle stop against the release flag) cancels most of it: 2.48 t is left (6.0%). [beside: 6.0% of its own uncharged 41.26 t (lm_cmd_taper_s1)]
+- [RB, cancels most] lm_cmd_hot_s1_st (the hot start under a structure-protecting drive (thrust replaces motor force)) cancels most of it: 18.27 t is left (44.3%). [beside: 39.7% of its own uncharged 46.01 t (lm_cmd_hot_s1)]
+- [RB, cancels most] lm_fixed_s1_st (a facility sized for the full load, run at full force on a lighter stack) cancels most of it: 11.34 t is left (27.5%). [beside: 26.2% of its own uncharged 43.32 t (lm_fixed_s1)]
+- [RB, cancels most] lm_fixed_target_s1_st (the same exit speed from a fixed facility) cancels most of it: 11.05 t is left (26.8%). [beside: 26.8% of its own uncharged 41.22 t (lm_fixed_target_s1)]
+- [RB, cancels most] lm_fixed_r07_s1_st (a power-limited drive) cancels most of it: 5.66 t is left (13.7%). [beside: 13.2% of its own uncharged 42.76 t (lm_fixed_r07_s1)]
+- [RB, cancels most] lm_fixed_hot_s1_st (the force-limited hot start (pre-registered to raise the upper-stack flag)) cancels most of it: 7.35 t is left (17.8%). [beside: 13.9% of its own uncharged 52.73 t (lm_fixed_hot_s1)]
+- [RB, cancels most] lm_fixed_sled22_s1_st (carriage mass at a fixed force) cancels most of it: 11.64 t is left (28.2%). [beside: 27.6% of its own uncharged 42.22 t (lm_fixed_sled22_s1)]
+- [RB, cancels most] lm_fixed_sealed_s1_st (the air column) cancels most of it: 9.05 t is left (21.9%). [beside: 22.2% of its own uncharged 40.70 t (lm_fixed_sealed_s1)]
+- [LM, the same within the resolution] lm_cmd_s1_st (constant_accel with a flown ramp (its uncharged x* equals SP1's within 0.25 kg for a cold start: pre-registered by the design)) leaves 11.42 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: the same within the resolution (uncharged 41.26 t against 41.26 t; the structure's offload cost U - X 29.84 t against 29.84 t). [beside: X - X_c +0.0046 kg, U - U_c +0.0014 kg, cost - cost_c -0.0032 kg, each within its R]
+- [LM, less] lm_cmd_taper_s1_st (the cost of a gentle stop against the release flag) leaves 2.48 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 8.94 t less (uncharged 41.26 t against 41.26 t; the structure's offload cost U - X 38.78 t against 29.84 t).
+- [LM, more] lm_cmd_hot_s1_st (the hot start under a structure-protecting drive (thrust replaces motor force)) leaves 18.27 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 6.85 t more (uncharged 46.01 t against 41.26 t; the structure's offload cost U - X 27.74 t against 29.84 t).
+- [LM, less] lm_fixed_s1_st (a facility sized for the full load, run at full force on a lighter stack) leaves 11.34 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 0.08 t less (uncharged 43.32 t against 41.26 t; the structure's offload cost U - X 31.98 t against 29.84 t). [beside: X - X_c -82.0 kg against R 3.4 kg]
+- [LM, less] lm_fixed_target_s1_st (the same exit speed from a fixed facility) leaves 11.05 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 0.37 t less (uncharged 41.22 t against 41.26 t; the structure's offload cost U - X 30.17 t against 29.84 t).
+- [LM, less] lm_fixed_r07_s1_st (a power-limited drive) leaves 5.66 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 5.76 t less (uncharged 42.76 t against 41.26 t; the structure's offload cost U - X 37.10 t against 29.84 t).
+- [LM, less] lm_fixed_hot_s1_st (the force-limited hot start (pre-registered to raise the upper-stack flag)) leaves 7.35 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 4.07 t less (uncharged 52.73 t against 41.26 t; the structure's offload cost U - X 45.38 t against 29.84 t).
+- [LM, more] lm_fixed_sled22_s1_st (carriage mass at a fixed force) leaves 11.64 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 0.22 t more (uncharged 42.22 t against 41.26 t; the structure's offload cost U - X 30.57 t against 29.84 t).
+- [LM, less] lm_fixed_sealed_s1_st (the air column) leaves 9.05 t of stage-1 propellant against silo_cold_s1_st's 11.42 t: 2.37 t less (uncharged 40.70 t against 41.26 t; the structure's offload cost U - X 31.65 t against 29.84 t).
+- [HS, more] lm_cmd_hot_s1_st keeps more offload than lm_cmd_s1_st with the same drive and the same structure settings: +6.85 t (uncharged +4.75 t; the structure's offload cost 27.74 t against 29.84 t) (nothing models the exhaust in the shaft: back-pressure, heating, the carriage in the plume, which favours the hot starts).
+- [HS, less] lm_fixed_hot_s1_st keeps less offload than lm_fixed_s1_st with the same drive and the same structure settings: -3.99 t (uncharged +9.41 t; the structure's offload cost 45.38 t against 31.98 t) (nothing models the exhaust in the shaft: back-pressure, heating, the carriage in the plume, which favours the hot starts).
+- [TS, less] Released where its speed reaches v_e (98.92 m up the 100 m stroke at x*), lm_fixed_target leaves 11.05 t against lm_fixed's 11.34 t released at the track end at 77.15 m/s: 0.29 t less (uncharged 41.22 t against 43.32 t).
+- [CM, more] With a 22 t carriage at the same F_max and P_max, lm_fixed_sled22 leaves 11.64 t against lm_fixed's 11.34 t: 0.31 t more (uncharged 42.22 t against 43.32 t; at x* an exit speed of 75.27 m/s against 77.15 m/s and a peak interface force of 21.644 MN against 22.484 MN).
+- [SS, less] In the sealed shaft (bore 5.24 m, gap 5 m) the same drive leaves 9.05 t against the vented lm_fixed's 11.34 t: 2.29 t less (uncharged 40.70 t against 43.32 t; at x* the column's peak force 2.180 MN and its work 201.7 MJ, and an exit speed of 72.22 m/s against 77.15 m/s).
+- [TP, less; the release flag fires; the payload-limit flag does not fire] The stop taper leaves 2.48 t against lm_cmd's 11.42 t: 8.94 t less; at x* its release flag fires (the stage-1 LOX bottom at -230 kPa absolute against lm_cmd's -896 kPa; the release swing -1.95 g0 against -4.39 g0) and its payload-limit flag does not fire.
+- [PL, less] The power-limited drive (r = 0.7, F_max 25.236 MN) leaves 5.66 t against lm_fixed's 11.34 t (F_max 22.484 MN): 5.68 t less.
+
+Not fired: RB's "keeps more than half" and "cancels all" on all nine; LM's "the same
+within the resolution" on all but lm_cmd (every other difference is beyond R, the smallest
+lm_fixed's 82.0 kg against about 3.4 kg); HS's "the same within the resolution" on both
+pairs; TS's, CM's, SS's and PL's other two branches; TP's "more", "the same within the
+resolution", "its release flag does not fire" and "its payload-limit flag fires". No case
+ended no_offload, search_failed or reference_failed, so no sentence was withheld.
+
+**The registered expectations** (part 2, section 8; met or not met, never a check):
+
+- E1 (design 4.10): lm_fixed_hot_s1_st raises the upper-stack flag at its x*: **met** (its
+  push loads the upper stack with 8.114 MN against the envelope's 7.095 MN; dm2 131.2 kg).
+- E2 (sources section 10; D-SP7-24): no `drive_cap` on the lm_cmd family: **met**. No
+  `drive_cap` or `drive_cap_end` event, no `push_cap_bound` and no cap flag appears on the
+  variant runs of lm_cmd, lm_cmd_taper and lm_cmd_hot or on their six cases' runs at x*.
+  Each released at v_e (76.71 m/s).
+
+Read beside them (part 2, section 8, not expectations of their own): lm_cmd_s1_st -
+silo_cold_s1_st = +0.0046 kg (R 3.4 kg); lm_cmd_hot_s1 - run A's silo_hot_ramp_s1 =
++0.0014 kg (R 2.55 kg); lm_cmd_hot_s1_st - run A's silo_hot_ramp_s1_st (18,273.917 kg) =
++0.00004 kg (R 3.4 kg). Both pairs reproduce file A's pushes, as part 2, section 2(b) said
+they would by construction: the acceleration law that reaches v_e at L flies the ramped
+plateau that file A's constant_accel `rise_time` row already charges, so lm_cmd's flown
+ramp gives the same x* as file A's closed-form charge of silo_cold's (within R), and
+lm_cmd_hot's the same as silo_hot_ramp_on_track's.
+
+**The blocking checks** (part 2, section 9, in its order; evaluated on run B by
+docs/findings/scripts/sp7_s7b_checks.py at b291518 on 2026-11-04T03:03:48Z, after the
+convergence check; its text and JSON output are committed unchanged as
+docs/findings/RQ1-structural-2d-drive-checks.txt and .json; its summary line: "SUMMARY:
+PASS: all 11 checks pass"):
+
+| check (part 2, section 9) | what it blocks | value on run B | verdict |
+|---|---|---|---|
+| 1. no run or comparison bug_suspect | the number it touches | none (summary.md's "No run and no comparison is bug_suspect."; 20 decompositions explained, the worst residual 8.578e-11 m/s against 1e-5 m/s; run checks ok on all 32 runs) | pass |
+| 2. the pad not reference_failed, its P* within 0.002 kg of P_ref | every number | P* 26,054.396243494975 kg, 0.0 kg off | pass |
+| 3. the stage-1 pad control's consistency test | every offload number | no_offload at x_pad = 0, m_res(0) -0.00164 kg against a 1.618 kg bound (a resolution effect, as in SP1 and run A) | pass |
+| 4. the cross-commit check (0.002 kg) | every number of run B | silo_cold_s1 41,262.90803733282 kg against SP1's, 0.0 kg; silo_cold_s1_st 11,420.246638573297 kg against run A's, 0.0 kg | pass |
+| 5. lm_cmd's uncharged x* within 0.25 kg of SP1's 41,262.908 kg | every linear-motor number | 41,262.909435 kg, +0.0014 kg | pass |
+| 6. structural verification within 1e-4 P_ref (2.605 kg) or flagged | the case (reported as a bound) | +0.0004 to +0.0017 kg on the ten structural cases | pass |
+| 7. `xv_dry_mass_delta_kg` = dm1 + dm2 at x* within 1e-6 kg | the case (a bug) | at most 4.5e-12 kg off on the ten structural cases | pass |
+| 8. the structure files' sha256 at run B's commit and as recorded | every structural number | both equal part 1, section 12's (a0516875... and a850de94...); run B's 22 records name the first | pass |
+| 9. the linear-motor convergence check (0.1%) | every linear-motor number | on lm_fixed_s1_st, the one registered case: tightened x* +0.0274 kg (2.4e-6 relative); the shipped x* equals run B's to 0.0 kg (the other eight linear-motor cases' tolerance sensitivity is not measured: "Convergence") | pass |
+| 10. no unexplained `offload_nonmonotone`, capped gamma* refine or fired fixed-point cap | the number | none fired (20 fixed-point records, the ten cases' and their recorded runs'; 6 or 7 sizings each against the cap of 25) | pass |
+| 11. every no_offload case reported with its shortfall and "payload deficit not flown" | the case's report | no case ended no_offload | pass |
+
+**What the drive cases show**, case by case (each against silo_cold_s1_st unless named;
+every difference beyond R unless stated):
+
+- **The acceleration law is constant_accel with its ramp charged.** lm_cmd reproduces
+  silo_cold_s1_st to +0.0046 kg, within R, and its uncharged x* reproduces SP1's to
+  +0.0014 kg (check 5). The push it flies (felt 4.006 g0 after a 0.5 s rise) is the
+  plateau file A already charges for silo_cold's instant step, so this equality is by
+  construction. It is not evidence that a real drive behaves so.
+- **A gentle stop costs most of what is left.** lm_cmd_taper's taper scales the net
+  acceleration command down linearly in position to zero at the release over its last
+  38.35 m (w(s) = min(1, (L - s)/s_taper)), with the command raised 24% to make the same
+  exit (felt 4.726 g0 against 4.006). Its dm is 8,003.0 kg against 6,305.2 kg, with
+  stage 2 sized by 0.9 kg, and it keeps 2.48 t, 8.94 t less than lm_cmd at the same
+  76.71 m/s exit. The model sizes no release step, so the gentler stop shows only in
+  the flags: release swing -1.946 g0 inside the payload's -2.0 g0 (0.950 g0 of it the
+  undamped residual of the rise and the taper's start, above), and the stage-1 LOX
+  bottom at -230 kPa absolute against -896 kPa. The release flag still fires.
+- **The hot start under the acceleration law keeps the most.** lm_cmd_hot (thrust
+  replaces motor force over the last 2 s of the push; 2,697.5 kg burned on the track)
+  leaves 18.27 t (44.3%), 6.85 t more than lm_cmd. 4.75 t of that is its larger uncharged
+  offload; its structure costs 2.10 t less (derived). Its peak interface force comes on
+  the plateau before its ignition at 0.849 s, so its dm at x = 0 equals the cold start's
+  6,467.0 kg. It is run A's silo_hot_ramp_s1_st to +0.00004 kg. Nothing models
+  the exhaust in the shaft, which favours it.
+- **A force sized for the full load gains nothing once charged.** lm_fixed's lighter
+  stack exits faster: 80.64 m/s uncharged, +2.06 t of uncharged offload. But its felt
+  plateau rises with the lighter stack (n_q 4.041 against 4.006 g0; F_peak 24.64 against
+  24.41 MN), its dm is 72.1 kg larger (6,377.3 against 6,305.2 kg, derived), and at x* it
+  exits only 0.44 m/s faster (77.15 m/s). It leaves 82.0 kg less than silo_cold_s1_st,
+  0.08 t, about 24 times R. The power limit binds at x* (`push_power_limited`; its corner
+  speed is v_e, and the stack offloaded by more than its dm passes it before L).
+- **Releasing that facility at v_e gives up its extra exit speed and keeps less.**
+  lm_fixed_target releases its stack at v_e (76.71 m/s), 98.92 m up the stroke, 1.08 m
+  below the mouth (90.70 m uncharged), and keeps 11.05 t: 0.29 t less than lm_fixed and
+  0.37 t less than silo_cold_s1_st. Its uncharged offload is 2.11 t below lm_fixed's, and
+  its structure costs 1.81 t less (U - X 30.17 against 31.98 t, derived): it keeps less
+  because its uncharged offload is lower, not because its structure costs more.
+- **More force for the same exit costs offload.** lm_fixed_r07 needs a 12% higher F_max
+  (25.24 against 22.48 MN) for the same full-load exit with r = 0.7. Its plateau (n_q
+  4.482 g0) sizes 7,397.5 kg, and it keeps 5.66 t, 5.68 t less than lm_fixed. At x* it
+  exits at 76.60 m/s, below v_e: the stack is heavier than M (x* = 5.66 t, below its dm
+  of 7.40 t).
+- **The force-limited hot start offloads the most uncharged and loses the most to
+  structure.** lm_fixed_hot adds the full thrust to F_max on the track (4,349.3 kg burned
+  at x*). Uncharged it leaves out 52.73 t, the most of any case, exiting at 93.85 m/s.
+  But its felt load reaches 5.378 g0 (n_peak 5.936 g0, the rise formula's, 0.126 g0 above
+  the flown history's own bound: an overcharge against the assist, of order 1 t of x* on a
+  rough estimate, not measured; "Limits"), dm is 9,006.0 kg with stage 2 and the
+  interstage sized (E1), and the structure costs 45.38 t of offload. It keeps 7.35 t,
+  3.99 t less than lm_fixed, while exiting at 89.24 m/s, 12.53 m/s faster than silo_cold.
+- **A carriage at a fixed force trades speed for structure, and wins by a little.**
+  lm_fixed_sled22's 22 t carriage takes its share of the same F_max, lowering both the
+  vehicle's felt load (n_q 3.894 g0) and its exit speed (75.27 m/s at x*). Its dm falls
+  to 6,079.7 kg and it keeps 11.64 t: 0.31 t more than lm_fixed and 0.22 t more than
+  silo_cold_s1_st while exiting 1.43 m/s slower. Part 2 placed this reading within
+  reach (+0.36 t estimated). The carriage itself, its structure and its interface
+  hardware are not sized.
+- **The air column costs exit speed and offload.** In the sealed shaft (bore 5.24 m, gap
+  5 m) the column pushes back with up to 2.180 MN and takes 201.7 MJ of the drive's
+  work. The exit at x* falls to 72.22 m/s and the case keeps 9.05 t, 2.29 t less than
+  the vented lm_fixed. Its lower interface force (21.90 against 22.48 MN flown) lowers dm
+  to 6,192.4 kg (lm_fixed's 6,377.3 kg), by less than the lost speed costs.
+- **The exit speed alone does not order the charged offloads.** At x* the fastest exit
+  (lm_fixed_hot, 89.24 m/s) keeps less than seven slower ones, and the 22 t carriage's
+  slower exit keeps more than silo_cold's. Among pushes at the same 76.71 m/s the
+  structural x* spans 2.48 t (the taper) to 18.27 t (lm_cmd_hot)
+  (RQ1-structural-2d-derived_drive_exit_speed.png).
+
+Figures: RQ1-structural-2d-derived_drive_cases.png (the table as a chart),
+RQ1-structural-2d-derived_drive_force_power.png (the flown pushes' force and power against
+speed) and RQ1-structural-2d-derived_drive_exit_speed.png ("Figures").
 
 ## The payload form
 
@@ -1059,8 +1477,11 @@ shutdown. At the central headline (run A's metrics.json, silo_cold_s1_st `struct
   the pad's own MECO (-231.7 kPa gauge, deeper than the push's -161.6 kPa on that tank). So
   a column separation under the instant-step treatment is not specific to the push, while
   the stage-1 release is about 3.9 times deeper than stage 2's at MECO (derived: -895.7 kPa
-  absolute against -231.7). A real drive's release and a real MECO are not instant steps;
-  the stop taper that would soften the release is file B's lm_cmd_taper (pending S7b).
+  absolute against -231.7). A real drive's release and a real MECO are not instant steps.
+  File B's lm_cmd_taper flies a stop taper to soften the release. Its softer release shows
+  in the model only in the flags (swing -1.946 g0, stage-1 LOX bottom -230 kPa absolute, the
+  release flag still firing), while its higher plateau costs 8.94 t of offload against
+  lm_cmd ("The drive cases").
 - The flag fires on every structural case of both files, every sweep point, every payload
   case and all eight arms (Caveats, "The flags"), the hot starts included (stage-1 LOX
   bottom about -100 and -114 kPa absolute at a swing of -1.6 g0). The payload-limit flag
@@ -1192,6 +1613,79 @@ fork tests split. On the README-loads fork the structure costs 26.84 t against t
 section 3's rule, but narrowly), while C2 on the share left (25.5% against 27.7%) reads
 "nearly the same on both forks".
 
+**On file B's drives** (run B, "The drive cases"; part 2, section 8's "what would undercut"
+list, each item checked against the run):
+
+- **No drive keeps more than half.** All nine linear-motor central cases cancel most of
+  SP1's uncharged 41.26 t, from 2.48 t (6.0%, lm_cmd_taper) to 18.27 t (44.3%,
+  lm_cmd_hot). Six of the nine keep less than silo_cold_s1_st's 11.42 t and lm_cmd ties
+  it. Only two keep more: lm_cmd_hot by 6.85 t, a hot start that the unmodelled exhaust
+  favours, and lm_fixed_sled22 by 0.22 t.
+- **On the same 100 m silo, both drives that exit faster leave less once charged.** Only two
+  of the nine exit faster than silo_cold at x*, and both keep less, by different mechanisms.
+  lm_fixed exits 0.44 m/s faster (77.15 m/s) and keeps 82.0 kg less, about 24 times R. Its
+  stack is lighter than M (x* of 11.34 t, above its dm of 6.38 t), so it feels more (n_q
+  4.041 against 4.006 g0), but that adds only 72.1 kg of dm. Its structure costs 2.14 t more
+  than silo_cold's against 2.06 t more uncharged offload (derived from U and U - X), and
+  most of that 2.14 t is exit speed, not felt load: under the fixed force the charged stack
+  at x*, 38.4 t heavier than the uncharged one, exits at 77.15 m/s against 80.64 m/s. At
+  silo_cold's 4.73 kg of offload per kg of dm the 72.1 kg costs about 0.34 t, leaving about
+  1.80 t to the lost speed; lm_fixed_target, the same force released at v_e, costs
+  4.73 kg per kg too, against lm_fixed's 5.02 (all derived: U - X over dm). So at x* its
+  0.44 m/s gain earns less than its extra dm costs. lm_fixed_hot exits 12.53 m/s faster
+  (89.24 m/s) and keeps 4.07 t less: its thrust adds to F_max on the track (felt 5.378 g0;
+  its stack 1.66 t heavier than M at x*, `vs_pad.delta_liftoff_mass_kg`), and its structure
+  costs 45.38 t against silo_cold's 29.84 t (an overcharge of its n_peak included:
+  "Limits"), more than its 11.46 t larger uncharged offload. That larger offload is the hot
+  start's (9.41 t of it over lm_fixed's): lit at push start, it exits at 93.85 m/s
+  uncharged and is at full thrust at its release (its ramp ends at 2.00 s, its release
+  comes at 2.48 s), while lm_fixed lights 0.5 s after its release and ramps for 2 s
+  (events.csv of the two uncharged runs). The run does not split the two. At an unchanged
+  exit speed the acceleration law's hot start, lit 0.849 s into its push, gains 4.75 t of
+  uncharged offload over lm_cmd (both at 76.71 m/s), so part of the 9.41 t may be the
+  timing (an inference across different ignition times, not measured). Uncharged it burns
+  3.99 t of its loaded propellant on the track (`propellant_burned_on_track_kg`), which is
+  not part of the offload. This is narrower than "a faster exit keeps less": on file A's
+  sweep 1, longer strokes exit faster and keep more (31.62 t at 108.5 m/s, 200 m; 44.73 t
+  at 132.9 m/s, an upper bound), with their own caveats (above).
+- **A gentler release costs offload that the model measures and buys only flags.**
+  lm_cmd_taper keeps 8.94 t less than lm_cmd at the same 76.71 m/s exit. Its benefit
+  shows only in the flags, because the model sizes no release step: a release swing of
+  -1.946 g0 inside the payload's -2.0 g0 (-0.996 g0 of it the release step, 0.950 g0 the
+  undamped residual of the rise and the taper's start), and the stage-1 LOX bottom at
+  -230 kPa absolute against -896 kPa. Its release flag still fires.
+- **A slower exit can leave more.** lm_fixed_sled22 exits 1.43 m/s slower than silo_cold
+  at x* (1.88 m/s slower than lm_fixed) and keeps 0.22 t more (0.31 t more than
+  lm_fixed). Its 22 t carriage takes part of the fixed force, which lowers the felt load
+  and the structure by more than the lost speed costs. So the exit speed alone does not
+  rank the charged offloads (RQ1-structural-2d-derived_drive_exit_speed.png). The
+  carriage itself is not sized ("Limits"), and part 2 placed this reading within reach
+  (+0.36 t estimated).
+- **More force for the same full-load exit costs offload**: lm_fixed_r07 (12% more F_max)
+  keeps 5.68 t less than lm_fixed. **So does the air column**: the sealed shaft keeps
+  2.29 t less than the vented lm_fixed, at the 5.24 m bore the fairing needs (D-SP7-54),
+  under a uniform adiabat.
+- **The force-limited hot start loses to its own cold start** (HS "less": -3.99 t), though
+  its uncharged offload is 9.41 t larger. The rise formula overcharges its n_peak (against
+  it; of order 1 t of x* on a rough estimate, not measured: "Limits"), and on that estimate
+  the reading does not move. The acceleration-law hot start gains (+6.85 t), with the
+  exhaust caveat favouring it.
+- **The flags fire on the linear motor too.** The payload-limit flag fires on seven of the
+  nine linear-motor central cases, on the swing (-2.67 to -4.51 g0 against -2.0 g0). The
+  MECO caveat applies: the same treatment swings the pad's own MECO to -5.195 g0. The
+  release flag fires on all nine. On the taper and on both hot starts the stage-1 LOX
+  bottom still falls below zero absolute (-230, -114 and -418 kPa).
+
+What file B shows in the assist's favour, stated as plainly: lm_cmd_hot keeps 18.27 t
+(44.3%), the most of any structural case of file B. That is still below half, and it comes
+with the exhaust caveat favouring it and with its release flag (the stage-1 LOX bottom at
+-114 kPa absolute while stage 1 is firing). lm_fixed_sled22 keeps 0.22 t more than
+silo_cold_s1_st. Uncharged, four of the six force-law pushes offload more than silo_cold
+(lm_fixed, lm_fixed_r07, lm_fixed_hot and lm_fixed_sled22; up to 52.73 t on lm_fixed_hot),
+but no structure is charged there. Of part 2's two "would favour" readings, neither
+occurred: lm_fixed's faster exit did not pay for its structure (82.0 kg less, beyond R the
+other way), and no linear-motor row keeps more than half.
+
 ## Limits
 
 Section 10's list, with the direction each would move the structural offload where known:
@@ -1247,6 +1741,130 @@ Section 10's list, with the direction each would move the structural offload whe
   pad's envelope (deviation 17); sweep points get no paired pad, pad control or arms, and
   their offloaded runs are not written.
 - One vehicle class (a medium launcher; RQ8 untouched).
+
+For file B's drives, part 2, section 10 adds these items. Each direction follows part 1's
+convention ("against the assist": modelled, it would lower x*), "no direction" where an
+item touches no x*, and run B's numbers replace the estimates where the run gives them:
+
+- The motor's thermal and electrical limits beyond P_max (duty cycle, heating, current and
+  voltage limits; P_max is a mechanical cap at the carriage and F_max a force cap, nothing
+  else): not modelled, direction not known. A further force cap would lower the exit speed
+  (U, against the assist) and the plateau force (dm, for it); a further power or voltage cap
+  would lower the exit speed only (against). Run B shows both net signs where the force on
+  the vehicle and the exit speed fall together (lm_fixed_sled22 +0.31 t and lm_fixed_sealed
+  -2.29 t against lm_fixed), while more force at the same full-load exit costs offload
+  (lm_fixed_r07, 12% more F_max: 5.68 t less).
+- The converter and the energy storage: the electricity is the drive work over an assumed
+  efficiency of 0.5. Storage losses and the supply of the peak electrical power (2.19 to
+  3.59 GW at x*) are not modelled. They move energy and power only, never dm or x*.
+- The carriage's own structure and its interface hardware: the carriage is massless, or a
+  22 t lumped mass, and never sized; direction not known. Under the force law a heavier
+  carriage lowers the vehicle's force and its exit speed together (CM: +0.31 t against
+  lm_fixed). Under the acceleration law it reaches the vehicle only once a cap binds (none
+  bound, E2). Interface hardware carried by the vehicle would add to dm (against).
+- The shaft flow above the vehicle and the gas in the sealed shaft (all inferred, not
+  computed):
+  - the air the vehicle pushes out of the mouth (design 4.8: about 77 kN at the exit for a
+    3.7 m bore, which D-SP7-54 found the fairing cannot pass; at the 5.24 m bore a real
+    shaft for this vehicle needs, larger by about the area ratio, about 2), acting on the
+    vehicle against its motion (against the assist);
+  - the cooling of the trapped gas near the end of lm_fixed_sealed's small-gap stroke (the
+    uniform adiabat biases F_p low: against; heat from the walls would act the other way;
+    the p_0 A bound holds regardless);
+  - the open shaft's hydrostatic drop above the carriage on lm_fixed_sealed (F_p biased
+    high by up to about 1.2% of F_p(L), about 26 kN: for the assist, so leaving it out is
+    conservative);
+  - the vents a vented shaft needs (about the bore's area): the vented variants assume
+    them, and smaller vents would leave a column force on the vehicle (against).
+- The release mechanism: every release is an instant separation. lm_cmd_taper flies one way
+  to soften it, whose effect shows only in the flags, and no release hardware is sized
+  (direction not known).
+- The carriage's braking: closed-form at a constant 5 g0 (D-SP7-12). It sets only the
+  facility length, with no braking phase in the trace (no direction: it touches no x*).
+- The exhaust in the shaft for the two hot starts (SP1's caveat: back-pressure, heating,
+  the carriage in the plume): on back-pressure and heating it favours the hot starts. On
+  lm_fixed_hot its direction is mixed: under the force law impingement 0 adds the whole
+  thrust to F_max, which raises its felt load (5.378 against 4.041 g0 for lm_fixed at x*)
+  and its dm (against the assist), so the omission's net direction there is not known.
+- **KI-067, with its direction.** Take a hot linear-motor push lit before its push start
+  (a hot hold). Its F_int is taken at rest at push start, although the startup ramp on the
+  clamp was still lowering it by about T. A single mode started at ignition exceeds the
+  charged F_peak by up to 0.456 MN (2.3%) in the 2-10 Hz band (S4b's probe: a 20 t
+  carriage, impingement 0.5). Charged, it would raise such hot cases' dm (against the
+  assist), so leaving it out is unconservative. Neither of file B's hot starts holds on
+  the clamp, and run B's records confirm it: no hold phase; lm_fixed_hot's `ignition`
+  event at push start, where its delivered thrust is 0; lm_cmd_hot's 0.849 s into its push.
+  So the at-rest premise is exact for both and this bias does not reach them. Their thrust
+  ramps are flown on the track and charged as forcings of F_int's mode.
+- Added here, beyond section 10's list: **the rise formula's excess on lm_fixed_hot.** Its
+  charged n_peak is the rise formula's 5.936 g0, 0.126 g0 above the flown history's own
+  phase-free bound (5.810 g0, `n_bound_g`), which already bounds the single-mode response of
+  the flown push. D-SP7-52's larger-of rule gives the motor's 0.5 s rise DLF (1.1273) to the
+  whole rise from 0.996 g0 at rest to 5.378 g0, including the 1.12 g0 that the rest of the
+  thrust's ramp adds over the next 1.5 s (felt 4.251 g0 at 0.5 s and 5.371 g0 at 2.0 s, the
+  ASSIST rows; about 7.5 periods of the 5 Hz mode, which follows it nearly
+  quasi-statically). Against the model's own single-mode response, this overcharges the
+  elements n_peak governs: its tanks, transfer tube, interstage and stage 2 (against the
+  assist; a multi-mode response, not modelled, is a separate item above). The force-governed
+  aft skirt and load ring equal lm_fixed's to 0.02 kg. Its effect on x* is not measured: of
+  order 0.2 t of dm and 1 t of x* on a rough slope derived across two cases that also differ
+  in stack mass (lm_fixed_hot's n-governed elements carry 2,628.7 kg more than lm_fixed's
+  over n_peak 4.429 to 5.936 g0, about 1,744 kg per g0; its structure costs 5.04 kg of
+  offload per kg of dm, U - X over dm). On that estimate no reading moves: HS stays "less"
+  (-3.99 t) and LM "less" (-4.07 t), and lm_fixed_hot still loses the most to structure
+  (45.38 t against lm_cmd_taper's 38.78 t).
+
+The known issues of steps S4 to S5a (TODO.md) that reach file B (part 2, section 10), with
+their direction in the same sense:
+
+- KI-048 (the scan for a watch value passed over inside one step; drive_limit not scanned):
+  every linear-motor push. On lm_fixed_target the power limit and the release coincide at
+  v_e. Direction not known; size at the scan's resolution.
+- KI-049 (the delivered-thrust clamp unsplit in ascent burns lit after release): every
+  cold variant's ascent, at about the 1e-10 level, as in SP1 and run A. Direction not
+  known.
+- KI-070 (the flown history's single-mode bound is phase-free and counts a curving load to
+  first order; conservative, 0.002 to 0.006 g0 on n_peak on an lm_fixed_r07-like push): it
+  may raise the charged load where the bound governs. Run B's DLF lies above the rise
+  formula's 1.1273 on lm_fixed (1.1274), lm_fixed_r07 (1.1281) and lm_fixed_sealed (1.1319),
+  so the bound governed n_peak there. On lm_fixed_hot the rise formula governs n_peak (5.936
+  against the bound's 5.810 g0, `n_bound_g`; that excess, larger and also against the
+  assist, is the item above on D-SP7-52's rule, not this bias) and the bound governs F_peak,
+  the charged peak interface force: `structure_F_peak_N` equals the bound's `f_bound_N` to
+  the bit (24.64 MN), so the bias reaches lm_fixed_hot too, by about 9.7 kN (0.04% of
+  F_peak; its effect on x* is not measured). That excess is derived, not recorded: the rise
+  formula F_0 + DLF (F_q - F_0) on the records' F_0 (the first ASSIST row's
+  `interface_force_N`) and F_q (`peak_interface_force_N`) with `dlf_rise` gives
+  24,632,168.7 N against `f_bound_N`'s 24,641,869.1 N, and the same formula reproduces
+  F_peak to 0.01 N on every linear-motor case where it governs (lm_cmd, lm_cmd_taper,
+  lm_cmd_hot, lm_fixed_target, lm_fixed_sled22; silo_cold's row charges its ramped plateau
+  from rest, not its flown step, so the recipe does not apply to it). On the lm_cmd family,
+  lm_fixed_target and lm_fixed_sled22 the two agree (DLF 1.1273; F_peak within 2e-5 N of
+  `f_bound_N`). silo_cold's constant_accel row has no flown bound. A second-order count
+  would lower it (for the assist), so leaving it out is conservative. Its release bound
+  overstates the release swings that TP and the payload-limit flag read. That is
+  conservative for the flags, and in TP it understates the gentle stop's gain.
+- KI-071 (the bound depends on the scan resolution at a corner; dm(x) can step by about 1%
+  of the load where a corner crosses a sub-phase start): the force-law variants whose power
+  corner moves with the offload. No `offload_nonmonotone` fired, so no step was large enough
+  to reverse m_res(x)'s slope; a smaller kink in m_res(x) was not looked for. The
+  convergence check exercised the corner on lm_fixed (a `power_limit` event at x* in both
+  chains) but does not bound x*'s dependence on the scan resolution ("Convergence").
+  Direction not known.
+- KI-074 (on linear-motor runs the minima, `drive_force_peak_N` and the track-normal peaks
+  stay sampled): the reported drive-force peaks read low between samples (the felt-g and
+  interface-force maxima are exact). No direction: no x* depends on them.
+- KI-076 (a sealed bore is checked only against the body diameter): lm_fixed_sealed's
+  5.24 m bore was set to clear the 5.2 m fairing by D-SP7-54, not by the code's check. No
+  direction on the numbers.
+- KI-047 and KI-057 (cap records): the lm_cmd family only if a cap binds; none bound (E2).
+  No direction: records only.
+- KI-053, KI-058, KI-081, KI-082, KI-083 and KI-084 (the scene template, two video-frame
+  fits, the display file's vented-shaft note, two manual gaps): the readers' pages and
+  documents of run B, never its numbers. No direction.
+
+Part 2, section 10 lists the known issues that do not reach file B, each with the setting
+that keeps it out.
 
 ## How each pre-registered reading came out
 
@@ -1363,6 +1981,93 @@ verification search (`OFFLOAD_SENSITIVITY_BASIS`), and the dry-mass arm reaches 
 only through the push's interface force and its perturbed pad's envelope, never through the
 stage-1 station loads (deviation 17).
 
+**Part 2 (file B)**: every reading and expectation of part 2, sections 7 to 9, taken as
+written, with its estimate (sizing only, placed on SP1's penalty curve; none a target) and
+its result from run B. "As expected" means the same verdict; a departure is named with its
+size.
+
+| pre-registered reading or expectation (part 2, section) | pre-registered estimate | result | how it came out |
+|---|---|---|---|
+| The eleven blocking checks (9) | each to pass | all eleven pass ("The drive cases") | as expected |
+| The cross-commit check (3, 9): silo_cold_s1 against SP1's, silo_cold_s1_st against run A's, 0.002 kg | the same bits | 0.0 kg and 0.0 kg | reproduced |
+| lm_cmd's uncharged x* against SP1's 41,262.908 kg, 0.25 kg (9) | 41,262.9 kg | 41,262.909 kg, +0.0014 kg | reproduced |
+| lm_cmd_taper's uncharged x* against SP1's 41,262.908 kg (7, an expectation: the same release state) | 41,262.9 kg | 41,262.972 kg, +0.064 kg (R 2.55 kg) | met |
+| The pad's P* against P_ref (3, 9) | 26,054.396243494975 kg, the same bits | 0.0 kg | as expected |
+| The stage-1 pad control (4, 9) | no_offload, m_res(0) -0.0016 kg, consistency pass | m_res(0) -0.00164 kg (bound 1.618 kg), pass | as expected |
+| E1 (8): lm_fixed_hot_s1_st raises the upper-stack flag | met; push 8.06 against 7.10 MN; stage 2 sized by 124.5 kg and the interstage by 74.5 kg | met; 8.114 against 7.095 MN; stage 2 131.2 kg, the interstage 78.4 kg | as expected |
+| E2 (8): no `drive_cap` on the lm_cmd family | met | met (no cap event, flag or bound on the three variant runs and the six cases' runs) | as expected |
+| Read beside (8): lm_cmd_s1_st against silo_cold_s1_st; lm_cmd_hot's pair against run A's silo_hot_ramp pair | 0 (R 3.4 kg); 46,013.437 and 18,273.917 kg | +0.0046 kg; +0.0014 and +0.00004 kg | within R; reproduced |
+| RB on all nine (8) | cancels most, 2.45 t (lm_cmd_taper) to 16.22 t (lm_cmd_hot; 18.27 t on run A's hot ramp), 5.9% to 39.3% | cancels most on all nine, 2.48 to 18.27 t, 6.0% to 44.3% | as expected; lm_cmd_hot at run A's value, 2.36 t below half |
+| LM, lm_cmd (8) | the same within the resolution (0.00 t) | the same within the resolution (+0.0046 kg) | as expected |
+| LM, lm_cmd_taper | 8.65 t less | 8.94 t less | as expected |
+| LM, lm_cmd_hot | 5.11 t more (6.85 t on run A's pairs) | 6.85 t more | as expected, at run A's pairs |
+| LM, lm_fixed (within reach) | 0.14 t less | 0.08 t less (82.0 kg; 24 times R) | as expected; nearer the threshold |
+| LM, lm_fixed_target (within reach) | 0.35 t less | 0.37 t less | as expected |
+| LM, lm_fixed_r07 | 5.61 t less | 5.76 t less | as expected |
+| LM, lm_fixed_hot | 7.36 t less | 4.07 t less | as expected in verdict; 3.29 t nearer silo_cold than estimated (the hot start's upward departure, below the table) |
+| LM, lm_fixed_sled22 (within reach) | 0.36 t more | 0.22 t more | as expected; nearer the threshold |
+| LM, lm_fixed_sealed | 1.92 t less | 2.37 t less | as expected |
+| HS, lm_cmd_hot against lm_cmd (8) | more: +5.11 t; uncharged +4.75 t; cost 29.79 against 30.16 t | more: +6.85 t; uncharged +4.75 t; cost 27.74 against 29.84 t | as expected |
+| HS, lm_fixed_hot against lm_fixed | less: -7.21 t; uncharged +9.96 t; cost 49.39 against 32.22 t | less: -3.99 t; uncharged +9.41 t; cost 45.38 against 31.98 t | as expected in verdict; 3.22 t nearer |
+| TS (within reach) | 0.20 t less; uncharged 1.97 t less | 0.29 t less; uncharged 2.11 t less | as expected |
+| CM (within reach) | 0.50 t more | 0.31 t more | as expected; nearer the threshold |
+| SS | 1.77 t less | 2.29 t less | as expected |
+| TP | 8.65 t less; the release flag fires on both (-230 against -897 kPa absolute; swing -1.95 against -4.39 g0); the payload-limit flag does not fire on the taper (its swing 0.054 g0 inside -2.0 g0, within reach) | 8.94 t less; fires (-230 against -896 kPa; -1.95 against -4.39 g0); does not fire (swing -1.946 g0) | as expected |
+| PL | 5.47 t less | 5.68 t less | as expected |
+| The flags (7) | release on every structural case; payload limit on all but lm_cmd_taper and lm_cmd_hot; upper stack on lm_cmd_taper (0.10% over; stage 2 0.9 kg) and lm_fixed_hot only; `release_speed_not_reached` on lm_fixed_target's variant run only; stage-1 LOX bottoms -897 (silo_cold, lm_cmd), -929, -907, -860, -809, -738, -423, -230 and -119 kPa absolute | every flag's state so; upper stack 7.102 against 7.095 MN on the taper (stage 2 0.9 kg); LOX bottoms -896, -928, -907, -860, -809, -737, -418, -230 and -114 kPa | as expected; each LOX bottom within 5 kPa of its estimate |
+| The distance from no offload of lm_cmd_taper and lm_fixed_hot (8, within reach) | 2.45 and 3.75 t | 2.48 and 7.35 t | both offload |
+| dm'(x) (7): -0.020 to +0.0084 kg/kg; the acceleration law about -0.014 to -0.020; lm_fixed +2.9e-4, lm_fixed_target +1.5e-4; lm_fixed_r07, lm_fixed_sled22 and lm_fixed_sealed -0.7e-4 to -4.9e-4; lm_fixed_hot +8.4e-3; no `offload_nonmonotone` | as stated | the chord slopes (dm(x*) - dm(0)) / x* (derived from `structure_dm_kg` and `structure_dm_x0_kg`): -0.0141 to -0.0201 on the acceleration law; +1.74e-4 and +1.40e-4; -4.98e-4, -1.91e-4 and -8.3e-5; +8.39e-3; no `offload_nonmonotone` | as expected, each sign the estimate's (a chord over [0, x*], not the local slope) |
+| The fixed point (7) | 6 to 7 sizings, contraction 0.006 to 0.021 | 6 to 7 sizings; contraction 0.0056 to 0.0211 | as expected |
+| What would undercut (8) | lm_fixed_hot faster and less (88.95 m/s, about 7.4 t less); lm_fixed within reach (77.12 m/s, 0.14 t less); lm_cmd_taper 8.65 t less at the same exit; lm_fixed_sled22 slower and more (within reach); the payload-limit flag on seven of nine; every row below half | lm_fixed_hot 89.24 m/s, 4.07 t less; lm_fixed 77.15 m/s, 82.0 kg less; lm_cmd_taper 8.94 t less; lm_fixed_sled22 75.27 m/s, 0.22 t more; seven of nine; every row below half | all occurred |
+| What would favour (8) | lm_fixed's faster exit paying beyond R (within reach); any row above half (not expected) | 82.0 kg less; none | neither occurred |
+| The linear-motor convergence check (1, 9) | tightened x* within 0.1%; the shipped x* equal to run B's within 0.002 kg | +0.0274 kg (2.4e-6); 0.0 kg | passed |
+| Runtime (11) | run B about 44-45 min at S7a's rates (20 at SP1's set M, 54 pessimistic); the convergence check about 5-10 min | 41.8 min; 389.7 s of parts (6.5 min) | inside the estimates |
+
+The structural x* against the estimates (part 2, section 7: the placement and, in
+brackets, the placement anchored on run A's solved silo_cold_s1_st; result - estimate
+derived):
+
+| case | uncharged U: estimate; result [kg] | structural x*: estimate (anchored); result [kg] | result - estimate (anchored) [kg] |
+|---|---|---|---|
+| silo_cold | 41,262.9; 41,262.9 | 11,105.2 (11,420.2); 11,420.2 | +315.0 (0.0) |
+| lm_cmd | 41,262.9; 41,262.9 | 11,105.2 (11,420.2); 11,420.3 | +315.1 (+0.0) |
+| lm_cmd_taper | 41,262.9; 41,263.0 | 2,450.7 (2,765.7); 2,479.0 | +28.3 (-286.7) |
+| lm_cmd_hot | 46,013.4; 46,013.4 | 16,218.5 (16,533.5); 18,273.9 | +2,055.4 (+1,740.4) |
+| lm_fixed | 43,181.3; 43,322.0 | 10,960.9 (11,276.0); 11,338.2 | +377.3 (+62.2) |
+| lm_fixed_target | 41,207.1; 41,216.1 | 10,756.7 (11,071.7); 11,046.4 | +289.7 (-25.3) |
+| lm_fixed_r07 | 42,655.9; 42,760.9 | 5,491.9 (5,806.9); 5,658.7 | +166.8 (-148.2) |
+| lm_fixed_hot | 53,143.7; 52,727.5 | 3,750.1 (4,065.1); 7,347.5 | +3,597.4 (+3,282.4) |
+| lm_fixed_sled22 | 42,148.0; 42,218.1 | 11,463.0 (11,778.0); 11,643.3 | +180.3 (-134.7) |
+| lm_fixed_sealed | 40,668.8; 40,703.2 | 9,188.6 (9,503.7); 9,049.8 | -138.8 (-453.9) |
+
+- **The chord bias** (concave penalty curve: a chord places x low, against the assist;
+  part 1 measured +204 to +315 kg at the headline push) shows on the cold cases at
+  silo_cold's push (lm_cmd +315.1 kg, the same as silo_cold's +315.0) and at about its
+  size on lm_fixed (+377.3) and lm_fixed_target (+289.7). It is smaller on lm_fixed_sled22
+  (+180.3), lm_fixed_r07 (+166.8) and lm_cmd_taper (+28.3), and reversed on
+  lm_fixed_sealed (-138.8 kg, the only solve below its estimate). Anchoring on run A's
+  solve removes the shared part: +0.005 kg for lm_cmd, -25.3 to +62.2 kg for
+  lm_fixed_target and lm_fixed, and -134.7 to -453.9 kg for the sled, the power-limited
+  drive, the taper and the sealed shaft. Why these four lie below their anchored estimates
+  is not measured. Each case's own slope (offload lost per kg of structure at its level)
+  is not measured either; the run gives only the cost per kg of dm (derived: U - X over
+  dm at x*): 4.73 kg/kg for silo_cold, 4.85 for the taper, 4.73 for lm_fixed_target and
+  5.02 to 5.11 for the other cold force-law cases.
+- **The hot starts depart upward, as part 2, section 7 expected, lm_fixed_hot by more
+  than run A's hot starts did.** lm_cmd_hot lands on run A's silo_hot_ramp_s1_st
+  (+2,055.4 kg against the estimate, the same departure run A measured). lm_fixed_hot
+  lands 3,597.4 kg above its estimate (+96%; run A's two hot starts departed by 1.6 to
+  2.1 t), on an uncharged offload 416.2 kg below its estimate. That U estimate came from
+  the 1-for-1 burn rule and the cold sweep's speed dependence, whose sign part 2, section
+  7 called not known. So the structural departure is not U's: the structure costs
+  45.38 t against an estimated 49.39 t, 4.0 t less. Why is not measured. Both departures
+  favour the assist.
+- **U's interpolation** (a chord on sweep 1's concave curve places U low, against the
+  assist, by 4 to 330 kg off v_e): every cold force-law U lies above its estimate (lm_fixed
+  +140.7, lm_fixed_r07 +105.0, lm_fixed_sled22 +70.1, lm_fixed_sealed +34.4 kg), in that
+  direction. lm_fixed_target's U lies 9.0 kg above its estimate; part 2, section 7 said its
+  altitude worth placed U about 5 to 8 kg low (against the assist).
+
 ## KI-006: M2 and M4 over gamma* +/- 0.5 deg
 
 - **The structural offload cases, the uncharged offload cases, the payload cases and the
@@ -1376,6 +2081,13 @@ stage-1 station loads (deviation 17).
   (metrics.json `comparison`).
 - **Run C's silo_cold comparison**: all pass and robust; M2 0.422 (0.347-0.498), M3 0.687,
   M4 0.112 (0.023-0.188).
+- **Run B's ten variant comparisons** (silo_cold and the nine linear-motor variants, each a
+  full-load payload comparison against the pad, uncharged): screening status ok on all
+  ten; M2 (diagnostic), M3 and M4 (blocking) pass at gamma*_ref and at both neighbours
+  (robust); M5 n/a. M2 ratios 0.449 on silo_cold, lm_cmd, lm_cmd_taper, lm_fixed,
+  lm_fixed_target and lm_fixed_r07, 0.439 on lm_fixed_sled22, 0.424 on lm_fixed_sealed,
+  0.781 on lm_cmd_hot and 0.825 on lm_fixed_hot; M4 shares 0.124 to 0.147 (ranges 0.058
+  to 0.225) (run B's metrics.json `comparison`).
 - **At the sweep points** the checks belong to each point's full-load payload comparison,
   not to its offload solves. M2 (diagnostic) fails at sweep 1's 25 m point (0.098, range
   -0.031 to 0.227, both neighbours fail) and 50 m point (0.294, 0.199-0.390, one neighbour
@@ -1419,6 +2131,54 @@ envelope's flight, the fixed point's 1e-6 kg tolerance unchanged.
   logged as deviation 42 of the phase file (the code it imports was the run's code; its
   parts took 374.5 s beside other agents' processes). The committed run of 2026-10-19 gives
   the same bits on every number above.
+
+**The linear-motor x*** (exit criterion 6's "one linear-motor structural x*", registered in
+part 2, section 1). This is read from the check's report (scratch, outside the repository;
+report.json, sha256 91a2b6ab76a13739186c077e6f1c9beea24e947710c3a919436f8ba9cf9705fa),
+written by docs/findings/scripts/sp7_lm_convergence.py as committed at b291518. That commit
+holds documents only: its code paths equal run B's commit 642e11e's, and the report
+records `git diff --quiet 642e11e b291518 -- src configs experiments pyproject.toml uv.lock
+tests` quiet in each of its parts. The check ran on 2026-11-04 from 02:57:04Z to 03:03:48Z,
+after run B, one part at a time and with nothing else of this session running. Part walls:
+33.2, 55.6, 39.0, 74.3, 103.6 and 84.1 s, 389.7 s in all, plus 0.3 s for the report, against
+part 2, section 11's "about 5-10 min". It solves lm_fixed_s1_st of file B (its pad, lm_fixed
+and that case, read from the committed file) twice: at the shipped budget and under
+`SearchContext.tightened(checks.convergence)` (every search and final tolerance divided by
+10, the max-step caps times 0.5). Each chain flies its own pad, whose P* is its P_ref and
+whose flight is its envelope. Each chain's push is flown with that chain's own context
+(the transform's `push_context` replaced by the tightened one, as S4b's test does: nothing
+tightens the push automatically). The fixed point's 1e-6 kg tolerance is unchanged, and
+each chain's x* is verified by an independent payload search at its own budget.
+
+- The shipped chain reproduces run B to 0.0 kg (P_ref 26,054.396243494975 kg; x*
+  11,338.21677533504 kg; dm 6,377.263265780975 kg; 40 evaluations; verification +0.0013 kg).
+- Tightened: P_ref 26,054.395519976406 kg (0.0007 kg lower); x* 11,338.244185975396 kg (41
+  evaluations, no flags; dm 6,377.26328685691 kg; verification +0.0005 kg). **x* moves by
+  +0.0274 kg, 2.4e-6 relative, against 0.1%: passes** (the registered rule: both solves ok,
+  the tightened x* within 0.1% of the shipped one, the shipped one within 0.002 kg of run
+  B's). In both chains the push at x* logs a `power_limit` event before its release (the
+  sub-phase boundary of KI-071 that moves with x), so the check exercised it.
+- **What it does not bound.** The report's `not_tightened` lists what neither chain
+  tightens (not exhaustive): the LTG finite-difference steps, brackets, penalties and
+  false-root guard; the gamma* grid (15 points), the refine's iteration cap (30) and the
+  payload search's backoff cap (4); brentq_rtol (8.9e-16, at its floor); the track-peak
+  scan resolution (`metrics.TRACK_PEAK_SCAN_POINTS`, 256 points per sub-phase), on which
+  KI-071's dm step depends; the time-series sampling interval (`integrator.sample_dt_s`,
+  0.05 s), whose rows give the envelope's load cases; and the structure's fixed-point
+  tolerance (1e-6 kg) and iteration cap (25). So the check does not bound x*'s dependence
+  on KI-071's track-peak scan resolution or on the sampling step, nor on the rest of that
+  list.
+- **Which case it measures.** The check flies lm_fixed_s1_st only, a push whose power
+  corner comes 0.0149 s before its release. The tolerance sensitivity of the other eight
+  linear-motor cases is not measured. Among what it leaves unexercised: lm_fixed_r07's
+  long power-limited sub-phase (its corner at 1.82 s of a 2.69 s push, KI-071's
+  long-sub-phase case), lm_fixed_hot's thrust on the track, the sealed column's state and
+  the 22 t carriage.
+- The numbers are a check, not a finding. Run B's checks script read the report (its check
+  9). It recomputed the registered rule, the verifications, the same-code record (`git
+  diff` run again for the recorded HEAD) and the scripts' sha256 at each recorded HEAD, and
+  agreed with the report's own verdicts. The machine's other processes during the check are
+  not recorded beyond this session; no number depends on them, the wall times may.
 
 ## Reproduction
 
@@ -1518,6 +2278,54 @@ and the sweep's re-run under Amendment 1, alone, from 2b343d7:
   only when all ten pass). The first drafts of the tables and the derived figures
   (2026-10-16, drawn and redrawn from 18:35Z to about 18:56Z) came from the uncommitted
   working tree and are replaced.
+
+**Run B** (file B; part 2, section 1's command), alone, with plots, from a clean checkout of
+642e11e in the repository root:
+
+    uv run python -m launchsim run experiments/silo_drive_2d.yaml
+
+- Started at 2026-11-03T23:19:44Z (the launcher's stamp) and ended at 2026-11-04T00:01:31Z,
+  exit 0: 41.8 min, against part 2, section 11's about 44-45 min at S7a's measured rates
+  (about 20 min at SP1's set M, 54 min at its pessimistic set). The directory's last file
+  time is 2026-11-04T00:01:31Z (summary.md); 388 files, no FAILED.txt. Its git record reads
+  dirty false, which `results_io.git_info` writes only when no tracked file outside results/
+  is modified and no untracked file outside results/ is one that git does not ignore (its
+  `git status --porcelain` excludes the results tree and lists no ignored file). No suite,
+  app-driving agent or other command of this session ran beside it. Other projects'
+  processes were running on the machine (a Blender MCP server, and a VideoSearchDB uvicorn
+  server with two celery processes, all since 2026-10-29), so the machine was not idle. No
+  number depends on that; the wall time may.
+- Experiment file experiments/silo_drive_2d.yaml as committed in 331891d (part 2), unchanged
+  at 642e11e and b291518; the structure file as committed in 45e39d4 and the vehicle file
+  unchanged since SP7's start commit 22c62e9 (sha256 under "Provenance"). Results: only the
+  directory's top-level summary.md is tracked.
+- The linear-motor convergence check, after run B, from b291518, with OUT a directory
+  outside the repository (the script refuses one inside it), PART each of shipped-pad,
+  shipped-solve, shipped-verify, tightened-pad, tightened-solve and tightened-verify in
+  that order, each in its own process, and then the report:
+
+      uv run python docs/findings/scripts/sp7_lm_convergence.py --out OUT --part PART
+      uv run python docs/findings/scripts/sp7_lm_convergence.py --out OUT --part report \
+          --run-b results/silo_drive_2d/20261103T231946Z
+
+- The blocking checks, after the convergence check, from b291518 (read-only; exit 0 only
+  when all eleven pass; TEXT and JSON are the output paths, whose committed copies are
+  docs/findings/RQ1-structural-2d-drive-checks.txt and .json):
+
+      uv run python docs/findings/scripts/sp7_s7b_checks.py \
+          --run-b results/silo_drive_2d/20261103T231946Z \
+          --convergence OUT/report.json --out-text TEXT --out-json JSON
+
+- The drive figures, read-only (they fly nothing), by the script committed with this
+  note at step S7b. `--check` compares the plotted x*, U, dm1 + dm2 and dm2, the release
+  speeds and positions and the drive-force and drive-power peaks with their records,
+  re-read independently from metrics.json and the ASSIST rows, and exits 1 on a mismatch
+  (it passed). The footers' facts listed under "Figures" are checked before any figure is
+  drawn; the footers' other numbers (the q-alpha values, the caps, the corner speed, the
+  column force, the power-cap spans, sweep 1's points) are read from the records and
+  printed, not re-checked:
+
+      uv run python docs/findings/scripts/sp7_drive_figures.py --check
 
 ## Figures
 
@@ -1676,3 +2484,101 @@ The sizing-only tables (the felt-load table, the break-even felt loads, the cent
 solved x*, the estimates at the sweep points against the re-run's solves, and the other
 pushes against their solves) are in docs/findings/RQ1-structural-2d-tables.md, generated by
 the tables script and not edited by hand.
+
+Derived from run B by docs/findings/scripts/sp7_drive_figures.py (step S7b; it reads run B's
+metrics.json and resolved_config.yaml, the recorded runs' timeseries.csv and events.csv,
+and, for one footer clause, file A's sweep re-run's sweep_1/sweep_index.csv and
+baseline/metrics.json; it flies nothing and writes only these three files). It reuses the
+look and helpers of sp7_structure_figures.py, unchanged. Every footer carries the
+gate-vehicle line (the +14.3% calibration miss, sweep-optimized, unthrottled, planar, x* at
+P_ref with partly filled tanks, and the central structure only, with no physics band and no
++/-10% arm on file B) and the drive line (the caps, the assumed efficiency, the carriage,
+the shaft, and the unmodelled exhaust, which favours the hot starts on back-pressure and
+heating, while on lm_fixed_hot impingement 0 also adds the whole thrust to F_max and raises
+its felt load and dm, so the omission's net direction there is not known). The two x*
+figures also carry the modelled-rows line (a first-order sizing, not a structural design;
+central coefficients; the linear motor's flown rise against silo_cold's assumed one; the
+pad's unthrottled envelope; zero existing margin, adverse for the assist; the instant
+release flagged, not sized, the release flag firing on all ten structural cases). The script
+prints, each with its source key, every plotted point of the x* figures, each flown push's
+row count, maxima and release row (not its every sample), the power-cap spans and every
+footer cap. Its `--check` compares x*, U, dm1 + dm2 (against the decomposition's
+`xv_dry_mass_delta_kg`), dm2 (against the stage-2 elements), the release speed (against the
+decomposition, `exit_speed_mps` and the last ASSIST row), the release position (against the
+last ASSIST row) and the drive-force and drive-power peaks (against `drive_force_peak_N` and
+`peak_drive_power_W`) with their records, and passed. These footer facts are read from
+metrics.json and resolved_config.yaml and checked before drawing: the verifications, the
+release flag, the kick phase, the sampling interval, the efficiency, the impingement, the
+carriage, the bore, the drive laws, silo_cold_s1_st's assumed rise time (`structure_t_r_s`,
+0.5 s) and each linear-motor case's against its flown rise, and each force-law variant's
+power ratio r = P_max / (F_max v_e) against its label. The exit-speed figure also checks,
+before writing its words, that lm_cmd lies within R of silo_cold_s1_st, that lm_cmd_taper
+releases at silo_cold's speed and keeps less beyond R, that each faster exit keeps less, and
+that sweep 1's 200 and 300 m points exit faster and keep more. It measures a dot on its
+drawn axes and refuses to save if that measure names other near-line points than its footer
+does. The force and power figure measures which force-law release dots lie beside
+lm_fixed_target's, and that each ringed release dot lies within a quarter of a dot's width
+of the dot drawn over it on both of its panels; it refuses to save if either differs from
+its footer. The footers' other numbers (the q-alpha values, the caps, the corner speed, the
+column force, the power-cap spans, sweep 1's points) are read from the records and printed,
+not re-checked. Words that describe the model rather than the run (the uniform adiabat, the
+kind of cap) are written, not read.
+
+- RQ1-structural-2d-derived_drive_cases.png: "The cases" as a chart. Each variant's
+  central structural x* (filled) and its uncharged x* (hollow) are joined by the
+  structure's offload cost U - X, against silo_cold_s1_st's 11.42 t, 50% of 41.26 t and
+  SP1's 41.26 t. Each row's text gives x* with its share of 41.26 t, the difference from
+  silo_cold_s1_st ("within R" for lm_cmd's +0.0046 kg), U, U - X and dm1 + dm2 at x*.
+  lm_cmd_taper's stage-2 0.9 kg is printed in kilograms. Its footer's free-kick clause gives
+  the central cases' peak q-alpha, 104.1 to 409.2 Pa rad (1.39 to 5.48 times the pad's
+  74.7). As drawn it leaves out the uncharged runs' kick (212.9 to 846.1 Pa rad, 2.85 to
+  11.32 times; "Beside every number"), the payload-limit flag (on seven of the nine
+  linear-motor central cases and on silo_cold's) and the upper-stack flag (lm_cmd_taper,
+  lm_fixed_hot).
+- RQ1-structural-2d-derived_drive_force_power.png: drive force and mechanical drive power
+  against the speed along the track for the ten flown pushes of the central structural cases
+  at x*, each carrying its dm. The acceleration law and silo_cold's constant_accel are on
+  the left, the force law on the right, and a dot marks each release. The footer names the
+  sampled rows (every 0.05 s plus the event rows; KI-074: a sampled drive-force peak can
+  read low), the caps, the electricity's efficiency of 0.5, and where the force on the
+  vehicle differs from the drive force (the sealed column's 2.18 MN, the 22 t carriage's
+  share, the hot starts' thrust). Five force-law pushes coincide on lm_fixed's F_max plateau
+  and power line after the rise (lm_fixed drawn above the other solid lines, lm_fixed_target
+  dashed over it) and release at 72.22 to 89.24 m/s (listed in the footer). lm_fixed (over
+  its last 1.14 m) and lm_fixed_hot (over its last 26.0 m) then fly the power cap from the
+  corner speed 76.71 m/s, the force falling as P_max / sdot, and lm_fixed_r07 flies its own
+  from 53.70 m/s over its last 57.48 m (the `power_limit` events). Rings mark the two
+  releases that another dot hides: lm_fixed's (77.15 m/s, 0.44 m/s past lm_fixed_target's;
+  its power-capped end is too short to see at this scale) and silo_cold's, under lm_cmd's
+  (22.23 against 22.28 MN). Their centres lie 0.15 and 0.02 of a dot's width from the dot
+  drawn over them (measured on the drawn axes, derived). lm_fixed_target's release dot is
+  drawn above the other force-law dots, so lm_fixed_sled22's (75.27 m/s) shows as a crescent
+  beside it. silo_cold's prescribed force (dashed) nearly coincides with lm_cmd's after the
+  rise. The caps and the corner speed come from `offload.runs` (`push_force_max_N`,
+  `push_power_max_W`, `push_corner_speed_mps`; r = P_max / (F_max v_e) derived, 1 and 0.7).
+  The acceleration law's caps (lm_cmd and lm_cmd_hot 24.73 MN and 1,897 MW; lm_cmd_taper
+  29.18 MN and 2,238 MW) never bind (E2) and are not drawn; the power axis is in MW. As
+  drawn it shows neither the hot starts' thrust nor the interface force, nor the uncharged
+  pushes (lighter stacks, which exit faster under the force law: "The cases").
+- RQ1-structural-2d-derived_drive_exit_speed.png: each central structural x* against the
+  speed at release of its recorded run at x*, all at the same 100 m stroke.
+  silo_cold_s1_st's point is the origin of four quadrants named after part 2, section 8's
+  readings: faster and less, or slower and more, undercuts "every m/s helps"; faster and
+  more beyond R would favour it. Its subtitle says that both faster exits (lm_fixed,
+  lm_fixed_hot) keep less. Its footer adds that on file A's sweep 1 longer strokes exit
+  faster and keep more (31.62 t at 108.5 m/s over 200 m, 44.73 t at 132.9 m/s over 300 m, an
+  upper bound), with an unconstrained kick: their full-load runs kick at 7.7 and 17.3 times
+  the pad's q-alpha, and the structural runs' own values are not written. silo_cold and
+  lm_cmd share one point and one label; silo_cold_s1_st's point, the quadrants' origin, is
+  drawn above the others and ringed in ink, so that lm_fixed_target's blue point below it
+  shows as a blue sliver inside the ring's lower edge. lm_cmd, lm_cmd_taper, lm_cmd_hot and
+  lm_fixed_target release at silo_cold's 76.71 m/s and lie on the vertical boundary, in no
+  quadrant (lm_cmd_hot, at 18.27 t, sits on the boundary in the upper half, between the two
+  "more" quadrants, without being slower or faster), which the footer says.
+  lm_fixed_target's speed is its release speed 1.08 m below the mouth, which the footer says
+  too. As drawn, R (about 3.4 kg) is far below the axis resolution, and a dot is about
+  0.65 t tall (the script measures it on the drawn axes): lm_fixed (82.0 kg, about 24 R,
+  below), lm_fixed_target (373.9 kg, about 110 R, below, partly under silo_cold's ringed
+  point) and lm_fixed_sled22 (223.1 kg, about 66 R, above) lie within about a dot's width of
+  silo_cold's line. Their side is shown by their labels (11.34, 11.05 and 11.64 against
+  11.42 t) and the footer, not by their positions.

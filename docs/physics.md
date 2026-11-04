@@ -10387,7 +10387,9 @@ before its start with no carriage the same 50 m push gives dm' = +0.0092 and +0.
 at x = 0 and 20 t (60 m with t_r 2 s: +0.0101 and +0.0110; 100 m: +0.0092 at x = 0; the 1
 kg and 10 g differences agreeing within 7e-8 kg/kg), positive as design 4.4's probe; a
 push lit 0.3 s after its start whose 15 m/s corner puts it in its power phase gives -0.0017
-and -0.0016 kg/kg (review round 3, P3-M1; measured, not explained term by term here).
+and -0.0016 kg/kg (review round 3, P3-M1; measured, not explained term by term here). On
+the gate file, run B (file B, step S7b) measured both signs on the force law as chords
+over [0, x*] ("SP7 research notes (step S7b)").
 
 **Records and the assumption line.** The record keys are S3's (`STRUCTURE_RECORD_KEYS`,
 unchanged; no key added): `structure_dynamic` stays the case's mode, `structure_t_r_s` is
@@ -11155,6 +11157,57 @@ budget.
 - **Display convention.** In the summaries' Checks lines, "insertion e 0" and "closure
   residual 0 m/s" mean below `DISPLAY_ZERO_ABS` (summary._fmt); metrics.json keeps the
   raw values (for example 5.1e-10 for silo_cold_s1's insertion e).
+
+## SP7 research notes (step S7b)
+
+Details and numbers are in docs/findings/RQ1-structural-2d.md, "The drive cases" (run B,
+results/silo_drive_2d/20261103T231946Z, git 642e11e3851d; file B on the gate vehicle at
+the central structure). No equation changes here: these are observations on the coupled
+structural solve of linear-motor pushes ("The flown push of a linear motor") that the
+model's text should carry. No test is added for them; they are measured on a registered
+run.
+
+- **dm'(x) takes either sign on the gate file, set by the push.** Run B records dm at x*
+  and at x = 0 for each structural case (`structure_dm_kg`, `structure_dm_x0_kg`). The chord
+  (dm(x*) - dm(0)) / x* (derived; a chord over [0, x*], not the local slope) is:
+  - on the acceleration law, -0.0141 (lm_cmd_hot), -0.0142 (lm_cmd, as silo_cold) and
+    -0.0201 kg/kg (lm_cmd_taper). With no cap binding, the push flies the same n at every
+    offload, so a lighter stack carries a smaller interface force and lighter tank heads;
+  - on the cold force law, +1.74e-4 (lm_fixed), +1.40e-4 (lm_fixed_target), -4.98e-4
+    (lm_fixed_r07), -1.91e-4 (lm_fixed_sled22) and -8.3e-5 kg/kg (lm_fixed_sealed): the
+    near-cancellation of "Monotonicity, measured", whose sign now goes either way with the
+    push (the synthetic case's was -4.6e-4);
+  - on the force law lit at push start, +8.39e-3 kg/kg (lm_fixed_hot): positive, as the
+    synthetic push lit 2 s before its start with no carriage (+0.0092 kg/kg at x = 0 over
+    50 m, a local slope from a hot hold, not a chord of a push lit at its start).
+
+  Every sign is the one part 2 of the pre-registration estimated (its section 7). Every
+  chord lies far above -1/(2 E) = -0.114 kg/kg, and no `offload_nonmonotone` fired. Why the
+  cold force law's sign differs between its variants is not measured term by term.
+- **The fixed point on the gate file.** At x* the coupled sizing took 6 sizings on eight
+  structural cases and 7 on lm_fixed_r07 and lm_fixed_hot (`structure_iterations`), with a
+  contraction of 0.0056 (silo_cold, lm_cmd, lm_cmd_hot) to 0.0211 (lm_fixed_hot) (the cap
+  flag's `contraction`; the synthetic file's 0.0104 cold and 0.025 hot). The structural
+  solves took 38 to 44 evaluations (`solve.n_evaluations`), the uncharged ones 42 to 45.
+- **A power corner just before the release.** On lm_fixed_s1_st's recorded run at x* the
+  stack is lighter than M (x* of 11.34 t, above its dm of 6.38 t), so it reaches the corner
+  speed v_e at 1.14 m below the mouth. Its `power_limit` event comes at 2.8194 s, 0.0149 s
+  before its release at L at 77.15 m/s. lm_fixed_hot_s1_st reaches it 26.0 m below the
+  mouth and flies its last 0.313 s power-limited. This is the sub-phase boundary that
+  moves with x (KI-071). The registered convergence check flew it in both chains and
+  passed (x* +2.4e-6 relative), but it does not bound x*'s dependence on
+  `metrics.TRACK_PEAK_SCAN_POINTS` (RQ1-structural-2d.md, "Convergence").
+- **A release below the mouth.** lm_fixed_target's recorded runs release at v_e 98.92 m up
+  the stroke at x* (1.08 m below the mouth) and 90.70 m uncharged. Stage 1 lights 0.5 s
+  later, 36.05 m above the mouth at x* (the `ignition` event's altitude), so no kick
+  begins in the shaft (KI-054 not reached, as part 2, section 10 expected).
+- **Measured cost.** Run B (11 searched runs, 20 verified offload solves, the pad control
+  and 388 files with plots) took 41.8 min, against part 2's estimate of about 44 to 45 min
+  at S7a's measured rates. The linear-motor convergence check's six parts (two pad
+  searches, two solves, two verifications) took 389.7 s. A structural solve calls the
+  transform about 40 times (`solve.n_evaluations`), and each call iterates the coupled
+  sizing, which flies the push once per sizing (6 or 7 sizings at x*,
+  `structure_iterations`).
 
 ## Display-only reconstructions (not part of the model)
 
