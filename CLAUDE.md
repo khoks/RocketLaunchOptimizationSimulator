@@ -16,29 +16,31 @@ Create these in Phase 0 and keep this list accurate.
 - Fast tests: `uv run pytest -q -m "not slow"`
 - All tests: `uv run pytest -q`
 - Lint and format: `uv run ruff check . && uv run ruff format .` (Windows PowerShell 5.1 has no `&&`: run the two commands separately, or use Git Bash)
-- One run: `uv run python -m launchsim run experiments/<name>.yaml [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]` (`--no-offload` skips an experiment's offload block; `--no-sensitivity` also skips its sensitivity arms)
-- Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]`
+- One run: `uv run python -m launchsim run experiments/<name>.yaml [--results-root DIR] [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]` (`--no-offload` skips an experiment's offload block, its structure payload cases with it; `--no-sensitivity` also skips its sensitivity arms)
+- Sweep: `uv run python -m launchsim sweep experiments/<name>.yaml [--results-root DIR] [--no-plots] [--no-offload]`
 - Animate a 2-D run (MP4/GIF): `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 - Interactive replay page (HTML): `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]`
 - Local app (127.0.0.1 only, Ctrl+C stops it): `uv run python -m launchsim app [--port N] [--results-root PATH] [--open]`
 - 2-D launch scene page (standalone HTML): `uv run python -m launchsim scene results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH] [--display PATH]`
+- Findings scripts (SP7; each one's arguments are in its note's Reproduction section, sp7_drive_rules.py's in its docstring): `uv run python docs/findings/scripts/<name>.py`
 
 ## Layout
 
 ```text
 src/launchsim/
-  constants.py   Earth and physical constants; the only place μ, R_E, ω_E and g0 are defined
+  constants.py   Earth and physical constants, the only place μ, R_E, ω_E and g0 are defined; also the SP-8007 coefficients, the KI-030 bounds and SP1's recorded penalty rows (model results structure.py places on, pinned to tests/data/silo_offload_2d_record.json, D-SP7-30)
   units.py       unit conversions at the YAML/plot boundary (deg, km, kN, t, g, kWh); the only place those factors appear
   atmosphere.py  ICAO standard atmosphere: layer closed forms evaluated from `ambiance`'s constant table (ambiance.Atmosphere is the test oracle; valid to ~81 km) plus a documented isothermal extension above
   vehicle.py     stages, engines, drag vs Mach, mass bookkeeping, thrust schedules, ideal-rocket-equation screening
-  config.py      pydantic models that validate vehicle and experiment YAML and convert units; no file I/O
-  assist/        swappable assist models: base (interfaces), none, constant_accel, linear_motor, track (geometry), cable_winch
+  config.py      pydantic models that validate vehicle, experiment and structure YAML and convert units; no file I/O
+  assist/        swappable assist models: base (interfaces), none, constant_accel, linear_motor (force and acceleration laws capped by F_max and P_max, rise, stop taper, carriage and closed-form braking, target-speed release, sealed shaft), track (geometry); cable_winch is planned and refused
   dynamics.py    equations of motion: 1-DOF track phase, 2-D planar ascent
   phases/        phase sequencing and events (ignition, release, staging, insertion, impact): engine (generic integrator, event rules), trace (StateView, event records), prelude (hold and track), vertical (1-D planner), planar (2-D planner)
   guidance.py    steering laws (vertical rise, kick, gravity turn, linear-tangent), gamma* inner solve, LTG shooting
   orbit.py       circular target orbit and orbital elements
   search.py      figure-of-merit searches (residual, payload capacity, gamma* sweep, final verification); "sweep-optimized" until Phase 5
   offload.py     fixed-payload propellant offload solver; pure
+  structure.py   first-order station sizing of the push load (SP7), pure: the sizing primitives, the station model of both stages, the pad envelope, the increment, the flags, the plausibility rule and the screened search behind the frozen sets
   losses.py      loss integrals, the budget check and the planar rocket-equation closure
   sim.py         run one configuration (vertical_1d or planar_2d dispatch) and return a Result; re-exports the split modules
   metrics.py     1-D metrics and time series
@@ -58,15 +60,16 @@ src/launchsim/
   cli.py
   templates/     package-data page templates: replay.html (the replay page; frozen in SP2), scene.html (the standalone 2-D scene page that scene.py renders and writes; no request; the hook window.launchsimScene: stateAt, captureFrame with the server's footer lines, clipTimes) and app.html (the app page: form, presets, live checks, progress, results panel, run browser, the scene frame and the Save video control)
 configs/vehicles/  one YAML per vehicle; every number has `source:` or `assumed: true`
+configs/structures/  one YAML per vehicle the structural model serves (coefficients with their ranges, layout, breakdown, frozen sets); every number has `source:` or `assumed: true`; frozen at SP7 step S2's commit
 configs/display/   display-only geometry of the 2-D scene (one YAML per vehicle family, applies_to names the vehicles; scene.yaml for the camera, pixel thresholds and the generic shape); every number has `source:` or `assumed: true`; nothing here enters the model
 experiments/       one YAML per experiment: baseline, variants, sweep axes
 results/           generated, never hand-edited; gitignored except */summary.md
 docs/physics.md    equations and assumptions; the source of truth for the math
-docs/findings/     one write-up per research question
+docs/findings/     one write-up per research question; scripts/ holds the committed scripts behind a note's derived figures and blocking checks
 docs/process/      SESSION_PROTOCOL.md: how every session runs (start checklist, step loop, end checklist, ID conventions)
 docs/phases/       program board (README.md), one file per phase (SP<n>-<slug>.md: brief, step table, exit criteria, session log), inputs/ (dated plans, designs and code surveys)
 docs/handoff/      NEXT_SESSION.md (the live handoff, read first by a new session) and archive/ (earlier handoffs)
-docs/demos/        recorded demo of each finished phase (SP<n>/; created when a phase closes; SP1 and SP2 so far)
+docs/demos/        recorded demo of each finished phase (SP<n>/; created when a phase closes; SP1, SP2 and SP7, recorded ahead of its close, so far)
 notebooks/         exploration only; nothing experiments depend on
 tests/
 ```

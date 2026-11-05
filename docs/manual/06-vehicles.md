@@ -139,6 +139,42 @@ the run path never reads them** (an import guard keeps the display and scene mod
 it), and no result changes if they change. `launchsim scene --display PATH` points the
 scene at another folder; the app reads the repository's.
 
+## Structure files (configs/structures/)
+
+`configs/structures/` holds the structural model of the push load (SP7): one file per vehicle
+it serves, `generic_f9_class_2d.yaml` for the gate vehicle and
+`generic_f9_class_2d_readme_loads.yaml` for the README-loads fork. An experiment names one in
+its [`structure:` block](04-experiments.md#structure-2-d), and its `applies_to` list must
+name the experiment's vehicle. The sections: `layout` (radius, stations, each stage's tank
+order and construction), `mixture`, `materials`, `factors`, `pressures`, `buckling`,
+`geometry`, `load_entry`, `nof` (the non-optimum factors), `dynamics` (the rise time and the
+axial frequency), `ring`, `thrust_structure`, `interstage`, `payload_limits`, `plausibility`,
+`breakdown` (where each stage's dry mass sits), `sizing_only` (labelled lines outside every
+band) and `sets`.
+
+Every number carries its provenance, as in a vehicle file, in one of four forms:
+`{value, source}` or `{value, assumed: true}`; a range, `{central, low, high}` with a
+`source` or `assumed: true`; a discrete choice, `{central, alternatives}` with the same; or a
+list with one provenance. Pressures are gauge at the ullage. The coefficient sections of the
+two files are identical, and a test compares them.
+
+`sets` holds the frozen coefficient sets a case can name: `physics_low_mass` and
+`physics_high_mass` (the physics band: the physics coefficients searched, the design axes at
+central) and `outer_low_mass` and `outer_high_mass` (the outer envelope: the design axes
+set at a corner and the physics coefficients searched at it). They are the extremes in dm a screened
+search found, sizing only, at one push, labelled that way in the file: not bounds, and not
+the extremes of any other push. `sets.method` says how they were found, and a slow test
+reproduces them.
+
+**Frozen before the runs, not blind to the probe.** The files were frozen at SP7 step S2's
+commit: a later change is a logged decision or a pre-registration amendment, and the
+`sha256` of the file a run used is in its records. Their central values follow rules written
+beside them, and their central values and range ends were set after the planning probe had
+shown which coefficients matter, a disclosure the pre-registration repeats (section 2(b)), and
+k_ts's central moved at S0's gate with the probe known (the note's headline caveats). As with
+vehicle files, copy a file to a new name to try other coefficients; a case can also move a design axis with `overrides`
+([5b](05b-offload.md#structural-cases-sp7)).
+
 ## Never edit a calibrated file; fork it
 
 Results and the calibration record depend on these files as they are. CLAUDE.md forbids

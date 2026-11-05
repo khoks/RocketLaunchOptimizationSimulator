@@ -99,6 +99,7 @@ committed before any run, with what each case is for and how its result is read 
 | `stage2_offload_t` | none | > 0 [t]; a stage-1 case only | Propellant taken from stage 2 before the case: the frontier point of a both-stage offload |
 | `stage1_dry_mass_added_t` | none | > 0 [t] | An assumed structural penalty added to stage 1's dry mass, on the assisted run only: a penalty row, not a sized structure |
 | `paired_pad` | false | refused together with `stage1_dry_mass_added_t` | Also fly the pad with the same propellant change and no push, and compare it with the case on one vehicle (the paired pad) |
+| `structure` | none | a stage-1 solve only; never with `stage1_dry_mass_added_t`, `paired_pad` or `stage2_offload_t` | The modelled structural mass of the push, charged to the assisted run ([below](#structural-cases-sp7)) |
 
 ### `fixed`
 
@@ -215,6 +216,99 @@ heights reached by the altitude event
 - `launchsim run` never solves a sweep's offload cases, and `launchsim sweep` never solves
   the block's own cases.
 
+## Structural cases (SP7)
+
+An offload case with a `structure:` field is a structural case: its assisted run carries the
+modelled structural mass dm of its own push, and the solve finds the largest offload that
+still carries P_ref with that mass on board. dm is sized at every offload x the solve
+evaluates (with `sizing: flown`) and added to the assisted run's dry masses only: the pad
+keeps its vehicle. It is a first-order station sizing, a first-order estimate with its
+stated ranges, not a structural design: each station's wall is sized for the push and for
+the pad's own unthrottled flight (the envelope), and dm is the positive part of the
+difference times a non-optimum factor, plus a ring frame between the carriage pads when the
+load enters through an aft ring. An experiment with structural cases needs the
+[`structure:` block](04-experiments.md#structure-2-d) that names the file. From
+`experiments/silo_structure_2d.yaml`, the headline case:
+
+```yaml
+    - {name: silo_cold_s1_st, of: silo_cold, solve: stage1,
+       structure: {set: central, sizing: flown, dynamic: rise_time, entry: aft_ring,
+                   margin: 0.0, envelope_cap_g: null, overrides: {}, plausibility_scaled: false}}
+```
+
+| Key | Default | Rule | Meaning |
+|---|---|---|---|
+| `set` | `central` | `central`, `physics_low_mass`, `physics_high_mass`, `outer_low_mass` or `outer_high_mass` | The coefficients: the file's central values, or one of its frozen sets ([6](06-vehicles.md#structure-files-configsstructures)) |
+| `sizing` | `flown` | `flown` or `full_load` | `flown` re-sizes dm at every x; `full_load` sizes it once at x = 0 and adds that dm at every x |
+| `dynamic` | `rise_time` | `rise_time`, `quasi_static` or `step` | The dynamic load factor: from the rise time t_r and the axial frequency, min(2, 1 + T / (pi t_r)), with T = 1 / f the assumed first axial period (0.2 s at the central 5 Hz); 1; or 2 |
+| `entry` | `aft_ring` | `aft_ring` or `thrust_structure` | Where the push enters the stack |
+| `margin` | 0 | >= 0 | Existing margin on the envelope's loads and pressures. It is capacity the push can use, so a margin keeps more offload, not a safety factor |
+| `envelope_cap_g` | null | null, or > 1 | A cap on the pad's stage-1 felt load in the envelope [g0] |
+| `overrides` | `{}` | design axes only, each in its range | Design-axis coefficients by file path: `nof.nof_barrel`, `nof.nof_stiffened`, `nof.nof_dome`, `nof.nof_entry_ratio`, `dynamics.rise_time_s`, `dynamics.axial_frequency_Hz`, `thrust_structure.k_ts_kg_per_kN`, `ring.ring_pads` |
+| `plausibility_scaled` | false | a physics set only | Multiply dm by the plausibility rule's factor for that band end. The factor is computed, never typed in |
+
+An outer set records its own margin and cap: a case that gives another value, or any
+override, is refused. A linear motor's structural case takes the rise time from the drive's
+`force_rise_time_s`, so an override of `dynamics.rise_time_s` on it is refused, and under
+`dynamic: rise_time` or `step` it is charged the larger of the rise formula and the flown
+history's single-mode bound (`quasi_static` has no bound).
+
+| Rule | Refusal you will see (shortened) |
+|---|---|
+| A stage-1 solve only | `offload case 'x': a structural case is a stage-1 solve ...` |
+| Not with an assumed penalty | `offload case 'x': structure charges the modelled structural mass of the push, so stage1_dry_mass_added_t (an assumed penalty) cannot be given with it ...` |
+| Not with a paired pad | `offload case 'x': structure is the assisted run's only ...; give the structural case without paired_pad` |
+| Not with a stage-2 pre-offload | `offload case 'x': structure sizes the case's start at x = 0 as the full load ...` |
+| A push to size | `offload case 'x': structure sizes the push load, but run 'y' has no push (assist none)` |
+| The file is named | `offload case 'x' has structure, but the experiment declares no structure block naming the structure file ...` |
+| The file fits the vehicle | `structure file '...' applies to [...], not to the ...` |
+| Physics sets only | `structure plausibility_scaled applies the rule's factor to a physics band end ...` |
+| Design axes only | `structure override 'x' is not a design-axis coefficient; ...` |
+
+**The runs.** A structural case's recorded run is `<case>`, as for any case: at x\*, or at
+x = 0 when the solve ends `no_offload`. Its assumption lines replace the partly-filled-tanks
+line with the variant that excepts the modelled increment, then add a `structure:` line.
+`plots/<run>_structure.png` shows the required wall along the stations, pad envelope against
+push, and dm by element.
+
+**What the sizing leaves out.** There is no finite-element model, and the dynamic factor is
+a single-mode one. Joints and weld lands beyond what the non-optimum factors carry, lateral
+and bending loads in the shaft, and fatigue are not modelled. The LOX transfer tube beyond
+its hoop, COPVs, engine mounts and feedlines are not charged, and the release is flagged,
+not sized. Most of these would lower the offload if modelled, and some omissions go the
+other way: [RQ1-structural-2d](../findings/RQ1-structural-2d.md#limits), "Limits", gives each
+one's direction where it is known. Nothing models propellant settling for the ignition
+0.5 s after a release the model flags as separating the LOX column, a risk no number here
+measures.
+
+**A `no_offload` end** is a result, not a failure: the vehicle carrying its dm cannot carry
+P_ref even with full tanks. The summary reports its delta-v shortfall at x = 0
+(`dv_shortfall_mps`), and its payload deficit when a payload case at the same settings ran.
+
+### Structure payload cases
+
+A payload case (the `structure:` block's `payload_cases`, [4](04-experiments.md#structure-2-d))
+asks the payload form of the question: the variant flies at full load at its own payload
+capacity with the structure sized for its full-load push. It runs in two passes: dm_0 at
+P_ref, a payload search P_1\*, dm_1 at P_1\*, a payload search P_2\*. The recorded run
+`<name>` is the second search's, and the first pass is named in the record but writes no
+directory. The figure is P_2\* - P_ref: a payload change, never propellant saved. The case
+takes the settings of a structural case without `sizing` (it is always a full-load sizing)
+and runs inside the offload pass, so it needs an `offload:` block, `--no-offload` skips it,
+and it answers to `--variant` as a case does. Its status is in
+`offload.structure_payload_cases`; the flag `structure_payload_unconverged` says the two
+passes had not settled (estimate above 0.5 x `search.final_payload_xtol_kg`, or a contraction
+above 0.1), and the estimate is printed beside the number.
+
+### Arms and sweeps
+
+A structural case named in `sensitivity_of` is re-sized on each arm's perturbed vehicle and
+on the pad its offload is solved against. A sweep that names a structural case rebuilds it at
+every point and adds the `structure_*` columns to `sweep_index.csv`
+([8](08-outputs.md#sweep_indexcsv)). The sets are the headline's sets placed at that push:
+they are extremes of the search at one push only, so a band end a sweep names is not that
+push's extreme. The shipped sweeps fly the central case only.
+
 ## What the summary reports
 
 `summary.md` of a `run` gains the section **"Propellant saved at fixed payload"**, right
@@ -283,7 +377,12 @@ after the variants table. In order:
    control in words.
 8. **Sensitivity**: one row per arm (parameter, change, whether the pad was perturbed,
    the arm's P_ref, status, offload and its change against the nominal case, the share of
-   stage 1, decomposition, ratio, whether the solve was reused).
+   stage 1, decomposition, ratio, whether the solve was reused, and for a structural arm its
+   dm, set and envelope pad).
+
+With a `structure:` block the section gains a **Structure** sub-section, after the imposed
+cases and before the decomposition: how to read it is in
+[9](09-reading-results.md#reading-a-structural-summary).
 
 The offload runs also join the Flags, Assumptions and Checks sections. The Checks section
 adds the heading "Offload checks" with the stage-1 pad control's verdict and one line per
@@ -388,11 +487,16 @@ reproduces its case's configuration and the page says "a reproduction, not new e
 No sensitivity arm and no sweep can be launched from the form, and every launch is
 exploratory, never a finding.
 
+A structural run is drawn like any other offload run: the page's run note and caveats name
+its modelled mass, and the drawn body does not change, since every shape comes from the
+display files. A sealed-shaft run's scene panel adds its own note
+([7b](07b-app.md#the-scene)).
+
 ## Skipping parts of it
 
 | Command and flag | Effect |
 |---|---|
-| `run --no-offload` | Skips the block. The summary section and metrics.json's `offload` record say `(offload block declared but skipped: --no-offload)`; no offload run is written |
+| `run --no-offload` | Skips the block and its structure payload cases. The summary section and metrics.json's `offload` record say `(offload block declared but skipped: --no-offload)`; no offload run is written |
 | `run --no-sensitivity` | Skips the sensitivity cases and the block's arms; the section notes `(offload sensitivity arms skipped: --no-sensitivity)` |
 | `run --variant NAME` | Runs only the cases built on that variant (and the pad controls of their modes, and their arms); every other case is listed as `not run: its variant did not run (launchsim run --variant)` |
 | `sweep --no-offload` | Skips the offload cases the sweeps name; `sweep_index.csv` then has no offload columns |
@@ -401,7 +505,11 @@ A baseline without a payload capacity solves nothing: the record says
 `reference_failed` and why. The offload pass is slow, because every case runs nested
 payload searches: the pre-registered `run` of `silo_offload_2d.yaml` took 14.1 min and its
 `sweep` 20.9 min on the author's machine, started together
-([docs/physics.md](../physics.md), "SP1 research notes"). While you iterate, use
+([docs/physics.md](../physics.md), "SP1 research notes"); the recorded `run` of
+`silo_structure_2d.yaml` took 64.8 min beside two other commands
+([RQ1-structural-2d](../findings/RQ1-structural-2d.md#reproduction), "Reproduction"), and
+about 36 min beside three in SP7's demo ([docs/demos/SP7/](../demos/SP7/README.md)). While
+you iterate, use
 `--no-offload` or `--no-sensitivity`.
 
 ## What the shipped run found
@@ -420,5 +528,26 @@ delta-v reading chosen after the run gives the lighter stack 28 to 29%. The offl
 max-Q is 3.4% above the pad's, and the stage-2 case failed its independent verification.
 [9. Reading results](09-reading-results.md#what-the-shipped-offload-run-says) gives the
 rest of the caveats that sit beside it.
+
+## What the shipped structural run found
+
+The pre-registered runs of `silo_structure_2d.yaml`, its README-loads fork and
+`silo_drive_2d.yaml` are written up in
+[RQ1-structural-2d](../findings/RQ1-structural-2d.md) (preliminary). With a structure sized
+for the offloaded stack at central coefficients, an assumed 0.5 s drive rise time the
+constant-acceleration trajectory does not fly, zero margin and the pad's unthrottled flight
+as the envelope, `silo_cold_s1_st` leaves out 11.42 t of stage-1 propellant, 27.7% of the
+uncharged 41.26 t (2.78% of the stage-1 load): the pre-registered reading "cancels most". It
+is a first-order station sizing, not a structural design, on the same gate vehicle
+(+14.3%), sweep-optimized and unthrottled, with a free kick and the instant release
+flagged, not sized. The physics band runs from no offload (243.7 m/s short, payload deficit
+-2,080 kg) to 28.57 t (23.68 t before its plausibility scaling), the outer envelope from no
+offload (1,021.5 m/s short, -7,804 kg) to 31.12 t, and the step push the
+constant-acceleration drive actually flies leaves no offload (125.2 m/s short, -1,087 kg); the -2,080 and -1,087 kg are upper
+bounds on the payload change. Under the ±10% arms the headline stays between 8.55 and
+15.07 t. All nine linear-motor drives cancel most of the offload too (2.48 to 18.27 t, at
+the central structure only, with no band and no ±10% arm).
+[9. Reading results](09-reading-results.md#reading-a-structural-summary) shows how to read
+these rows.
 
 Next: [6. Vehicle files](06-vehicles.md)

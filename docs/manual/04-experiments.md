@@ -4,7 +4,7 @@
 
 An experiment file is one YAML file under `experiments/`. It names a vehicle, defines a pad
 baseline and the variants compared with it, and optionally sweeps, sensitivity cases,
-bounds, (for calibration) cases and an offload block. Everything is validated, and every
+bounds, (for calibration) cases, an offload block and a structure block. Everything is validated, and every
 run's settings are built, before anything is integrated or written: a file that is refused
 leaves no results directory and prints one `error:` line.
 
@@ -31,6 +31,7 @@ this manual" are not in a shipped file; each was checked against the config load
 | `bounds` | no | Named re-runs with overrides, each against a re-run baseline (2-D) |
 | `cases` | no | Independent runs, never compared; only with `label: calibration` |
 | `offload` | no | Propellant offload at fixed payload (2-D, payload search): cases solved or imposed on the variants, pad controls, sensitivity arms, energy inputs ([5b](05b-offload.md)) |
+| `structure` | no | The structural model of the push (2-D, payload search): the structure file and the structure payload cases ([below](#structure-2-d)) |
 
 Unknown keys are errors everywhere, so a typo is caught, not ignored.
 
@@ -55,7 +56,7 @@ paths are used as given.
 - `vertical_1d` (the default): straight up, vacuum thrust from sea level, no air, no Earth
   rotation, to stage-1 burnout. Fast. Used by `silo_screening_1d.yaml`.
 - `planar_2d`: a planar ascent over a spherical, rotating Earth with the ICAO atmosphere,
-  drag, back-pressure, guidance and a payload search, to orbit. Used by the other six
+  drag, back-pressure, guidance and a payload search, to orbit. Used by the other nine
   shipped files. The vehicle needs exactly two stages and an `aero` block.
 
 ## Shared blocks (experiment level)
@@ -67,7 +68,7 @@ form, when the experiment declares none), and variants, sweeps, sensitivity para
 bounds may not touch them. The one exception is a paired sweep of a `guidance_study`, which
 may vary `guidance.*`.
 
-The six shipped 2-D files declare identical shared blocks (a test pins that). From
+The nine shipped 2-D files declare identical shared blocks (a test pins that). From
 `experiments/silo_screening_2d.yaml`:
 
 ```yaml
@@ -364,6 +365,35 @@ A case must change at least one of the four. As with bounds, only the `planar_2d
 flies cases, and `run --variant` skips them. A calibration run also records whether
 `configs/` and `experiments/` were committed (its pre-registration state); see
 [10. Validation](10-validation.md#calibration-is-not-validation).
+
+## `structure` (2-D)
+
+The block names the structure file that sizes every structural case of the `offload:`
+block, and lists the structure payload cases. Like `offload:` it is not a shared block:
+nothing in it changes a run of the experiment. From `experiments/silo_structure_2d.yaml`
+(two of its four payload cases):
+
+```yaml
+structure:
+  file: configs/structures/generic_f9_class_2d.yaml
+  payload_cases:
+    - {name: silo_cold_pstar_st, of: silo_cold, set: central, dynamic: rise_time,
+       entry: aft_ring, margin: 0.0, envelope_cap_g: null, overrides: {},
+       plausibility_scaled: false}
+    - {name: silo_cold_pstar_st_step, of: silo_cold, set: central, dynamic: step,
+       entry: aft_ring, margin: 0.0, envelope_cap_g: null, overrides: {},
+       plausibility_scaled: false}
+```
+
+| Key | Default | Rule | Meaning |
+|---|---|---|---|
+| `file` | required | looked up like `vehicle:`, next to the experiment and then at the repository root; its `applies_to` must name the experiment's vehicle | The structure file ([6](06-vehicles.md#structure-files-configsstructures)) |
+| `payload_cases` | `[]` | names unique; each `of` a variant with a push, never the baseline; needs an `offload:` block | Fly the variant at its own payload capacity with the structure sized for its full-load push ([5b](05b-offload.md#structure-payload-cases)) |
+
+The block needs `dynamics: planar_2d` and `search.figure_of_merit: payload`. A file without
+the block behaves as before it existed; an offload case with a `structure:` field needs
+it. The case fields, the payload cases and what they write are in
+[5b](05b-offload.md#structural-cases-sp7).
 
 ## Rules that catch common mistakes
 

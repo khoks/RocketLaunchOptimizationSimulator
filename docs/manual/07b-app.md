@@ -19,7 +19,9 @@ in both themes, is [docs/demos/SP2/](../demos/SP2/README.md)).
   goes under `results/app/<UTC timestamp>/`, carries the label `exploratory` and a banner
   that says so, and every replay, animation, scene and video frame of it carries one
   exploratory line. Findings come only from committed experiment files run from a clean
-  tree and live in [docs/findings/](../findings/README.md). A launch that equals a committed
+  tree (one disclosed departure, which reached no number: SP7's sweep re-run,
+  [RQ1-structural-2d](../findings/RQ1-structural-2d.md#provenance)) and live in
+  [docs/findings/](../findings/README.md). A launch that equals a committed
   variant or offload case says so on the page ("a reproduction, not new evidence").
 - **The numbers it shows beside recorded directories are the findings' numbers**, with the
   caveats those notes carry: the gate vehicle calibrates +14.3% high, no structural mass is
@@ -385,16 +387,27 @@ reconstructions and are not model output." In short ([docs/physics.md](../physic
   is a drawing choice (the coast stays within 0.2 m of the recorded rows on the reference
   runs, and each page quotes its own run's gap); both halves follow one path; a body still
   in flight when the run ends is drawn stopped there;
-- the plume inside the shaft and the carriage beneath lit engines: the model has a vented
-  shaft and one impingement fraction that moves only track forces and drive energy;
+- the plume inside the shaft and the carriage beneath lit engines: the model has no
+  exhaust in the shaft, and one impingement fraction that moves only track forces and drive
+  energy (under the linear motor's force law, or a bound cap, it moves the exit speed too);
 - the carriage after release and where it brakes: the model gives a braking distance only;
   a failed ignition falls back along an obstacle-free path (the model has no contact with
   the carriage, the mouth or the shaft; the page says so under a run that ends in an
-  impact, and draws the carriage and rails as outlines);
+  impact, and draws the carriage and rails as outlines); after a release below the ground
+  whose carriage parks below it, a fall back ends on the parked carriage instead
+  (`shaft_fallback`, [5](05-assist-and-ignition.md#how-the-linear-motor-flies-the-push)),
+  and the page says so under that run;
 - one propellant level per stage, read empty at depletion (no residual or reserve is
   modelled);
 - the pad's liftoff marker and a held ramp's end marker, synthesised from the metrics; the
   marker that replaces the rocket once its body is under 3 px wide is a position only.
+
+A sealed-shaft run says so: the display-only list names each run's shaft, and its panel
+carries the note "Sealed shaft: the model's bore is 5.24 m over a 5 m gap
+(resolved_config.yaml); the 7 m shaft drawn is display geometry, the gap not drawn." (its own
+bore and gap). In the scene's run record that note follows any offload note in the same
+`note` field, so an offloaded sealed run's panel shows both, the offload note first;
+`offload_note` keeps the offload part alone.
 
 ## Save video (MP4)
 
@@ -428,11 +441,11 @@ modelled mass it carries, by stage to 0.1 kg when stage 2 carries any ("... kg (
 and ... kg (stage 2) of modelled structural mass"), with its set, any plausibility
 scaling and its fired flags, on a footnote line of its own, "Structure, per run: ...",
 ending "modelled mass by stage: the caveats of summary.md's offload section; structure
-file and x* at the physics band's ends: its Structure subsection", which the frame wraps
+file and x\* at the physics band's ends: its Structure subsection", which the frame wraps
 at its own width; that line is `animate`'s footnote line and quotes neither the file nor
 the band's ends, which the frame takes, in the full sentence with their scope, from the
 scene's per-run structure note drawn under it: the band's sizing-only dm ends at the
-structure file's headline push, not the x* the Structure subsection gives at the band's
+structure file's headline push, not the x\* the Structure subsection gives at the band's
 ends, which is the experiment's own offload); and, for an app run,
 the exploratory line. A launch and a video never run together. The demo's export (1,727 frames at 20 fps,
 86.35 s, 6.0 MB; docs/demos/SP2/README.md, "The video export") is not in the repository;

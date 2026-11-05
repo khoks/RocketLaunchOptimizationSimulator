@@ -45,8 +45,9 @@ cases (`test_offload.py`) and the altitude event of a ramp start by height, agai
 constant-g coast closed form (`test_height_event.py`). The offload block's pipeline (the
 schema, the cases, the pad controls, the energy comparison against hand numbers, the sweep
 columns, the summary section, the CLI flags and the replay role among them) is covered by
-`test_offload_pipeline.py`. [docs/physics.md](../physics.md) ends with a test-to-equation
-map.
+`test_offload_pipeline.py`. SP7's closed forms are in `test_structure.py` (the station
+sizing's primitives), `test_linear_motor.py` and `test_sealed_shaft.py`.
+[docs/physics.md](../physics.md) ends with a test-to-equation map, which lists them.
 
 ## Records and goldens (regression, not validation)
 

@@ -1,0 +1,34 @@
+results: results/silo_drive_2d/20261104T095635Z
+  pad (baseline): inserted (P* 26054.4 kg, gamma* 22.9891 deg, max-Q 37191.4 Pa)
+  silo_cold: inserted (P* 27553.2 kg, gamma* 21.6465 deg, max-Q 31237.6 Pa)
+  lm_cmd: inserted (P* 27553.2 kg, gamma* 21.6466 deg, max-Q 31237.6 Pa)
+  lm_cmd_taper: inserted (P* 27553.2 kg, gamma* 21.6466 deg, max-Q 31237.6 Pa)
+  lm_cmd_hot: inserted (P* 27788.2 kg, gamma* 21.457 deg, max-Q 31372.5 Pa)
+  lm_fixed: inserted (P* 27550.2 kg, gamma* 21.6489 deg, max-Q 31245.2 Pa)
+  lm_fixed_target: inserted (P* 27550.2 kg, gamma* 21.6489 deg, max-Q 31245.2 Pa) flags: release_speed_not_reached: the push reached 76.5744 m/s at the track end (s = L = 100 m), below the release speed 76.7072 m/s; it released at the track end
+  lm_fixed_r07: inserted (P* 27551.1 kg, gamma* 21.6483 deg, max-Q 31243.1 Pa)
+  lm_fixed_hot: inserted (P* 28004 kg, gamma* 21.2901 deg, max-Q 31220.6 Pa)
+  lm_fixed_sled22: inserted (P* 27507.4 kg, gamma* 21.6844 deg, max-Q 31355.2 Pa)
+  lm_fixed_sealed: inserted (P* 27443.4 kg, gamma* 21.7374 deg, max-Q 31525.6 Pa)
+  offload at P_ref 26054.4 kg:
+    silo_cold_s1: ok, 41.2629 t removed (10.0421 % of stage 1, 7.95967 % of the total), decomposition explained
+    silo_cold_s1_st: ok, 11.4202 t removed (2.77933 % of stage 1, 2.20298 % of the total), decomposition explained
+    lm_cmd_s1: ok, 41.2629 t removed (10.0421 % of stage 1, 7.95967 % of the total), decomposition explained
+    lm_cmd_s1_st: ok, 11.4203 t removed (2.77933 % of stage 1, 2.20298 % of the total), decomposition explained
+    lm_cmd_taper_s1: ok, 41.263 t removed (10.0421 % of stage 1, 7.95968 % of the total), decomposition explained
+    lm_cmd_taper_s1_st: ok, 2.47902 t removed (0.603315 % of stage 1, 0.478206 % of the total), decomposition explained
+    lm_cmd_hot_s1: ok, 46.0134 t removed (11.1982 % of stage 1, 8.87605 % of the total), decomposition explained
+    lm_cmd_hot_s1_st: ok, 18.2739 t removed (4.44729 % of stage 1, 3.52506 % of the total), decomposition explained
+    lm_fixed_s1: ok, 43.322 t removed (10.5432 % of stage 1, 8.35686 % of the total), decomposition explained
+    lm_fixed_s1_st: ok, 11.3382 t removed (2.75936 % of stage 1, 2.18716 % of the total), decomposition explained
+    lm_fixed_target_s1: ok, 41.2161 t removed (10.0307 % of stage 1, 7.95064 % of the total), decomposition explained
+    lm_fixed_target_s1_st: ok, 11.0464 t removed (2.68833 % of stage 1, 2.13086 % of the total), decomposition explained
+    lm_fixed_r07_s1: ok, 42.7609 t removed (10.4066 % of stage 1, 8.24863 % of the total), decomposition explained
+    lm_fixed_r07_s1_st: ok, 5.65872 t removed (1.37715 % of stage 1, 1.09157 % of the total), decomposition explained
+    lm_fixed_hot_s1: ok, 52.7275 t removed (12.8322 % of stage 1, 10.1712 % of the total), decomposition explained
+    lm_fixed_hot_s1_st: ok, 7.34747 t removed (1.78814 % of stage 1, 1.41734 % of the total), decomposition explained
+    lm_fixed_sled22_s1: ok, 42.2181 t removed (10.2745 % of stage 1, 8.14392 % of the total), decomposition explained
+    lm_fixed_sled22_s1_st: ok, 11.6433 t removed (2.83362 % of stage 1, 2.24601 % of the total), decomposition explained
+    lm_fixed_sealed_s1: ok, 40.7032 t removed (9.90586 % of stage 1, 7.85169 % of the total), decomposition explained
+    lm_fixed_sealed_s1_st: ok, 9.04984 t removed (2.20244 % of stage 1, 1.74572 % of the total), decomposition explained
+    pad control stage1: no_offload, x_pad 0 kg, consistency pass

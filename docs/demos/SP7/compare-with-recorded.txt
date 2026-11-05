@@ -1,0 +1,25 @@
+== run A: recorded silo_structure_2d/20261016T171513Z (git 1b5f9d46d31c, dirty False)
+   demo silo_structure_2d/20261104T095619Z (git 6cf0fd2d05f7, dirty False)
+   offload cases 24 / 24; same names: True
+   status differences: none
+   largest |offload_kg difference|: 0.000000 kg on silo_hot_ramp_s1_st
+   structure payload cases 4 / 4; largest difference 0.000000 kg on silo_cold_pstar_st_step.payload_kg
+   sensitivity arms 8 / 8; largest offload difference 0.000000 kg on None
+   runs 5 / 5; largest payload difference 0.000000 kg on silo_hot_ramp_on_track.payload_kg
+== run C: recorded silo_structure_2d_readme/20261016T171529Z (git 1b5f9d46d31c, dirty False)
+   demo silo_structure_2d_readme/20261104T095630Z (git 6cf0fd2d05f7, dirty False)
+   offload cases 2 / 2; same names: True
+   status differences: none
+   largest |offload_kg difference|: 0.000000 kg on silo_cold_s1_st
+   runs 2 / 2; largest payload difference 0.000000 kg on silo_cold.payload_kg
+== run B: recorded silo_drive_2d/20261103T231946Z (git 642e11e3851d, dirty False)
+   demo silo_drive_2d/20261104T095635Z (git 6cf0fd2d05f7, dirty False)
+   offload cases 20 / 20; same names: True
+   status differences: none
+   largest |offload_kg difference|: 0.000000 kg on silo_cold_s1_st
+   runs 11 / 11; largest payload difference 0.000000 kg on silo_cold.payload_kg
+== sweep A: recorded 20261019T172327Z, demo 20261104T095624Z
+   baseline/events.csv: rows 10 / 10; largest numeric difference 0 at row 9 column m_kg; text cells differing 0
+   baseline/timeseries.csv: rows 10779 / 10779; largest numeric difference 0 at row 10778 column J_bp_mps; text cells differing 0
+   sweep_1/sweep_index.csv: rows 5 / 5; largest numeric difference 0 at row 4 column silo_cold_s1_st.structure_plausibility_ratio; text cells differing 0
+   sweep_2/sweep_index.csv: rows 4 / 4; largest numeric difference 0 at row 3 column silo_cold_200m_s1_st.structure_plausibility_ratio; text cells differing 0

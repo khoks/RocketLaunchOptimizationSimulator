@@ -1,0 +1,139 @@
+........................................................................ [  3%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 16%]
+........................................................................ [ 19%]
+........................................................................ [ 22%]
+........................................................................ [ 25%]
+........................................................................ [ 29%]
+........................................................................ [ 32%]
+........................................................................ [ 35%]
+........................................................................ [ 38%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 55%]
+........................................................................ [ 58%]
+........................................................................ [ 61%]
+........................................................................ [ 64%]
+........................................................................ [ 68%]
+........................................................................ [ 71%]
+........................................................................ [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................................................ [ 94%]
+........................................................................ [ 97%]
+..................................F.........F............                [100%]
+================================== FAILURES ===================================
+_______________ test_one_connection_carries_an_exports_requests _______________
+
+tmp_path = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3433/test_one_connection_carries_an0')
+basis = Basis(offload_experiment={'name': 'silo_offload_2d', 'vehicle': 'configs/vehicles/generic_f9_class_2d.yaml', 'dynamics...as MA-6 (TOR-930(2101)-3); total power-on C_D incl. base; generic, not Falcon 9'}}})}, committed_cases={}, commit=None)
+root = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3433/test_one_connection_carries_an0/root')
+directory = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3433/test_one_connection_carries_an0/root/app/20261104T103953Z')
+
+    def test_one_connection_carries_an_exports_requests(
+        tmp_path: Path, basis: appform.Basis, root: Path, directory: Path
+    ) -> None:
+        """Fix round 3 (honesty pass 3, the blocker; compliance pass 3 finding 5): the server
+        answers HTTP/1.1 and keeps the connection, so an export's frame POSTs, its finish and
+        its polls travel on one connection instead of one per frame (Windows' loopback stack
+        refused one of about 1,700 new connections now and then, and the page saw a lost
+        frame). Here: the create, every frame, the finish and the polls of a whole clip on one
+        raw socket, each response HTTP/1.1 with a Content-Length and the socket still open;
+        then a 413 (a frame over the cap, answered before its body is read) closes the
+        connection with its response, so the unread body is never read as a request."""
+        with serving(
+            root, basis, encoder=fake_encoder(tmp_path, "copy"), work_dir=tmp_path / "work"
+        ) as server:
+            port = server.port
+            own = f"127.0.0.1:{port}".encode()
+    
+            def request(method: bytes, target: bytes, ctype: bytes, data: bytes) -> bytes:
+                return (
+                    method
+                    + b" "
+                    + target
+                    + b" HTTP/1.1\r\nHost: "
+                    + own
+                    + b"\r\nContent-Type: "
+                    + ctype
+                    + b"\r\nContent-Length: "
+                    + str(len(data)).encode()
+                    + b"\r\n\r\n"
+                    + data
+                )
+    
+            create_body = json.dumps(
+                {
+                    "experiment": directory.parent.name,
+                    "timestamp": directory.name,
+                    "runs": ["pad", "silo"],
+                    "fps": video.DEFAULT_FPS,
+                    "width": WIDTH,
+                    "frames": 3,
+                }
+            ).encode()
+            with socket.create_connection(("127.0.0.1", port), timeout=TIMEOUT_S) as sock:
+                sock.sendall(request(b"POST", b"/api/videos", b"application/json", create_body))
+                status, body = split_response(read_response(sock))
+                assert status == 201, body
+                vid = json.loads(body)["video"]["id"].encode()
+                for k in range(3):
+                    sock.sendall(
+                        request(
+                            b"POST", b"/api/videos/" + vid + b"/frames/%d" % k, b"image/png", frame(k)
+                        )
+                    )
+                    response = read_response(sock)
+                    assert response.startswith(b"HTTP/1.1 200 "), response[:80]
+                    assert json.loads(split_response(response)[1])["received"] == k + 1
+                sock.sendall(
+                    request(b"POST", b"/api/videos/" + vid + b"/finish", b"application/json", b"{}")
+                )
+>               assert split_response(read_response(sock))[0] == 202
+E               assert 503 == 202
+
+tests\test_video.py:1196: AssertionError
+_____ test_wrapper_encoder_is_killed_with_its_child_and_the_session_fails _____
+
+tmp_path = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3433/test_wrapper_encoder_is_killed0')
+basis = Basis(offload_experiment={'name': 'silo_offload_2d', 'vehicle': 'configs/vehicles/generic_f9_class_2d.yaml', 'dynamics...as MA-6 (TOR-930(2101)-3); total power-on C_D incl. base; generic, not Falcon 9'}}})}, committed_cases={}, commit=None)
+root = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3433/test_wrapper_encoder_is_killed0/root')
+directory = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3433/test_wrapper_encoder_is_killed0/root/app/20261104T103953Z')
+
+    def test_wrapper_encoder_is_killed_with_its_child_and_the_session_fails(
+        tmp_path: Path, basis: appform.Basis, root: Path, directory: Path
+    ) -> None:
+        """Fix round 2 (security pass 2, finding 1): the encoder resolved on PATH is a wrapper
+        (a .bat here, an sh script elsewhere; a chocolatey or scoop shim behaves the same) whose
+        child is the program that never reads. Before the fix the kill reached the wrapper
+        alone: the child kept the pipe, the writer stayed blocked in flush, stdin.close from the
+        monitor blocked on the pipe's lock, and the failure was never published (the slot held,
+        frames 503, the server's close waiting on the child). Now the failed state is published
+        before the kill, the kill takes the whole tree (a Job Object, or the process group), the
+        folder goes, a new session starts and the server's close returns promptly."""
+        encoder = wrapper_encoder(tmp_path, "never_reads")
+        pid_file = tmp_path / "never_reads.pid"
+        with serving(root, basis, encoder=encoder, work_dir=tmp_path / "work") as server:
+            port = server.port
+            vid = create(port, directory, ["pad", "silo"], frames=50)[1]["video"]["id"]
+            session = session_of(server, vid)
+            wait_until(lambda: pid_file.is_file() and pid_file.read_text(encoding="utf-8") != "")
+            inner = int(pid_file.read_text(encoding="utf-8"))
+>           assert inner != session._proc.pid and process_alive(inner)
+E           AssertionError: assert (73768 != 48448 and False)
+E            +  where 48448 = <Popen: returncode: 1 args: ['<home>\\AppData\\Local\\Temp\\pytest...>.pid
+E            +    where <Popen: returncode: 1 args: ['<home>\\AppData\\Local\\Temp\\pytest...> = <launchsim.video.VideoSession object at 0x00000285BD9DF140>._proc
+E            +  and   False = process_alive(73768)
+
+tests\test_video.py:1643: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_video.py::test_one_connection_carries_an_exports_requests
+FAILED tests/test_video.py::test_wrapper_encoder_is_killed_with_its_child_and_the_session_fails
+2 failed, 2215 passed, 53 deselected in 415.03s (0:06:55)

@@ -12,8 +12,9 @@ The site is static. This script:
    Images the manual shows are copied to ``_site/manual/files/<repository path>``;
    The replay pages in ``examples/`` (written by ``launchsim replay``, whose template belongs
    to the simulator) get the site's frame added on the way: a favicon, a top bar back to the
-   gallery and the home page, the all-rights-reserved notice and the site's contrast tokens
-   (``site/templates/replay-frame.html``), plus the template patches in
+   gallery and the home page, the all-rights-reserved notice, the site's contrast tokens
+   and a rule that lets a caveat's long word break (``site/templates/replay-frame.html``),
+   plus the template patches in
    ``REPLAY_TEXT_FIXES`` and the editorial additions in ``REPLAY_PAGE_FIXES``; scene pages
    in ``examples/`` (written by ``launchsim scene``) get the same frame in the form their
    Content-Security-Policy allows (the logo as a ``data:`` image, no icon link) and no text
@@ -195,15 +196,18 @@ REPLAY_TEXT_FIXES = (
 # drive caveat's invariants, the two-decimal offload figures, the paired-pad label and note
 # (its stage named), the subtitle of a page without the baseline, and what a paired pad, a
 # pad control and a stage-2 or both-stage solve measure.
-# The drive caveat of all five pages says the missing shaft drag biases the drive energy,
-# peak power and interface force low; the gallery adds the size of that bias, RQ3-2d's own
-# estimate for silo_cold's push (the same 100 m, 3 g, 76.7 m/s push on every silo run of
-# these pages), which no page can compute from its runs. Added to the three pages that
-# compare a payload or an offload with the pad (pad-vs-silo-cold, pad-vs-silo-offload,
-# offload-vs-paired-pad; REPLAY_PAGE_FIXES). Not added to ignition-timing.html (its hot
-# starts have smaller drive figures, so their shares differ) nor to failed-ignition.html
-# (its runs are cold starts of that push, but the page is about the abort coast and gets
-# no editorial addition); the pages' own text carries no percentage (design 4.3).
+# The drive caveat of all five SP1 and Phase 2 pages says the missing shaft drag biases the
+# drive energy, peak power and interface force low; the gallery adds the size of that bias,
+# RQ3-2d's own estimate for silo_cold's push (the same 100 m, 3 g, 76.7 m/s push on every
+# silo run of these pages), which no page can compute from its runs. Added to the three
+# pages that compare a payload or an offload with the pad (pad-vs-silo-cold,
+# pad-vs-silo-offload, offload-vs-paired-pad; REPLAY_PAGE_FIXES). Not added to
+# ignition-timing.html (its hot starts have smaller drive figures, so their shares differ)
+# nor to failed-ignition.html (its runs are cold starts of that push, but the page is about
+# the abort coast and gets no editorial addition); the pages' own text carries no
+# percentage (design 4.3). SP7's pad-vs-structural-offload.html (step S8) has no entry
+# here: its stack carries a modelled mass, so these full-stack shares are not its own, and
+# its gallery entry says it adds none.
 REPLAY_SHAFT_BIAS_SOURCE = (
     "and the missing shaft drag biases the drive energy, peak power and interface force low."
 )

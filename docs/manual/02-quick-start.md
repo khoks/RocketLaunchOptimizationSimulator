@@ -21,6 +21,9 @@ Each file in `experiments/` defines a pad baseline and its variants on one vehic
 | `calibration_f9_2d.yaml` | `planar_2d` | Calibration against the published Falcon 9 payload (labelled calibration) |
 | `silo_offload_2d.yaml` | `planar_2d` | Propellant offload at fixed payload (SP1, pre-registered): pad, three silo variants, eleven offload cases, pad controls, eight sensitivity arms, five sweeps that solve an offload case at every point ([5b](05b-offload.md)) |
 | `silo_offload_2d_readme.yaml` | `planar_2d` | The offload headline case repeated on the README masses (the calibration bridge) |
+| `silo_structure_2d.yaml` | `planar_2d` | The offload with the push's structure charged (SP7, pre-registered): pad, four silo variants, 24 offload cases, four structure payload cases, eight sensitivity arms of the headline, two sweeps ([5b](05b-offload.md)) |
+| `silo_structure_2d_readme.yaml` | `planar_2d` | The structural headline repeated on the README masses (SP7, pre-registered): pad, one silo variant, two offload cases ([5b](05b-offload.md)) |
+| `silo_drive_2d.yaml` | `planar_2d` | The drive cases (SP7, pre-registered): pad, `silo_cold` and nine linear-motor variants, 20 offload cases, no sweep ([5b](05b-offload.md)) |
 
 ## Step 1: a 1-D run (seconds)
 

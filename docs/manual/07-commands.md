@@ -35,7 +35,7 @@ directory.
 | `--variant NAME` | all variants | Fly only this variant, plus the baseline. Sensitivity cases run only for these two runs, a bound runs only if it names this variant, calibration cases are skipped, and only the offload cases built on this variant run (with the pad controls of their modes and their arms; the others are listed as not run). An unknown name is an error that lists the variants |
 | `--no-plots` | plots on | Skip the PNG plots |
 | `--no-sensitivity` | sensitivity on | Skip the sensitivity cases (the +/- parameter re-runs), the offload block's sensitivity arms included |
-| `--no-offload` | offload on | Skip the experiment's offload block (2-D: the propellant saved at fixed payload); the summary says it was skipped. No effect on a file without the block |
+| `--no-offload` | offload on | Skip the experiment's offload block (2-D: the propellant saved at fixed payload) and its structure payload cases; the summary says it was skipped. No effect on a file without the block |
 
 Output: a new directory `<results root>/<experiment>/<UTC timestamp>/`
 ([8. Outputs](08-outputs.md#a-run-directory)). The console prints its path and one line per
@@ -59,7 +59,9 @@ takes about 7-10 s for the pad and 25-28 s for the lag variants (README), and ea
 comparison adds matched-payload evaluations, so a full 2-D file with its sensitivity cases
 takes many minutes. An offload block adds nested payload searches per case: the
 pre-registered `run experiments/silo_offload_2d.yaml` took 14.1 min on the author's machine
-([docs/physics.md](../physics.md), "SP1 research notes").
+([docs/physics.md](../physics.md), "SP1 research notes"). A structural offload block sizes a
+structure at every offload it evaluates, and prints one line per case and payload case
+([5b](05b-offload.md#structural-cases-sp7)).
 
 ## `sweep`
 
@@ -195,12 +197,13 @@ These are the project's own command list, kept in [CLAUDE.md](../../CLAUDE.md):
 | Fast tests | `uv run pytest -q -m "not slow"` |
 | All tests | `uv run pytest -q` |
 | Lint and format | `uv run ruff check .` then `uv run ruff format .` |
-| One run | `uv run python -m launchsim run experiments/<name>.yaml [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]` |
-| Sweep | `uv run python -m launchsim sweep experiments/<name>.yaml [--no-plots] [--no-offload]` |
+| One run | `uv run python -m launchsim run experiments/<name>.yaml [--results-root DIR] [--variant NAME] [--no-plots] [--no-sensitivity] [--no-offload]` |
+| Sweep | `uv run python -m launchsim sweep experiments/<name>.yaml [--results-root DIR] [--no-plots] [--no-offload]` |
 | Animate a 2-D run | `uv run python -m launchsim animate results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]` |
 | Replay page | `uv run python -m launchsim replay results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH]` |
 | Local app (127.0.0.1 only, Ctrl+C stops it) | `uv run python -m launchsim app [--port N] [--results-root PATH] [--open]` |
 | 2-D launch scene page (standalone HTML) | `uv run python -m launchsim scene results/<experiment>/<timestamp> [--runs NAME ...] [--out PATH] [--display PATH]` |
+| Findings scripts (SP7; each one's arguments are in its note's Reproduction section, `sp7_drive_rules.py`'s in its docstring) | `uv run python docs/findings/scripts/<name>.py` |
 
 The `&&` in the pip fallback does not work in Windows PowerShell 5.1; run the two parts
 separately ([11. Troubleshooting](11-troubleshooting.md#windows)).

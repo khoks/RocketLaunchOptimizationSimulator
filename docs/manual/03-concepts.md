@@ -14,7 +14,7 @@ The README calls the concepts:
 
 | Concept | What it is | In the simulator |
 |---|---|---|
-| A. Vertical maglev silo | The rocket stands in a shaft lined with electromagnetic rings that push a carriage (or supports on its body) upward. Engines light in the shaft (hot) or just after the mouth (cold) | Built, as the `constant_accel` assist on a vertical straight track |
+| A. Vertical maglev silo | The rocket stands in a shaft lined with electromagnetic rings that push a carriage (or supports on its body) upward. Engines light in the shaft (hot) or just after the mouth (cold) | Built, as the `constant_accel` assist and, since SP7, `linear_motor`, on a vertical straight track |
 | B. Cable-pulled ramp | A cable drive pulls a carriage along a track that curves from horizontal toward vertical | Not built. Curved tracks and the cable winch are README roadmap Phase 3 |
 | C. Baseline | The same rocket from a pad | The `baseline` run of every experiment, with assist model `none` |
 
@@ -32,7 +32,7 @@ column of the time series ([8. Outputs](08-outputs.md#timeseriescsv)).
 |---|---|---|---|
 | 1 | Hold (optional) | The vehicle is clamped on the pad or on the carriage; engines may start. On the pad the clamp opens at t = 0, or later if thrust has not yet passed weight (an extended hold) | `HOLD` |
 | 2 | Assist | The carriage pushes the vehicle along the track from s = 0 to the track length L (1-DOF) | `ASSIST` |
-| 3 | Release | At s = L, the track exit (the silo mouth). The carriage stays behind. The state is mapped into the ascent frame; in 2-D the ground speed of the site is added | an event, `release` |
+| 3 | Release | At s = L, the track exit (the silo mouth), or where a linear motor reaches its `release_speed_mps`. The carriage stays behind. The state is mapped into the ascent frame; in 2-D the ground speed of the site is added | an event, `release` |
 | 4 | Ignition | The stage-1 thrust ramp starts at a time relative to release (negative: lit on the track or the pad), as a step, a linear ramp or a first-order lag | an event, `ignition` |
 | 5 | Ascent | 1-D: straight up. 2-D: a vertical rise, a pitch kick, then a gravity turn along the air-relative velocity on stage 1 | 1-D: `BURN`, `COAST`, `FALL` (and `_PRE_IGN` coasts). 2-D: `COAST_PRE_IGN`, `VERTICAL_RISE`, `KICK`, `GRAVITY_TURN` |
 | 6 | Staging | Stage 1's dry mass is dropped, the vehicle coasts (11 s on the 2-D vehicles), stage 2 lights. The fairing goes at staging or, on the 2-D vehicles, when free-molecular heating falls below a limit | `COAST_STAGING` (and `FALL_STAGING` in 1-D); event `staging`, `fairing` |
@@ -117,7 +117,8 @@ stage-1 propellant, 10.04% of the stage-1 load and 7.96% of the total, at the pa
 and orbit. That is a difference between runs of a vehicle model that calibrates +14.3% high
 (the README-loads fork gives 36.01 t, 9.10%), sweep-optimized and unthrottled, before any
 structural mass is charged (an assumed +8.1 t of stage-1 dry mass leaves 1.98 t; about
-8.5 t, extrapolated, cancels it). Read as the pre-registration worded it, most of the
+8.5 t, extrapolated, cancels it; SP7's first-order structure leaves 11.42 t,
+[5b](05b-offload.md#what-the-shipped-structural-run-found)). Read as the pre-registration worded it, most of the
 offload is the lighter stack's thrust-to-weight (the pad flown with the same offload falls
 only 1.4 t short of the payload), while a delta-v reading chosen after the run gives the
 lighter stack 28 to 29%. The offloaded run's max-Q is 3.4% above the pad's.

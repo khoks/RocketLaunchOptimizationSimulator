@@ -38,9 +38,10 @@ preliminary.
 | `inserted` | 2-D | Stage 2 reached the energy cutoff inside the targeting acceptance |
 | `off_target` | 2-D | It reached the cutoff outside the acceptance (flagged with the misses) |
 | `short_of_orbit` | 2-D | Stage 2 burned out before the cutoff |
-| `impact` | both | The run ended on the ground (expected for a failed ignition) |
+| `impact` | both | The run ended on the ground, or inside the shaft on the parked carriage (expected for a failed ignition) |
 | `no_liftoff` | both | Thrust never passed weight on the pad |
-| `drive_limit` | both | The prescribed push would need a negative drive force; the run stopped on the track ([5](05-assist-and-ignition.md#what-the-drive-does-and-what-it-does-not-model)) |
+| `drive_limit` | both | The push would need a negative drive force; the run stopped on the track. A 2-D payload search cannot fly such a push: the variant ends `search_failed` (kind `grid`), with `drive_limit` named in its flag ([5](05-assist-and-ignition.md#what-the-drive-does-and-what-it-does-not-model); on a linear motor, [5](05-assist-and-ignition.md#how-the-linear-motor-flies-the-push)) |
+| `drive_stall` | both | A linear motor at F_max and the thrust cannot lift the stack at push start (or, in a sealed shaft, hold it against the column at the track end); the run stopped on the track. A 2-D payload search cannot fly such a push: the variant ends `search_failed` (kind `grid`), with `drive_stall` named in its flag ([5](05-assist-and-ignition.md#how-the-linear-motor-flies-the-push)) |
 | `search_failed` | 2-D | The payload search failed; no recorded run (see `search_failure_kind`) |
 | `guidance_failed` | 2-D | A fixed-guidance run whose guidance failed (for example a kick timeout, or `no_ignition`: a ramp start by event height that the coast never reaches) |
 | `bug_suspect` | 2-D | A per-run check failed (closure, loss identity or insertion eccentricity). The trajectory's own status is in `trace_status` |
@@ -355,9 +356,10 @@ that sit beside it:
   which calibrates inside the band, the same case removes 36.01 t (9.10% of stage 1). Read
   it as 9 to 10% of stage 1 across the two vehicle forks of this model, not as a Falcon 9
   figure.
-- **Structure.** No structural mass is charged for the 4 g full-stack push. An assumed +2,
-  +4 and +8.1 t of stage-1 dry mass leave 32.29, 22.88 and 1.98 t; about 8.5 t
-  (extrapolated) leaves nothing.
+- **Structure.** This run charges no structural mass for the 4 g full-stack push. An
+  assumed +2, +4 and +8.1 t of stage-1 dry mass leave 32.29, 22.88 and 1.98 t; about 8.5 t
+  (extrapolated) leaves nothing. SP7's first-order structure leaves 11.42 t
+  ([below](#reading-a-structural-summary)).
 - **What the push itself does.** The pad flown with the same offload falls 1.4 t short of
   the payload; read as the pre-registration worded it, most of the offload is the lighter
   stack's thrust-to-weight, while the delta-v reading chosen after the run gives the lighter
@@ -369,6 +371,70 @@ that sit beside it:
 - **Method.** Sweep-optimized guidance (not optimal control), no throttle, a free kick, a
   prescribed drive with no force or power limit, partly filled tanks of an unchanged
   vehicle. Under the ±10% sensitivity arms the offload stays between 38.67 and 44.46 t.
+
+## Reading a structural summary
+
+A run with structural cases (SP7) adds a **Structure** sub-section to "Propellant saved at
+fixed payload", with one column per structural case and the assumed penalty rows beside
+them. Read it after the section's caveats and in this order. The numbers here are the
+recorded `silo_structure_2d` run's; [RQ1-structural-2d](../findings/RQ1-structural-2d.md) is
+the note, and every structural number is a first-order station sizing, not a structural
+design.
+
+1. **The kind and the layer.** `kind` separates an assumed penalty ("a parametric row, not a
+   sized structure") from a modelled structure. `layer and set` says what a row is: the
+   central set; a physics band end (the physics coefficients at the search's extreme, the
+   design assumptions at central); an outer envelope end (the design axes at a corner, the
+   physics coefficients searched); or a design axis, one assumption moved off the headline. Only the central row is the headline,
+   and a design-axis row is never a band end.
+2. **The load.** `n_q` is the quasi-static plateau, DLF the dynamic load factor, n_peak =
+   n_rest + DLF (n_q - n_rest), with n_rest the resting load before the push (g_eff / g0,
+   0.996 g), and F_peak the peak interface force the structure is sized for. On a
+   `constant_accel` row under `rise_time` these are charged values: the trajectory flies an
+   instant step at 3.996 g, and the row charges an assumed 0.5 s rise (n_q 4.006 g, DLF
+   1.1273, n_peak 4.389 g) with its ramp cost. The `step` row is the push as flown.
+3. **The mass.** dm1 is stage 1 with the interstage, dm2 stage 2, both at x\*. A `no_offload`
+   row prints them at x = 0, where the solve ended. "Elements of the central case" splits dm
+   element by element, the ring frame apart ("new hardware ... no envelope credit"), and "Pad
+   envelope per element" gives what each wall needed before the push.
+4. **The offload.** x\* and its share of the stage-1 load, then the independent verification
+   as for any case. A `no_offload` row prints "none" and has its own line under the table
+   with the delta-v shortfall and, where a payload case at those settings ran, the payload
+   deficit. Read a percentage against its own uncharged offload: a hot start's or a fork's
+   uncharged x\* is not SP1's 41.26 t.
+5. **The band lines.** "physics band (layer 1)" and "outer envelope (layer 3)" give x\* at
+   each end. The ends are the extremes a screened search found at one push, not bounds, and
+   the lines under them say where the sets were found and how far they apply. A case at
+   another push reads the headline's sets placed at that push.
+6. **The plausibility table.** It compares the model's envelope mass of the stage-1 tanks,
+   M_model, with Heineman's relation R within its +/-30% band. Above 1.3 R the low-mass end's
+   dm is multiplied by 1.3 R / M_model, and below 0.7 R the high-mass end's by 0.7 R / M_model
+   (in this run M_model / R is 1.76, so the factor on the low-mass end is 0.739). Both
+   low-mass ends are printed, scaled and unscaled.
+   This is calibration, not validation.
+7. **The flags.** They are reported, never a gate. `structure_release_unload`: the instant
+   release's unloading, the stage-1 LOX column's lowest pressure under the model's single-mode
+   step treatment, and the same treatment at the pad's own MECO beside it, so read it as a
+   comparison, not a prediction. `structure_payload_limit`: n_peak or the release swing beyond
+   the payload's published limits. `structure_upper_stack_exceeded`: the push loads the upper
+   stack beyond the pad's envelope, so stage 2 and the interstage are sized.
+   `structure_flight_exceedance`: the run's own flight needs more wall than the envelope it
+   was sized to (sized, not charged). `structure_fixed_point_cap`: the sizing's fixed point
+   hit its iteration cap. `structure_payload_unconverged`: a payload case's two passes had not settled;
+   read its number with the residual estimate printed beside it.
+8. **The payload cases.** A separate table: P_2\* - P_ref is a payload change on the full
+   load, never propellant saved. A flown case's run inherits the free kick, so a gain whose
+   run kicks above the pad's q-alpha is an upper bound (the run's variants table says so for
+   the uncharged gain, and the note applies the same rule to the +342 kg).
+9. **The figure.** `plots/<case>_structure.png` shows the required wall along the stations,
+   pad envelope against push, the governing mode by station, and dm by element.
+
+The decomposition and the screening rule apply as for any case. With the structure charged
+the headline no longer beats the ideal-screening estimate (0.763 of 14.98 t). A linear-motor
+case reads the same way, with DLF and n_peak, under `dynamic: rise_time`, the larger of the
+rise formula and the flown history's bound, and "Variants against the baseline" adds the drive's rows.
+`silo_drive_2d.yaml` ran at the central structure only, so a difference between drives is read at the central coefficients
+and nowhere else.
 
 ## The caveats, and why each matters
 
@@ -422,9 +488,36 @@ The fuel-offload note adds these ([RQ1-fuel-offload-2d](../findings/RQ1-fuel-off
   300 m; at a fixed exit speed a deeper silo gives the same offload (by construction in
   this model) for up to 71% more electricity and a longer facility.
 - The earliest hot start loses: lighting at the shaft floor removes 2.6 t less than
-  lighting 75 m deep, under a prescribed drive where thrust on the track buys no speed; a
-  force-limited drive (Phase 3) may change that ordering.
+  lighting 75 m deep, under a prescribed drive where thrust on the track buys no speed.
+  Under SP7's force law thrust does add exit speed: uncharged, its hot start offloads 9.41 t
+  more than its own cold start, and with the structure charged it keeps 3.99 t less. SP7's
+  acceleration-law hot start gains, repeating the constant-acceleration ramped hot start by
+  construction. Each carries the exhaust caveat
+  ([RQ1-structural-2d](../findings/RQ1-structural-2d.md), "The drive cases").
 - A late start is expensive: each second of delay after release costs 4.8 to 5.3 t.
 - The figure depends on the vehicle masses (9.10% of stage 1 on the README-loads fork).
+
+With the push's structure charged (SP7; preliminary; a first-order station sizing, not a
+structural design; [RQ1-structural-2d](../findings/RQ1-structural-2d.md), "What goes against
+the hypothesis"):
+
+- The structure cancels most of the offload at the central coefficients: 11.42 t of
+  41.26 t is left, and the silo no longer beats the ideal-screening estimate.
+- The physics band reaches no offload, and so does the instant step the
+  constant-acceleration drive actually flies.
+- Strokes of 25 and 50 m leave no offload; the lowest exit speed that still offloads lies
+  between 54.24 and 76.71 m/s.
+- Every offloaded structural run kicks into a q-alpha above the pad's: 1.7 to 3.9 times it
+  on the recorded runs of `silo_structure_2d.yaml` (its sweeps' structural runs are not
+  written), 1.39 to 5.48 times on `silo_drive_2d.yaml`.
+- In payload terms the silo becomes marginal: +342 kg, an upper bound.
+- The payload-limit flag fires on every cold start except `lm_cmd_taper`, and on the
+  force-limited hot start `lm_fixed_hot`. At the headline the release swing is -4.389 g
+  against the payload's published -2.0 g; the same treatment swings the pad's own MECO to
+  -5.195 g, so the flag measures the step treatment as much as the push. The model also says
+  the release would separate the stage-1 LOX column (-896 kPa absolute), and nothing models
+  the propellant settling for the ignition 0.5 s later: a risk no number here measures.
+- At the central structure all nine linear-motor drives cancel most of the offload, and on
+  the same 100 m silo neither of the two that exit faster keeps more.
 
 Next: [10. Validation](10-validation.md)

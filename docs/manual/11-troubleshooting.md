@@ -70,7 +70,21 @@ key path.
 | `a ramp start by at_depth_m needs an assist model` | A depth, speed or height trigger on a pad | Use it on a silo run only |
 | `reference push_start needs an assist model (a pad run has no push)` | `push_start` on a pad | Use `reference: release` |
 | `ignition fails: true requires end: impact` | A failed ignition must end on the ground | Add `end: impact` |
-| `assist model 'linear_motor' is planned for Phase 3` | Not built yet | Use `constant_accel` |
+| `assist model 'cable_winch' is planned for Phase 3` | Not built yet | Use `constant_accel` or `linear_motor` |
+| `linear_motor control acceleration needs accel_command_g`, `linear_motor control force takes no accel_command_g ...` | The command goes with the acceleration law only | Add or remove it ([5](05-assist-and-ignition.md#linear_motor-keys)) |
+| `linear_motor release_speed_mps is refused together with stop_taper_m ...` | The taper is a release-at-L device | Leave one out |
+| `a sealed shaft needs the vehicle's body diameter to check its bore against, and the vehicle has no aero block ...` | The bore check reads the vehicle's A_ref, and this vehicle (the 1-D `generic_f9_class.yaml`, for one) has no `aero` block | Use a vehicle with an `aero` block, such as a 2-D file ([5](05-assist-and-ignition.md#linear_motor-keys)) |
+| `linear_motor shaft sealed needs shaft_bore_m, shaft_gap_m, shaft_gamma ...`, `linear_motor shaft vented takes no ...` | The three keys go with `shaft: sealed` only | Give all three, or none |
+| `linear_motor shaft sealed is refused together with stop_taper_m under the force law ...` | The taper's holding value leaves the column out | Leave one out; the acceleration law's taper flies its command, the column included |
+| `the sealed shaft's bore ... must exceed the diameter sqrt(4 A_ref / pi) ...` | The bore leaves the vehicle no room | Widen it; only that section is checked, not a wider fairing |
+| `a release-referenced t_ign_s ... (lit on the track) is refused on the linear_motor ...` | The push time is known only once the push is flown | State it with `reference: push_start` |
+| `a ramp start by at_depth_m needs the constant_accel drive and its track ...` | Depth, speed and height ramp starts convert on `constant_accel` only | State it by time |
+| `offload case 'x' has structure, but the experiment declares no structure block ...` | A structural case without the file | Add `structure: {file: ...}` ([4](04-experiments.md#structure-2-d)) |
+| `structure file '...' applies to [...], not to the ...` | The file does not serve the experiment's vehicle | Use its fork, or add the vehicle to a copy's `applies_to` |
+| `offload case 'x': a structural case is a stage-1 solve ...` | A `stage2`, `both` or fixed case with `structure` | Use `solve: stage1` |
+| `structure override 'x' is not a design-axis coefficient ...`, `structure overrides: ...` | The path is not a design axis, or the value is out of its range | Use one of the listed paths, inside its range ([5b](05b-offload.md#structural-cases-sp7)) |
+| `structure override dynamics.rise_time_s does not act on run ...` | A linear motor takes its own `force_rise_time_s` | Vary `force_rise_time_s` instead |
+| `structure payload case 'x': the payload form runs inside the offload pass ...` | Payload cases without an `offload:` block | Add one |
 | `track angle_deg other than 90 is a Phase 3 feature` | Tilted or curved tracks are not built yet | Use 90 |
 | `include_rotation: true is a Phase 2 feature: it needs dynamics: planar_2d` | Earth rotation on a 1-D run | Set it false, or use `planar_2d` |
 | `a planar_2d site needs latitude_deg, azimuth_deg and include_rotation, each given explicitly` | A 2-D site with a missing key | Give all three |
@@ -104,7 +118,10 @@ key path.
   recorded trajectory, so its plots and time series are empty. A searched run whose ramp
   start by event height lies just below the drag-free apex fails this way (kind `grid`,
   naming `no_ignition`): the flown coast, slowed by drag, peaks below the height
-  ([5](05-assist-and-ignition.md#ramp-start-by-depth-speed-or-height)). Lower the height.
+  ([5](05-assist-and-ignition.md#ramp-start-by-depth-speed-or-height)). Lower the height. A
+  linear motor that cannot lift the stack fails the same way (kind `grid`, naming
+  `drive_stall`; [5](05-assist-and-ignition.md#how-the-linear-motor-flies-the-push)): raise
+  `force_max_kN`.
 - **An offload case reads `offload_verify_mismatch`.** Its independent payload search did
   not return P_ref within the tolerance; its x\* is a lower bound. Report it as such
   ([9](09-reading-results.md#verification-and-flags)).
@@ -118,6 +135,8 @@ key path.
   offload until it is investigated ([9](09-reading-results.md#the-pad-control)).
 - **Status `drive_limit`.** The thrust on the track exceeded what the prescribed
   acceleration needs; see [5](05-assist-and-ignition.md#what-the-drive-does-and-what-it-does-not-model).
+  A linear motor refuses `allow_negative_drive_force`; see
+  [5](05-assist-and-ignition.md#how-the-linear-motor-flies-the-push).
 - **Status `bug_suspect` or a `bug_suspect` comparison.** A per-run check or a blocking
   screening check failed. Do not quote the number; read the Checks section
   ([9](09-reading-results.md)).

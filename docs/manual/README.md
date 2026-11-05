@@ -44,7 +44,18 @@ and `launchsim scene`, the same scene as a standalone page
 ([7b. The local app and the launch scene](07b-app.md)). Every run launched from the app is
 exploratory and never a finding; the app's launch of the `silo_cold_s1` preset reproduces
 SP1's 41.26 t within 0.002 kg (the same configuration on the same model: a reproduction,
-not new evidence). The program board is [docs/phases/README.md](../phases/README.md).
+not new evidence). Phase SP7 (in progress: its pre-registered runs and findings note are
+done, its close is not) added a first-order structural model of the push load (the
+`structure:` block of an experiment and the files under `configs/structures/`), the
+force- and power-limited `linear_motor` with its carriage, closed-form braking,
+target-speed release and sealed shaft, and a second note on the offload:
+[RQ1-structural-2d](../findings/RQ1-structural-2d.md) (preliminary). With a first-order
+structure sized for the offloaded stack at central coefficients and charged, the same
+silo leaves out **11.42 t of the 41.26 t** (27.7%, 2.78% of the stage-1 load): a
+first-order station sizing, not a structural design, with an assumed drive rise time
+the constant-acceleration trajectory does not fly, and a physics band from no offload to
+28.57 t (23.68 t before its plausibility scaling; [5b](05b-offload.md#what-the-shipped-structural-run-found)), on the same gate vehicle (+14.3%), sweep-optimized and unthrottled. The program board
+is [docs/phases/README.md](../phases/README.md).
 
 ## Contents
 
@@ -53,14 +64,14 @@ not new evidence). The program board is [docs/phases/README.md](../phases/README
 | [1. Install](01-install.md) | Python, uv, the virtual environment, ffmpeg, checking the install |
 | [2. Quick start](02-quick-start.md) | Run a shipped experiment, open the summary, replay a 2-D run, watch it as a launch scene, open the app |
 | [3. Concepts](03-concepts.md) | The phases of a run, pad baseline against silo, payload capacity, residual propellant, the loss budget |
-| [4. Experiment files](04-experiments.md) | Every block of an experiment YAML: shared blocks, baseline, variants, sweeps, sensitivity, bounds, cases, the merge rules |
-| [5. Assist and ignition](05-assist-and-ignition.md) | The `none` and `constant_accel` assist models, the carriage, braking, efficiency, impingement; ignition timing, startup shapes, failed ignition, ramp start by depth, speed or height (closed form or altitude event) |
-| [5b. Propellant offload at fixed payload](05b-offload.md) | The `offload:` block: every key, the runs it writes, pad controls, paired pads, sensitivity arms, sweeps that solve an offload at every point, the summary section, replaying an offloaded run, `--no-offload` and `--no-sensitivity` |
-| [6. Vehicle files](06-vehicles.md) | Stages, engines, sourced quantities, aerodynamics, fairing, screening; why calibrated files are forked, never edited |
+| [4. Experiment files](04-experiments.md) | Every block of an experiment YAML: shared blocks, baseline, variants, sweeps, sensitivity, bounds, cases, the `structure:` block, the merge rules |
+| [5. Assist and ignition](05-assist-and-ignition.md) | The `none`, `constant_accel` and `linear_motor` assist models, the carriage, braking, efficiency, impingement, the target-speed release, the sealed shaft; ignition timing, startup shapes, failed ignition, ramp start by depth, speed or height (closed form or altitude event) |
+| [5b. Propellant offload at fixed payload](05b-offload.md) | The `offload:` block: every key, the runs it writes, pad controls, paired pads, sensitivity arms, sweeps that solve an offload at every point, structural cases and payload cases, the summary section, replaying an offloaded run, `--no-offload` and `--no-sensitivity` |
+| [6. Vehicle files](06-vehicles.md) | Stages, engines, sourced quantities, aerodynamics, fairing, screening; why calibrated files are forked, never edited; display files and structure files |
 | [7. Commands](07-commands.md) | `run`, `sweep`, `animate`, `replay`, `scene`, `app`: every flag, default and output location; the one output-path rule |
 | [7b. The local app and the launch scene](07b-app.md) | `launchsim app`: starting and stopping it, the form group by group, the presets, the checks and refusals, Launch, the progress card, the results panel, the run browser, the scene and its keys, the MP4 export, the exploratory regime, the security notes; `launchsim scene`, the standalone page |
-| [8. Outputs](08-outputs.md) | The results directory, `summary.md`, `metrics.json` (with the offload record), `resolved_config.yaml`, `sweep_index.csv` (with the offload columns), `timeseries.csv` and `events.csv` columns with units, plots; an app launch's directory, the scene page and the MP4 |
-| [9. Reading results](09-reading-results.md) | The loss identity, payload capacity, the screening yardstick and the screening-beat rule, statuses and flags; reading an offload result (the cross-vehicle decomposition, the pad control, the paired pad); the caveats |
+| [8. Outputs](08-outputs.md) | The results directory, `summary.md`, `metrics.json` (with the offload record), `resolved_config.yaml`, `sweep_index.csv` (with the offload columns), `timeseries.csv` and `events.csv` columns with units, plots; the structure and linear-motor keys; an app launch's directory, the scene page and the MP4 |
+| [9. Reading results](09-reading-results.md) | The loss identity, payload capacity, the screening yardstick and the screening-beat rule, statuses and flags; reading an offload result (the cross-vehicle decomposition, the pad control, the paired pad); reading a structural summary; the caveats |
 | [10. Validation](10-validation.md) | Validation first: the analytic tests, calibration against validation, running the tests |
 | [11. Troubleshooting](11-troubleshooting.md) | Windows notes, common errors and what they mean |
 | [12. FAQ and glossary](12-faq-glossary.md) | Short answers and the terms used everywhere else |
@@ -106,9 +117,16 @@ the one output-path rule and the display files) at commit `705025f` (2026-10-07)
 command, option, field, preset, refusal and output named in those additions was checked
 against `src/launchsim/cli.py`, `app.py`, `appform.py`, `scene.py`, `display.py`,
 `video.py`, `run_data.py`, the templates under `src/launchsim/templates/`, the files under
-`configs/display/` and the recorded demo in `docs/demos/SP2/`. Where the code and the docs
+`configs/display/` and the recorded demo in `docs/demos/SP2/`. It was brought up to date for
+what SP7 delivered (the `structure:` block, structural and payload cases, the structure
+files, `linear_motor`, the sealed shaft and their keys, columns, events and figures) at
+commit `cf6d1db` (2026-11-05 UTC): every key, refusal, metric and column named in those
+additions was checked against `src/launchsim/config.py`, `structure.py`,
+`assist/linear_motor.py`, `phases/prelude.py`, `results_io.py`, `summary.py`, `scene.py` and
+`plots.py`, the config loader itself, the shipped `experiments/silo_structure_2d.yaml` and
+`silo_drive_2d.yaml`, and the recorded runs they name. Where the code and the docs
 move on, the code wins; [docs/physics.md](../physics.md) is the source of truth for the
 equations.
 
 Features that are planned but not in that code are marked with the phase that brings them
-(for example README roadmap Phase 3 for the force-limited drives).
+(for example README roadmap Phase 3 for the cable winch).

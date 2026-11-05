@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Slide Deck · launch-assist-sim</title>
-<meta name="description" content="A 20-slide deck on launch-assist-sim: the fuel-replacement question, the concepts, first-order numbers, prior art, the simulator, calibration, the preliminary 2-D results, what goes against the hypothesis, the preliminary fuel-offload finding with its caveats, and the roadmap. All rights reserved.">
+<meta name="description" content="A 24-slide deck on launch-assist-sim: the fuel-replacement question, the concepts, first-order numbers, prior art, the simulator, calibration, the preliminary 2-D results, what goes against the hypothesis, the preliminary fuel-offload finding with its caveats, the same offload with the push's structure charged and the drive cases, and the roadmap. All rights reserved.">
 <meta name="author" content="Rahul Singh Khokhar">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22 viewBox=%220 0 64 64%22 role=%22img%22 aria-label=%22launch-assist-sim%22%3E%3Ctitle%3Elaunch-assist-sim%3C/title%3E%3CclipPath id=%22fc%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2212%22/%3E%3C/clipPath%3E%3CclipPath id=%22fr%22%3E%3Cpath d=%22M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V47H28Z%22/%3E%3C/clipPath%3E%3Cg clip-path=%22url(%23fc)%22%3E%3Crect width=%2264%22 height=%2241%22 fill=%22%232d5f8f%22/%3E%3Crect y=%2241%22 width=%2264%22 height=%2223%22 fill=%22%231c2226%22/%3E%3Crect x=%2225%22 y=%2241%22 width=%2214%22 height=%2223%22 fill=%22%232b3238%22/%3E%3Cpath d=%22M0 42.25H25M39 42.25H64%22 stroke=%22%23b09a78%22 stroke-width=%222.5%22/%3E%3Cpath d=%22M19.5 48.5h5.5M39 48.5h5.5%22 stroke=%22%23f08a4b%22 stroke-opacity=%221.0%22 stroke-width=%223.6%22/%3E%3Cpath d=%22M19.5 56.5h5.5M39 56.5h5.5%22 stroke=%22%23f08a4b%22 stroke-opacity=%220.5%22 stroke-width=%223.6%22/%3E%3Cpath d=%22M28 18.5C28 12 30.6 7.4 32 5.5C33.4 7.4 36 12 36 18.5V47H28Z%22 fill=%22%23fbfbf8%22/%3E%3Crect x=%2233.6%22 y=%224%22 width=%223%22 height=%2244%22 fill=%22%23dfe4e1%22 clip-path=%22url(%23fr)%22/%3E%3Crect x=%2228%22 y=%2227%22 width=%228%22 height=%222.2%22 fill=%22%231c2226%22/%3E%3Cpath d=%22M0 41V52A12 12 0 0 0 12 64H52A12 12 0 0 0 64 52V41%22 fill=%22none%22 stroke=%22%234c565c%22 stroke-width=%225%22/%3E%3C/g%3E%3C/svg%3E" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -368,7 +368,11 @@ table.pa td:nth-child(4) { color: var(--ink-2); }
 .s-app .shot img { width: 100%; height: auto; display: block; border: 1px solid var(--rule); border-radius: 6px; }
 .s-app .facts { font-size: 15.5px; }
 .s-app .facts li { margin: 0 0 7px; }
-.s-more .linkcards ul { font-size: 17px; }
+.s-more .linkcards ul { font-size: 16px; }
+.s-more .cmd { padding: 5px 9px; font-size: 13px; }
+.s-more .cmd + .cmd { margin-top: 4px; }
+.s-more .readorder li { font-size: 13.5px; line-height: 1.3; }
+.s-more .readorder li b { font-size: 12.5px; }
 .s-scr .body { align-content: center; }
 .s-ag .against { font-size: 14.5px; line-height: 1.34; }
 .s-ag .against ol { gap: 6px; }
@@ -383,7 +387,7 @@ table.pa td:nth-child(4) { color: var(--ink-2); }
 .tagn { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-family: var(--font-data); font-size: 12px; font-weight: 500; color: var(--panel); background: var(--run-1); }
 .tagn.pad { background: var(--run-0); border-radius: 3px; }
 .ch .num-tag { font-size: 14px; }
-.readorder { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; counter-reset: ro; list-style: none; padding: 0 !important; }
+.readorder { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; counter-reset: ro; list-style: none; padding: 0 !important; }
 .readorder li { margin: 0 !important; border-top: 3px solid var(--run-0); padding-top: 6px; font-size: 14.5px; line-height: 1.35; color: var(--ink-2); }
 .readorder li b { display: block; font-family: var(--font-data); font-weight: 500; font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
 .nw { white-space: nowrap; }
@@ -423,6 +427,35 @@ table.pa td:nth-child(4) { color: var(--ink-2); }
 table.t.pen { font-size: 15.5px; }
 table.t.pen td { padding: 4px 10px; }
 .pen-list { font-size: 14.5px; line-height: 1.38; gap: 7px; padding-left: 1.1em; }
+
+/* the structural slides (16-19): SP7's finding, its axes, the drive cases, what goes against it */
+.s-st .hero .v { font-size: 62px; }
+.s-st .hero .k { font-size: 15.5px; line-height: 1.38; }
+.s-st .facts { font-size: 14.5px; line-height: 1.38; }
+.s-st .facts li + li { margin-top: 5px; }
+.s-st .cav, .s-ax .cav, .s-dr .cav { font-size: 13.5px; line-height: 1.4; padding: 7px 12px; }
+.s-st h2, .s-ax h2, .s-dr h2 { margin-bottom: 12px; }
+.s-st .badges { margin-bottom: 8px; }
+.s-st .body, .s-ax .body, .s-dr .body { gap: 12px; }
+.s-ax table.t.pen, .s-dr table.t.pen { font-size: 14.5px; }
+.s-ax table.t.pen td { padding: 4px 8px; }
+.s-ax .pen-list { font-size: 14px; line-height: 1.34; gap: 5px; }
+.s-dr table.t.drv td { padding: 3px 8px; }
+.s-dr table.t.drv code { padding: 0 3px; }
+.s-dr .tbar { min-width: 96px; height: 12px; display: block; margin-top: 4px; }
+.s-ag2 .against ol { gap: 4px; }
+.s-ag2 .cav { font-size: 13.5px; }
+html.stack .s-dr table.t.drv th:nth-child(2), html.stack .s-dr table.t.drv td:nth-child(2) { display: none; }
+html.stack .s-dr .tbar { min-width: 34px; }
+html.stack .s-ax table.t.pen td { padding: 4px 5px; }
+/* phone: the slide's result stays on screen (the facility column goes first; a note under
+   each table keeps its figures, shown only here, never in print) */
+html.stack .s-ax table.t.pen th:last-child, html.stack .s-ax table.t.pen td:last-child { display: none; }
+html.stack .s-ax table.t.pen td.num { white-space: normal; }
+html.stack .s-dr table.t.drv code { overflow-wrap: normal; }
+html.stack .s-ag2 .against { font-size: 14.5px; }
+.stack-note { display: none; }
+html.stack .stack-note { display: block; }
 
 /* ---------- controls ---------- */
 .controls {
@@ -558,7 +591,7 @@ html.pp .controls, html.pp .progress { display: none; }
   html .stage, html.pp .stage, html.stack .stage { position: static; transform: none; width: 1280px; height: auto; margin: 0; padding: 0; display: block; gap: 0; }
   html .slide, html.pp .slide, html.stack .slide { position: relative; inset: auto; display: flex !important; width: 1280px; height: 720px; border: 0; border-radius: 0; box-shadow: none; animation: none; break-after: page; page-break-after: always; break-inside: avoid; }
   html .slide:last-child { break-after: auto; page-break-after: auto; }
-  .controls, .progress, .skip { display: none !important; }
+  .controls, .progress, .skip, .stack-note { display: none !important; }
   a { text-decoration: none; }
 }
 </style>
@@ -593,10 +626,10 @@ html.pp .controls, html.pp .progress { display: none; }
     <p class="sub">A vertical maglev silo pushes a Falcon 9-class rocket out of the ground at about 77 m/s, before or while its engines light. The simulator measures what that is worth, always against the same rocket launched from a pad.</p>
     <div class="chips">
       <span class="badge accent">Preliminary results</span>
-      <span class="badge">Phases 0–2, SP1 and SP2 done · SP7 next</span>
-      <span class="badge">Status as of 7 October 2026</span>
+      <span class="badge">Phases 0–2, SP1 and SP2 done · SP7 results in, not yet closed</span>
+      <span class="badge">Status as of 5 November 2026</span>
     </div>
-    <p class="author">Rahul Singh Khokhar <span>· October 2026</span></p>
+    <p class="author">Rahul Singh Khokhar <span>· November 2026</span></p>
   </div>
   <div class="art" aria-hidden="true">
     <svg viewBox="0 0 470 675" preserveAspectRatio="xMidYMax slice">
@@ -664,7 +697,7 @@ html.pp .controls, html.pp .progress { display: none; }
           <p class="small"><span class="strong">The headline question.</span> Measured in SP1: <span class="strong">41.26 t</span> of <span class="nb">stage-1</span> propellant, 10.04% (preliminary, slides 13–15).</p>
         </div>
       </div>
-      <p class="cav way-cav"><b>Caveats</b>No structural mass for the 4 g push (~8.1 t of <span class="nb">stage-1</span> strengthening cancels the gain, ~8.5 t the offload); gate vehicle +14.3% high; as pre-registered, the offload is mostly the lighter stack, not the push (slide 14).</p>
+      <p class="cav way-cav"><b>Caveats</b>Both charge no structure for the 4 g push: ~8.1 t cancels the gain, and SP7's leaves 11.42 t (slide 16). Gate vehicle +14.3% high; as pre-registered, the offload is mostly the lighter stack (slide 14).</p>
       </div>
       <div>
         <h3>Why a launch company might care</h3>
@@ -720,7 +753,7 @@ html.pp .controls, html.pp .progress { display: none; }
           <text x="8" y="130" class="m">ground</text>
         </svg>
       </div>
-      <p class="small">Rings in an underground shaft form a vertical linear motor. Engines light in the shaft (hot) or just after the exit (cold). Modelled as a prescribed-acceleration push.</p>
+      <p class="small">Rings in an underground shaft form a vertical linear motor. Engines light in the shaft (hot) or just after the exit (cold). Modelled as a prescribed-acceleration push and, since SP7, a force- and power-limited linear motor.</p>
     </div>
     <div class="concept">
       <span class="badge tag">Planned · README Phase 3</span>
@@ -862,13 +895,13 @@ html.pp .controls, html.pp .progress { display: none; }
     <div class="pgrid">
       <div class="card"><h3>Axial load on a full stack</h3>
         <p><span class="k h">Hand</span>A 3 g net push means a fuelled stack feels 4 g: 21.5 MN at the interface, 2.8× liftoff thrust.</p>
-        <p><span class="k s">Sim</span>3.996 g and 22.49 MN on the <span class="nb">2-D</span> stack. No structural mass charged.</p></div>
+        <p><span class="k s">Sim</span>3.996 g and 22.49 MN on the <span class="nb">2-D</span> stack; SP7 sizes a structure for it (slide 16).</p></div>
       <div class="card"><h3>Lighting after release</h3>
         <p><span class="k h">Hand</span>g × (delay + ramp/2): 5–25 m/s, up to a third of a 77 m/s assist.</p>
         <p><span class="k s">Sim</span><span class="nb">2-D</span> costs about 2× more: 0.5 s + 2 s ramp loses 32.30 m/s on the README masses.</p></div>
       <div class="card"><h3>Hardware and strengthening</h3>
         <p><span class="k h">Hand</span>Break-even at ~5.5 t added to stage 1, ~0.7 t to stage 2.</p>
-        <p><span class="k s">Sim</span>~184 kg of payload per tonne of <span class="nb">stage-1</span> mass, so break-even ~8.1 t; the 41.26 t offload loses 4.5–5.1 t per tonne, zero near 8.5 t.</p></div>
+        <p><span class="k s">Sim</span>~184 kg of payload per tonne of <span class="nb">stage-1</span> mass, so break-even ~8.1 t; the 41.26 t offload loses 4.5–5.1 t per tonne, zero near 8.5 t. SP7's first-order 6.31 t leaves 11.42 t (slide 16).</p></div>
       <div class="card"><h3>Peak power</h3>
         <p><span class="k h">Hand</span>≈2.2 GJ in 2.6 s, ~1.65 GW peak; ~1.2 MWh of electricity at 50%.</p>
         <p><span class="k s">Sim</span>2.249 GJ with a 1.725 GW peak on the heavier <span class="nb">2-D</span> stack.</p></div>
@@ -880,7 +913,7 @@ html.pp .controls, html.pp .progress { display: none; }
         <p><span class="k s">Sim</span>Back at the mouth at 76.60 m/s after 15.689 s. No abort modelled.</p></div>
       <div class="card"><h3>Silo air (A)</h3>
         <p><span class="k h">Hand</span>A snug shaft is a piston: up to 1.1 MN for a 3.7 m bore, ~5% of the drive.</p>
-        <p><span class="k s">Sim</span>Every run vents the shaft, with no shaft drag (biases power ~0.08% low).</p></div>
+        <p><span class="k s">Sim</span>Vented, no shaft drag (power ~0.08% low); SP7's one sealed shaft adds a column force, still no drag.</p></div>
       <div class="card"><h3>Carriage braking</h3>
         <p><span class="k h">Hand</span>At 77 m/s, braking at 5 g needs ~60 m.</p>
         <p><span class="k s">Sim</span>60.0 m added: the 100 m stroke needs a 160 m facility.</p></div>
@@ -940,7 +973,7 @@ html.pp .controls, html.pp .progress { display: none; }
           <li>ICAO standard atmosphere, drag varying with Mach, back-pressure.</li>
           <li>Vertical rise, kick, gravity turn; linear-tangent steering on stage 2.</li>
           <li>Payload capacity found by bisection; guidance sweep-optimized.</li>
-          <li>Constant-acceleration silo push, with no force or power limit.</li>
+          <li>Constant-acceleration silo push, with no force or power limit (SP7 adds a linear motor, a sealed shaft and a first-order structural sizing).</li>
         </ul>
       </div>
       <div>
@@ -960,7 +993,7 @@ html.pp .controls, html.pp .progress { display: none; }
           <div class="count"><span class="v">269</span><span class="k">at the Phase 1 gate</span></div>
           <div class="count"><span class="v">951</span><span class="k">928 fast + 23 slow at the Phase 2 handoff</span></div>
         </div>
-        <p class="facts" style="margin-top:12px">Every run writes <code>summary.md</code>, <code>metrics.json</code>, CSV time series and plots. <code>animate</code> makes an MP4 or GIF; <code>replay</code> an interactive HTML page; <code>scene</code> the <span class="nb">2-D</span> launch scene as a page; <code>app</code> serves the local app with the scene (slide 18).</p>
+        <p class="facts" style="margin-top:12px">Every run writes <code>summary.md</code>, <code>metrics.json</code>, CSV time series and plots. <code>animate</code> makes an MP4 or GIF; <code>replay</code> an interactive HTML page; <code>scene</code> the <span class="nb">2-D</span> launch scene as a page; <code>app</code> serves the local app with the scene (slide 22).</p>
       </div>
     </div>
   </div>
@@ -1013,7 +1046,7 @@ html.pp .controls, html.pp .progress { display: none; }
       <p class="small">Best physical variant: lit on the carriage, ramp ending at release, <span class="strong">+235.0 kg</span> over the cold start, paid for with 2.7 t burned on the track (no sensitivity run).</p>
     </div>
   </div>
-  <p class="cav"><b>Caveats</b>Sweep-optimized guidance, not optimal control · unthrottled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds · free kick (no angle-of-attack aerodynamics) · gate vehicle +14.3% high · no structural mass for the 4 g push · prescribed-acceleration drive, massless carriage, no shaft drag · planar point mass, generic C<sub>D</sub>(Mach).</p>
+  <p class="cav"><b>Caveats</b>Sweep-optimized guidance, not optimal control · unthrottled, so <span class="nb">max-Q</span> and <span class="nb">q-alpha</span> are upper bounds · free kick (no angle-of-attack aerodynamics) · gate vehicle +14.3% high · no structural mass for the 4 g push in these runs (SP7's, slide 16) · prescribed-acceleration drive, massless carriage, no shaft drag · planar point mass, generic C<sub>D</sub>(Mach).</p>
   <footer class="foot"><span class="src">Source: README.md, "<span class="nb">2-D</span> to orbit" · docs/findings/RQ3-silo-screening-2d.md · RQ2-ignition-timing-2d.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
@@ -1059,8 +1092,8 @@ html.pp .controls, html.pp .progress { display: none; }
   <div class="body cols-ab" style="gap:34px">
     <div>
       <h3>Structural mass could cancel the whole gain</h3>
-      <div class="chwrap"><svg class="ch" viewBox="0 0 560 320" role="img" aria-label="Net payload gain falls about 184 kg per tonne of stage-1 strengthening, from +1,498.8 kg to zero at about 8.1 tonnes" xmlns="http://www.w3.org/2000/svg"><rect class="band" x="66" y="30" width="104.3" height="232"/><text class="t-mute" x="72" y="242.9">tested</text><text class="t-mute" x="72" y="258.9">±2.22 t</text><line class="grid" x1="66" y1="262" x2="536" y2="262"/><text class="t-mute" x="58" y="266" text-anchor="end">−800</text><line class="grid" x1="66" y1="228.9" x2="536" y2="228.9"/><text class="t-mute" x="58" y="232.9" text-anchor="end">−400</text><line class="zero" x1="66" y1="195.7" x2="536" y2="195.7"/><text class="t-mute" x="58" y="199.7" text-anchor="end">0</text><line class="grid" x1="66" y1="162.6" x2="536" y2="162.6"/><text class="t-mute" x="58" y="166.6" text-anchor="end">+400</text><line class="grid" x1="66" y1="129.4" x2="536" y2="129.4"/><text class="t-mute" x="58" y="133.4" text-anchor="end">+800</text><line class="grid" x1="66" y1="96.3" x2="536" y2="96.3"/><text class="t-mute" x="58" y="100.3" text-anchor="end">+1,200</text><line class="grid" x1="66" y1="63.1" x2="536" y2="63.1"/><text class="t-mute" x="58" y="67.1" text-anchor="end">+1,600</text><line class="grid" x1="66" y1="30" x2="536" y2="30"/><text class="t-mute" x="58" y="34" text-anchor="end">+2,000</text><text class="t-mute" x="66" y="280" text-anchor="middle">0</text><text class="t-mute" x="160" y="280" text-anchor="middle">2</text><text class="t-mute" x="254" y="280" text-anchor="middle">4</text><text class="t-mute" x="348" y="280" text-anchor="middle">6</text><text class="t-mute" x="442" y="280" text-anchor="middle">8</text><text class="t-mute" x="536" y="280" text-anchor="middle">10</text><text x="301" y="312" text-anchor="middle">extra stage-1 dry mass for strengthening (t)</text><text x="58" y="16" text-anchor="end" class="t-mute">kg</text><line class="silo" x1="66" y1="71.5" x2="170.3" y2="105.4"/><line class="silo dash" x1="170.3" y1="105.4" x2="536" y2="224.2"/><circle class="dot-silo" cx="66" cy="71.5" r="6"><title>+1,498.8 kg with no strengthening</title></circle><text class="t-strong" x="78" y="53.5">+1,498.8 kg with nothing charged (today)</text><text x="239.9" y="116">≈ −184 kg of payload per tonne</text><text class="t-mute" x="536" y="83.7" text-anchor="end">dashed: linear extrapolation</text><circle class="dot-hollow" cx="448.2" cy="195.7" r="6"><title>break-even about 8.1 t</title></circle><text class="t-strong" x="436.2" y="215.7" text-anchor="end">break-even ≈ 8.1 t</text><text class="t-mute" x="436.2" y="231.7" text-anchor="end">37% of the 22.2 t stage-1 dry mass</text></svg></div>
-      <p class="xsmall" style="margin-top:4px">Derived from the ±10% <span class="nb">stage-1</span> dry-mass cases of silo_cold; a linear extrapolation beyond them, not a sized structure. No mass is charged today for the 4.0 g full-stack load (22.5 MN at the interface).</p>
+      <div class="chwrap"><svg class="ch" viewBox="0 0 560 320" role="img" aria-label="Net payload gain falls about 184 kg per tonne of stage-1 strengthening, from +1,498.8 kg to zero at about 8.1 tonnes" xmlns="http://www.w3.org/2000/svg"><rect class="band" x="66" y="30" width="104.3" height="232"/><text class="t-mute" x="72" y="242.9">tested</text><text class="t-mute" x="72" y="258.9">±2.22 t</text><line class="grid" x1="66" y1="262" x2="536" y2="262"/><text class="t-mute" x="58" y="266" text-anchor="end">−800</text><line class="grid" x1="66" y1="228.9" x2="536" y2="228.9"/><text class="t-mute" x="58" y="232.9" text-anchor="end">−400</text><line class="zero" x1="66" y1="195.7" x2="536" y2="195.7"/><text class="t-mute" x="58" y="199.7" text-anchor="end">0</text><line class="grid" x1="66" y1="162.6" x2="536" y2="162.6"/><text class="t-mute" x="58" y="166.6" text-anchor="end">+400</text><line class="grid" x1="66" y1="129.4" x2="536" y2="129.4"/><text class="t-mute" x="58" y="133.4" text-anchor="end">+800</text><line class="grid" x1="66" y1="96.3" x2="536" y2="96.3"/><text class="t-mute" x="58" y="100.3" text-anchor="end">+1,200</text><line class="grid" x1="66" y1="63.1" x2="536" y2="63.1"/><text class="t-mute" x="58" y="67.1" text-anchor="end">+1,600</text><line class="grid" x1="66" y1="30" x2="536" y2="30"/><text class="t-mute" x="58" y="34" text-anchor="end">+2,000</text><text class="t-mute" x="66" y="280" text-anchor="middle">0</text><text class="t-mute" x="160" y="280" text-anchor="middle">2</text><text class="t-mute" x="254" y="280" text-anchor="middle">4</text><text class="t-mute" x="348" y="280" text-anchor="middle">6</text><text class="t-mute" x="442" y="280" text-anchor="middle">8</text><text class="t-mute" x="536" y="280" text-anchor="middle">10</text><text x="301" y="312" text-anchor="middle">extra stage-1 dry mass for strengthening (t)</text><text x="58" y="16" text-anchor="end" class="t-mute">kg</text><line class="silo" x1="66" y1="71.5" x2="170.3" y2="105.4"/><line class="silo dash" x1="170.3" y1="105.4" x2="536" y2="224.2"/><circle class="dot-silo" cx="66" cy="71.5" r="6"><title>+1,498.8 kg with no strengthening</title></circle><text class="t-strong" x="78" y="53.5">+1,498.8 kg with nothing charged</text><text x="239.9" y="116">≈ −184 kg of payload per tonne</text><text class="t-mute" x="536" y="83.7" text-anchor="end">dashed: linear extrapolation</text><circle class="dot-hollow" cx="448.2" cy="195.7" r="6"><title>break-even about 8.1 t</title></circle><text class="t-strong" x="436.2" y="215.7" text-anchor="end">break-even ≈ 8.1 t</text><text class="t-mute" x="436.2" y="231.7" text-anchor="end">37% of the 22.2 t stage-1 dry mass</text></svg></div>
+      <p class="xsmall" style="margin-top:4px">Derived from the ±10% <span class="nb">stage-1</span> dry-mass cases of silo_cold; a linear extrapolation beyond them, not a sized structure. These runs charge no mass for the 4.0 g full-stack load (22.5 MN at the interface); SP7's first-order sizing keeps +342 kg of the gain, an upper bound (slide 16).</p>
     </div>
     <div class="against">
       <ol>
@@ -1100,7 +1133,7 @@ html.pp .controls, html.pp .progress { display: none; }
       <div class="card bridge"><h3>The bridge · README masses, +8.3%</h3><p class="small">Calibrated inside the band: <span class="strong">36.01 t, 9.10%</span> of its 395.7 t <span class="nb">stage-1</span> load. Read it as 9–10% of stage 1 across the two models, not as a Falcon 9 figure.</p></div>
     </div>
   </div>
-  <p class="cav"><b>Caveats</b>Gate vehicle, +14.3% high · <span class="strong">as pre-registered, most of the offload is the lighter stack's thrust-to-weight</span> (the paired pad is only 1.4 t short); a <span class="nb">delta-v</span> reading chosen after the run gives the lighter stack 28–29% (slide 14) · sweep-optimized, unthrottled, free kick · no structural mass for the 4 g push (slide 15) · <span class="nb">max-Q</span> 3.4% above the pad's · prescribed 3 g drive, massless carriage, vented shaft · partly filled tanks, dry masses unchanged · stage 1 is the only headline (stage 2 failed its verification).</p>
+  <p class="cav"><b>Caveats</b>Gate vehicle, +14.3% high · <span class="strong">as pre-registered, most of the offload is the lighter stack's thrust-to-weight</span> (the paired pad is only 1.4 t short); a <span class="nb">delta-v</span> reading chosen after the run gives the lighter stack 28–29% (slide 14) · sweep-optimized, unthrottled, free kick · no structural mass for the 4 g push (slides 15 and 16) · <span class="nb">max-Q</span> 3.4% above the pad's · prescribed 3 g drive, massless carriage, vented shaft · partly filled tanks, dry masses unchanged · stage 1 is the only headline (stage 2 failed its verification).</p>
   <footer class="foot"><span class="src">Source: docs/findings/RQ1-fuel-offload-2d.md · run 20261003T112934Z · bridge 20261003T112956Z · commit b3150c1</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
@@ -1177,11 +1210,158 @@ html.pp .controls, html.pp .progress { display: none; }
       </ul>
     </div>
   </div>
-  <p class="cav"><b>Assumptions</b>The rows add an assumed dry mass to the silo run only; they are not a sized structure. No structural model exists yet: phase SP7, the next phase, decides whether the headline survives.</p>
+  <p class="cav"><b>Assumptions</b>The rows add an assumed dry mass to the silo run only; they are not a sized structure. SP7's first-order sizing replaces the assumption with a modelled mass: 6.31 t, 11.42 t left (next slide, with its caveats).</p>
   <footer class="foot"><span class="src">Source: docs/findings/RQ1-fuel-offload-2d.md, "Structural penalty rows and break-even", "Energy" and "Max-Q and loads"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 16 ─ Roadmap -->
+<!-- 16 ─ The structural finding -->
+<section class="slide s-st" data-title="The offload with the push's structure charged">
+  <p class="kicker">The headline question · SP7 finding</p>
+  <h2>With a sized structure charged, 11.42 t of the 41.26 t is left</h2>
+  <div class="badges"><span class="badge prelim">Preliminary finding · RQ1-structural-2d</span><span class="badge">Pre-registered · runs from 2026-10-16</span><span class="badge probe">First-order sizing, not a structural design</span></div>
+  <div class="body cols-ab" style="grid-template-columns:minmax(0,560px) minmax(0,1fr);gap:34px">
+    <div>
+      <div class="chwrap wide"><svg class="ch" viewBox="0 0 560 316" role="img" aria-label="Stage-1 offload left at the pad's payload: 41.26 tonnes with nothing charged (SP1), 11.42 at the central structure, 8.55 to 15.07 across the plus or minus 10 percent arms, none to 28.57 across the physics band with 23.68 before its plausibility scaling, none to 31.12 across the outer envelope, 5.97 entering through the thrust structure, and no offload for the step push the constant-acceleration drive actually flies" xmlns="http://www.w3.org/2000/svg"><line class="zero" x1="178.0" y1="22" x2="178.0" y2="290"/><text class="t-mute" x="178.0" y="308" text-anchor="middle">0</text><line class="grid" x1="256.22" y1="22" x2="256.22" y2="290"/><text class="t-mute" x="256.22" y="308" text-anchor="middle">10</text><line class="grid" x1="334.44" y1="22" x2="334.44" y2="290"/><text class="t-mute" x="334.44" y="308" text-anchor="middle">20</text><line class="grid" x1="412.67" y1="22" x2="412.67" y2="290"/><text class="t-mute" x="412.67" y="308" text-anchor="middle">30</text><line class="grid" x1="490.89" y1="22" x2="490.89" y2="290"/><text class="t-mute" x="490.89" y="308" text-anchor="middle">40</text><text class="t-mute" x="530" y="14" text-anchor="end">stage-1 offload left at the pad's payload (t)</text><text x="170" y="48" text-anchor="end">SP1, nothing charged</text><rect class="seg-hold" x="178.0" y="34" width="322.74" height="20"/><text class="t-strong" x="506.74" y="48">41.26 t</text><text class="t-strong" x="170" y="86" text-anchor="end">Headline: central</text><rect class="seg-light" x="178.0" y="72" width="89.33" height="20"/><text class="t-strong" x="273.33" y="86">11.42 t</text><text x="170" y="124" text-anchor="end">±10% arms</text><rect class="seg-light" x="244.88" y="110" width="51.0" height="20"/><text class="t-strong" x="301.88" y="124">8.55–15.07 t</text><text x="170" y="162" text-anchor="end">Physics band</text><rect class="seg-traj" x="178.0" y="148" width="223.48" height="20"/><line class="bracket" x1="363.23" y1="145" x2="363.23" y2="171"/><text class="t-strong" x="407.48" y="162">none–28.57 t</text><text x="170" y="200" text-anchor="end">Outer envelope</text><rect class="seg-traj" x="178.0" y="186" width="243.43" height="20"/><text class="t-strong" x="427.43" y="200">none–31.12 t</text><text x="170" y="238" text-anchor="end">Thrust-structure entry</text><rect class="seg-traj" x="178.0" y="224" width="46.7" height="20"/><text class="t-strong" x="230.7" y="238">5.97 t</text><text x="170" y="276" text-anchor="end">Step push, as flown</text><circle class="dot-hollow" cx="178.0" cy="272" r="5.5"/><text class="t-strong" x="190.0" y="276">no offload</text></svg></div>
+      <p class="xsmall" style="margin-top:2px">The tick on the physics band is 23.68 t, before its plausibility scaling. "None": the case falls short of the pad's payload with nothing offloaded. The bands are the extremes a screened search found, not bounds. The 5.97 t sits close to its own estimated break-even, and k_ts's central moved after the planning probe in a direction that raised it (the note).</p>
+    </div>
+    <div class="stack-v" style="gap:10px">
+      <div class="hero"><span class="v">11.42<small> t</small></span><span class="k"><span class="strong">27.7%</span> of SP1's uncharged 41.26 t, <span class="strong">2.78%</span> of the 410.9 t <span class="nb">stage-1</span> load: the pre-registered reading "cancels most" fired</span></div>
+      <ul class="facts">
+        <li>A structure is sized for the offloaded stack and charged to the assisted run at every offload the solve tries. Its <span class="strong">6.31 t</span> costs <span class="strong">29.84 t</span> of offload, about 4.7 kg per kg (derived).</li>
+        <li>No offload at the physics band's high-mass end (243.7 m/s short, −2,080 kg), the outer envelope's (1,021.5 m/s, −7,804 kg) or the step push the constant-acceleration drive actually flies (125.2 m/s, −1,087 kg). The −2,080 and −1,087 kg are upper bounds on the payload change.</li>
+        <li>Sized for its own full-load push, silo_cold keeps <span class="strong">+342 kg</span> of its uncharged +1,498.8 kg, an upper bound: its kick's <span class="nb">q-alpha</span> is above the pad's.</li>
+        <li>README-loads fork (+8.33%): <span class="strong">9.16 t</span> of its 36.01 t, 25.5%.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cav"><b>Caveats</b>First-order station sizing at central coefficients · an assumed 0.5 s rise time the constant-acceleration trajectory does not fly · zero existing margin, the pad's own unthrottled flight as the envelope · the instant release flagged, not sized (the model's single-mode step separates the LOX column, as it does stage 2's at the pad's own MECO) · gate vehicle +14.3% high · sweep-optimized, unthrottled, free kick (<span class="nb">q-alpha</span> 1.89× the pad's) · partly filled tanks.</p>
+  <footer class="foot"><span class="src">Source: docs/findings/RQ1-structural-2d.md · run 20261016T171513Z (commit 1b5f9d4) · fork 20261016T171529Z</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 17 ─ The stroke and exit-speed axes -->
+<section class="slide s-ax" data-title="The stroke and exit-speed axes">
+  <p class="kicker">The headline question · the two axes, central structure</p>
+  <h2>At 3 g, 25 and 50 m strokes leave none; more stroke keeps more, at a price</h2>
+  <div class="body cols-2" style="gap:30px">
+    <div class="stack-v" style="gap:8px">
+      <h3>Same 3 g push, a longer stroke exits faster</h3>
+      <div class="tablewrap">
+        <table class="t pen">
+          <thead><tr><th>Stroke</th><th class="r">Exit</th><th class="r">Uncharged</th><th class="r">Charged</th><th class="r">Facility</th></tr></thead>
+          <tbody>
+            <tr><td>25 m</td><td class="num r">38.35 m/s</td><td class="num r">18.77 t</td><td class="num r">none (60.2 m/s short)</td><td class="num r">40 m</td></tr>
+            <tr><td>50 m</td><td class="num r">54.24 m/s</td><td class="num r">28.65 t</td><td class="num r">none (18.3 m/s short)</td><td class="num r">80 m</td></tr>
+            <tr class="hl"><td>100 m</td><td class="num r">76.71 m/s</td><td class="num r">41.26 t</td><td class="num r">11.42 t</td><td class="num r">160 m</td></tr>
+            <tr><td>200 m</td><td class="num r">108.48 m/s</td><td class="num r">56.83 t</td><td class="num r">31.62 t</td><td class="num r">320 m</td></tr>
+            <tr><td>300 m</td><td class="num r">132.86 m/s</td><td class="num r">67.29 t*</td><td class="num r">44.73 t*</td><td class="num r">480 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="xsmall stack-note">Facility, stroke plus braking: 40, 80, 160, 320, 480 m.</p>
+      <p class="xsmall">* An upper bound: an unconstrained kick above 120 m/s. Peak drive power 2.44 and 2.99 GW at 200 and 300 m (full-load runs).</p>
+      <ul class="against pen-list">
+        <li><b>The lowest exit speed that still offloads</b> lies between 54.24 and 76.71 m/s; the sweep does not resolve the crossing. Below it the extra speed helped, but did not pay for the structure it needs.</li>
+        <li><b>Above 100 m, faster exits kick harder.</b> The 200 and 300 m full-load runs kick into 574.1 and 1,293.3 Pa rad, 7.7 and 17.3× the pad's, and the structural runs' values, not written, are likely higher. Nothing constrains it.</li>
+      </ul>
+    </div>
+    <div class="stack-v" style="gap:8px">
+      <h3>Same 76.71 m/s exit, a longer stroke pushes gentler</h3>
+      <div class="tablewrap">
+        <table class="t pen">
+          <thead><tr><th>Stroke</th><th class="r">Felt (flown)</th><th class="r">Structure</th><th class="r">Charged</th><th class="r">Facility</th></tr></thead>
+          <tbody>
+            <tr><td>50 m</td><td class="num r">6.996 g</td><td class="num r">16.05 t</td><td class="num r">none (190.0 m/s short)</td><td class="num r">110 m</td></tr>
+            <tr class="hl"><td>100 m</td><td class="num r">3.996 g</td><td class="num r">6.31 t</td><td class="num r">11.42 t</td><td class="num r">160 m</td></tr>
+            <tr><td>200 m</td><td class="num r">2.496 g</td><td class="num r">3.20 t</td><td class="num r">26.69 t</td><td class="num r">260 m</td></tr>
+            <tr><td>300 m</td><td class="num r">1.996 g</td><td class="num r">2.06 t</td><td class="num r">32.03 t</td><td class="num r">360 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="xsmall stack-note">Facility, stroke plus braking: 110, 160, 260, 360 m.</p>
+      <p class="xsmall">Uncharged, every stroke offloads the same 41.26 t in this model. The 50 m push sizes stage 2 too.</p>
+      <ul class="against pen-list">
+        <li><b>Depth sets the felt load, and the felt load sets the mass:</b> the gentler push needs less structure, for 1,769.8 kWh at 300 m against 1,235.1 kWh at 100 m.</li>
+        <li><b>The returns fall.</b> The step from 100 to 200 m adds 15.27 t; the last 100 m adds 5.34 t.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cav"><b>Caveats</b>Central structure only; a sweep point has no flown band and no ±10% arm · every point flags the instant release and the payload limit · a deeper or faster silo is a larger facility, and no facility cost is modelled · first-order sizing, gate vehicle +14.3% high, sweep-optimized, unthrottled, free kick.</p>
+  <footer class="foot"><span class="src">Source: RQ1-structural-2d.md, both axis sections · sweep 20261019T172327Z (re-run; git record dirty, deviation 45)</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 18 ─ The drive cases -->
+<section class="slide s-dr" data-title="The drive cases">
+  <p class="kicker">The headline question · nine linear-motor drives</p>
+  <h2>All nine drives cancel most of it; on the same silo, neither faster exit keeps more</h2>
+  <div class="body cols-ab" style="grid-template-columns:minmax(0,704px) minmax(0,1fr);gap:26px">
+    <div class="tablewrap">
+      <table class="t pen drv">
+        <thead><tr><th>Drive (same <span class="nb">100 m</span> silo)</th><th>What it changes</th><th class="r">Exit at x* (m/s)</th><th class="r">Offload left</th><th></th></tr></thead>
+        <tbody>
+            <tr><td><code>lm_cmd_hot</code></td><td>acceleration law, lit 0.849 s into the push</td><td class="num r">76.71</td><td class="num r">18.27 t</td><td><span class="tbar"><i class="silo" style="width:100.0%"></i></span></td></tr>
+            <tr><td><code>lm_fixed_sled22</code></td><td>force law, 22 t carriage</td><td class="num r">75.27</td><td class="num r">11.64 t</td><td><span class="tbar"><i class="silo" style="width:63.7%"></i></span></td></tr>
+            <tr><td><code>lm_cmd</code></td><td>acceleration law: a flown ramp</td><td class="num r">76.71</td><td class="num r">11.42 t</td><td><span class="tbar"><i class="silo" style="width:62.5%"></i></span></td></tr>
+            <tr class="hl"><td><code>silo_cold</code></td><td>constant_accel, the basis</td><td class="num r">76.71</td><td class="num r">11.42 t</td><td><span class="tbar"><i class="silo" style="width:62.5%"></i></span></td></tr>
+            <tr><td><code>lm_fixed</code></td><td>force law for the full load</td><td class="num r">77.15</td><td class="num r">11.34 t</td><td><span class="tbar"><i class="silo" style="width:62.1%"></i></span></td></tr>
+            <tr><td><code>lm_fixed_target</code></td><td>force law, released at 76.71 m/s</td><td class="num r">76.71</td><td class="num r">11.05 t</td><td><span class="tbar"><i class="silo" style="width:60.5%"></i></span></td></tr>
+            <tr><td><code>lm_fixed_sealed</code></td><td>force law, sealed shaft</td><td class="num r">72.22</td><td class="num r">9.05 t</td><td><span class="tbar"><i class="silo" style="width:49.5%"></i></span></td></tr>
+            <tr><td><code>lm_fixed_hot</code></td><td>force law, lit at push start</td><td class="num r">89.24</td><td class="num r">7.35 t</td><td><span class="tbar"><i class="silo" style="width:40.2%"></i></span></td></tr>
+            <tr><td><code>lm_fixed_r07</code></td><td>12% more force, power-limited</td><td class="num r">76.60</td><td class="num r">5.66 t</td><td><span class="tbar"><i class="silo" style="width:31.0%"></i></span></td></tr>
+            <tr><td><code>lm_cmd_taper</code></td><td>acceleration law, stop taper</td><td class="num r">76.71</td><td class="num r">2.48 t</td><td><span class="tbar"><i class="silo" style="width:13.6%"></i></span></td></tr>
+        </tbody>
+      </table>
+      <p class="xsmall" style="margin-top:5px">Each variant with the central structure charged, at its solved offload x*, where it carries the pad's payload. The force law's stack is lighter or heavier than the full load at x*, so its exit speed moves; the sealed column and on-track thrust move it too. lm_cmd equals silo_cold, and lm_cmd_hot the constant-acceleration ramped hot start, by construction, not as evidence about a real drive.</p>
+      <p class="xsmall stack-note" style="margin-top:5px">The names: lm_cmd, acceleration law; lm_fixed, force law. hot: lit on the track (lm_cmd_hot 0.849 s into the push, lm_fixed_hot at push start). taper: stop taper. target: released at 76.71 m/s. r07: 12% more force, power-limited. sled22: 22 t carriage. sealed: sealed shaft. silo_cold: constant_accel, the basis.</p>
+    </div>
+    <div class="stack-v" style="gap:9px">
+      <ul class="against pen-list">
+        <li><b>Two exit faster than silo_cold at x*, and neither keeps more.</b> lm_fixed_hot exits 12.53 m/s faster and keeps 4.07 t less; lm_fixed 0.44 m/s faster and 82 kg less. A longer stroke's faster exit does keep more (slide 17).</li>
+        <li><b>A gentler release costs offload and buys only flags.</b> The stop taper keeps 8.94 t less; the model sizes no release step, so its benefit shows only in the flags.</li>
+        <li><b>A slower exit can leave more.</b> The 22 t carriage exits 1.43 m/s slower and keeps 0.22 t more: it lowers the felt load. The carriage itself is not sized.</li>
+        <li><b>The air column costs too.</b> The sealed shaft keeps 2.29 t less than the same drive vented, at a 5.24 m bore, under a uniform adiabat.</li>
+        <li><b>The best is a hot start.</b> lm_cmd_hot keeps 18.27 t, 44.3% of the 41.26 t, still under half, favoured by the unmodelled exhaust in the shaft and with its release flag, a risk no number here measures.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cav"><b>Caveats</b>Central structure only, with no physics band and no ±10% arm: a difference of 0.22 t or 82 kg is read there and nowhere else · force and power caps only, no thermal, current or voltage limit · an assumed efficiency of 0.5 · a massless carriage except one · an instant release, flagged · the exhaust in the shaft is not modelled · every caveat of slide 16 applies.</p>
+  <footer class="foot"><span class="src">Source: RQ1-structural-2d.md, "The drive cases" · run 20261103T231946Z (commit 642e11e)</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 19 ─ What goes against it, with the structure charged -->
+<section class="slide s-ag s-ag2" data-title="What goes against it with the structure charged">
+  <p class="kicker">Against the hypothesis · the offload with its structure (SP7)</p>
+  <h2>Not every m/s of assist pays once its structure is charged</h2>
+  <div class="body cols-ab" style="grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:30px">
+    <div class="against">
+      <ol>
+        <li><b>The structure cancels most of the offload</b> at the central coefficients: 11.42 t of 41.26 t is left (every caveat of slide 16 applies).</li>
+        <li><b>It no longer beats the ideal-screening estimate:</b> 0.763 of the 14.98 t at 76.7 m/s, where SP1's uncharged headline was 2.76×.</li>
+        <li><b>The physics band reaches no offload:</b> 243.7 m/s short and −2,080 kg at its adverse end, a bound on the payload change.</li>
+        <li><b>The push the constant-acceleration drive actually flies cancels all of it.</b> The instant step leaves no offload; a rise time at or below about 0.14 s is estimated (sizing only) to do the same.</li>
+        <li><b>Short strokes give none at all:</b> 25 and 50 m at 3 g, the same felt load and nearly the same structure for a smaller offload.</li>
+        <li><b>A fast, short push sizes the upper stack:</b> at 7 g, 16.05 t of structure and 190.0 m/s short.</li>
+        <li><b>Every offloaded structural run kicks above the pad's <span class="nb">q-alpha</span>,</b> 1.7 to 3.9× on the recorded constant-acceleration runs (the sweeps' structural runs are not written), 1.39 to 5.48× on the drive cases, a lateral load the pad envelope does not cover.</li>
+        <li><b>Other plausible design choices leave little:</b> 5.97 t through the thrust structure (close to its own estimated break-even), 4.81 t with the envelope capped at 4.0 g.</li>
+        <li><b>The force-limited hot start loses:</b> 3.99 t less than its own cold start, 4.07 t less than silo_cold (the rise formula overcharges its n_peak, which costs of order 1 t of offload on a rough estimate, not measured; the reading does not move).</li>
+        <li><b>Most unmodelled terms favour the assist:</b> the unthrottled envelope, the release not sized, propellant settling for the ignition 0.5 s after a release the model flags as separating the LOX column (a risk no number here measures), COPVs and engine mounts not charged.</li>
+      </ol>
+    </div>
+    <div class="stack-v" style="gap:10px">
+      <div class="card"><h3>In the assist's favour, as plainly</h3>
+        <ul class="small" style="line-height:1.42">
+          <li>The low-mass ends keep more than half: 28.57 t (23.68 t unscaled), 31.12 t on the outer envelope.</li>
+          <li>A deeper silo at the same exit speed keeps 32.03 t at 300 m, 2.0 g felt, for 360 m of facility.</li>
+          <li>The two constant-acceleration hot starts keep 4.9 to 6.9 t more than the cold start, with the exhaust caveat favouring them and with their release flag, a risk no number here measures; lm_cmd_hot repeats the <span class="nb">6.85 t</span> by construction (it flies the plateau that case's structure is sized for, with the same thrust ramp and exit speed).</li>
+          <li>Some omissions and choices work against the assist: zero existing margin, a clean-sheet vehicle, damping.</li>
+        </ul>
+      </div>
+      <p class="cav"><b>What was known before the run</b>The pre-registration's sizing-only estimates placed the headline at 11.1 t and the band from no offload to 28.5 t, and the central values and range ends were set after the planning probe had shown which coefficients matter. What was fixed in advance is the design around these numbers and how each result is read.</p>
+    </div>
+  </div>
+  <footer class="foot"><span class="src">Source: docs/findings/RQ1-structural-2d.md, "What goes against the hypothesis" and "Caveats (read first)"</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
+</section>
+
+<!-- 20 ─ Roadmap -->
 <section class="slide s-road" data-title="Roadmap">
   <p class="kicker">Roadmap</p>
   <h2>One phase per session, each ending in something you can run</h2>
@@ -1191,15 +1371,15 @@ html.pp .controls, html.pp .progress { display: none; }
       <div class="st done"><span class="when">Done</span><b>Phase 1</b><span>Vertical <span class="nb">1-D</span> model and the silo push</span></div>
       <div class="st done"><span class="when">Done</span><b>Phase 2</b><span><span class="nb">2-D</span> ascent to orbit; calibration miss accepted</span></div>
       <div class="st done"><span class="when">Done · 4 Oct</span><b>SP1</b><span>Launch settings and fuel offload at fixed payload (planar)</span></div>
-      <div class="st done"><span class="when">Done · 7 Oct</span><b>SP2</b><span>Local app with a <span class="nb">2-D</span> launch scene (slide 18)</span></div>
-      <div class="st now"><span class="when">Next</span><b>SP7</b><span>Structural mass for the 4 g push; force-limited drive</span></div>
+      <div class="st done"><span class="when">Done · 7 Oct</span><b>SP2</b><span>Local app with a <span class="nb">2-D</span> launch scene (slide 22)</span></div>
+      <div class="st now"><span class="when">Results in</span><b>SP7</b><span>Structural mass for the 4 g push; force-limited drive (slides 16–19)</span></div>
       <div class="st"><span class="when">Planned</span><b>SP3</b><span><span class="nb">3-D</span> dynamics: point mass over a rotating sphere</span></div>
       <div class="st"><span class="when">Planned</span><b>SP4</b><span><span class="nb">3-D</span> scene; headline re-checked in <span class="nb">3-D</span></span></div>
       <div class="st"><span class="when">Planned</span><b>SP5</b><span>Oblate Earth: J2 and the ellipsoid</span></div>
       <div class="st"><span class="when">Planned</span><b>SP6</b><span><span class="nb">6-DOF</span> verification fly-out</span></div>
     </div>
     <div class="cols-3" style="display:grid;gap:16px">
-      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small">Force- and power-limited linear motor, curved ramp, cable winch, air column, modelled braking, and the structural mass for the 4 g push. <span class="strong">This decides whether the headline survives:</span> about 8.5 t of assumed <span class="nb">stage-1</span> dry mass cancels SP1's 41.26 t (extrapolated). The structural mass and the linear motor are SP7, the next phase (SP2 closed 7 October 2026); the rest is not scheduled.</p></div>
+      <div class="card" style="border-color:var(--run-1)"><h3 style="color:var(--accent-ink)">README Phase 3 · assist models</h3><p class="small"><span class="strong">SP7 built and ran</span> the first-order structural sizing, the force- and power-limited linear motor, carriage mass, braking functions and the sealed shaft: 11.42 t of the 41.26 t is left at the central structure, with its findings note written and the phase not yet closed. Curved ramp and cable winch are not scheduled; the <span class="nb">3-D</span> phases follow SP7's close.</p></div>
       <div class="card"><h3>README Phase 5 · fair comparison</h3><p class="small">Optimal-control ascent for every configuration; the headline results re-run with optimized guidance instead of sweep-optimized.</p></div>
       <div class="card"><h3>README Phase 6 · hobby scale</h3><p class="small">A RocketPy <span class="nb">6-DOF</span> model of a real rocket with an assist before the rail; baseline apogee within ±5% of RocketPy.</p></div>
     </div>
@@ -1207,7 +1387,7 @@ html.pp .controls, html.pp .progress { display: none; }
   <footer class="foot"><span class="src">Source: docs/phases/README.md (program board) · README.md, "Roadmap" · TODO.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 17 ─ See it fly -->
+<!-- 21 ─ See it fly -->
 <section class="slide s-fly" data-title="See it fly">
   <p class="kicker">See it fly</p>
   <h2>The head start, in the first 8 seconds of the recorded run</h2>
@@ -1226,19 +1406,20 @@ html.pp .controls, html.pp .progress { display: none; }
       <p class="small">At 8 s after release the silo stack is at 578 m and 85 m/s; the pad at 120 m and 31 m/s.</p>
       <h3 style="margin-top:6px">Animation examples</h3>
       <ul class="small" style="line-height:1.45">
-        <li><span class="strong">SP1 fuel offload</span>: the pad against the offloaded silo at the same payload and orbit, and the offloaded silo against its paired pad (interactive replays), and the same pair as SP2's launch scene (a page and a video in the gallery, made from the recorded directory; the app itself is on the next slide).</li>
+        <li><span class="strong">SP7 structure charged</span>: pad against silo, replay, video and scene.</li>
+        <li><span class="strong">SP1 fuel offload</span>: against the pad and its paired pad, and SP2's launch scene from the recorded directory (the app: next slide).</li>
         <li><span class="strong">Pad against cold-start silo</span>: both flown to a 200 km orbit.</li>
         <li><span class="strong">Ignition timing</span>: four ways to light stage 1.</li>
         <li><span class="strong">Failed ignition</span>: the push with no engines, back at the mouth at 15.7 s.</li>
       </ul>
-      <p class="small">Videos, GIFs, interactive replays and the launch scene: <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/">khoks.github.io/…/examples/</a></p>
-      <p class="xsmall">Point-mass planar model, sweep-optimized and unthrottled, gate vehicle +14.3% high, no structural mass for the 4 g push. A model replay, not a design result.</p>
+      <p class="small">Videos, GIFs, replays and scenes: <a href="https://khoks.github.io/RocketLaunchOptimizationSimulator/examples/">khoks.github.io/…/examples/</a></p>
+      <p class="xsmall">Point-mass planar model, sweep-optimized and unthrottled, gate vehicle +14.3% high, no structural mass for the 4 g push in this run. A model replay, not a design result.</p>
     </div>
   </div>
   <footer class="foot"><span class="src">Source: results/silo_screening_2d/20260930T175743Z, pad and silo_cold timeseries.csv and events.csv · site/examples/</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 18 ─ The app and the scene -->
+<!-- 22 ─ The app and the scene -->
 <section class="slide s-app" data-title="The app and the scene">
   <p class="kicker">SP2 · the local app and the launch scene</p>
   <h2>Set the silo, press Launch, watch pad and silo side by side</h2>
@@ -1252,7 +1433,7 @@ html.pp .controls, html.pp .progress { display: none; }
       <ul class="facts">
         <li><code>launchsim app</code>: a form built from the committed experiments (depth, push, ramp start, startup, offload, penalty; 17 presets), Launch, a progress card, a results panel with every caveat beside every number, a browser over the results on disk, the scene, an MP4 export.</li>
         <li><code>launchsim scene</code>: the same scene as a standalone page. The vehicle's path, thrust and mass are replayed from the recorded time series; the spent stage, the fairing halves, the carriage after release and the unpowered attitude are display-only reconstructions, named on the page and on every video frame.</li>
-        <li>Every launch writes <code>results/app/</code>, labelled exploratory with a banner and no plots; findings come only from committed experiment files run from a clean tree. No physics changed in SP2.</li>
+        <li>Every launch writes <code>results/app/</code>, labelled exploratory with a banner and no plots; findings come only from committed experiment files run from a clean tree (one disclosed departure, which reached no number: SP7's sweep re-run, RQ1-structural-2d.md, Provenance). No physics changed in SP2.</li>
       </ul>
       <p class="cav"><b>Reproduction, not evidence</b>The app's launch of its <code>silo_cold_s1</code> preset gives SP1's 41.26 t and the pad's 26,054.4 kg within 0.002 kg: the same configuration on the same model, so a reproduction of slide 13, not new evidence, with all of its caveats (gate vehicle +14.3% high, no structural mass for the 4 g push, sweep-optimized and unthrottled).</p>
     </div>
@@ -1260,11 +1441,11 @@ html.pp .controls, html.pp .progress { display: none; }
   <footer class="foot"><span class="src">Source: docs/demos/SP2/README.md (launch 3) · docs/manual/07b-app.md · docs/phases/SP2-launch-app-2d-scene.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 19 ─ Read more -->
+<!-- 23 ─ Read more -->
 <section class="slide s-more" data-title="Read more">
   <p class="kicker">Read more</p>
   <h2>Where the full numbers and their caveats live</h2>
-  <div class="body" style="gap:22px">
+  <div class="body" style="gap:12px">
   <div class="linkcards">
     <div class="card">
       <h3>On GitHub</h3>
@@ -1298,18 +1479,19 @@ html.pp .controls, html.pp .progress { display: none; }
     <h3>Findings: the suggested reading order</h3>
     <ol class="readorder">
       <li><b>CAL-f9-leo-2d</b>The vehicle every <span class="nb">2-D</span> number rests on, and its +14.3% miss.</li>
-      <li><b>RQ1-fuel-offload-2d</b>Propellant replaced at fixed payload: the headline, its decomposition and penalty rows.</li>
-      <li><b>RQ3-silo-screening-2d</b>The payload gain, the screening check and the full caveat list.</li>
-      <li><b>RQ2-ignition-timing-2d</b>Hot or cold start; what delay, ramp and lag cost.</li>
+      <li><b>RQ1-fuel-offload-2d</b>Propellant replaced at fixed payload, with penalty rows.</li>
+      <li><b>RQ1-structural-2d</b>The same offload with a sized structure charged.</li>
+      <li><b>RQ3-silo-screening-2d</b>The payload gain and the full caveat list.</li>
+      <li><b>RQ2-ignition-timing-2d</b>Hot or cold start; delay, ramp and lag.</li>
       <li><b>RQ6-aero-2d-preliminary</b>Max-Q, <span class="nb">q-alpha</span> and drag, unthrottled.</li>
-      <li><b>RQ3-1d, RQ2-1d</b>The <span class="nb">1-D</span> record: closed forms, loads, energy, failed ignition.</li>
+      <li><b>RQ3-1d, RQ2-1d</b>The <span class="nb">1-D</span> record: closed forms, loads, energy.</li>
     </ol>
   </div>
   </div>
   <footer class="foot"><span class="src">Source: README.md, "Quick start" · docs/manual/ · docs/findings/README.md</span><span class="rights">All rights reserved</span><span class="n"></span></footer>
 </section>
 
-<!-- 20 ─ License -->
+<!-- 24 ─ License -->
 <section class="slide dark" data-title="License">
   <p class="kicker">License</p>
   <h2>All rights reserved</h2>
@@ -1334,7 +1516,7 @@ html.pp .controls, html.pp .progress { display: none; }
 
 <nav class="controls" id="controls" aria-label="Slide controls">
   <button type="button" id="prev" aria-label="Previous slide">‹ Prev</button>
-  <span class="count-now" id="countNow" aria-live="polite">1 / 20</span>
+  <span class="count-now" id="countNow" aria-live="polite">1 / 24</span>
   <button type="button" id="next" aria-label="Next slide">Next ›</button>
   <span class="sep" aria-hidden="true"></span>
   <button type="button" id="themeBtn" aria-label="Switch colour theme">auto</button>

@@ -1,0 +1,15 @@
+start fast-suite 2026-11-04T09:50:27Z HEAD 6cf0fd2d05f7321b41b2bb145e1a3ce7e4ede276 dirty=false
+end fast-suite 2026-11-04T09:56:10Z exit 1
+start structure-tests 2026-11-04T09:56:10Z HEAD 6cf0fd2d05f7321b41b2bb145e1a3ce7e4ede276 dirty=false
+end structure-tests 2026-11-04T09:56:15Z exit 0
+start run-structure 2026-11-04T09:56:15Z HEAD 6cf0fd2d05f7321b41b2bb145e1a3ce7e4ede276 dirty=false
+start sweep-structure 2026-11-04T09:56:20Z HEAD 6cf0fd2d05f7321b41b2bb145e1a3ce7e4ede276 dirty=false
+start run-readme 2026-11-04T09:56:25Z HEAD 6cf0fd2d05f7321b41b2bb145e1a3ce7e4ede276 dirty=false
+start run-drive 2026-11-04T09:56:30Z HEAD 6cf0fd2d05f7321b41b2bb145e1a3ce7e4ede276 dirty=false
+end run-readme 2026-11-04T09:59:53Z exit 0
+end sweep-structure 2026-11-04T10:18:25Z exit 0
+end run-drive 2026-11-04T10:25:40Z exit 0
+end run-structure 2026-11-04T10:32:27Z exit 0
+all runs ended 2026-11-04T10:32:28Z
+start fast-suite-rerun 2026-11-04T10:33:22Z
+end fast-suite-rerun 2026-11-04T10:40:23Z exit 1

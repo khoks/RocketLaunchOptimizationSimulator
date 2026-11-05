@@ -1,0 +1,3 @@
+results: results/silo_structure_2d/20261104T095624Z
+  sweep_1: silo_cold x 5 points over assist.stroke_m: inserted
+  sweep_2: silo_cold_200m x 4 points over assist.stroke_m: inserted

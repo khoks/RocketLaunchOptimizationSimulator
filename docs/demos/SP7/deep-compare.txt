@@ -1,0 +1,9 @@
+== run A: 16391 numeric leaves compared; 0 differ; 2 text leaves differ; 0 structural differences
+   text /git/hash: '1b5f9d46d31c' -> '6cf0fd2d05f7'
+   text /timestamp_utc: '20261016T171513Z' -> '20261104T095619Z'
+== run C: 2161 numeric leaves compared; 0 differ; 2 text leaves differ; 0 structural differences
+   text /git/hash: '1b5f9d46d31c' -> '6cf0fd2d05f7'
+   text /timestamp_utc: '20261016T171529Z' -> '20261104T095630Z'
+== run B: 14967 numeric leaves compared; 0 differ; 2 text leaves differ; 0 structural differences
+   text /git/hash: '642e11e3851d' -> '6cf0fd2d05f7'
+   text /timestamp_utc: '20261103T231946Z' -> '20261104T095635Z'

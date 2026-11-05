@@ -12,8 +12,8 @@ every key of both, with the rules the config enforces.
 |---|---|---|
 | `none` | built | The pad: no track phase. The baseline of every shipped experiment |
 | `constant_accel` | built | A prescribed constant net acceleration along a straight track: the screening drive used for the vertical silo |
-| `linear_motor` | planned, README roadmap Phase 3 | A force- and power-limited drive. Refused today: `assist model 'linear_motor' is planned for Phase 3` |
-| `cable_winch` | planned, README roadmap Phase 3 | Drum, cable as a spring-damper, pulleys. Refused the same way |
+| `linear_motor` | built (SP7) | A force- and power-limited drive along a straight track, under a force law or an acceleration law, with a carriage, an optional stop taper, an optional target-speed release and an optional sealed shaft |
+| `cable_winch` | planned, README roadmap Phase 3 | Drum, cable as a spring-damper, pulleys. Refused: `assist model 'cable_winch' is planned for Phase 3` |
 
 ### `constant_accel` keys
 
@@ -27,7 +27,7 @@ every key of both, with the rules the config enforces.
 | `brake_decel_g` | required | > 0 | Carriage braking deceleration, in g0 |
 | `drive_efficiency` | 1.0 | 0 < eta <= 1 | Electrical energy = positive drive work / eta. The shipped files use 0.5 (assumed) |
 | `exhaust_impingement_fraction` | 0 | 0 to 1 | Fraction of the on-track thrust lost to exhaust hitting the carriage: the system keeps (1 - f) T (an assumed amendment to the track equation) |
-| `shaft` | `vented` | `vented` only | No air column and no air drag in the shaft |
+| `shaft` | `vented` | `vented` only | No air column and no air drag in the shaft (the sealed shaft is `linear_motor`'s) |
 | `allow_negative_drive_force` | false | | Let the drive pull back on the vehicle (see `drive_limit` below) |
 | `track.angle_deg` | 90 | 90 only | Track angle above horizontal. Anything else: `track angle_deg other than 90 is a Phase 3 feature` |
 | `track.exit_altitude_m` | 0 | | Altitude of the track exit (the silo mouth) above the pad datum [m]. The track starts L below it |
@@ -120,6 +120,119 @@ sweeps:
 A 2-D run records the push it flew in `metrics.json` (`stroke_m`, `net_accel_mps2`,
 `net_accel_g`), whichever way it was stated, and a push stated by its exit speed adds an
 assumption line to the summary.
+
+### `linear_motor` keys
+
+A force- and power-limited drive along a straight track (SP7). Unlike `constant_accel` it
+has no `net_accel_g` or `exit_speed_mps`: the push is stated by its limits, and the exit
+speed is a result of the flown push.
+
+| Key | Default | Rule | Meaning |
+|---|---|---|---|
+| `model` | required | `linear_motor` | |
+| `stroke_m` | required | > 0 | Track length L [m] |
+| `control` | required | `force` or `acceleration` | The control law (below) |
+| `force_max_kN` | required | > 0 | Force limit F_max [kN] |
+| `power_max_MW` | required | > 0 | Mechanical power limit P_max at the carriage [MW] |
+| `force_rise_time_s` | required | >= 0 | Rise time t_r [s] of the force or the command; 0 is a step |
+| `accel_command_g` | required by `acceleration`, refused by `force` | > 0 | The net acceleration command a_cmd, in g0 |
+| `stop_taper_m` | none | >= 0, shorter than the stroke | Length of the stop taper over the end of the stroke [m] |
+| `release_speed_mps` | none | > 0; refused with `stop_taper_m` | Release where the speed along the track reaches this value before the track end |
+| `carriage_mass_t` | 0 | >= 0 | Carriage mass [t]. It rides with the stack and stays on the track at release |
+| `brake_decel_g` | required | > 0 | The carriage's constant total braking deceleration after release, in g0 |
+| `drive_efficiency` | 1.0 | 0 < eta <= 1 | Electrical energy = positive drive work / eta, which moves no trajectory. The shipped file uses 0.5 (assumed) |
+| `exhaust_impingement_fraction` | 0 | 0 to 1 | As for `constant_accel` |
+| `shaft` | `vented` | `vented` or `sealed` | `sealed`: the carriage seals a trapped air column below it (below) |
+| `shaft_bore_m` | none | required by `sealed`, refused by `vented`; > 0 and above the diameter of the run's A_ref, so the vehicle needs an `aero` block | The bore's diameter [m] |
+| `shaft_gap_m` | none | required by `sealed`, refused by `vented`; > 0 | The gap h_0 of trapped air below the carriage [m] |
+| `shaft_gamma` | none | required by `sealed`, refused by `vented`; > 1 | The ratio of specific heats |
+| `track.angle_deg`, `track.exit_altitude_m` | as for `constant_accel` | | |
+
+Every number is strict and finite: a bool, a numeric string, NaN or infinity is refused, and
+a null does not unset an optional key. `allow_negative_drive_force` is `constant_accel`'s
+and an unknown key here. From `experiments/silo_drive_2d.yaml` (its nine variants are
+this drive; the file's comments give the closed form behind each number):
+
+```yaml
+lm_fixed:
+  assist: {model: linear_motor, stroke_m: 100, control: force, force_max_kN: 22483.65942458794,
+           power_max_MW: 1724.6578960494573, force_rise_time_s: 0.5, carriage_mass_t: 0,
+           brake_decel_g: 5, drive_efficiency: 0.5, exhaust_impingement_fraction: 0.0,
+           shaft: vented, track: {angle_deg: 90, exit_altitude_m: 0}}
+  ignition: {stage1: {t_ign_s: 0.5, reference: release}}
+```
+
+### How the linear motor flies the push
+
+The track equation is M s'' = F + (1 - f) T - M g_eff sin phi - F_p, with M the vehicle plus
+carriage mass, F the drive force, f the impingement fraction and F_p the sealed column's
+force (0 in a vented shaft). There is no friction.
+
+- **The force law** (`control: force`): F = min(F_lim(t), F_max, P_max / s'), where F_lim
+  rises linearly from the holding force at push start to F_max over t_r. The plateau force
+  F_max does not depend on the stack, so a stack lighter than the one F_max was chosen for exits faster
+  and a heavier one slower. Thrust on the track adds on top of the force.
+- **The acceleration law** (`control: acceleration`): a net acceleration command a(t) =
+  a_cmd min(1, t / t_r). The force is solved from the track equation, then capped by F_max
+  and P_max / s'. While no cap binds the push does not depend on the stack's mass, and
+  thrust on the track replaces motor force.
+- **The stop taper** (`stop_taper_m`): over the last s_taper metres the command, or the force
+  limit toward the holding force, is scaled by (L - s) / s_taper, so the push ends with no
+  net acceleration at L, unless thrust on the track stops it first (`drive_limit`, below). It
+  is a release-at-L device, so it is refused with `release_speed_mps`.
+- **The target-speed release** (`release_speed_mps`): the push releases where the speed along
+  the track reaches the value, before the track end, and the stack flies the rest of the
+  shaft in the open atmosphere. A push that reaches L below it releases at L with the flag
+  `release_speed_not_reached`. A stack released below the ground can fall back inside the
+  shaft. Its floor there is the parked carriage: any touchdown on it, however slow, ends the
+  run in an impact with the flag `shaft_fallback` (no catch and re-hold is modelled, and
+  there is no contact with the shaft walls). In 2-D that status is a failed ignition's. A
+  live stage 1 ends `guidance_failed` with fixed guidance, and a payload search ends
+  `search_failed` (kind `grid`), each with `shaft_fallback` named in its flag.
+- **The carriage and braking.** The drive pushes M, so a heavy carriage takes part of a fixed
+  force. After release the carriage brakes in closed form at the constant total deceleration
+  from the release point: distance v^2 / (2 a_brake), and a facility of
+  max(L, release position + braking distance). Braking is a set of functions, not a flown
+  phase. A run reports its time, force and energy (`braking_time_s`, `brake_force_N`,
+  `brake_energy_J`).
+- **The sealed shaft** (`shaft: sealed`): the carriage seals the bore above a gap of air
+  trapped at p_0, the ambient pressure at the track start, which expands adiabatically as
+  the carriage rises: F_p(s) = max(0, p_0 - p_0 (h_0 / (h_0 + s))^gamma) A_bore, against the
+  motion, on the carriage, never above p_0 A_bore. Under the force law the drive's force is
+  unchanged and the stack slows; under the acceleration law the drive supplies F_p too. A
+  run records the peak force, the work and the column's pressure at release. The adiabat is
+  uniform and quasi-static, and the model still computes no air drag, dynamic pressure or
+  Mach number on the push: F_p is a force on the carriage, not a flow past the vehicle.
+  From the same file, `lm_fixed_sealed` uses `shaft_bore_m: 5.24, shaft_gap_m: 5.0,
+  shaft_gamma: 1.4`.
+- **Hot starts** are stated from the push start, `{t_ign_s: 0.0, reference: push_start}`
+  (`lm_fixed_hot`), or any other time on that clock: a negative time lights the engines held
+  on the carriage before the push (a hot hold, whose charged F_peak is biased low, KI-067;
+  no shipped linear-motor variant does this). A release-referenced `t_ign_s < 0` is refused, because
+  the push time is known only once the push is flown, and so is a ramp start by depth,
+  speed or height: `a ramp start by at_depth_m needs the constant_accel drive and its
+  track`. A cold start, `{t_ign_s: 0.5, reference: release}`, works as on `constant_accel`.
+- **`drive_stall`.** When the drive at F_max and the thrust at push start cannot lift the
+  stack, the run stops on the track with status `drive_stall`. On a sealed shaft the same
+  status covers a drive that cannot hold the stack against the column at the track end. A
+  2-D payload search cannot fly such a push: the variant ends `search_failed` (kind `grid`),
+  with `drive_stall` named in its flag. The status itself appears in 1-D and on a 2-D run
+  with `figure_of_merit: none`.
+- **`drive_limit`.** The drive never pulls back. When its law asks for less force than the
+  thrust's share (1 - f) T supplies, the drive force would have to turn negative, and the
+  run stops on the track with status `drive_limit`. Examples: a hot start under a stop taper,
+  whose holding force turns negative once (1 - f) T passes M g; a command too low for the
+  thrust; the acceleration law's hot hold, at t = 0. The remedy on `constant_accel`,
+  `allow_negative_drive_force`, is refused here. A 2-D payload search ends `search_failed`
+  (kind `grid`), with `drive_limit` named in its flag.
+
+What it does not model: only F_max and P_max limit it (no thermal, current or voltage
+limit), P_max is mechanical at the carriage, the carriage is a lumped mass that is never sized
+(neither its structure nor its interface hardware), the release is instant, and nothing models
+the exhaust in the shaft (back-pressure, heating, the carriage in the plume). The local app's
+form launches only the committed `constant_accel` experiments; it lists and plays a
+directory with a linear-motor run ([7b](07b-app.md)). A structural case on this drive takes
+its rise time from `force_rise_time_s` ([5b](05b-offload.md#structural-cases-sp7)).
 
 ## Ignition
 
@@ -214,7 +327,9 @@ height.
 Rules:
 
 - First stage only, and only on a run with a `constant_accel` assist. On a pad:
-  `a ramp start by at_depth_m needs an assist model (a pad run has no push and no track exit)`.
+  `a ramp start by at_depth_m needs an assist model (a pad run has no push and no track exit)`;
+  on a `linear_motor`: `a ramp start by at_depth_m needs the constant_accel drive and its
+  track`.
 - One way only: the four forms are one exclusive family group
   ([4. Experiment files](04-experiments.md#merge-rules)). A variant that sets `at_depth_m`
   over the baseline's `t_ign_s` and `reference` replaces them; giving both together is

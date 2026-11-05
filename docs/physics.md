@@ -6999,7 +6999,8 @@ and quote the column's figures from metrics.json, never recomputed.
   too (lm and lm_sealed: 532 and 560 px at 1280, 518 and 546 at 1920). Its push settings
   gain `sealed_shaft` (payload data the frozen template does not draw). The display file's own shaft note, "the model
   has a vented shaft and no shaft geometry", is payload data the page does not show;
-  configs/display is not edited here, since the gallery's scene page embeds it.
+  configs/display is not edited here, since the gallery's scene page embeds it (SP7 step S8
+  reworded the note, KI-082: "The public face (SP7 step S8)").
   templates/scene.html is not edited.
 - The app: its results panel's display-only list reads the pair's shafts (`pair_shafts`,
   a run folder metrics.json does not describe read as None), its caveats and push line
@@ -10031,6 +10032,36 @@ SP7's reading (the answer-so-far caveat "Before structural mass.", the 41.26 t a
 +1,498.8 kg cards' caveats, and the Phase 2 bullet "Structural mass could cancel the
 gain").
 
+**The public face (SP7 step S8).** S8 changed no equation, event, integrator setting, loss
+term or run: it wrote what the steps above left to it, and nothing under src/,
+configs/vehicles/, configs/structures/ or experiments/ moved.
+
+- KI-082: the `shaft_diameter_m` note of `configs/display/f9_class.yaml` read "the model has
+  a vented shaft and no shaft geometry", false of a sealed run. It now reads "...; display-only,
+  never model input: a vented run has no shaft geometry, and a sealed run's bore and gap are
+  its own assist keys, not this value". The number (7.0 m) is unchanged, and the note enters
+  no model path (the import guard) and no drawing: it is payload data the frozen templates do
+  not show. Its one effect is on the bytes of a scene page, whose data block embeds it at
+  `display.provenance["silo.shaft_diameter_m"]`: site/examples/pad-vs-silo-offload-scene.html regenerated
+  90 bytes longer, with that one string on line 316 its only difference, the five replay pages
+  byte-identical. docs/demos/SP2/pad-vs-silo-cold-scene.html is a dated record, kept as written.
+- The gallery gained SP7.1 from run A (a replay page, a scene page, an MP4 and its poster,
+  by the commands the entry records), through site/build.py's framing with no new
+  `REPLAY_PAGE_FIXES` entry. site/templates/replay-frame.html gained one rule,
+  `.caveats li { overflow-wrap: anywhere; }`, so that the structure file's path in a caveat
+  does not widen a phone's page: it is in every built replay page and, through
+  `scene_frame_parts`, the built scene pages, and in no file under site/examples/.
+- site/assets/site.css releases the first column of chapter 11's tables from the manual's
+  one-line rule for table names: there the first column holds whole messages, which pushed
+  Cause and Fix off a desktop page.
+- The present-tense lines the S7c paragraph above left to S8 are reworded: the deck (four new
+  slides, 16 to 19, and its PDF), the README's caveat list, status and roadmap rows, the
+  landing page's roadmap row and run-true lines, the manual's "So what has been found?" and
+  chapter 9's pointer, and the findings index's RQ2 caveat. docs/process/SESSION_PROTOCOL.md's
+  caveat line now branches on what a run charges.
+- `PROGRAM_CLAIM_SOURCES` gains site/deck/index.html now that its slides are rewritten; README.md
+  stays out, its one hit a past-tense sentence about SP1's record.
+
 ### The flown push of a linear motor (SP7 step S4b)
 
 Modules: `src/launchsim/sim.py` (`flown_push_trace`, `linear_motor_push_load`,
@@ -12040,6 +12071,6 @@ requirements are quoted where they are looser). Parametrised cases are one row.
 | `test_scene.py::test_run_path_modules_never_import_display_or_scene`, `::test_fresh_interpreter_keeps_display_and_the_run_path_apart` (slow) | the import guard of D-SP2-18, split by KI-035 (SP7 step S1) into a fast source scan (no run-path module, `structure` and `assist/linear_motor` included, imports display or scene; scene imports no run-path writer and reads no file itself) and a slow fresh-interpreter check (importing display loads no I/O module; importing sim and results_io loads neither display nor scene); every assertion of the unsplit test kept | exact |
 | `test_appform.py::test_appform_is_pure_and_off_the_run_path`, `::test_fresh_interpreter_keeps_appform_and_the_run_path_apart` (slow) | the import guard of D-SP2-18 on the app's form, split in SP7 step S7d as KI-035 split the scene's: a fast source scan (appform imports no I/O module and no YAML reader; no module of the package but app and cli imports appform or app, which covers the whole run path) and a slow fresh-interpreter check (importing appform loads none of those, whatever its imports pull in; importing sim and results_io loads neither appform nor app); every assertion of the unsplit test kept | exact |
 | `test_caveat_wording.py::test_structure_caveat_says_what_a_penalty_row_charges` (SP7 step S7c) | "Program-level sentences (SP7 step S7c)": a penalty row beside an uncharged run, alone, and two penalty rows end "...: a parametric assumption, not a sized structure; SP7's first-order structural model is reported separately (docs/findings/RQ1-structural-2d.md)." (plural "parametric assumptions, not sized structures; ..."), word for word | exact text |
-| `test_caveat_wording.py::test_no_source_claims_the_program_has_no_structural_model` | "Program-level sentences (SP7 step S7c)": no file of `PROGRAM_CLAIM_SOURCES` (src/launchsim and its templates, site/build.py, site/index.html, site/examples/*.html, docs/manual/*.md; the deck and README.md are S8's) states any of `RETIRED_PROGRAM_CLAIMS` ("no structural model", in any tense, and "unknown in this model"; fix round 1), matched case-insensitively across line breaks in two readings (`_scan_texts`: wrapped comment and blockquote markers dropped, HTML tags and no-break spaces read as spaces, and string literals split over lines, implicitly or with '+', with a trailing comment or a prefixed second literal, joined), each form caught on a sample first; `replay.PENALTY_MODEL_POINTER` equals the written-out pointer, and the note it names exists | exact (a scan of the files) |
+| `test_caveat_wording.py::test_no_source_claims_the_program_has_no_structural_model` | "Program-level sentences (SP7 step S7c)": no file of `PROGRAM_CLAIM_SOURCES` (src/launchsim and its templates, site/build.py, site/index.html, site/examples/*.html, docs/manual/*.md and, since S8 rewrote its slides, site/deck/index.html; README.md stays out, its one hit a past-tense sentence about SP1's record) states any of `RETIRED_PROGRAM_CLAIMS` ("no structural model", in any tense, and "unknown in this model"; fix round 1), matched case-insensitively across line breaks in two readings (`_scan_texts`: wrapped comment and blockquote markers dropped, HTML tags and no-break spaces read as spaces, and string literals split over lines, implicitly or with '+', with a trailing comment or a prefixed second literal, joined), each form caught on a sample first; `replay.PENALTY_MODEL_POINTER` equals the written-out pointer, and the note it names exists | exact (a scan of the files) |
 | `test_app_server.py::test_sp1_structure_caveat_quotes_sp7s_structural_note` | "Program-level sentences (SP7 step S7c)": `app.SP1_HEADLINE`'s "Structure." group opens "SP1's 41.26 t is computed with no structure charged for the 4 g0 full-stack push; its penalty rows are assumptions, not a sized structure. SP7's central first-order structure", leaves 11.42 t of the 41.26 t (27.7%; docs/findings/RQ1-structural-2d.md, preliminary, 2026-11-03, the note's own status line), never "no structural model" or "unknown"; its eight numbers (41.26 t, 4 g0, 11.42 t, 27.7%, 0.5 s, +14.3%, 28.57 t, 23.68 t) in its text and in docs/findings/RQ1-structural-2d.md, each but 4 g0 (SP1's headline) in SP1's dated pointer section ("Since this note" up to "The question"), with the group's five phrases, each also in its text (fix round 1: "the pad's unthrottled envelope, zero margin and an instant release flagged but not sized" among them; fix round 2: "to 28.57 t (23.68 t before its plausibility scaling)", so swapped band ends fail; fix round 3: "an assumed 0.5 s drive rise time that the constant-acceleration trajectory does not fly (the step it flies leaves no offload", one phrase for the rise time, its antecedent and the step clause, so a deleted, altered or moved step clause or another rise time such as 10.5 s fails), the text's "(the step it flies leaves no offload)", "on the same gate vehicle (+14.3%)" (SP1's pointer section's "on the same gate vehicle (+14.3% calibration miss)") and its closing band clause, the sizing basis "sized for the offloaded stack's push and charged at every offload the solve tries" before the 11.42 t (fix round 3; SP7's headline: "With a first-order structure sized for the offloaded stack only"; a full-load basis, which leaves 10.59 t, or a dropped one fails), and the zero margin's gloss ("is the adverse choice for the assist, not a missing safety factor", "a margin is capacity the push can use") after "zero margin" in the text and word for word in SP7's note; the note's headline carrying the 11.42 t against SP1's 41.26 t, the band from no offload to 28.57 t (23.68 t unscaled) and the step push's no offload, and the caveat's key words in SP7's note ("the model's unthrottled envelope; zero margin" and "the instant release flagged, not sized" among them) | exact text (quoted from the notes, never computed) |
 | `test_site_build.py::test_offload_structure_addition_ends_with_the_replay_pointer` | "Program-level sentences (SP7 step S7c)", fix round 1: site/build.py's `REPLAY_OFFLOAD_STRUCTURE` extends its source sentence and ends "; these are assumptions, not a sized structure, and " + `replay.PENALTY_MODEL_POINTER` + "."; both offload pages list it in `REPLAY_PAGE_FIXES`, carry the source sentence word for word and not the pointer, and `fix_replay_text` gives each the pointer once with no warning or error | exact text |

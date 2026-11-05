@@ -22,7 +22,7 @@ vehicle:
   engine_section_length_m: {value: 2.0, assumed: true, note: "the octaweb engine bay drawn at the base of stage 1 (part of its length); a drawing proportion, not a published figure"}
 
 silo:
-  shaft_diameter_m: {value: 7.0, assumed: true, note: "a drawn shaft wide enough for the 5.2 m fairing with clearance; the model has a vented shaft and no shaft geometry"}
+  shaft_diameter_m: {value: 7.0, assumed: true, note: "a drawn shaft wide enough for the 5.2 m fairing with clearance; display-only, never model input: a vented run has no shaft geometry, and a sealed run's bore and gap are its own assist keys, not this value"}
   ring_pitch_m: {value: 10.0, assumed: true, note: "spacing of the rings drawn on the shaft wall, a visual depth cue only"}
   ring_size_m: {value: 0.4, assumed: true, note: "thickness of the drawn rings, a visual cue only"}
   carriage_height_m: {value: 3.0, assumed: true, note: "the drawn carriage under the vehicle; the model gives it a mass and no size"}

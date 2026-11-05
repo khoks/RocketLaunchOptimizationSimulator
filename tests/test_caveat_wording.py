@@ -404,14 +404,14 @@ PROGRAM_CLAIM_SOURCES = (
     "site/build.py",
     "site/index.html",
     "site/examples/*.html",
+    "site/deck/index.html",
     "docs/manual/*.md",
 )
 """Where a present-tense program claim would be read (code, its page templates, the site's
-build, landing page and gallery, the manual). Left out: docs/physics.md (it records the
-retirement), docs/findings/ and docs/phases/ (dated records), and two texts S8 rewrites at
-SP7's close: site/deck/, whose slides and PDF are re-printed together, and README.md, whose
-one hit is its SP1 bullet's past-tense "No structural model existed then" (S7b's, true of
-that record)."""
+build, landing page, gallery and deck, the last since SP7 step S8 rewrote its slides, the
+manual). Left out: docs/physics.md (it records the retirement), docs/findings/ and
+docs/phases/ (dated records), and README.md, whose one hit is its SP1 bullet's past-tense
+"No structural model existed then" (S7b's, true of that record)."""
 LITERAL_JOIN_RE = re.compile(r"[\"']\s*\+?\s*(?:#[^\n]*)?\n\s*[rbfuRBFU]{0,2}[\"']")
 """A string literal split over lines and joined implicitly or with '+', with or without a
 trailing comment on the first line, the second with any prefix (``"... no "  # x`` then
@@ -474,6 +474,7 @@ def test_no_source_claims_the_program_has_no_structural_model() -> None:
     assert root / "src" / "launchsim" / "replay.py" in files
     assert root / "site" / "build.py" in files and root / "src" / "launchsim" / "app.py" in files
     assert root / "site" / "index.html" in files
+    assert root / "site" / "deck" / "index.html" in files
     assert root / "docs" / "manual" / "09-reading-results.md" in files
     assert len(files) > 60
     hits: set[str] = set()

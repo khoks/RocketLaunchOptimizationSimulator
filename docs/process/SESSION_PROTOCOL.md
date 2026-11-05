@@ -442,6 +442,10 @@ Working with the user:
 - Plan first; show the plan before code. Put the recommendation first in every decision
   question and give the trade-off in one line.
 - Keep caveats next to every headline number. On the gate vehicle that means, at least:
-  the calibration miss (+14.3%), sweep-optimized and unthrottled guidance, and no
-  structural mass charged for the 4 g push.
+  the calibration miss (+14.3%), sweep-optimized and unthrottled guidance, and what the run
+  charges for the 4 g push. A run with no structure (Phase 2's payload gain, SP1's offload)
+  says that no structural mass is charged. A run with SP7's modelled structure says it is
+  a first-order station sizing at central coefficients, with what the note's caveats list
+  (the assumed rise time, zero margin, the pad's unthrottled flight as the envelope, the
+  instant release flagged, not sized), never "no structural mass".
 - Commit at each gate and keep the trackers current; the user reads them.

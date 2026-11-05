@@ -141,6 +141,7 @@ When the sweep names offload cases, each case adds these columns, written
 | `electrical_energy_J` | J | Electrical energy of the offloaded run's push |
 | `solve_gamma_star_rad` | rad | The solve's own gamma\*_ref (Earth-relative flight-path angle at MECO), not the point's payload-search `gamma_star_rad` column. Empty for a fixed case (no solve) and for a solve that ended `search_failed` |
 | `n_flags` | | The number of the case record's flags (its solve's and its recorded run's); the flags themselves are listed in the sweep summary's Checks section. Empty for a record without a flag list (a `reference_failed` point) |
+| `dv_shortfall_mps` | m/s | The offload solve's delta-v shortfall at x = 0 (-dv_margin(0)) where `<case>.status` is `no_offload`, empty otherwise |
 
 From `results/silo_offload_2d/20261003T112949Z` (sweep 1, its 100 m point; the CSVs are
 local, not in git): `silo_cold_s1.offload_kg` 41262.9080373, `silo_cold_s1.stage1_fraction`
@@ -150,6 +151,19 @@ power columns of a sweep row describe the point's full-load run, because the off
 of a point is not written; only `max_q_pa` and `electrical_energy_J` of the case columns
 describe the offloaded run.
 
+A structural case adds, after every case's columns above and only when it was structural
+at some point of the sweep, `<case>.structure_set`, `.structure_sizing`,
+`.structure_dynamic`, `.structure_entry`, `.structure_margin`, `.structure_cap_g`,
+`.structure_dm_kg` (dm1 + dm2 at x\*), `.structure_dm_stage2_kg`, `.structure_dm_x0_kg` (dm at
+x = 0), `.structure_dlf`, `.structure_n_peak_g`, `.structure_F_peak_N`,
+`.structure_ramp_cost_rel`, `.structure_plausibility_factor`, `.structure_flags` (the fired
+flags' names, `none`, or that no flag was evaluated where the solve failed
+(`search_failed`)),
+`.structure_plausibility_scaled`, `.structure_overrides` and
+`.structure_plausibility_ratio`. The sweep's summary adds a line per structural case under
+the table, and one line for each point that ended `no_offload`, with its shortfall from
+`dv_shortfall_mps`; a sweep runs no payload case, so its deficit reads as not flown.
+
 ## summary.md
 
 | Section | Run (1-D) | Run (2-D) | Sweep |
@@ -157,7 +171,7 @@ describe the offloaded run.
 | Header: experiment, timestamp, git hash, comparison basis, vehicle, baseline (2-D: the search budget id and a guidance note) | yes | yes | yes |
 | Variants against the baseline: one column per run, one row per quantity | yes | yes | |
 | `sweep_<n>`: the sweep index as a table | | | yes |
-| Propellant saved at fixed payload (only with an `offload:` block; [5b](05b-offload.md#what-the-summary-reports); its imposed cases in their own sub-section since SP7) | | yes | |
+| Propellant saved at fixed payload (only with an `offload:` block; [5b](05b-offload.md#what-the-summary-reports); its imposed cases in their own sub-section since SP7, and with a `structure:` block its Structure sub-section, [9](09-reading-results.md#reading-a-structural-summary)) | | yes | |
 | Bounds | | yes | |
 | Cases (calibration) | | yes | |
 | Sensitivity | yes | yes | |
@@ -178,7 +192,9 @@ end and the orbit; the four losses and the identity and closure residuals; max-Q
 q-alpha; felt g (run-wide, in flight, lateral, on the track); interface force and hold-down
 force; track-normal g; drive energy, electrical energy, peak power, braking distance and
 facility length; search diagnostics; and the failed-ignition items. "n/a" marks an item a
-run did not reach.
+run did not reach. When some run of the table is a linear motor, rows of its settings and
+results follow the facility length (a run of another drive reads "-"), and when one is a
+sealed shaft, three rows of its column follow them.
 
 **The 1-D variant table** reports burnout speed instead of payload: release speed and its
 delta, propellant burned before release, stage-1 burnout speed and altitude with deltas,
@@ -220,6 +236,8 @@ A sweep point's `metrics.json` holds `experiment`, `timestamp_utc`, `git`, `run`
 |---|---|
 | `basis`, `reference`, `reference_payload_kg` | The basis line (different vehicles, same payload and orbit), the baseline's name and P_ref [kg] |
 | `caveats` | The caveat lines the summary prints, the vehicle's calibration first |
+| `structure_inputs` | With a `structure:` block: `file`, `sha256`, `envelope_pad`, `reference_payload_kg`, `envelope_basis`, `envelope` (per element its required wall, station, mode and load case), `plausibility`, `sets`, `sets_label`, and `tornado` and `break_even`, null with `tornado_note` saying why |
+| `structure_payload_cases` | With payload cases: one record per case, its settings and the structure keys below, plus `dm_0_kg`, `dm_1_kg`, `payload_1_kg`, `payload_kg` (P_2\*), `payload_delta_kg` (P_2\* - P_ref), `payload_2_minus_1_kg`, `contraction`, `residual_estimate_kg`, `residual_tolerance_kg`, `unconverged`, `pass_1_run`, `run`, `vs_pad`, `flight_check`, `flags` |
 | `energy_inputs` | Each stage's fuel mass [kg] and the heating value [J/kg], each with its provenance (null without an `energy` block) |
 | `pad_control`, `pad_controls` | The setting, and one record per control: `mode`, `run`, `status`, `offload_kg` (x_pad), `fraction_of_load`, `m_res_kg`, `dv_margin_mps`, `slope_kg_per_kg`, `bound_kg`, `within_bound`, `resolution_effect`, `consistency` (`pass`, `fail`, `not_checked`; `n/a` for stage 2 and both), `solve`, `verification`, `flags` |
 | `cases` | One record per case (below); a case whose variant did not run holds only `name`, `of` and `skipped` |
@@ -239,10 +257,20 @@ A sweep point's `metrics.json` holds `experiment`, `timestamp_utc`, `git`, `run`
   `stage2_offload_kg`, `total_offload_kg`, the loads (`stage1_load_kg`, `stage2_load_kg`,
   `total_load_kg`) and the shares (`stage1_fraction`, `stage2_fraction`,
   `total_fraction`); the penalty (`stage1_dry_mass_added_kg`, `assumed_penalty`); on a
-  structural case (SP7) the run-level structure keys (`structure_charged`,
-  `structure_dm_kg`, `structure_dm_stage2_kg`, `structure_set`, `structure_file`,
-  `structure_flags`, ...), which its recorded run's record under `offload.runs` carries
-  too and which every reader words its structure caveat from;
+  structural case (SP7) the structure keys, which its recorded run's record under
+  `offload.runs` and a structural arm's record carry too and which every reader words its
+  structure caveat from: what is charged (`structure_charged`, `structure_dm_kg`, dm1 + dm2
+  at x\*, `structure_dm_stage2_kg`, `structure_dm_x0_kg`), the settings (`structure_set`,
+  `structure_sizing`, `structure_dynamic`, `structure_entry`, `structure_margin`,
+  `structure_envelope_cap_g`, `structure_overrides`, `structure_plausibility_scaled`), the
+  load (`structure_t_r_s`, `structure_f_Hz`, `structure_dlf`, `structure_n_q_g`,
+  `structure_n_peak_g`, `structure_F_peak_N`, `structure_ramp_cost_rel`), the sizing
+  (`structure_elements`, dm by element; `structure_closed_form_kg` and `structure_ring_kg`,
+  its two parts; `structure_governing`, `structure_iterations`,
+  `structure_flight_exceedance_kg`), the rule (`structure_plausibility_ratio`,
+  `structure_plausibility_factor`), the source (`structure_file`, `structure_file_sha256`,
+  `structure_envelope_pad`) and `structure_flags`, one record per flag with `name`, `fired`
+  and its `values`;
 - the payload: `payload_kg` (P_ref for a solved case, its own P\* for a fixed one) and
   `payload_delta_kg`;
 - `solve` (status, `offload_kg`, `root_kg`, `load_kg`, `fraction_of_load`,
@@ -293,9 +321,16 @@ they apply.
 | `drive_energy_J`, `drive_energy_kWh` (aliases `assist_energy_J`, `assist_energy_kWh`) | Net drive work |
 | `electrical_energy_J`, `electrical_energy_kWh` | Positive drive work / drive efficiency |
 | `drive_power_peak_W` (alias `peak_drive_power_W`), `drive_power_peak_t_s` | Peak drive power and its time on the run clock (t = 0 at push start) |
-| `braking_distance_m`, `facility_length_m` | Carriage braking distance; stroke plus braking |
-| `exit_speed_mps`, `push_time_s` | Track exit speed and push duration |
-| `stroke_m`, `net_accel_mps2`, `net_accel_g` | The push as flown, however it was stated (2-D) |
+| `braking_distance_m`, `facility_length_m` | Carriage braking distance; stroke plus braking (a linear motor released before the track end: the larger of the stroke and the release position plus braking) |
+| `exit_speed_mps`, `push_time_s` | The speed at release (the track exit, unless a target speed releases it first) and the push duration |
+| `release_position_m`, `release_trigger` | Linear motor: where the push released along the track, and how: `track_end` or `target_speed` |
+| `push_control_law`, `push_force_max_N`, `push_power_max_W`, `push_rise_time_s`, `push_accel_command_mps2`, `push_stop_taper_m`, `push_release_speed_mps` | Linear motor: the drive's settings in SI |
+| `push_power_limited`, `push_cap_bound` | Linear motor: whether the power limit bound on the push, and whether a cap bound the acceleration law's command (null under the force law) |
+| `push_accel_mean_mps2`, `push_corner_speed_mps`, `push_felt_g_plateau` | Linear motor: the mean push acceleration v_exit / t_push, the corner speed P_max / F_max, and the felt g at the end of the rise |
+| `electrical_power_peak_W` | Linear motor: the mechanical peak over the efficiency |
+| `braking_time_s`, `brake_force_N`, `brake_energy_J` | Linear motor: the carriage's braking time, m_c (a_b - g_eff sin phi) and its energy; negative force and energy when a_b < g_eff sin phi, where the brake holds the carriage up |
+| `piston_force_peak_N`, `piston_work_J`, `bore_pressure_release_pa` | Sealed shaft only: the column's peak force on the carriage, the drive work done against it, and its absolute pressure at the release |
+| `stroke_m`, `net_accel_mps2`, `net_accel_g` | The push as flown, however it was stated (2-D). `net_accel_*` are null on a linear motor: see `push_accel_mean_mps2` |
 | `ramp_start_*` | The achieved stage-1 ramp start; with a depth, speed or height trigger also `ramp_start_trigger` and `ramp_start_requested_*` (`ramp_start_requested_t_s` is empty for a height reached by the altitude event; 2-D; [5](05-assist-and-ignition.md#ramp-start-by-depth-speed-or-height)) |
 | `propellant_burned_before_release_kg`, `propellant_burned_before_flight_kg` | Propellant burned while clamped or on the track |
 | `meco_*`, `stage1_burnout_*`, `stage2_end_*`, `insertion_e`, `perigee_alt_m`, `apogee_alt_m` | Stage-1 burnout and the orbit at stage-2 cutoff |
@@ -331,7 +366,8 @@ differs (a vehicle sensitivity case, a vehicle sweep point) carries its own vehi
 2-D file adds `model`, `label` (`exploratory` for an app launch, [An app launch](#an-app-launch)), `bound_runs` and `cases`, and, with an `offload:` block,
 `offload_runs`: every offload run it wrote, each with its run dict and its offloaded vehicle
 dict (the changed masses restated as `{value, assumed: true, note}`). With `--no-offload`
-`offload_runs` is empty.
+`offload_runs` is empty. With a `structure:` block it adds `structure`: the file's path,
+`sha256` and content.
 
 ## timeseries.csv
 
@@ -354,7 +390,7 @@ phase boundaries are always in the series. Floats are written with 12 significan
 | `m_kg` | kg | Vehicle mass |
 | `thrust_N`, `thrust_vac_N` | N | Delivered thrust (vacuum thrust minus ambient pressure on the exit, clamped at 0) and vacuum thrust |
 | `drag_N` | N | Drag |
-| `q_pa`, `mach` | Pa, - | Dynamic pressure and Mach number. Empty on track rows: the vented shaft has no air model |
+| `q_pa`, `mach` | Pa, - | Dynamic pressure and Mach number. Empty on track rows: the vented shaft has no air model, and a sealed run's rows are empty too, since its column is a force on the carriage, not a flow past the vehicle |
 | `q_alpha_pa_rad` | Pa rad | q times psi (empty on track rows) |
 | `felt_axial_g`, `felt_lateral_g` | g0 | Felt acceleration along and across the thrust axis. Hold rows read 1 g; track rows give the axial value on the push and the vehicle's track-normal load |
 | `J_vac_mps`, `J_grav_mps`, `J_alt_mps`, `J_drag_mps`, `J_steer_mps`, `J_bp_mps` | m/s | Cumulative loss quadratures from the flight start (0 before it). `J_alt_mps` is the part of the gravity loss due to gravity weakening with altitude |
@@ -388,9 +424,14 @@ One row per event, in time order.
 | `push_start` | The push begins (t = 0 on a track) |
 | `ignition_height` | The coast after release crosses the height of a ramp start stated by `height_method: event`; logged right before the `ignition` it triggers |
 | `ignition` | A stage's thrust ramp starts |
+| `drive_ramp_end` | The end of a linear motor's rise (t = t_r) |
+| `power_limit`, `power_limit_end` | The power limit starts, or stops, binding on the push |
+| `drive_cap`, `drive_cap_end` | A cap (F_max or P_max / speed) starts, or stops, binding the acceleration law's command |
+| `taper_start` | The push enters the stop taper |
+| `target_speed` | The push reaches its `release_speed_mps`; the `release` follows |
 | `ignition_failed` | A stage with `fails: true` would have lit |
 | `liftoff` | Thrust passes weight after the clamp was due to open (an extended hold) |
-| `release` | Track exit, or hold-down release on a pad |
+| `release` | Track exit (or where a target speed releases the push), or hold-down release on a pad |
 | `ramp_end` | A thrust ramp reaches full thrust |
 | `kick_start`, `kick_end` | The pitch kick (2-D) |
 | `propellant` | A stage runs out of propellant |
@@ -408,8 +449,8 @@ the 50 m/s kick trigger when its engines light.
 
 ## Plots
 
-`plots/<run>_<kind>.png`, 768 x 432 px (6.4 x 3.6 in at 120 dpi). Characters outside
-`[A-Za-z0-9_.-]` in a name become `_`.
+`plots/<run>_<kind>.png`, 768 x 432 px (6.4 x 3.6 in at 120 dpi; `drive_curve` 768 x 600,
+`structure` 1080 x 1128). Characters outside `[A-Za-z0-9_.-]` in a name become `_`.
 
 | Kind | 2-D | 1-D |
 |---|---|---|
@@ -423,9 +464,11 @@ the 50 m/s kick trigger when its engines light.
 | `losses` | cumulative gravity, drag, steering and back-pressure losses | |
 | `track_forces` | drive and interface force (runs with a track) | the same |
 | `drive_power` | drive power (runs with a track) | the same |
+| `drive_curve` | a linear motor's drive force and power against speed, with F_max, P_max and the power cap | the same |
+| `structure` | a structural run's required wall along the stations, pad envelope against push, and dm by element (only that run kind) | |
 
-Every panel except `trajectory` is plotted against `t_rel_release_s`. The findings notes
-copy the plots they rest on into [docs/findings/](../findings/README.md#plot-files) with a
+Every panel except `trajectory`, `drive_curve` and `structure` is plotted against
+`t_rel_release_s`. The findings notes copy the plots they rest on into [docs/findings/](../findings/README.md#plot-files) with a
 prefix naming the note.
 
 Next: [9. Reading results](09-reading-results.md)

@@ -21,7 +21,8 @@ figure, and these caveats travel with it:
   the band, the same case removes 36.01 t (9.10% of stage 1);
 - guidance is sweep-optimized and nothing is throttled;
 - no structural mass is charged for the 4 g full-stack push: an assumed +8.1 t of stage-1
-  dry mass leaves 1.98 t, and about 8.5 t (extrapolated) cancels it;
+  dry mass leaves 1.98 t, and about 8.5 t (extrapolated) cancels it (SP7's first-order
+  structure leaves 11.42 t, below);
 - read as the pre-registration worded it, most of the offload is the lighter stack's
   thrust-to-weight (the pad flown with the same offload falls only 1.4 t short of the
   payload), while a delta-v reading chosen after the run gives the lighter stack 28 to 29%;
@@ -34,18 +35,27 @@ figure, and these caveats travel with it:
 
 **Does this show that electricity can replace a share of a rocket's fuel?**
 No such claim follows. The figure is propellant left out of a partly filled tank of one
-vehicle model at one payload, before any structure is charged for the push, and the energy
-ratio beside it sets unlike quantities side by side: it leaves out producing the oxidiser,
+vehicle model at one payload, before any structure is charged for the push (with SP7's
+first-order structure charged, 11.42 t of the 41.26 t is left), and the energy ratio beside
+it sets unlike quantities side by side: it leaves out producing the oxidiser,
 supplying the fuel, grid losses and the facility, and says nothing about cost.
 
 **So what has been found?**
 Preliminary results for the vertical silo only, in [docs/findings/](../findings/README.md).
 On the 2-D gate vehicle the cold-start silo (3 g net over 100 m, 76.7 m/s at the mouth)
 carries +1,498.8 kg (+5.75%) more to a 200 km orbit than the pad, or, read the other way,
-leaves out 41.26 t of stage-1 propellant at the pad's payload (above). That comes with
-caveats that could cancel it: no structural mass is charged for the 4 g full-stack push
-(about 8.1 t of strengthening would cancel the payload gain, about 8.5 t the offload), the
-vehicle calibrates +14.3% high, and the guidance is sweep-optimized and unthrottled
+leaves out 41.26 t of stage-1 propellant at the pad's payload (above). Both figures charge
+no structural mass for the 4 g full-stack push (about 8.1 t of strengthening would cancel
+the payload gain, about 8.5 t the offload). SP7 charges one: with a first-order structure
+sized for the offloaded stack at central coefficients, 11.42 t of the 41.26 t is left
+(27.7%; the pre-registered "cancels most"), and sized for its own full-load push the silo
+keeps +342 kg of the payload gain, an upper bound. That is a first-order station sizing, not
+a structural design, with an assumed drive rise time the constant-acceleration trajectory
+does not fly and the instant release flagged, not sized. Its physics band runs from no
+offload to 28.57 t (23.68 t before its plausibility scaling), and the step push the
+constant-acceleration drive actually flies leaves none
+([RQ1-structural-2d](../findings/RQ1-structural-2d.md)). Every figure is on a vehicle that
+calibrates +14.3% high, sweep-optimized and unthrottled
 ([9. Reading results](09-reading-results.md#the-caveats-and-why-each-matters)).
 
 **Does every m/s of assist help, as the hypothesis says?**
@@ -56,7 +66,8 @@ release gives back a large part of the gain, and at the slowest swept push (0.5 
 the trajectory term is negative and a third of the small gain is the pad's own hold-down
 burn. In the offload runs the max-Q benefit is spent, the offload per m/s falls with depth,
 each second of ignition delay after release costs 4.8 to 5.3 t, and assumed structure takes
-4.5 to 5.1 t of offload per tonne
+4.5 to 5.1 t of offload per tonne. With a first-order structure charged, strokes of 25 and
+50 m (38 and 54 m/s) leave no offload at all
 ([9. Reading results](09-reading-results.md#results-that-go-against-the-hypothesis)).
 
 **Why is the 2-D gain about twice the README's hand estimate? Is that a bug?**
@@ -78,9 +89,17 @@ launch coasters pull cars up towers with cables. The README's
 assist is worth on a specific rocket, with the penalties counted.
 
 **Can I simulate the cable-pulled ramp, a linear motor, or a tilted exit?**
-Not yet. Curved tracks, the cable winch, the force- and power-limited linear motor, the
-silo air column, modelled braking and a tilted-exit abort are README roadmap Phase 3. The
-config refuses them with a message that says so.
+The linear motor, yes: since SP7, `linear_motor` is a force- and power-limited drive with a
+carriage, closed-form braking, a target-speed release and an optional sealed shaft
+([5](05-assist-and-ignition.md#linear_motor-keys)). Curved tracks, the cable winch and a
+tilted-exit abort are still README roadmap Phase 3; the config refuses them with a message
+that says so.
+
+**Can I charge a structure for the push?**
+Yes, on a stage-1 offload solve: give the case a `structure:` field and the experiment a
+`structure:` block ([5b](05b-offload.md#structural-cases-sp7)). It is a first-order station
+sizing, an estimate with stated ranges, not a structural design. The app's form has no
+structural switch; it lists and plays recorded structural directories.
 
 **Is there a graphical app?**
 Yes, a local one since phase SP2: `uv run python -m launchsim app` serves a page on this
@@ -89,7 +108,9 @@ panel, a browser over the results directories and the 2-D launch scene, which dr
 and the silo side by side from a run's recorded time series, with an MP4 export;
 `launchsim scene` writes the scene as a standalone page ([7b](07b-app.md)). Every run
 launched from the app is exploratory and never a finding; findings come only from committed
-experiment files run from a clean tree. The command-line outputs stay: files, an MP4 or GIF
+experiment files run from a clean tree (one disclosed departure, which reached no number:
+SP7's sweep re-run, [RQ1-structural-2d](../findings/RQ1-structural-2d.md#provenance)). The
+command-line outputs stay: files, an MP4 or GIF
 from `animate`, an interactive page from `replay`.
 
 **Is there a 3-D model?**
@@ -139,6 +160,7 @@ It raised after the directory was created. See
 
 | Term | Meaning |
 |---|---|
+| **acceleration law** | A `linear_motor` control law: a net acceleration command, the force solved from the track equation and capped by F_max and P_max / speed |
 | **app run** | A results directory written by a launch from the local app (`results/app/<timestamp>/`), labelled exploratory ([7b](07b-app.md#the-exploratory-regime)) |
 | **assist** | The ground-powered push. Configured in a run's `assist` block |
 | **attribution** | The split of a variant's delta-v margin difference against the pad, at the pad's payload, into release-speed, final-speed, gravity, drag, steering, back-pressure, pre-flight and fairing terms (`attr_*`) |
@@ -149,19 +171,27 @@ It raised after the directory was created. See
 | **calibration** | Comparing the model vehicle with the real one's published performance. Labelled, and kept apart from validation |
 | **carriage** | What the drive pushes and the rocket stands on. It stays on the track at release |
 | **case** | An independent run of a calibration experiment with another vehicle, site or orbit; never compared |
+| **central set** | A structure file's central coefficients: the headline of a structural result |
 | **close-up** | The fixed-scale drawing of the vehicle beside each panel's true-scale view of the scene: its attitude, plume, tank levels and, at the separations, the gap and the opening halves, each marked "drawn, not computed" |
 | **closure** | The rocket-equation bookkeeping of a 2-D run: the ideal rocket-equation delta-v at the payload must equal the flown vacuum delta-v plus the pre-flight burn and fairing-carry terms plus the delta-v margin, to a tolerance |
 | **cold start** | Engines lit after release (silo_cold: 0.5 s after, with a 2 s ramp) |
 | **constant_accel** | The screening drive: a prescribed constant net acceleration along a straight track |
+| **design axis** | A structural assumption rather than a physics coefficient (dynamic factor, non-optimum factors, entry path, margin, envelope cap, sizing basis). A row moves one; the outer envelope sets them at a corner together, except the entry path and the sizing basis, which stay `aft_ring` and `flown` |
+| **DLF** | The dynamic load factor on the push's load increment: from the rise time t_r, min(2, 1 + T / (pi t_r)), with T = 1 / f the assumed first axial period (0.2 s at the central 5 Hz); 1 quasi-static; 2 for a step |
+| **dm** | The modelled structural mass a structural run carries: dm1 on stage 1 with the interstage, dm2 on stage 2 |
 | **dP\*** | A run's payload capacity minus the baseline's |
 | **display-only** | What the launch scene draws that the model does not compute: every shape and length, the held attitude when the engines are off, the spent stage's and fairing halves' drag-free coasts, the carriage after release, the tank levels, the liftoff marker. Named on every scene page and video frame; never model output ([7b](07b-app.md#what-the-scene-draws-that-the-model-does-not-compute)) |
 | **drive efficiency** | Mechanical drive work over electrical energy (assumed 0.5 in the shipped files) |
+| **drive_stall** | The status of a linear-motor run whose drive cannot start the push or, in a sealed shaft, hold the stack against the column at the track end; it stops on the track. A 2-D payload search cannot fly such a push: the variant ends `search_failed`, with `drive_stall` named in its flag |
 | **dv margin** | The delta-v the residual propellant at insertion is worth, at the vehicle payload |
-| **exit speed** | The speed at the track exit; sqrt(2 a L) for the prescribed push |
+| **envelope (pad envelope)** | The largest wall each station needs over the pad's own unthrottled flight at P_ref; the structural model charges what the push needs beyond it, plus, on an aft-ring entry, a ring frame with no envelope credit |
+| **exit speed** | The speed at release (the track exit, unless a target speed releases it first); sqrt(2 a L) for the prescribed push |
 | **exploratory** | The label of every run launched from the local app: made from the form, not from a committed experiment file, not pre-registered, never a finding and never cited. Its summary carries a banner, and its replay, animation, scene and video frames one line |
-| **facility length** | Stroke plus carriage braking distance |
+| **facility length** | Stroke plus carriage braking distance (a linear motor released before the track end: the larger of the stroke and the release position plus braking) |
 | **felt g** | Proper acceleration, the acceleration the vehicle feels, in g0. A full stack pushed at 3 g net feels about 4 g |
+| **first-order station sizing** | SP7's structural model: closed forms per station for the push and for the pad envelope, the positive difference times a non-optimum factor, plus, on an aft-ring entry, a ring frame with no envelope credit. An estimate with stated ranges, not a structural design |
 | **flight start** | Release, or liftoff after an extended hold; the loss quadratures start here |
+| **force law** | A `linear_motor` control law: F = min(F_lim(t), F_max, P_max / speed); its plateau F_max does not depend on the stack |
 | **g0** | 9.80665 m/s^2: the unit "g" and the Isp conversion, never a gravity model |
 | **g_eff** | Effective gravity, mu/r^2 - omega_p^2 r (centrifugal folded in). The track uses its constant surface value |
 | **gamma\*** | The flight-path angle at stage-1 burnout (MECO), solved per run by the search |
@@ -171,6 +201,7 @@ It raised after the directory was created. See
 | **hot start** | Engines lit on the track (or before the push starts) |
 | **kick** | The pitch-over that starts the turn, held at angle delta until the velocity lines up with the thrust |
 | **lag** | A first-order startup: thrust fraction 1 - exp(-t/tau). A lag of tau costs as much as a linear ramp of 2 tau |
+| **linear motor** | The force- and power-limited drive `linear_motor`, capped by F_max and P_max only |
 | **loss identity** | Speed change = vacuum delta-v minus gravity, drag, steering and back-pressure losses; must close for every run |
 | **LTG** | Linear-tangent guidance on stage 2: tan(pitch) = a - b t |
 | **M2 to M5** | Mechanism checks of the screening-beat rule (gravity, back-pressure, drag and steering, anchor). M2 is diagnostic only |
@@ -178,36 +209,49 @@ It raised after the directory was created. See
 | **max-Q** | The largest dynamic pressure of the flight. Unthrottled here, so an upper bound |
 | **MECO** | Main engine cutoff: stage-1 burnout |
 | **mouth** | The top of the silo, the track exit |
+| **n_peak** | The peak felt load factor a structure is sized for: n_rest + DLF (n_q - n_rest), with n_rest the resting load before the push (g_eff / g0, 0.996 g) |
+| **n_q** | The quasi-static felt load of the push's plateau |
 | **no_ignition** | A ramp start by event height that the coast after release never reaches (its apex lies below the height); the run ends `guidance_failed` or `search_failed` |
 | **no_offload** | The status of an offload solve whose vehicle cannot carry P_ref even with full tanks (x\* = 0) |
 | **offload** | Propellant removed from a full load at a fixed payload and orbit, with the tanks partly filled and every dry mass unchanged; set up with the experiment's `offload:` block ([5b](05b-offload.md)) |
 | **offload decomposition (cross-vehicle)** | The split of the ideal delta-v an offloaded vehicle does without, D_id(pad) - D_id(case), into the release speed and the differences in the losses, the pre-flight burn, the fairing term and the margin; `explained` when it closes, else `bug_suspect` |
 | **omega_p** | The Earth rotation rate in the plane of the launch, omega_E cos(lat) sin(az) |
+| **outer envelope** | The structural band with the design axes set at a corner and the physics coefficients searched at it: extremes found, not bounds |
 | **P0** | The payload in the vehicle file (22.8 t on the Falcon 9-class files) |
 | **P\*** | Payload capacity: the largest payload that reaches the target orbit with zero residual propellant |
 | **P_ref** | The reference payload of an offload: the full-load pad's P\* on the same vehicle and orbit |
 | **pad control** | The offload solve run on the pad itself: for stage 1 a consistency test of the solver; for stage 2 and both the amount those cases are quoted net of |
 | **paired pad** | The pad flown with an offload case's propellant change and no push (`<case>__<baseline>`); it separates the head start from the lighter stack |
 | **paired sweep** | A sweep that re-runs the baseline at every point with the same overrides (2-D) |
+| **payload case** | A structure payload case: the variant at full load at its own P\* with the structure sized for its full-load push, in two passes; its figure is P_2\* - P_ref, a payload change |
 | **penalty row** | An offload case with `stage1_dry_mass_added_t`: an assumed stage-1 dry mass added to the assisted run, a parametric stand-in for structure, not a sized one. Not to be confused with a structural case (SP7, `structure:` on the case), whose run carries the modelled structural mass of the push load, a first-order station sizing that every summary row, caveat, page and frame names as modelled, never as assumed |
+| **physics band** | The structural band over the physics coefficients' ranges, the design axes at central: the extremes a screened search found at one push, not bounds |
+| **plausibility rule** | The check of the model's envelope tank mass against Heineman's relation; outside its +/-30% band it scales the band's end by a computed factor |
+| **power_limit** | The event where P_max / speed starts binding on a linear motor's force |
 | **pre-registration** | Fixing inputs and rules in a commit before a run, so they cannot drift toward a wanted answer |
 | **probe** | A labelled one-off calculation outside the shipped experiments. Never a finding |
 | **q-alpha** | Dynamic pressure times the angle between thrust and air-relative velocity, an aerodynamic load indicator |
 | **ramp** | A linear thrust startup over `t_ramp_s` |
 | **ramp start** | When a stage's thrust ramp begins: by time, or (stage 1 on a silo run) by depth, speed or height (by a closed form or by an altitude event in flight) |
 | **release** | The moment the vehicle leaves the track or the hold-down opens |
+| **release flag** | `structure_release_unload`: what the model's single-mode instant-step treatment says the release does, reported with the same treatment at the pad's own MECO; flagged, not sized |
 | **residual propellant** | Stage-2 propellant left at insertion, at the vehicle payload. Negative means a virtual shortfall |
 | **resolution effect** | A stage-1 pad control that ends `no_offload` because the full-load pad misses P_ref by grams of residual propellant (between -0.05 and 0 kg); it passes the consistency test |
 | **scene** | The 2-D launch scene: a cross-section of the launch site with the pad and the silo side by side on one clock, drawn from a run's recorded time series, in the app or as a standalone page from `launchsim scene` ([7b](07b-app.md#the-scene)) |
 | **screening, screening yardstick** | The ideal rocket-equation payload gain of a release speed, with all losses held constant. The yardstick a run's dP\* is checked against |
+| **sealed shaft** | `shaft: sealed` on a linear motor: the carriage seals a trapped air column whose net pressure force acts against the motion. A uniform adiabat, with no air drag on the vehicle |
 | **sensitivity case** | A run with one parameter moved by plus or minus a fraction |
 | **silo** | Concept A: a vertical shaft whose drive pushes the rocket out |
 | **stage-1 burnout speed** | The 1-D figure of merit |
 | **steering loss** | Thrust not along the velocity, integrated as (T/m)(1 - cos psi) |
-| **step** | Instant full thrust at ignition. A yardstick: no engine does it |
+| **step** | Instant full thrust at ignition. A yardstick: no engine does it. Also `dynamic: step`, the structural row sized for the instant push `constant_accel` actually flies |
+| **stop taper** | A linear motor's `stop_taper_m`: the push eased to no net acceleration at the track end |
 | **stroke** | Track length L (`stroke_m`) |
+| **structural case** | An offload case with a `structure:` field: its assisted run carries the modelled mass dm of its push. Not to be confused with a penalty row, an assumed mass |
+| **structure file** | A file under `configs/structures/`: the sizing coefficients with their ranges, the layout, the breakdown and the frozen sets |
 | **sweep** | A full grid of runs over dotted paths |
 | **sweep-optimized** | Guidance whose free parameters are solved per run over a grid shared by every run of an experiment. Not optimal control |
+| **target-speed release** | A linear motor's `release_speed_mps`: the push releases where the speed reaches it, before the track end |
 | **track-normal load** | The load across the track, per body, in g0. Zero on a vertical straight track |
 | **v_k** | The kick trigger speed (50 m/s in the shipped files) |
 | **v_rel** | Velocity relative to the co-rotating air (Earth-relative). Drag, Mach, q and the loss accounting use it |
