@@ -18,7 +18,7 @@ note), steps S4 (25967be, merged 8c4b41a: the linear motor) and S4a (7cdc24a: th
 release, the readers) S4b (b0fcc31: the flown structural push), S5 (460c4d6: the sealed shaft) and S5a
 (2bd40bd: the sealed shaft's wording) closed, checkpoint 2's handoff written, S6b
 (331891d: file B) and S7b (e5f64b3: `run` B and the note completed) closed, S7c (9fe125c: the
-program-level wording) and S7d (cd14968: the fast tier under load) closed, S8 next; decisions D-SP7-01 to D-SP7-56; SP2 closed 2026-10-07, commit 3a1b243).
+program-level wording) S7d (cd14968: the fast tier under load) and S8 (3a07f07: the public face) closed, C1 next; decisions D-SP7-01 to D-SP7-56; SP2 closed 2026-10-07, commit 3a1b243).
 
 ## Phases
 

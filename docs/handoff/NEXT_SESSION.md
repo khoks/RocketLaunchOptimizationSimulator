@@ -108,7 +108,8 @@ checkpoint 1 with S6a, S7a with S3c, S4, S4a, S4b, S5, S5a.
 | S7b | `run` B and the note completed (after this snapshot) | [x] | e5f64b3 |
 | S7c | the program-level wording (after this snapshot) | [x] | 9fe125c |
 | S7d | the fast tier under load (added after the demo, deviation 57) | [x] | cd14968 |
-| S8, C1, C2 | the public face, the close | [ ] | |
+| S8 | the public face | [x] | 3a07f07 |
+| C1, C2 | the close | [ ] | |
 
 **S7a's result** (docs/findings/RQ1-structural-2d.md, draft of 2026-10-19): with the
 central first-order structure charged, 11,420.2 kg of SP1's 41,262.9 kg stage-1 offload
