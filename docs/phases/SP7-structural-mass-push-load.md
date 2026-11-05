@@ -857,6 +857,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S6b | File B (silo_drive_2d.yaml) and the pre-registration addendum | experiments/, docs/phases/inputs/ | the rule values recomputed independently to 1e-12; structure files unchanged; honesty review; clean tree | [x] | 331891d |
 | S7b | `run` B; the note completed; RQ1's pointer; README results; the findings index; physics.md research notes; derived figures by a committed script | results/ (summary), docs/findings/ | B's silo_cold_s1_st within 0.002 kg of A's; lm_cmd's uncharged x* within 0.25 kg of SP1's; no `bug_suspect`; honesty review | [x] | e5f64b3 (scripts b291518) |
 | S7c | Program-level wording in code (replay, the app's headline caveat, site/build.py, the compare.py docstring); the pinned tests; the gallery regenerated | replay.py, app.py, compare.py, site/build.py | `git grep -n "no structural model exists"` only in dated or archived records; full suite; honesty review | [x] | 9fe125c |
+| S7d | A fast tier that holds under other projects' load (KI-090, KI-091; added after the demo's fast suite failed, deviation 57) | tests/, docs/physics.md's test-map rows | under 32 burners and a disk writer test_video.py and the sizing test 10 of 10, the fast suite in three chunks with and without the burner; a mutation for each changed test; full suite | [x] | cd14968 |
 | S8 | Public face: the demo record, a gallery entry for an SP7 run, the deck slides and PDF, the manual chapters, the landing page, CLAUDE.md layout, status and commands, the protocol's caveat line | docs/demos/SP7/, site/, docs/manual/, CLAUDE.md, docs/process/ | site build with no broken link; visual, honesty and compliance review | [ ] | |
 | C1 | Documents: this file, the board, TODO.md, SP3's file fact-checked, the handoff, memory | docs/, TODO.md, memory | compliance review | [ ] | |
 | C2 | Independent exit gate on every criterion; full suite; cold read; closing commit; push; Pages | docs/ | each criterion passes or the user accepts a logged miss | [ ] | |
@@ -1573,6 +1574,37 @@ option fairly with its cost)
   the FAQ's "So what has been found?", the findings index line 24, manual 09's "(Phase 3)"
   pointer. TODO.md's B-005 row and its hot-start finding line, which S7b made stale, are
   updated in this tracker commit. Next: S8.
+- The demo runs (2026-11-04; committed 6940273): the phase file's section 9 commands from
+  6cf0fd2, clean tree. Every leaf of metrics.json equals the recorded directory's (run A
+  16,391 numeric leaves, run C 2,161, run B 14,967; only /git/hash and /timestamp_utc
+  differ), and the sweep's two index files equal the re-run's in every cell. Its fast suite
+  exited 1 (1 failed, 2,216 passed), then 2 failed on a re-run, both in test_video.py, with
+  other projects' pytest runs on the machine. Those processes are not this session's to stop,
+  so the tier was made to hold (S7d).
+- Step S7d closed (2026-11-04; commit cd14968; tests and docs/physics.md rows only). Scan of
+  every wall-clock dependency in tests/ (65 rows: 34 safe, 26 races, 4 slow tier, 1 not
+  clocks). ROOMY limits are now serving's default and ArmedLimits shortens only the timeout
+  under test once its setup has finished; process_alive uses OpenProcess; the app-server
+  races use events or counts; KI-090's ordering is replaced by a scripted clock giving exactly
+  (2.0, 4.0) and the sizing's own stage2_sized record; child-import guards 600 s. The appform
+  guard is split as KI-035 split the scene's, with a new scan test over every module of the
+  package (D-SP7-56). Two tests that did not catch what their docstrings said, at HEAD too,
+  were strengthened. Mutations: 95 by the gate's own plugin, 92 caught; the three survivors
+  are one equivalent mutant and two disclosed gaps (KI-093). Every loosened wall-clock bound
+  is listed with what it no longer catches (the step's report, section 7). Workflow: one
+  implementer; physics, compliance and honesty reviewers in six passes (36, 19, 14, 12, 14
+  and 13 findings; 7, 3, 2, 1, 6 and 3 majors), six fix rounds; the independent gate: under 32
+  burners and a disk writer test_video.py 10 of 10 and the sizing test 10 of 10, the fast
+  suite 2,217 in three chunks twice, beside eight VideoSearchDB pytest runs on the first
+  pass; without the burner 2,217 twice; slow tier 54 of 54 in nine commands, none re-run; full
+  suite 2,271; ruff, the exact 1-D golden tier, the planar pins and capture, the golden-dump
+  field lists, replay.html's sha256; src/, configs/, experiments/, results/, site/ and
+  docs/manual/ untouched. What the gate does not show: it ran 32 busy processes, not 64, so a
+  1-in-50 failure of fix round 6's writer fix at 64 would not appear, and the frozen sets were
+  not run under the burner. A real src defect surfaced and stays open: KI-092 (a body arriving
+  after a 404 on /cancel or /finish draws a reset); the tests no longer send the page's `{}` on
+  that path, so the fast tier does not cover it until it is fixed. KI-090 and KI-091 closed;
+  KI-092 and KI-093 opened. Next: S8.
 
 ## 12. Deviations from the plan
 
@@ -2134,6 +2166,14 @@ Checkpoint 1 and step S6a (2026-10-16):
     and results box now state SP7's reading, with no new number), five manual chapters,
     docs/physics.md and four test files, as the brief's wider list asked. Accepted by the
     session.
+57. **Step S7d, added beyond the plan** (the step table had no such row): the demo's fast
+    suite failed for reasons unrelated to the code under test, on a machine carrying other
+    projects' pytest runs, and exit criterion 10 needs the suite green whatever else the
+    machine is doing. Tests and physics.md's test-map rows only; two findings (KI-092, KI-093)
+    left open rather than fixed in src/, which the step could not edit. The step also went past
+    the brief's named tests where the scan found the same race (eight test files), and split
+    one guard (D-SP7-56), so the slow tier grew by one to 54 and the suite to 2,271; the fast
+    count is unchanged at 2,217. Accepted by the session.
 
 ## 13. Prompt to start this phase
 
