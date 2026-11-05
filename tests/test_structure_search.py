@@ -13,6 +13,7 @@ only sizings). Tests never read results/.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import importlib.util
 import json
 import math
@@ -852,12 +853,21 @@ def test_break_even_integer_bracket_on_a_shifted_sizing(
     assert pads.evaluations == 5
 
 
-def test_structure_sizing_on_the_synthetic_pad() -> None:
+def test_structure_sizing_on_the_synthetic_pad(monkeypatch: pytest.MonkeyPatch) -> None:
     """sim.structure_sizing is structure.size on the analytic push of the vehicle offloaded
     by the case's x (the headline's by default), with the file's coefficients by path: equal
     to a direct call; a pad count below the file's range only with check_ranges False;
     sim.time_structure_sizing (the call behind the files' recorded timing) returns two
-    positive medians, the step row's (stage 2 sized) the slower."""
+    finite positive medians, on a scripted clock the median of its own case's repeats after
+    one warm-up, the headline's first and the step row's second; the step row sizes stage 2
+    and the headline does not (the sizing's own record). S7d (KI-090): the order of the two
+    real medians is not asserted: which is the slower is a claim about load-free timing (on
+    two medians of three repeats "the step row the slower" failed in 2 of 3 chunk runs on a
+    loaded machine and passed 9 of 9 alone). The scripted clock shows that each number is
+    that median, of its own case, in the documented order; whether the step row costs more
+    is no longer tested (physics.md records the medians measured on the development machine
+    before the frozen run: 22.1 and 39.9 ms for the gate, 22.7 and 40.1 ms for the fork; it
+    does not record the machine's load)."""
     cfg = ss.structure_config()
     veh = ss.vehicle()
     pad = st.pad_load_set(
@@ -891,8 +901,23 @@ def test_structure_sizing_on_the_synthetic_pad() -> None:
         pad_seconds=0.0,
     )
     head, step = sim.time_structure_sizing(inputs, repeats=3)
-    assert 0.0 < head < step
+    assert 0.0 < head < math.inf and 0.0 < step < math.inf
     assert sizing({}, sim.STRUCTURE_STEP_CASE).stage2_sized
+    assert not sizing({}, sim.STRUCTURE_HEADLINE_CASE).stage2_sized
+    now = [0.0]
+    # the warm-up's first; the two orders differ, so no position in the repeats is both medians
+    durations = {
+        sim.STRUCTURE_HEADLINE_CASE: [100.0, 5.0, 2.0, 1.0],
+        sim.STRUCTURE_STEP_CASE: [200.0, 4.0, 10.0, 2.0],
+    }
+
+    def scripted(_overrides: Any, case: st.SizingCase) -> None:
+        """One sizing on the scripted clock: the case's next duration [s]."""
+        now[0] += durations[case].pop(0)
+
+    monkeypatch.setattr(sim.time, "perf_counter", lambda: now[0])
+    timed = sim.time_structure_sizing(dataclasses.replace(inputs, sizing=scripted), repeats=3)
+    assert timed == (2.0, 4.0)
 
 
 def _synthetic_inputs(ranges: tuple[st.CoefficientRange, ...]) -> sim.StructureSearchInputs:

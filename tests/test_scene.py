@@ -64,6 +64,9 @@ from launchsim.constants import OMEGA_EARTH_RADS, R_EARTH_M
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "launchsim"
 DISPLAY_DIR = Path(__file__).resolve().parents[1] / "configs" / "display"
+CHILD_GUARD_S = 600.0
+"""The hang guard on a child process that imports the package [s]: a test that is mostly
+such a child took over two minutes under load (S7d)."""
 FIXED_GAMMA_DEG = 20.0
 FIXED_LTG = (0.756790, 2.19338e-3)
 """The pad's LTG pair at gamma* 20 deg (tests/test_planar_pipeline.py)."""
@@ -1686,7 +1689,7 @@ def test_fresh_interpreter_keeps_display_and_the_run_path_apart() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=120,
+        timeout=CHILD_GUARD_S,
         check=False,
     )
     assert done.returncode == 0, done.stderr

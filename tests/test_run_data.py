@@ -58,6 +58,10 @@ from launchsim.phases.planar import (
 )
 from launchsim.vehicle import Vehicle
 
+CHILD_GUARD_S = 600.0
+"""The hang guard on a child process that imports the package [s]: a test that is mostly
+such a child took over two minutes under load (S7d)."""
+
 # ---------------------------------------------------------------- synthetic directory
 #
 # The SYNTH_* constants and the _synth_* functions are self-contained on purpose: they
@@ -859,7 +863,7 @@ def test_importing_run_data_loads_no_drawing_or_writer_module() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=120,
+        timeout=CHILD_GUARD_S,
         check=False,
     )
     assert done.returncode == 0, done.stderr

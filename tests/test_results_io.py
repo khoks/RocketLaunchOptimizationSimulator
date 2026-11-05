@@ -28,6 +28,9 @@ from launchsim.vehicle import Vehicle
 
 RUN_DIR_PATTERN = re.compile(r"^\d{8}T\d{6}Z(-\d+)?$")
 FIXED_NOW = datetime(2026, 9, 28, 12, 34, 56, tzinfo=UTC)
+CHILD_GUARD_S = 600.0
+"""The hang guard on a child process that imports the package [s]: a test that is mostly
+such a child took over two minutes under load (S7d)."""
 
 
 def _git(args: list[str], cwd: Path) -> None:
@@ -134,7 +137,7 @@ def test_summary_written_and_read_back_in_cp1252_subprocess(tmp_path: Path) -> N
         env=env,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=CHILD_GUARD_S,
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "OK"

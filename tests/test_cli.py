@@ -19,6 +19,9 @@ from launchsim.constants import G0_MPS2
 
 TINY = Path(__file__).resolve().parent / "data" / "tiny_experiment.yaml"
 TOY_VEHICLE = TINY.parent / "toy_vehicle.yaml"
+CHILD_GUARD_S = 600.0
+"""The hang guard on a child process that imports the package [s]: a test that is mostly
+such a child took over two minutes under load (S7d)."""
 
 
 def _only_run_dir(root: Path, experiment: str) -> Path:
@@ -359,11 +362,12 @@ def test_posix_rooted_vehicle_path_is_not_joined(
 
 
 def test_help_in_subprocess_exits_0() -> None:
+    """python -m launchsim --help in a child process: exit 0, run and sweep in the output."""
     proc = subprocess.run(
         [sys.executable, "-X", "utf8", "-m", "launchsim", "--help"],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=CHILD_GUARD_S,
     )
     assert proc.returncode == 0, proc.stderr
     assert "run" in proc.stdout and "sweep" in proc.stdout

@@ -851,7 +851,11 @@ def test_one_full_sizing_timed(cfg: Any, veh: Any, request: pytest.FixtureReques
     synthetic pad of the recorded pad's size (rows every 0.05 s: about 10,500 cases),
     timed and recorded in the test's user_properties (nothing printed): the screened search
     needs about 3,263 sizings within 10 minutes, about 0.18 s each (source note 9.3). The
-    pad's drivers are prepared once (the first sizing); the ceiling is generous."""
+    pad's drivers are prepared once (the first sizing); the ceiling is generous. It holds each
+    case's faster of two timings, the headline's and the step row's: a run stalled by other
+    work on the machine says nothing about the sizing (S7d: the slowest of three reached
+    0.621 s with 64 busy processes on the 32 logical processors), and a case that is slow
+    every time still fails, either case alone."""
     layout = cfg.stack_layout()
     result = ss.synthetic_pad_result(veh, dt_s=0.05)
     start = time.perf_counter()
@@ -864,15 +868,16 @@ def test_one_full_sizing_timed(cfg: Any, veh: Any, request: pytest.FixtureReques
     st.size(masses, layout, coeffs, pad_set, push)
     first = time.perf_counter() - start
     step = cfg.coefficients(overrides={"materials.E_GPa": 72.0})
-    runs = []
-    for coeff_set, dynamic in ((coeffs, "rise_time"), (step, "step"), (coeffs, "rise_time")):
+    runs: dict[str, list[float]] = {"rise_time": [], "step": []}
+    for coeff_set, dynamic in ((coeffs, "rise_time"), (step, "step")) * 2:
         start = time.perf_counter()
         inc = st.size(masses, layout, coeff_set, pad_set, push, dynamic=dynamic)
-        runs.append(time.perf_counter() - start)
+        runs[dynamic].append(time.perf_counter() - start)
         assert inc.total_kg > 0.0
+    sizing_s = max(min(case) for case in runs.values())
     request.node.user_properties.append(("pad_cases", len(pad_set.cases)))
     request.node.user_properties.append(("pad_prepare_s", prepared))
     request.node.user_properties.append(("first_sizing_s", first))
-    request.node.user_properties.append(("sizing_s", max(runs)))
+    request.node.user_properties.append(("sizing_s", sizing_s))
     assert len(pad_set.cases) > 10_000
-    assert max(runs) < 1.0
+    assert sizing_s < 1.0

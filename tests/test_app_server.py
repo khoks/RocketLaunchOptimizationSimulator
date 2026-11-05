@@ -34,8 +34,8 @@ Fast:
   a FAILED.txt or summary.md that is a link is unreadable and never followed; a scene of
   a directory cut short after its row was cached is 422, its row built again; classify
   reads the calibration cases, bounds and sensitivity arms; a resolved_config.yaml with
-  a YAML alias tree or over its cap is unreadable, never walked or parsed; run_folders
-  is linear in the run list;
+  a YAML alias tree or over its cap is unreadable, never walked or parsed; run_folders'
+  comparisons of the listed names and its calls do not grow with the run list;
 - the results panel per launch kind on directories derived from one fixed-guidance
   launch (a solved stage-1 case, a stage-2 solve with a failed verification, an imposed
   offload above and below P_ref, a run that did not fly), and the reproduction lines;
@@ -130,8 +130,26 @@ change of its wording is caught by the served-panel test)."""
 POLL_S = 0.02
 TIMEOUT_S = 30.0
 QUICK_S = 5.0
-"""A response that must come at once (the server did not wait for a body) arrives within
-this [s]; the handler timeout is 30 s."""
+"""What must come at once arrives within this [s]: a refusal that waits for no body (the
+handler timeout is 30 s) and a walk that LEAF_BUDGET bounds. S7d: each took under 0.25 s with
+64 busy processes on the 32 logical processors, so this bound stands as it was."""
+DRIP_S = 0.5
+"""The gap between the bytes of the dripping client [s]."""
+SHORT_DEADLINE_S = 2.0
+"""HANDLER_TIMEOUT_S of the deadline tests [s]."""
+KEPT_GAP_S = 0.2
+"""The hold between the two requests of a kept connection [s], so that the arm before the
+second request normally reads the long deadline before the test shortens it."""
+KEPT_DEADLINE_S = 1.0
+KEPT_DRIP_S = 0.1
+"""The deadline [s] and the gap between bytes [s] of the request dripped on a kept
+connection: the drip of a request of about 48 bytes outlasts the deadline at any speed."""
+KEPT_CLOSE_WAIT_S = TIMEOUT_S / 2
+"""How long a close may take on a kept-connection test [s], half the long deadline: arriving
+before this, it is the short deadline's on the idle connection and the answer to the request
+on the 403 and HTTP/1.0 connections, never the long deadline's."""
+CLOCK_TICK_S = 0.1
+"""A margin on a lower time bound [s]: time.monotonic has about 16 ms resolution on Windows."""
 INJECT_IMG = "<img src=x onerror=window.__x=1>"
 INJECT_SCRIPT = "</script><script>window.__x=1</script>"
 OFFLOAD_CAVEATS = ("first offload caveat, word for word", f"caveat with {INJECT_IMG} in it")
@@ -1048,13 +1066,31 @@ def test_stop_marks_a_running_launch_and_leaves_a_finished_one(
 
 
 def test_a_launch_post_arriving_during_the_stop_starts_nothing(
-    tmp_path: Path, basis: appform.Basis, request_body: dict[str, Any]
+    tmp_path: Path,
+    basis: appform.Basis,
+    request_body: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A launch POST whose body is still arriving when the server stops (Ctrl+C:
-    stop_active_job, then close): 503 stopping, the runner never called, no directory."""
+    stop_active_job, then close): 503 stopping, the runner never called, no directory. The
+    stop waits for the handler's second read, the one that waits for the rest of the body
+    (S7d, KI-091: a 0.2 s sleep stood for it, and a handler slower than that on a loaded
+    machine would not have been reading yet)."""
     root = tmp_path / "root"
     runner = StubRunner()
     body = json.dumps(request_body).encode()
+    reads = [0]
+    waiting = threading.Event()
+    real_read = app.DeadlineReader.readinto
+
+    def counted_read(self: app.DeadlineReader, buffer: Any) -> int:
+        """The real read, counted: the second one waits for the rest of the body."""
+        reads[0] += 1
+        if reads[0] > 1:  # the first read took the head and the body's first bytes
+            waiting.set()
+        return real_read(self, buffer)
+
+    monkeypatch.setattr(app.DeadlineReader, "readinto", counted_read)
     with serving(root, basis, runner=runner) as server:
         own = f"127.0.0.1:{server.port}".encode()
         head = (
@@ -1063,7 +1099,7 @@ def test_a_launch_post_arriving_during_the_stop_starts_nothing(
         )
         with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
             sock.sendall(head + body[:10])
-            time.sleep(0.2)  # the handler is now waiting for the rest of the body
+            assert waiting.wait(TIMEOUT_S)  # the handler waits for the rest of the body
             assert server.stop_active_job() is None
             server.close()
             sock.sendall(body[10:])
@@ -1244,35 +1280,46 @@ def test_a_failure_while_marking_a_crash_still_ends_the_job(
     assert runner.calls == 2
 
 
+def drip(sock: socket.socket, request: bytes, gap_s: float) -> tuple[int, bool, bytes]:
+    """Send ``request`` a byte at a time, ``gap_s`` [s] apart, reading between the bytes:
+    (bytes sent, whether the server closed the connection, what it answered)."""
+    reply = b""
+    sent = 0
+    sock.settimeout(gap_s)
+    for byte in request:
+        try:
+            sock.sendall(bytes([byte]))
+            sent += 1
+            chunk = sock.recv(65536)
+        except TimeoutError:
+            continue  # nothing yet: drip the next byte
+        except OSError:
+            return sent, True, reply
+        if not chunk:
+            return sent, True, reply
+        reply += chunk
+    return sent, False, reply
+
+
 def test_a_client_that_drips_its_request_is_cut_off_at_the_deadline(
     tmp_path: Path, basis: appform.Basis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """HANDLER_TIMEOUT_S bounds the whole request, not each byte: a client sending one
-    byte every 0.5 s sees its connection closed within about the deadline (2 s here) and
-    never a 200."""
-    monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", 2.0)
+    byte every DRIP_S sees its connection closed before its last byte, no earlier than the
+    deadline (2 s here), and never a 200 (a per-byte timeout would read the whole request,
+    about 24 s of drip, and answer). S7d (KI-091): the bound was elapsed < 3.5 s, a margin a
+    loaded machine's delivery of the close could spend. Bytes left unsent tell a whole-request
+    deadline from a per-byte timeout without a clock, but a deadline up to about 20 s late now
+    passes; the lower bound, new here, holds under any load (the deadline starts after t0)."""
+    monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", SHORT_DEADLINE_S)
     with serving(tmp_path / "root", basis) as server:
         request = b"GET /api/job HTTP/1.1\r\nHost: 127.0.0.1:%d\r\n\r\n" % server.port
         t0 = time.monotonic()
-        reply = b""
-        closed = False
         with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
-            sock.settimeout(0.5)
-            for byte in request:
-                try:
-                    sock.sendall(bytes([byte]))
-                    chunk = sock.recv(65536)
-                except TimeoutError:
-                    continue  # nothing yet: drip the next byte
-                except OSError:
-                    closed = True
-                    break
-                if not chunk:
-                    closed = True
-                    break
-                reply += chunk
+            sent, closed, reply = drip(sock, request, DRIP_S)
         elapsed = time.monotonic() - t0
-    assert closed and elapsed < 3.5, elapsed
+    assert closed and sent < len(request), (sent, elapsed)
+    assert elapsed > SHORT_DEADLINE_S - CLOCK_TICK_S, elapsed
     assert not reply.startswith((b"HTTP/1.0 200", b"HTTP/1.1 200"))
 
 
@@ -1282,28 +1329,55 @@ def test_a_kept_connection_carries_requests_and_idles_out_at_the_deadline(
     """Fix round 3 of A6v (HTTP/1.1): two GETs on one connection are both answered 200
     without a close between them; a refusal (403) closes the connection with its response;
     an HTTP/1.0 request line closes it; an idle kept connection is closed after
-    HANDLER_TIMEOUT_S (2 s here), armed anew for each request."""
-    monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", 2.0)
+    HANDLER_TIMEOUT_S (2 s here), armed anew for each request: a request dripped on a kept
+    connection is cut off before its last byte, as the first request of a connection is. S7d
+    (KI-091): a 1.2 s hold under a 2 s deadline was a race on a loaded machine, so the
+    deadline is long (TIMEOUT_S) through each connection's hold and short only for the arm
+    that follows its second request (each arm reads the constant anew); the hold is a sleep,
+    and an arm later than it reads the short value too, which only leaves the second request
+    1 or 2 s to arrive. The idle runs from that request's send, which the armed deadline can
+    only follow, so its lower bound holds under any load; the upper one is half the long
+    deadline. The drip is new: without a new arm the socket's timeout, which the idle alone
+    cannot tell from a deadline, restarts with every byte (the mutation that removes the arm
+    passed the idle check, before S7d and after it). The 403 and the HTTP/1.0 request run on
+    the long deadline, and their clients wait half of it, so the close they see is the answer
+    to that request: on a 2 s deadline a connection left open was closed by the deadline and
+    passed."""
+    monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", TIMEOUT_S)
     with serving(tmp_path / "root", basis) as server:
         own = b"127.0.0.1:%d" % server.port
         get = b"GET /api/job HTTP/1.1\r\nHost: " + own + b"\r\n\r\n"
         with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
             sock.sendall(get)
             first = read_response(sock)
-            time.sleep(1.2)  # within the deadline: the connection is still kept
+            time.sleep(KEPT_GAP_S)  # the connection is still kept
+            monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", SHORT_DEADLINE_S)
+            t0 = time.monotonic()
             sock.sendall(get)
             second = read_response(sock)
-            t0 = time.monotonic()
             closed = sock.recv(65536) == b""  # idle: closed at the deadline, nothing sent
             idle = time.monotonic() - t0
         assert first.startswith(b"HTTP/1.1 200 ") and second.startswith(b"HTTP/1.1 200 ")
-        assert closed and 1.0 < idle < 3.5, idle
+        assert closed and SHORT_DEADLINE_S - CLOCK_TICK_S < idle < KEPT_CLOSE_WAIT_S, idle
+        monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", TIMEOUT_S)
         with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
+            sock.sendall(get)
+            first = read_response(sock)
+            time.sleep(KEPT_GAP_S)  # as above: the arm before the next request
+            monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", KEPT_DEADLINE_S)
+            sock.sendall(get)
+            second = read_response(sock)
+            sent, closed, reply = drip(sock, get, KEPT_DRIP_S)
+        assert first.startswith(b"HTTP/1.1 200 ") and second.startswith(b"HTTP/1.1 200 ")
+        assert closed and sent < len(get) and reply == b"", (sent, closed, reply)
+        monkeypatch.setattr(app, "HANDLER_TIMEOUT_S", TIMEOUT_S)
+        address = ("127.0.0.1", server.port)
+        with socket.create_connection(address, timeout=KEPT_CLOSE_WAIT_S) as sock:
             sock.sendall(b"GET /api/job HTTP/1.1\r\nHost: evil.example:1\r\n\r\n")
             reply = read_response(sock)
             assert reply.startswith(b"HTTP/1.1 403 ")
             assert sock.recv(65536) == b""  # a refusal closes the connection
-        with socket.create_connection(("127.0.0.1", server.port), timeout=TIMEOUT_S) as sock:
+        with socket.create_connection(address, timeout=KEPT_CLOSE_WAIT_S) as sock:
             sock.sendall(b"GET /api/job HTTP/1.0\r\nHost: " + own + b"\r\n\r\n")
             reply = read_response(sock)
             assert reply.startswith(b"HTTP/1.1 200 ")
@@ -1664,11 +1738,13 @@ def test_a_yaml_alias_config_is_unreadable(
     tmp_path: Path, basis: appform.Basis, launched: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An app directory whose resolved_config.yaml holds a width-10, depth-9 alias tree
-    under runs.silo.run (about 14 kB; 10**9 leaves when walked): its detail answers at once
-    with a small body, the row unreadable with a line naming resolved_config.yaml and no
-    panel; the listing stays 200; its scene is refused and never built. The same file in a
-    recorded directory (whose row reads no config): no panel, panel_error with the same
-    line, scene 422 with it."""
+    under runs.silo.run (about 14 kB; 10**9 leaves when walked): its detail answers with a
+    small body, the row unreadable with a line naming resolved_config.yaml and no panel; the
+    listing stays 200; its scene is refused and never built. The same file in a recorded
+    directory (whose row reads no config): no panel, panel_error with the same line, scene
+    422 with it. S7d: the 5 s bound on the detail went: that one request reached 3.016 s
+    with 64 busy processes on the 32 logical processors, the assertions prove the refusal, and
+    the client's 30 s still bounds a hang."""
     root = tmp_path / "root"
 
     def bomb(metrics: dict[str, Any], config: dict[str, Any], out: Path) -> None:
@@ -1683,16 +1759,14 @@ def test_a_yaml_alias_config_is_unreadable(
     monkeypatch.setattr(scene, "scene_payload", lambda *a, **k: builds.append(a))
     line = f"{run_data.CONFIG_FILE} {app.YAML_ALIAS_REFUSED}"
     with serving(root, basis) as server:
-        t0 = time.monotonic()
         status, _, body = call(server.port, "GET", "/api/results/app/20260105T000001Z")
-        elapsed = time.monotonic() - t0
         listing_status = call(server.port, "GET", "/api/results")[0]
         scene_status = call(server.port, "GET", "/scene/app/20260105T000001Z/pad")[0]
         rec_status, _, rec_body = call(server.port, "GET", "/api/results/recorded/20260105T000002Z")
         rec_scene_status, _, rec_scene = call(
             server.port, "GET", "/scene/recorded/20260105T000002Z/pad"
         )
-    assert status == 200 and elapsed < QUICK_S and len(body) < 100_000
+    assert status == 200 and len(body) < 100_000
     detail = strict(body)
     assert detail["row"]["state"] == app.DIR_UNREADABLE and detail["row"]["line"] == line
     assert detail["row"]["playable"] is False and detail["panel"] is None
@@ -1709,8 +1783,10 @@ def test_an_oversized_config_is_unreadable_without_parsing(
     tmp_path: Path, basis: appform.Basis, launched: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An app directory whose resolved_config.yaml is MAX_CONFIG_BYTES + 1 bytes (valid
-    YAML): its row is unreadable ('over its size cap'), the listing answers within 2 s,
-    the scene is refused, and the file is never parsed nor the scene built."""
+    YAML): its row is unreadable ('over its size cap'), the scene is refused, and the file
+    is never parsed nor the scene built. S7d: ``parsed == []`` is the point, so the bound of
+    2 s on the listing went: that one request went over it 7 times in 92 with 64 busy
+    processes on the 32 logical processors, and the client's 30 s still bounds a hang."""
     out = derive(launched, tmp_path / "root", "20260105T000003Z", lambda m, c, o: None)
     path = out / run_data.CONFIG_FILE
     pad = app.MAX_CONFIG_BYTES + 1 - path.stat().st_size - len("#\n")
@@ -1723,11 +1799,9 @@ def test_an_oversized_config_is_unreadable_without_parsing(
     builds: list[Any] = []
     monkeypatch.setattr(scene, "scene_payload", lambda *a, **k: builds.append(a))
     with serving(tmp_path / "root", basis) as server:
-        t0 = time.monotonic()
         status, _, body = call(server.port, "GET", "/api/results")
-        elapsed = time.monotonic() - t0
         scene_status = call(server.port, "GET", "/scene/app/20260105T000003Z/pad")[0]
-    assert status == 200 and elapsed < 2.0, elapsed
+    assert status == 200
     (row,) = strict(body)["groups"][0]["rows"]
     assert row["state"] == app.DIR_UNREADABLE
     assert row["line"] == (
@@ -1737,27 +1811,75 @@ def test_an_oversized_config_is_unreadable_without_parsing(
     assert parsed == [] and builds == []
 
 
+def profiled_calls(walk: Callable[[], object]) -> int:
+    """The Python and C function calls ``walk()`` makes on this thread (sys.setprofile's
+    'call' and 'c_call' events): a cost no load moves."""
+    calls = [0]
+
+    def tick(_frame: object, event: str, _arg: object) -> None:
+        """Count one call."""
+        if event in ("call", "c_call"):
+            calls[0] += 1
+
+    before = sys.getprofile()
+    sys.setprofile(tick)
+    try:
+        walk()
+    finally:
+        sys.setprofile(before)
+    return calls[0]
+
+
 def test_run_folders_cost_does_not_grow_with_the_run_list(tmp_path: Path) -> None:
-    """run_folders over 1,000 run folders with a metrics.json listing 600,000 runs (half
-    of the folders among them, in reverse): the listed folders first in the run list's
-    order, the others sorted after them; the long run list adds well under a second to
-    the walk of the same folders (a membership test in a list made it about 3 s here)."""
-    for i in range(1000):
+    """run_folders over 200 run folders with a metrics.json listing 6,100 runs (100 of
+    them folders, half of the folders, in reverse): the listed folders first in the run
+    list's order, the others sorted after them. Two counts stand for the cost. The listed
+    names are hashed or compared at most four times per folder (700 here); only they count,
+    so a scan of the list shows as its comparisons with those 100 names, 15,550 here, and a
+    set or a dict of the list rebuilt per folder as its hashes, 20,700 here. The long list
+    adds fewer than two calls per folder to the walk (sys.setprofile), which sees a
+    file-system call per entry that no such count shows; an ``in`` on a list makes no call,
+    so neither count does the other's work. S7d (KI-091): the counts replace the difference
+    of two timed walks over 1,000 folders and 600,000 names, which a loaded disk could move
+    by more than the 1 s the test allowed (that whole test took 63 to 93 s under load; it
+    passed at HEAD, by analysis a race). What the clock saw and the counts do not: a cost
+    per folder that neither hashes a listed name nor tests one for equality and adds under
+    two calls, a bare copy of the run list per folder say."""
+    compares = [0]
+
+    class CountedName(str):
+        """A run name that counts its hashes and equality comparisons."""
+
+        __slots__ = ()
+
+        def __hash__(self) -> int:
+            """Count the hash, then hash as a str."""
+            compares[0] += 1
+            return str.__hash__(self)
+
+        def __eq__(self, other: object) -> bool:
+            """Count the comparison, then compare as a str."""
+            compares[0] += 1
+            return str.__eq__(self, other)
+
+    for i in range(200):
         folder = tmp_path / f"run_{i:04d}"
         folder.mkdir()
         (folder / run_data.SERIES_FILE).write_text("t_s\n0\n", encoding="utf-8")
-    listed = [f"run_{i:04d}" for i in range(998, -1, -2)]
-    runs: dict[str, Any] = {f"x{i}": {} for i in range(600_000)}
-    runs.update({name: {} for name in listed})
-    app.run_folders(tmp_path, {"runs": {}})  # the file-system cache warmed
-    t0 = time.perf_counter()
+    listed = [f"run_{i:04d}" for i in range(198, -1, -2)]
+    others = [f"x{i}" for i in range(6_000)]
+    runs: dict[str, Any] = {name: {} for name in [*others, *listed]}
+    counted: dict[str, Any] = {name: {} for name in [*others, *map(CountedName, listed)]}
     walk = app.run_folders(tmp_path, {"runs": {}})
-    t1 = time.perf_counter()
-    out = app.run_folders(tmp_path, {"runs": runs})
-    t2 = time.perf_counter()
+    compares[0] = 0
+    out = app.run_folders(tmp_path, {"runs": counted})
+    spent = compares[0]
     rest = sorted(n for n in walk if n not in set(listed))
-    assert list(out) == listed + rest and all(out.values()) and len(out) == 1000
-    assert (t2 - t1) - (t1 - t0) < 1.0, (t1 - t0, t2 - t1)
+    assert list(out) == listed + rest and all(out.values()) and len(out) == 200
+    assert spent <= 4 * len(out), spent
+    walk_calls = profiled_calls(lambda: app.run_folders(tmp_path, {"runs": {}}))
+    long_calls = profiled_calls(lambda: app.run_folders(tmp_path, {"runs": runs}))
+    assert long_calls - walk_calls < 2 * len(out), (walk_calls, long_calls)
 
 
 # ------------------------------------------------------------------ the results panel
@@ -3467,31 +3589,38 @@ def test_cli_app_a_second_ctrl_c_during_the_stop_is_ignored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A launch in its writing stage when Ctrl+C comes, and a second Ctrl+C (an
-    interrupt_main 0.2 s into the 1 s grace wait): the stopping line at once, no
-    traceback, FAILED.txt with the stop's reason, the stopped line last, exit 0, SIGINT's
-    handler restored."""
+    interrupt_main as the stop starts, before its 1 s grace wait): the stopping line at once,
+    no traceback, FAILED.txt with the stop's reason, the stopped line last, exit 0, SIGINT's
+    handler restored. S7d (KI-091): a timer 0.2 s into the wait stood for it, and a timer
+    that fired before the signals were ignored, or before cli.main returned after they were
+    restored, would have failed the test (a second interrupt escaped cli.main), and a later
+    one would have reached the test session itself; the stop's own start is inside the
+    ignoring block, on the main thread, so the second interrupt lands there under any load."""
     import _thread
 
     runner = StubRunner()
     runner.writing.clear()
     monkeypatch.setattr(app, "STOP_WRITING_GRACE_S", 1.0)
     monkeypatch.setattr(app, "WORKER_JOIN_TIMEOUT_S", 0.1)  # the stub job stays blocked
-    timers: list[threading.Timer] = []
+    real_stop = app.AppServer.stop_active_job
+
+    def stop(self: app.AppServer) -> Path | None:
+        """The second interrupt, then the real stop."""
+        _thread.interrupt_main()
+        return real_stop(self)
+
+    monkeypatch.setattr(app.AppServer, "stop_active_job", stop)
 
     def serve(server: app.AppServer, runner: StubRunner, form: appform.Form) -> None:
+        """A launch, a wait for its writing stage, then the first Ctrl+C."""
         assert server.start_launch(form)[0] == 202
         deadline = time.monotonic() + TIMEOUT_S
         while server.job_snapshot()["stage"] != app.STAGE_WRITING:
             assert time.monotonic() < deadline
             time.sleep(POLL_S)
-        timer = threading.Timer(0.2, _thread.interrupt_main)
-        timers.append(timer)
-        timer.start()
         raise KeyboardInterrupt
 
     code = _cli_app_with(monkeypatch, runner, tmp_path / "root", serve)
-    for timer in timers:
-        timer.join(TIMEOUT_S)
     out = capsys.readouterr().out.splitlines()
     assert code == 0
     assert out[-2] == cli.stopping_line() and "gets up to 1 s to finish" in out[-2]
@@ -3507,14 +3636,20 @@ def test_cli_app_ctrl_c_before_the_directory_exists(
 ) -> None:
     """Ctrl+C while the launch is still in its preflight (no directory yet): the worker
     makes its directory after the stop, inside close()'s join, and marks it FAILED; the
-    stopped line names it; exit 0."""
+    stopped line names it; exit 0. S7d: the join is production's WORKER_JOIN_TIMEOUT_S, patched
+    to 0.5 s until then, and the stub is released and abandoned at the stop, so the worker ends
+    right after its mark and the join returns then. The mark must still finish inside that
+    join, or the stopped line names no directory, here as in production; a mark 0.5 to 2 s
+    late, which the old patch failed, passes in both."""
     runner = StubRunner(block=True)
     runner.pre.clear()
-    monkeypatch.setattr(app, "WORKER_JOIN_TIMEOUT_S", 0.5)  # the stub job stays blocked
     real_stop = app.AppServer.stop_active_job
 
     def stop(self: app.AppServer) -> Path | None:
+        """The real stop, then the stub released: it makes the directory and ends."""
         marked = real_stop(self)
+        runner.abandon = True
+        runner.gate.set()
         runner.pre.set()  # the directory is made after the stop
         return marked
 

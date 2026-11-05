@@ -1,7 +1,8 @@
 """The app's form, pure (SP2 step A4; src/launchsim/appform.py; design
 docs/phases/inputs/2026-10-05-SP2-design.md, section 4.7, D-SP2-07, 25, 31).
 
-All fast, on the committed files (nothing is flown or written):
+On the committed files (nothing is flown or written), all fast but the fresh-interpreter half
+of the import guard, the one slow test here:
 
 - every preset of design 4.7 builds the committed run: the resolved RunConfig and vehicle
   equal the committed experiment's (a case: its start run, paired pad and imposed
@@ -69,6 +70,9 @@ def _load_support() -> ModuleType:
 sup = _load_support()
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "launchsim"
+CHILD_GUARD_S = 600.0
+"""The hang guard on a child process that imports the package [s]: a test that is mostly
+such a child took over two minutes under load (S7d)."""
 GATE_EXIT_SPEED_MPS = math.sqrt(2.0 * 3.0 * G0_MPS2 * 100.0)
 """Hand exit speed [m/s] of the committed silo: 3 g0 net over 100 m from rest."""
 RECORDED_FELT_G = 3.9964760359053533
@@ -87,21 +91,8 @@ IO_MODULES = (
     "yaml",
 )
 """Modules a pure appform must not load."""
-RUN_PATH_MODULES = (
-    "sim",
-    "results_io",
-    "search",
-    "guidance",
-    "dynamics",
-    "offload",
-    "compare",
-    "summary",
-    "metrics",
-    "metrics_planar",
-    "run_data",
-    "config",
-)
-"""Modules of the run path that must never import appform or app."""
+APP_SIDE = ("app", "cli")
+"""The only modules of the package that may import appform or app."""
 
 
 @pytest.fixture(scope="module")
@@ -849,11 +840,46 @@ def test_building_never_mutates_the_basis(basis: appform.Basis) -> None:
     assert after == before
 
 
+def source_imports(module: str) -> set[str]:
+    """Every absolute name a module of the package imports, anywhere in its source: ``import
+    a.b`` as ``a.b``, ``from a import b`` as both ``a`` and ``a.b``. ``module``: its path
+    under SRC without .py."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse((SRC / f"{module}.py").read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom):
+            names |= {f"{node.module}.{a.name}" for a in node.names} | {str(node.module)}
+        elif isinstance(node, ast.Import):
+            names |= {a.name for a in node.names}
+    return names
+
+
 def test_appform_is_pure_and_off_the_run_path() -> None:
-    """In a fresh interpreter importing appform loads no I/O module (run_data, replay,
-    scene, plots, results_io, sim, summary, app, cli) and no YAML reader; importing sim
-    and results_io (the run path, with everything it pulls in) loads neither appform nor
-    app (D-SP2-18); no module of the run path imports appform or app (source scan)."""
+    """By source scan, appform imports no I/O module (run_data, replay, scene, plots,
+    results_io, sim, summary, app, cli) and no YAML reader, and no module of the package but
+    app and cli imports appform or app (D-SP2-18 asks this of the run path; S7d's scan asks
+    it of every module but these two), so the whole run path is read and a new module is read
+    without being named here. The fast part of the guard; what those imports pull in is
+    ``test_fresh_interpreter_keeps_appform_and_the_run_path_apart`` (slow). The scan reads
+    ``import`` and ``from ... import`` of absolute names at any depth of a module, deferred
+    ones included. It does not read a relative import, a submodule of yaml, or an import made
+    through importlib.import_module or __import__, and the package has none of those (its
+    only importlib is importlib.resources, for the page templates)."""
+    assert not source_imports("appform") & set(IO_MODULES)
+    banned = {"launchsim.app", "launchsim.appform"}
+    modules = sorted(path.relative_to(SRC).with_suffix("").as_posix() for path in SRC.rglob("*.py"))
+    offenders = [name for name in modules if name not in APP_SIDE and source_imports(name) & banned]
+    assert not offenders, offenders
+
+
+@pytest.mark.slow
+def test_fresh_interpreter_keeps_appform_and_the_run_path_apart() -> None:
+    """In a fresh interpreter importing appform loads no I/O module and no YAML reader;
+    importing sim and results_io (the run path, with everything it pulls in) loads neither
+    appform nor app (D-SP2-18). The slow part of the guard: two fresh interpreters, 4.5 to
+    6.7 s in quiet runs, on CLAUDE.md's 5 s mark (S7d: the unsplit test, scan included, was
+    over it in 9 of 12 runs on one day; KI-035 split the scene's guard the same way), split
+    from ``test_appform_is_pure_and_off_the_run_path``, every assertion of the unsplit test
+    kept."""
     code = (
         "import json, sys\n"
         "import launchsim.appform\n"
@@ -864,7 +890,7 @@ def test_appform_is_pure_and_off_the_run_path() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=120,
+        timeout=CHILD_GUARD_S,
         check=False,
     )
     assert done.returncode == 0, done.stderr
@@ -880,20 +906,8 @@ def test_appform_is_pure_and_off_the_run_path() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=120,
+        timeout=CHILD_GUARD_S,
         check=False,
     )
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout.strip().splitlines()[-1]) == []
-    banned = {"launchsim.app", "launchsim.appform"}
-    offenders = []
-    for module in RUN_PATH_MODULES:
-        tree = ast.parse((SRC / f"{module}.py").read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                names = {f"{node.module}.{a.name}" for a in node.names} | {str(node.module)}
-                if names & banned:
-                    offenders.append(module)
-            elif isinstance(node, ast.Import) and {a.name for a in node.names} & banned:
-                offenders.append(module)
-    assert not offenders, offenders
