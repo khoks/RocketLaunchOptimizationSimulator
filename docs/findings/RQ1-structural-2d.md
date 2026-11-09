@@ -22,6 +22,13 @@ scripts, all named under "Provenance" and "Reproduction". Every structural numbe
 first-order station sizing of the push load (D-SP7-01): a first-order estimate with its
 stated ranges, not a detailed structural design.
 
+Wording corrected 2026-11-05 (SP7 step C1, from the reviews of S8 and C1; no number changed;
+each traced to the recorded metrics.json or, for the design axes and the outer envelope, to
+structure.py, the experiment files and the phase file's S2 entry): the payload-limit flag's
+scope in "The release" and "What goes against the hypothesis", which rows fly which design
+axes and what the outer envelope moves (Caveats, "The band's method and what lies outside
+it") and "start mass" for the liftoff wording under the headline table.
+
 ## The question
 
 README research question 1 asks how payload or propellant changes with exit speed after
@@ -247,11 +254,20 @@ lm_fixed_hot) keeps more once charged; every fixed sentence of part 2 that fired
   high (understated, for the assist) (section 2(c); the phase file, section 11, step S2).
   Outside the band: the design axes (the dynamic factor's rise time and frequency, the four
   non-optimum factors, k_ts, the pad count, the margin, the envelope cap, the entry path,
-  the sizing basis), which the layer-2 rows move one at a time and the outer envelope moves
-  together; the plausibility rule's scaling of the low-mass end (below); and everything
-  under "Limits". At any push other than the headline's (the hot starts, the 200 m silo, the
-  sweep points) the band ends are the headline's sets placed at that push: sizing-only
-  estimates, never flown (section 3; design 4.2.6).
+  the sizing basis). Run A's rows move the dynamic mode, the margin, the cap, the entry path
+  and the sizing basis, one at a time. No row moves the rise time, the frequency, the four
+  non-optimum factors or the pad count alone: only the outer envelope's two rows fly them
+  off central, all at a corner together. No row flies k_ts off its central (the outer sets
+  record a corner, but their cases keep the aft-ring entry, which does not read it). S2's
+  search D moves each of the eight alone, sizing only (estimates, not solves; the phase
+  file, section 11). The outer envelope sets every axis but the entry path and the sizing
+  basis at a corner, fixed without search (`structure.design_corner`; the margin comes from
+  its tornado, and each outer set records it and the cap), and searches the physics
+  coefficients at that corner; its two cases keep the aft-ring entry and the flown sizing
+  basis. Also outside: the plausibility rule's scaling of the low-mass end (below), and
+  everything under "Limits". At any push other than the headline's (the hot starts, the 200
+  m silo, the sweep points) the band ends are the headline's sets placed at that push:
+  sizing-only estimates, never flown (section 3; design 4.2.6).
 - **The dominant terms.** At x* the central's 6,305.2 kg is 57.4% load entry (the aft skirt
   2,095.4 kg and the load ring 1,522.5 kg) and 35.3% stage-1 RP-1 barrel (2,222.7 kg); the
   stage-1 LOX barrel takes 25.1 kg ("Which elements and modes carry the mass"). Four
@@ -734,12 +750,13 @@ run A's summary.md offload table and Structure subsection, metrics.json `offload
 | flags | structure_release_unload, structure_payload_limit | none | |
 
 With the structure charged, the decomposition's gravity + steering term falls from 124.7 to
-36.0 m/s while the release speed's 76.7 m/s stays: the structural stack lifts off only 5.1 t
-lighter than the pad (derived: 572,354 - 567,239 kg), against 41.3 t for SP1's uncharged
-one. That is a reading of two decompositions, not a split: no paired pad was flown here. The
-structural headline no longer beats the ideal-screening estimate at its release speed (0.763
-of it; file C's central 0.643 of 14.25 t). CLAUDE.md's rule asks that a beat be explained;
-here there is none to explain, and the decomposition closes.
+36.0 m/s while the release speed's 76.7 m/s stays: the structural stack's start mass is
+only 5.1 t below the pad's (derived: 572,354 - 567,239 kg; the pad's is before its 2 s
+hold), against 41.3 t for SP1's uncharged one. That is a reading of two decompositions,
+not a split: no paired pad was flown here. The structural headline no longer beats the
+ideal-screening estimate at its release speed (0.763 of it; file C's central 0.643 of
+14.25 t). CLAUDE.md's rule asks that a beat be explained; here there is none to explain,
+and the decomposition closes.
 
 ## Which elements and modes carry the mass
 
@@ -1485,7 +1502,9 @@ shutdown. At the central headline (run A's metrics.json, silo_cold_s1_st `struct
 - The flag fires on every structural case of both files, every sweep point, every payload
   case and all eight arms (Caveats, "The flags"), the hot starts included (stage-1 LOX
   bottom about -100 and -114 kPa absolute at a swing of -1.6 g0). The payload-limit flag
-  fires on every cold start and not on the hot starts, as section 8 expected.
+  fires on every cold start of files A and C and not on file A's two hot starts, as section
+  8 expected. File B differs: it does not fire on lm_cmd_taper, a cold start, and it fires
+  on lm_fixed_hot, a hot start ("The drive cases").
 - Nothing models propellant settling for the ignition 0.5 s after a release that the model
   flags as separating the LOX column (Limits): a risk against the assist that no number here
   measures. The hot starts' stage 1 is already firing when the model flags their release (it
@@ -1566,11 +1585,12 @@ needs. Charging the push's structure undercuts it, stated as plainly as the head
   uncharged comparison's own rate (derived; "The payload form"), so its sign is shown only
   under the unconstrained kick. The physics high-mass deficit is an upper bound by the same
   rule (1.29 times the pad's q-alpha).
-- **The payload-limit flag fires on every cold start** (release swing -4.389 g0 against the
-  payload's published -2.0 g0), with its MECO caveat beside it: the same treatment swings
-  the pad's own MECO to -5.195 g0, so the flag measures the step treatment as much as the
-  push. The release would also separate the stage-1 LOX column (-896 kPa absolute), with
-  nothing modelling the settling before the ignition 0.5 s later.
+- **The payload-limit flag fires on every cold start of file A** (release swing -4.389 g0
+  at the central against the payload's published -2.0 g0; file B has its own bullet below),
+  with its MECO caveat beside it: the same treatment swings the pad's own MECO to
+  -5.195 g0, so the flag measures the step treatment as much as the push. The release would
+  also separate the stage-1 LOX column (-896 kPa absolute), with nothing modelling the
+  settling before the ignition 0.5 s later.
 - **Most unmodelled terms favour the assist** ("Limits"): the unthrottled envelope (the cap
   rows measure part of it: 0.94 t and 6.61 t of offload lost at 4.5 and 4.0 g0, derived from
   the central's x*), the release not sized, the transfer tube beyond its hoop, COPVs and

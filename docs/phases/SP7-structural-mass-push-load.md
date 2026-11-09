@@ -1628,6 +1628,29 @@ option fairly with its cost)
   the sentences describe the baseline and stay true of it; the landing's one sentence about the
   rocket after release goes to C1, the deck's stay, slide 13 saying two different vehicles.
   KI-041, KI-082, KI-083, KI-084 closed; KI-094 to KI-099 opened. Next: C1.
+- Step C1, the documents of the close (2026-11-05; commit `<C2:c1-commit>`; documents only, no
+  file under src/, tests/, configs/, experiments/ or results/). SP3's file: the fact-check made
+  at 6cf0fd2 (52 edits, 2 outside the file, 6 questions) re-validated at d03367b. Its 157 line
+  claims all hold, since no file under src/ changed after 9fe125c; 19 changes in 13 edits (the
+  commit and date of each statement; three physics.md headings; S7d's counts and KI-090; the
+  four demo summaries committed at 6940273; S7d and S8 done; a caveat clause in the prompt), each
+  fixed in the edit; X2's commit likewise. All applied, each old text checked to occur exactly
+  once; the six questions added to that file's section 10 with a recommendation first (the
+  fact-check had one and part of another; the rest are drafted and say so), and a seventh, Q7,
+  from the physics review's pass 2 (deviation 59). The board, TODO.md
+  (B-004 and B-005 stay in progress until the exit gate, B-017 opened for the interface
+  hardware B-004 leaves unsized, B-007, B-015 and B-016 updated, D-SP7-56 flagged, KI-051
+  reworded, KI-100, KI-101 and KI-102 opened; M20 stays in progress), the handoff archived as
+  docs/handoff/archive/2026-11-03-SP7-in-progress.md and the new one written with marks for
+  what C2 produces, the memory. Every KI exit criterion 8 names is closed with its evidence in
+  TODO.md (KI-021, KI-022, KI-023, KI-030, KI-035, KI-036, KI-038, KI-039). The wording S8's
+  reviews left, each traced to the recorded metrics.json (the design axes and the outer
+  envelope to structure.py, the experiment files and S2's log entry) with no number changed:
+  the payload-limit flag's scope, which rows fly which design axes, what the outer envelope
+  moves and a start mass in the note, the settling clause and lm_cmd_hot's clause in README,
+  the index's 18.27 t, the landing page's one sentence (deviation 59). Reviews and gate:
+  `<C2:c1-review-and-gate>`. While the handoff holds one of those marks, SP7 is not closed.
+  Next: C2.
 
 ## 12. Deviations from the plan
 
@@ -2203,6 +2226,39 @@ Checkpoint 1 and step S6a (2026-10-16):
     overflow on every framed page, the unframed demo page keeping its 7 px), docs/manual/02
     and 10, docs/physics.md's section, and README's "planned for Phase 3" bullet, which was
     false. Accepted by the session.
+59. **Step C1's fact-check predates two steps, its questions gained recommendations, and
+    its files go beyond the row** (the C1 row names docs/, TODO.md and memory): SP3's
+    fact-check was made at 6cf0fd2, before S7d and S8 were added or run, so C1 re-validated
+    it at d03367b and fixed in the edit what had moved. The brief asks every open question
+    with the recommendation first; the fact-check recommended on Q1 and on Q3's planar-only
+    blocks only, so Q2, Q4, Q5, Q6 and Q3's clause on the `planar` key carry
+    recommendations drafted from the SP3 file's own text, marked as drafted there and in
+    the handoff, and answered by no one. The brief's item 7 reaches outside the row's
+    files: README.md (two sentences) and site/index.html line 93 (one clause). Its fix
+    round went one clause past item 7(b) in the note: the sentence 7(b) re-cut said the
+    layer-2 rows move every design axis, and two reviews graded that major, so it now says
+    which rows fly which axes and the dated line at the note's status block says so; what
+    stays outside is KI-101. The board also gained the three SP7 inputs its table lacked
+    and lost its stale "No structural mass is charged today", and section 13 here gained
+    one dated line, since the live handoff's section 10 now holds SP3's prompt. Pass 2 of
+    the physics review added a seventh question, Q7, beyond the brief's six: on a replica,
+    not a run, the reason section 5.10 gives for the 5 kg bound does not hold under section
+    5.7's law, in text that predates this step. The bound, its number and the prompt's
+    sentence on it stay; dated lines at 5.10 and risk 4 and clauses at 5.5 and 5.7 say what
+    changed. Five of SP3's gates changed reading at this step, each a proposal its step 0
+    confirms: exit criterion 3 and S1.2's rows and pointwise dV/dt, and S1.3's kick event
+    (exit criterion 4), now read 1e-12 against the quantity's scale; exit criterion 3 and
+    S1.2's orbit gate read each component of h against |h| and of the eccentricity vector
+    against e, and state an rtol, 1e-12, since CLAUDE.md's upper limit of 1e-9 fails it
+    with no step cap; exit criterion 5 and S1.4's 28.5 deg vacuum line now compare r, v_r,
+    v_theta and m with the kick started on the in-plane speed; and exit criterion 5 and
+    S1.4's equatorial line keep the design's 1e-9 and 1e-8 s on a smooth test air, on the
+    pad and silo_hot_full, at a tightened rtol 1e-13 with `atol_scale` 1e-3, since no
+    setting tried clears the shipped air's kinks with margin, and read the shipped air, on
+    the pad and silo_cold, at 1e-8, 1e-6 and 1e-5 s, with v_r read against |v| on both
+    lines (that file's section 7, Tolerances;
+    reviews' replicas, not runs). For the user's review at the close: handoff section 6
+    puts the five to the user beside SP3's questions.
 
 ## 13. Prompt to start this phase
 
@@ -2210,6 +2266,9 @@ Final (2026-10-07, SP2's close-out at 705025f; KI-039 added at the close). Kept 
 record of how SP7 was started. SP2's handoff, archived as
 docs/handoff/archive/2026-10-07-SP2.md, holds the same text. To resume SP7, use the
 "Resume SP7" prompt below; docs/handoff/NEXT_SESSION.md section 10 holds that one.
+(Dated note, 2026-11-05, step C1: that copy is now
+docs/handoff/archive/2026-11-03-SP7-in-progress.md, section 10; the live handoff's section
+10 holds SP3's prompt. Both prompts below stay as the record.)
 
 > Read docs/handoff/NEXT_SESSION.md first, then docs/process/SESSION_PROTOCOL.md,
 > docs/phases/README.md, docs/phases/SP7-structural-mass-push-load.md, CLAUDE.md, TODO.md,
