@@ -859,7 +859,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S7c | Program-level wording in code (replay, the app's headline caveat, site/build.py, the compare.py docstring); the pinned tests; the gallery regenerated | replay.py, app.py, compare.py, site/build.py | `git grep -n "no structural model exists"` only in dated or archived records; full suite; honesty review | [x] | 9fe125c |
 | S7d | A fast tier that holds under other projects' load (KI-090, KI-091; added after the demo's fast suite failed, deviation 57) | tests/, docs/physics.md's test-map rows | under 32 burners and a disk writer test_video.py and the sizing test 10 of 10, the fast suite in three chunks with and without the burner; a mutation for each changed test; full suite | [x] | cd14968 |
 | S8 | Public face: the demo record, a gallery entry for an SP7 run, the deck slides and PDF, the manual chapters, the landing page, CLAUDE.md layout, status and commands, the protocol's caveat line | docs/demos/SP7/, site/, docs/manual/, CLAUDE.md, docs/process/ | site build with no broken link; visual, honesty and compliance review | [x] | 3a07f07 |
-| C1 | Documents: this file, the board, TODO.md, SP3's file fact-checked, the handoff, memory | docs/, TODO.md, memory | compliance review | [ ] | |
+| C1 | Documents: this file, the board, TODO.md, SP3's file fact-checked, the handoff, memory | docs/, TODO.md, memory | compliance review | [x] | ead6e38 |
 | C2 | Independent exit gate on every criterion; full suite; cold read; closing commit; push; Pages | docs/ | each criterion passes or the user accepts a logged miss | [ ] | |
 
 **If room runs out** (put to the user when it happens; compute-only cases and the CLAUDE.md arms
@@ -1628,7 +1628,7 @@ option fairly with its cost)
   the sentences describe the baseline and stay true of it; the landing's one sentence about the
   rocket after release goes to C1, the deck's stay, slide 13 saying two different vehicles.
   KI-041, KI-082, KI-083, KI-084 closed; KI-094 to KI-099 opened. Next: C1.
-- Step C1, the documents of the close (2026-11-05; commit `<C2:c1-commit>`; documents only, no
+- Step C1, the documents of the close (2026-11-05 to 2026-11-08; commit ead6e38; documents only, no
   file under src/, tests/, configs/, experiments/ or results/). SP3's file: the fact-check made
   at 6cf0fd2 (52 edits, 2 outside the file, 6 questions) re-validated at d03367b. Its 157 line
   claims all hold, since no file under src/ changed after 9fe125c; 19 changes in 13 edits (the
@@ -1649,7 +1649,17 @@ option fairly with its cost)
   the payload-limit flag's scope, which rows fly which design axes, what the outer envelope
   moves and a start mass in the note, the settling clause and lm_cmd_hot's clause in README,
   the index's 18.27 t, the landing page's one sentence (deviation 59). Reviews and gate:
-  `<C2:c1-review-and-gate>`. While the handoff holds one of those marks, SP7 is not closed.
+  physics, compliance and honesty reviewers in six passes (39, 16, 17, 12, 13 and 9 findings;
+  5, 3, 2, 1, 2 and 1 majors), six fix rounds; from pass 2 on, the physics reviews flew a
+  review's replica of SP3's 3-D model and re-read S1.4's tolerance lines (Q7, the five changed
+  gates, deviation 59); the independent gate on 2026-11-08: item 7 traced by its own script
+  (15 of 15), the SP3 file's added lines against HEAD (every commit, 101 symbol-line pairs),
+  the 52 edits and 2 outside each applied or changed with a reason, the prompt byte-identical
+  in both places, 51 handoff commits resolving, the site built with 1,426 links and none
+  broken, fast suite 2,217 in three chunks, ruff, the exact 1-D golden tier, the planar pins,
+  the golden-dump field lists, replay.html's sha256. Pass 6's one major was checked by the
+  gate against its probes' logs, since no later pass ran. While the handoff holds one of C2's
+  marks, SP7 is not closed.
   Next: C2.
 
 ## 12. Deviations from the plan

@@ -13,12 +13,12 @@ split, order and designs of SP1-SP6 come from the plan the user approved on 2026
 (the structural mass of the push load and a force-limited drive) was added at SP1's
 close-out on 2026-10-04 and ordered after SP2 and before SP3 (decision D-SP1-18).
 
-Last updated: 2026-11-05 (SP7 in progress: step S7a closed (6fa2ff0, the structural findings
+Last updated: 2026-11-08 (SP7 in progress: step S7a closed (6fa2ff0, the structural findings
 note), steps S4 (25967be, merged 8c4b41a: the linear motor) and S4a (7cdc24a: the target-speed
 release, the readers) S4b (b0fcc31: the flown structural push), S5 (460c4d6: the sealed shaft) and S5a
 (2bd40bd: the sealed shaft's wording) closed, checkpoint 2's handoff written, S6b
 (331891d: file B) and S7b (e5f64b3: `run` B and the note completed) closed, S7c (9fe125c: the
-program-level wording) S7d (cd14968: the fast tier under load) and S8 (3a07f07: the public face) closed, C1's documents written 2026-11-05 (SP3's file fact-checked at d03367b, the handoff, the memory), C2 next; decisions D-SP7-01 to D-SP7-56; SP2 closed 2026-10-07, commit 3a1b243).
+program-level wording) S7d (cd14968: the fast tier under load) and S8 (3a07f07: the public face) closed, C1 (ead6e38: the documents of the close, written 2026-11-05 to 2026-11-08; SP3's file fact-checked at d03367b, the handoff, the memory) closed, C2 next; decisions D-SP7-01 to D-SP7-56; SP2 closed 2026-10-07, commit 3a1b243).
 
 ## Phases
 
