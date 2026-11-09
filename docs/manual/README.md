@@ -44,8 +44,8 @@ and `launchsim scene`, the same scene as a standalone page
 ([7b. The local app and the launch scene](07b-app.md)). Every run launched from the app is
 exploratory and never a finding; the app's launch of the `silo_cold_s1` preset reproduces
 SP1's 41.26 t within 0.002 kg (the same configuration on the same model: a reproduction,
-not new evidence). Phase SP7 (in progress: its pre-registered runs and findings note are
-done, its close is not) added a first-order structural model of the push load (the
+not new evidence). Phase SP7 (closed 2026-11-09: its pre-registered runs, findings note
+and exit gate are done) added a first-order structural model of the push load (the
 `structure:` block of an experiment and the files under `configs/structures/`), the
 force- and power-limited `linear_motor` with its carriage, closed-form braking,
 target-speed release and sealed shaft, and a second note on the offload:

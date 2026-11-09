@@ -1,6 +1,6 @@
 # SP7: Structural mass of the push load, and a force-limited drive (planar model)
 
-Status: in progress (session 2026-10-08)
+Status: done (2026-11-09, commit `3a07f07`)
 
 Phase file of the program board ([README.md](README.md)). How a session runs:
 [docs/process/SESSION_PROTOCOL.md](../process/SESSION_PROTOCOL.md). Written 2026-10-04 in
@@ -861,7 +861,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S8 | Public face: the demo record, a gallery entry for an SP7 run, the deck slides and PDF, the manual chapters, the landing page, CLAUDE.md layout, status and commands, the protocol's caveat line | docs/demos/SP7/, site/, docs/manual/, CLAUDE.md, docs/process/ | site build with no broken link; visual, honesty and compliance review | [x] | 3a07f07 |
 | C1 | Documents: this file, the board, TODO.md, SP3's file fact-checked, the handoff, memory | docs/, TODO.md, memory | compliance review | [x] | ead6e38 |
 | C1a | The sweeps' missing columns: both sweep tables' peak electrical power (derived) and sweep 2's DLF in the findings note, after C2's first run failed criterion 7 (added, deviation 60) | docs/findings/RQ1-structural-2d.md | every added cell recomputed from the record; physics, compliance and honesty review | [x] | 185e35a |
-| C2 | Independent exit gate on every criterion; full suite; cold read; closing commit; push; Pages | docs/ | each criterion passes or the user accepts a logged miss | [ ] | |
+| C2 | Independent exit gate on every criterion; full suite; cold read; closing commit; push; Pages | docs/ | each criterion passes or the user accepts a logged miss | [x] | the gate at e8c2366 (second run; the first, at a0e351e, failed criterion 7, deviation 60); the bookkeeping commit "Close SP7: trackers, handoff, next phase file" |
 
 **If room runs out** (put to the user when it happens; compute-only cases and the CLAUDE.md arms
 are never cut): S5 and lm_fixed_sealed; the payload cases; S4a's target-speed release with
@@ -938,6 +938,45 @@ cross-check, the penalty rows, the golden-dumped field lists, the gallery's reco
 app's basis. New: 5 (the frozen sets), 6 (convergence, out of 5.9), 7's cross-commit and lm_cmd
 checks, 8's KI closures and the grep. The brief's 4 becomes 4 with the three layers and the
 reading rules; its 5 becomes 7; its 6 becomes 8; 7 to 10 become 9 to 12.
+
+**Exit criteria results (2026-11-09).** Checked by the independent gate of step C2 at
+e8c2366 (clean tree, origin/main equal to HEAD), in four parts (criteria 1, 2 and 9; 3, 5,
+10 and 12; 4, 6 and 7; 8 and 11), each with its own scripts outside the repository, every
+command in the foreground and under ten minutes, nothing written in the repository or under
+results/. This is the gate's second run. The first, at a0e351e
+(2026-11-08 to 2026-11-09), passed criteria 1 to 6 and 8 to 12 and failed criterion 7 on
+reporting only (the note's two sweep sections gave no peak electrical power, and sweep 2's no
+DLF); the user chose to add the columns from the record and run the gate again in full
+(D-SP7-57); step C1a added them (185e35a, deviation 60). The second run re-ran every criterion
+from scratch and reused no verdict. All 12 pass. Criterion 12 covers what precedes the close's
+documents; the cold read follows them (session log).
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Validation first | pass | All 306 SP7 tests come from 15 introducing commits (found with ast). Files A and C (registered cbbd7bc, run at 1b5f9d4, clean): S1 a3bd183, S2 45e39d4, S3 889f6ea, S3b 216a79c and S3a 0a16a89 precede both. File B (registered 331891d, run at 642e11e, clean): those five plus S4 25967be (merged 8c4b41a), S4a 7cdc24a, S4b b0fcc31, S5 460c4d6 and S5a 2bd40bd precede both. S3c (1e4c732, 77e1691; reporting only) follows cbbd7bc, was registered by Amendment 1 (74eb3c8) and precedes the sweep A re-run at 2b343d7 (dirty true, deviation 45, disclosed in the note). A and C use none of the S4-S5a drive pieces. No code changed between a registration commit and its run commit; the merge's src and tests equal 25967be's. "Every test of S1-S5 passes" rests on criterion 10's full suite |
+| 2 | Provenance and freeze | pass | Both structure files validate through cli.load_structure and read_structure_file, the central set and all four frozen sets convert; every number sourced or assumed (gate file 496 of 496, fork 500 of 500; all 112 value/central mappings carry exactly one of source or assumed); the 15 shared sections identical. `git diff --quiet` exits 0 for configs/structures/ against 45e39d4 (its only commit), configs/vehicles/ and the seven shipped experiments against 22c62e9 and a7c9f0a, files A and C against cbbd7bc, file B against 331891d. The structure files' sha256 equal the pre-registration's and those recorded in every directory of A, B and C and all 27 sweep points |
+| 3 | Nothing validated moved | pass | The exact 1-D golden tier (LAUNCHSIM_REQUIRE_EXACT_GOLDEN=1) with the planar digest tests, the output capture and the golden-dump field lists: 284 passed, 0 skipped; tests/planar_pin_support.py "pins match". Slow pins: pad and silo_cold P*, SP1's structure-off headline (0.0 kg from the record), the constant-2 t cross-check (0.0 kg). Run A's silo_cold_s1 x* 41,262.90803733282 kg (+0.000037 kg from 41,262.908); its +2, +4 and +8.1 t rows equal SP1's to 0.000000000 kg. replay.html's sha256 1fa6eba6...6916990 in the tree, at HEAD, at a7c9f0a and in the installed package. Eight gallery pages regenerated, each byte-identical with HEAD; the five replay pages identical to a7c9f0a; the scene page differs from a7c9f0a only in deviation 32's four regions and KI-082's leaf (D-SP7-47). `sp1_files_same` true. The app, on a scratch results root, launched silo_cold_s1 complete in 80.1 s at 41,262.90803733282 kg; its sp1_comparison reproduces, differs [] |
+| 4 | The structural headline | pass | Run A (results/silo_structure_2d/20261016T171513Z) and run C record git 1b5f9d4, dirty false; no code path changed from cbbd7bc. Run A: 24 cases (4 uncharged, 3 penalty, 17 structural), 21 ok, 3 no_offload, each with its shortfall and two-pass payload deficit (phys_hi 243.714 m/s, -2,080.41 kg; outer_hi 1,021.54 m/s, -7,804.35 kg; step 125.177 m/s, -1,086.88 kg). Every ok case verifies between +0.0006 and +0.0088 kg (bound 2.605 kg). All 24 decompositions and all 8 arms explained (worst residuals 8.4e-10 and -2.16e-9 m/s). `xv_dry_mass_delta_kg` equals dm1 + dm2 within 7.3e-12 kg on all 17 structural cases. No `bug_suspect`, no `offload_nonmonotone`, no fixed-point cap fired (at most 10 iterations of 25); run_checks ok on all 34 runs of A and 5 of C. The flags reported. Every pre-registered reading rule evaluated on the record; each fired sentence appears verbatim in the note's headline and the not-fired set matches; every fill of the fixed-form sentence matches the record (61 checks, 0 failed) |
+| 5 | The frozen sets | pass | Both slow tests at e8c2366, one per command: generic_f9_class_2d 100.86 s, 6,789 evaluations; generic_f9_class_2d_readme_loads 101.33 s, 6,836; both counts equal the files' evaluation_count; set values compared exactly. Largest extremality excess 223.198 kg (file A, physics_low_mass, search B, one coordinate held, at rho_lox 1306.1); largest plain one-coordinate excess 11.806 kg (file A) and 7.671 kg (the fork); every random-sample check 0. These match the note |
+| 6 | Convergence | pass | Central (silo_cold_s1_st, docs/findings/scripts/sp7_convergence.py, committed at 0a12c36 and byte-identical at HEAD): the shipped chain equals run A to the bit; the tightened x* 11,420.284416087732 kg moves +0.037778 kg (3.31e-6 relative, against 1e-3); doubling the stations moves dm by +6.2e-6 kg (against 0.1 kg); 0a12c36's code paths equal 1b5f9d4's. Linear motor (lm_fixed_s1_st): the report's sha256 equals the note's, its shipped x* and dm equal run B's to the bit, the tightened x* moves +0.027411 kg (2.42e-6). KI-089 (open, low) covers the linear-motor check's untightened track-peak scan and sampling step, as the note's Convergence section states (26 checks, 0 failed) |
+| 7 | Axes and drive | pass | The note's sweep 1 (5 rows), sweep 2 (4 rows) and drive table (20 rows) against the sweep re-run's sweep_index.csv, point metrics.json and resolved_config.yaml and run B's metrics.json: 378 printed values, 0 mismatches. Every named column present: felt g, DLF, n_peak, F_peak, dm1 and dm2, x*, electricity, peak mechanical and electrical power, facility, and for the linear motor release position and speed (sweep 1's felt g and DLF and sweep 2's DLF in the sentence under each table; the sweeps' electrical peaks n/a with the derived bracket, the form D-SP7-57 decided). B's silo_cold_s1_st 11,420.246638573297 kg equals A's (0.000 kg, within 0.002). lm_cmd_s1's uncharged x* 41,262.909435 kg against SP1's 41,262.908037 kg (+0.0014 kg, within 0.25) |
+| 8 | The findings note and the KI closures | pass | docs/findings/RQ1-structural-2d.md, preliminary: its headline matches the registered fixed form (design 4.11 with D-SP7-46) clause by clause, every branch the one the record selects, every number traced to run A. The honesty reviews of S7b, C1 and C1a pass on the record, and the gate's own spot check found nothing said beyond it. RQ1's pointer: one dated section (e5f64b3, 18 insertions, 0 deletions). README's SP7 section and the findings index trace to records A, C, B and the sweep re-run. Survey 04's C1-C11 and section 2.2's four sentences branch three ways at their source; offload_caveats() equals OFFLOAD_CAVEATS without structural records. `git grep "no structural model exists"`: only dated inputs, the archive, SP1's dated note line 37, this file and two quotations. KI-021, KI-022, KI-023 and KI-030 closed at 25967be (merged 8c4b41a), KI-035 at a3bd183, KI-036, KI-038 and KI-039 at 0a16a89, each read at source; KI-030 re-probed (16 of 16 inputs refused, the base resolves) |
+| 9 | docs/physics.md | pass | The test-to-equation map read by a script: 464 rows, 823 named tests, 0 stale rows; all 306 SP7 tests (27 files, 12 new) have an explicit row, none on a whole-file row alone. Every new piece has a section or paragraph; every code-step commit changed physics.md; every SP7 assumption emitter is named in the Assumptions section |
+| 10 | Full suite, ruff, no new dependency | pass | 2,271 of 2,271 passed at e8c2366: 2,217 fast in three chunks (738 + 581 + 898) and 54 slow in eight groups plus the two frozen-sets tests one per command (longest command 202 s); the junit files against the collected ids: none missing, extra, failed or skipped; nothing re-run. `ruff check .`: all checks passed; `ruff format --check .`: 133 files already formatted (ruff 0.16.9). pyproject.toml and uv.lock unchanged since a7c9f0a |
+| 11 | Demo | pass | docs/demos/SP7/: 16 tracked files from 3a07f07, every command of section 9 with start and end times, the three fast-suite results in order; the README's 12 commits resolve and match. The gate's own comparer: run A 16,391 numeric leaves, C 2,161, B 14,967, 0 differing (only /git/hash and /timestamp_utc differ); the sweep's index files, baseline series and nine points 0 numeric difference. Every README number traced; 28 relative links resolve. Not re-checked: the two display defects the README discloses (they need a browser) |
+| 12 | Close-out | pass (the parts before the close's documents) | Landing page, deck and PDF (24 pages), the gallery's SP7.1 entry with its MP4 and poster, and the manual present and carrying SP7's result. `uvx --with markdown==3.11 python site/build.py --out <scratch>`: 1,426 links, no broken link. origin/main = e8c2366 = HEAD; Pages run 42601122304 built e8c2366, build and deploy succeeded, the two runs before it too. SP3's section 6: "Checked at commit d03367b on 2026-11-05", no code or physics.md diff from d03367b to HEAD, 64 of 64 cited symbol lines at their line. The handoff with the marks C2 fills, its prompt equal to SP3's section 13 (79 identical lines), memory current |
+
+Observations that fail no criterion: the central convergence check also leaves the sampling
+step untightened (sp7_convergence.py line 305), which neither KI-089's text nor the note's
+central bullets say, and its report file is not on disk, so its tightened x* and the stations
+move are read from the note and the S7a log; tests/test_convergence_2d.py's docstring ("Every
+other planar test uses the test budget") no longer holds since S4b's `lm_solves` fixture flies
+the shipped budget, so TODO.md's closing words for KI-022 are out of date at HEAD (docstring
+only; KI-022's own defects stay fixed); SP1's note line 37 is present tense inside its dated
+record. The cold read logged these three as KI-104 (session log). The closing commit is
+3a07f07, the last commit under src, tests, configs, experiments or results (`git log -1 --
+src tests configs experiments results pyproject.toml uv.lock`); the last under results/ is
+6940273 and the last under src/ is 9fe125c.
 
 ## 9. Demo script
 
@@ -1683,6 +1722,51 @@ option fairly with its cost)
   changed, the site built with 1,426 links and none broken, every table rendering evenly,
   fast suite 2,217 in three chunks, ruff, the exact 1-D golden tier, the planar pins, the
   golden-dump field lists, replay.html's sha256. KI-103 opened. Next: C2's second run.
+- Step C2, second run (2026-11-09, at e8c2366; the gate wrote nothing in the repository or
+  under results/). Every criterion re-run from scratch, no verdict of the first run reused:
+  all 12 pass (section 8, "Exit criteria results"). Full suite 2,271 of 2,271 (2,217 fast in
+  three chunks, 54 slow in ten commands, the frozen sets one per command; none failed,
+  skipped or re-run); ruff check and format --check clean (133 files); no new dependency
+  since a7c9f0a. Criterion 7 now holds: 378 printed values against the record, 0
+  mismatches, every named column present. The frozen sets recomputed (largest extremality
+  excess 223.198 kg); the exact 1-D golden tier and the planar pins 284 passed, 0 skipped;
+  the app's slow launch at 41,262.908 kg (+0.000037 kg). Observations that fail no
+  criterion: the central convergence check leaves the sampling step untightened and its
+  report file is not on disk; tests/test_convergence_2d.py's docstring is out of date since
+  S4b's `lm_solves` fixture; SP1's note line 37 is present tense inside its dated record
+  (section 8). The closing commit is 3a07f07, found with `git log -1 -- src tests configs
+  experiments results pyproject.toml uv.lock` (the last under results/ is 6940273, an
+  ancestor; the last under src/ 9fe125c; the five commits after 3a07f07 change documents
+  only). The close's documents (the brief's "After the gate"): the handoff's marks filled
+  (the verdict, the closing commit, the twelve criteria, the suite and ruff counts); this
+  file (status, the C2 row, section 8's results, this entry, deviation 61); the board
+  (SP7's row closed); TODO.md (M20 done, SP3 the current phase, B-004 and B-005 closed
+  2026-11-09, the priorities); CLAUDE.md's status and docs/demos/ lines; memory; and the
+  public status texts that said SP7 was not closed, each to closed or done with the date,
+  no number changed: README.md's status, roadmap and layout lines, docs/manual/README.md,
+  the landing page's SP7 row and label (and SP3's row to "Next", as SP7's was at SP2's
+  close), the deck's badge, date, roadmap entries and Phase 3 card. The deck PDF re-printed
+  by headless Edge from PowerShell against the built site on 127.0.0.1 (24 pages, 1280 x 720
+  px, 1,292,063 bytes); its text differs from HEAD's only on pages 1 and 20, both looked at,
+  with the other 22 pages on a contact sheet; the landing page's status table looked at in
+  both themes. Site built (1,426 links, none broken); tests/test_caveat_wording.py and
+  tests/test_site_build.py 54 passed; `git grep` for the not-closed phrases finds nothing
+  that speaks of SP7 now outside dated or archived records.
+- The cold read (2026-11-09; a second agent, from docs/handoff/NEXT_SESSION.md, reading only
+  what it names): every check the brief names passes (paths, commit hashes, test counts,
+  results directories, memory against the board, the prompt identical in the handoff and
+  SP3's section 13). Three minor completeness points, none touching a number, fixed: the
+  handoff's section 7 now runs to KI-104 (it had left KI-103 out); the gate's three
+  observations are logged as KI-104, with a dated note on KI-022's entry, and the handoff
+  says where they are; the memory note says so and no longer reads as listing every open
+  SP7 KI. The cold read ran three times, each by a fresh agent. The second found one
+  completeness point: the handoff's section 2 left out D-SP7-57; fixed by a sentence there
+  naming it, and section 4's header redated "Status on 2026-11-09" (no row changed). The
+  third found every check the brief names passing and one record gap, this entry naming
+  only the first read; fixed here by the orchestrator, with D-SP7-57 marked as the
+  recommended option in the handoff and TODO.md (the question put to the user offered it
+  as recommended). No number, status or path changed in any of the three.
+- Phase closed 2026-11-09. Next: SP3 (D-SP1-18, D-SP2-40), from docs/handoff/NEXT_SESSION.md.
 
 ## 12. Deviations from the plan
 
@@ -2297,6 +2381,16 @@ Checkpoint 1 and step S6a (2026-10-16):
     gate again in full (D-SP7-57), rather than accept a logged miss. The criterion was
     not reworded. The electrical peak is derived, not recorded, and its assumption is
     stated in the note.
+61. **Step C2's files beyond its row, and the gate run twice** (the C2 row names docs/):
+    the exit gate ran twice at the close (deviation 60 for why). Its close changed TODO.md,
+    CLAUDE.md, README.md, docs/manual/README.md, site/index.html, site/deck/index.html and
+    the deck PDF, and the memory notes, as its brief's "After the gate" asked: each a status
+    text, no result number changed. Two edits went one line past the brief's list, to keep
+    the pages in agreement: README's roadmap row for Phase 3 ("its close still to come",
+    found by the brief's own grep) and the landing page's SP3 row, now "Next", as SP7's row
+    was at SP2's close and as the deck's roadmap now shows. The gate read the brief's "start
+    commit" 22c62e9 (SP2's close, the parent of "Start SP7") and also checked a7c9f0a, with
+    the same result. Accepted by the session.
 
 ## 13. Prompt to start this phase
 

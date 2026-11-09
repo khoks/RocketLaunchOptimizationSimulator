@@ -1,15 +1,19 @@
-# Handoff: SP7 `<C2:closed>`; start SP3 (3-D dynamics S1, a 3-DOF point mass over a rotating sphere)
-
-`<C2:delete-this-line>` Until C2 fills the marks in this file, SP7 is in progress and step C2 is next (its brief: C:/Users/rahul/.claude/projects/D--DEV-ClaudeProjects-SpaceRocketOptimization/sp7work/c2/BRIEF.md): do not start SP3 from this file.
+# Handoff: SP7 closed; start SP3 (3-D dynamics S1, a 3-DOF point mass over a rotating sphere)
 
 ## 1. Header
 
-- Written 2026-11-05, at the close of phase SP7 (session started 2026-10-08, resumed
+- Written 2026-11-05 to 2026-11-08 (step C1) and completed on 2026-11-09 with the exit gate's
+  results (step C2), at the close of phase SP7 (session started 2026-10-08, resumed
   2026-10-19), following docs/process/SESSION_PROTOCOL.md sections 7 and 8.
-- Phase `<C2:closed>`: **SP7**, the structural mass of the push load and a force-limited drive
-  (planar model), docs/phases/SP7-structural-mass-push-load.md. Exit gate:
-  `<C2:exit-gate-verdict>`.
-- Closing commit (the last commit that changed code or results): `<C2:closing-commit>`.
+- Phase closed on 2026-11-09: **SP7**, the structural mass of the push load and a force-limited
+  drive (planar model), docs/phases/SP7-structural-mass-push-load.md. Exit gate: all 12
+  criteria pass (the independent gate's second run, 2026-11-09, at e8c2366; its first run, at
+  a0e351e, failed criterion 7 on reporting only, and the user chose to add the two missing
+  columns and run the gate again in full: D-SP7-57, step C1a, deviation 60).
+- Closing commit (the last commit that changed code or results): `3a07f07` (SP7 step S8, the
+  public face). Found with `git log -1 -- src tests configs experiments results pyproject.toml
+  uv.lock`; the last commit under results/ is 6940273, an ancestor, and the last under src/ is
+  9fe125c. The commits after 3a07f07 change documents only.
 - This file is part of the bookkeeping commit that follows, subject
   `Close SP7: trackers, handoff, next phase file` (protocol section 7, item 12). A file cannot
   hold the hash of its own commit, so HEAD is identified by that subject. main is pushed to
@@ -48,7 +52,10 @@ No new research request otherwise. SP7's own goal is the user's ordering (D-SP1-
 by D-SP2-40), quoted with the rules of the phase in the SP7 phase file, section 13. The
 user's answers during SP7: D-SP7-01 to D-SP7-12 (the questions and follow-ups), the design
 approved with the plan (D-SP7-13 to D-SP7-35), D-SP7-36, D-SP7-41, D-SP7-45 to D-SP7-47, and
-on 2026-10-19 D-SP7-48 ("Fix and re-run sweep A"). Every one was the recommended option.
+on 2026-10-19 D-SP7-48 ("Fix and re-run sweep A"). Every one of these was the recommended
+option. The user's last answer, on 2026-11-09 after the exit gate's first run, was D-SP7-57:
+add the two missing columns and run the exit gate again in full, over accepting a logged miss
+(step C1a, deviation 60); that too was the recommended option.
 D-SP7-49 to D-SP7-56 were made by the session under the instruction to keep working, and go
 to the user in section 6. The other seven: D-SP7-37 is the source note's corrections to the
 design, adopted at S0; D-SP7-40 records the question D-SP7-41 answered; D-SP7-38 and
@@ -83,25 +90,26 @@ session-made and logged as reported in S3's entry of the phase file.
 | S8 | The public face: demo record, gallery entry, deck and PDF, manual, landing page | `3a07f07` |
 | C1 | The documents of the close: SP3's file fact-checked, the trackers, this handoff, memory | `ead6e38` |
 | C1a | The sweeps' missing columns, after the exit gate's first run failed criterion 7 on reporting (D-SP7-57, deviation 60) | `185e35a` |
-| C2 | Independent exit gate, full suite, cold read, closing commit, push, Pages | the bookkeeping commit |
+| C2 | Independent exit gate (second run, at e8c2366, 2026-11-09: all 12 pass), full suite, cold read, closing commit, push, Pages | the bookkeeping commit |
 
 **Exit criteria** (SP7 phase file, section 8; 12 criteria, tolerances fixed by the approved
-design). C2's independent gate records its verdicts there:
+design). C2's independent gate records its verdicts there, with the evidence; it ran at
+e8c2366 on 2026-11-09, every criterion from scratch:
 
 | # | Criterion | Result |
 |---|---|---|
-| 1 | Validation first | `<C2:criterion-1>` |
-| 2 | Provenance and freeze | `<C2:criterion-2>` |
-| 3 | Nothing validated moved | `<C2:criterion-3>` |
-| 4 | The structural headline | `<C2:criterion-4>` |
-| 5 | The frozen sets | `<C2:criterion-5>` |
-| 6 | Convergence | `<C2:criterion-6>` |
-| 7 | Axes and drive | `<C2:criterion-7>` |
-| 8 | The findings note and the KI closures | `<C2:criterion-8>` |
-| 9 | docs/physics.md | `<C2:criterion-9>` |
-| 10 | Full suite, ruff, no new dependency | `<C2:criterion-10>` |
-| 11 | Demo | `<C2:criterion-11>` |
-| 12 | Close-out | `<C2:criterion-12>` |
+| 1 | Validation first | pass: each piece's test commit precedes the registration and run commits that use it (A and C: cbbd7bc, run at 1b5f9d4; B: 331891d, run at 642e11e); no code changed between a registration and its run |
+| 2 | Provenance and freeze | pass: both structure files validate, 496 of 496 and 500 of 500 numbers sourced or assumed, the 15 shared sections identical; configs/structures/ unchanged since 45e39d4, configs/vehicles/ and the seven shipped experiments since 22c62e9 and a7c9f0a, files A and C since cbbd7bc, file B since 331891d |
+| 3 | Nothing validated moved | pass: exact 1-D golden tier and planar pins 284 passed, 0 skipped; pad and silo_cold P*, SP1's structure-off headline, its three penalty rows and the 2 t cross-check each 0.000 kg from the record; replay.html's sha256 unchanged; the gallery regenerated as D-SP7-47 reads it; `sp1_files_same` true; the app's launch at 41,262.908 kg (+0.000037 kg) |
+| 4 | The structural headline | pass: run A (1b5f9d4, clean) 24 cases, 21 ok and 3 no_offload with their shortfalls and deficits; every verification within 2.605 kg; every decomposition explained; `xv_dry_mass_delta_kg` = dm1 + dm2 within 7.3e-12 kg; no `bug_suspect`; every fired reading sentence in the note's headline |
+| 5 | The frozen sets | pass: both recomputed here, one per command (6,789 and 6,836 evaluations, about 101 s each); largest extremality excess 223.198 kg |
+| 6 | Convergence | pass: central x* moves 3.31e-6 and the linear-motor x* 2.42e-6 relative (against 1e-3); doubling the stations moves dm 6.2e-6 kg; KI-089's scope stated in the note |
+| 7 | Axes and drive | pass: 378 printed values against the record, 0 mismatches, every named column present (the electrical peaks derived, D-SP7-57); B's silo_cold_s1_st equals A's (0.000 kg); lm_cmd's uncharged x* +0.0014 kg from SP1's |
+| 8 | The findings note and the KI closures | pass: the headline in the registered fixed form, every number traced to run A; RQ1's pointer, README and the index traced; every structural sentence branched; the grep only in dated or archived records or quotations; the eight KIs closed with their evidence |
+| 9 | docs/physics.md | pass: all 306 SP7 tests with an explicit test-map row (464 rows, 0 stale); every new piece and its assumptions described |
+| 10 | Full suite, ruff, no new dependency | pass: 2,271 of 2,271 (2,217 fast, 54 slow); ruff clean; pyproject.toml and uv.lock unchanged since a7c9f0a |
+| 11 | Demo | pass: docs/demos/SP7/ complete; the demo directories equal the recorded ones in every numeric leaf but the git hash and timestamp |
+| 12 | Close-out | pass: public face present with SP7's result, the site built with 1,426 links and none broken, main pushed and Pages green at e8c2366, SP3's file fact-checked at d03367b and still true at HEAD; the handoff, prompt and memory completed by C2; the cold read after them |
 
 **The headline, with its caveats beside it.** Quoted from docs/findings/RQ1-structural-2d.md,
 which this file does not recompute; read that note's "Caveats (read first)" before quoting
@@ -156,7 +164,7 @@ docs/manual/.
 
 ## 4. Requirements and status
 
-| # | Requirement | Status on 2026-11-05 |
+| # | Requirement | Status on 2026-11-09 |
 |---|---|---|
 | R1 | The interactive replay page as a CLI command | Done before SP1; structural, linear-motor and sealed-shaft caveats branched in S3a, S4a, S5a and S7c; the template unchanged |
 | R2 | An animated scene of the launch, 2-D first | Done in SP2; linear-motor and sealed-shaft labels in S4a and S5a |
@@ -319,7 +327,7 @@ and a re-run.
 
 - the bookkeeping commit `Close SP7: trackers, handoff, next phase file` (step C2's; it holds
   this file);
-- C1a's tracker commit; 185e35a C1a (the sweeps' missing columns, exit criterion 7);
+- e8c2366 C1a trackers; 185e35a C1a (the sweeps' missing columns, exit criterion 7);
 - a0e351e C1 trackers; ead6e38 C1 (the documents of the close);
 - d03367b S8 trackers; 3a07f07 S8 (the public face);
 - cf6d1db S7d trackers; cd14968 S7d (the fast tier under load);
@@ -341,9 +349,12 @@ and a re-run.
   S0; 1945144 S1 trackers; a3bd183 S1;
 - a7c9f0a Start SP7.
 
-**Tests and lint.** Full suite at the close: `<C2:full-suite-count>`; ruff:
-`<C2:ruff>`. The last counts before C2: 2,271 tests, 2,217 fast and 54 slow, all passing (S7d's
-gate, cd14968; S8's gate ran the fast suite again, 2,217).
+**Tests and lint.** Full suite at the close: 2,271 passed of 2,271 collected (2,217 fast in
+three chunks, 54 slow in ten commands, the frozen sets one per command; none failed, skipped or
+re-run), at e8c2366 on 2026-11-09 (C2's gate); ruff: `ruff check .` all checks passed, `ruff
+format --check .` 133 files already formatted (ruff 0.16.9). The same counts as before C2:
+2,271 tests, 2,217 fast and 54 slow (S7d's gate, cd14968; S8's gate ran the fast suite again,
+2,217).
 
 **Results directories** on disk. Only each directory's top-level summary.md is tracked; a fresh
 clone has no CSVs. Sizes by `du -sh` on 2026-11-05.
@@ -388,9 +399,12 @@ the preserved runs show no 10053 on it since, before or after S7d changed it, an
 shows why it stopped) is on every gate, so a failure there is re-run alone before it is
 read as real. All of that range are low; of the rest, the drive, release and sealed-shaft
 items reach SP3 only if Q1 or Q2 keeps those paths, and the others are structure, reader
-and test-map items. KI-094 to KI-102 are low, owned "later", none on SP3's path but KI-102:
+and test-map items. KI-094 to KI-104 are low, owned "later", none on SP3's path but KI-102:
 its SP4 point is read at SP3's close, and its evidence point at SP3's start commit; until
-then Q7's paths are where the user reads it.
+then Q7's paths are where the user reads it. KI-104 holds the three observations SP7's exit
+gate left, which fail no criterion (the SP7 file's section 8): the central convergence
+check's untightened sampling step and missing report file, test_convergence_2d.py's
+docstring (so KI-022's closing words are out of date) and SP1's note line 37.
 
 ## 8. How work is done
 
