@@ -29,6 +29,13 @@ scope in "The release" and "What goes against the hypothesis", which rows fly wh
 axes and what the outer envelope moves (Caveats, "The band's method and what lies outside
 it") and "start mass" for the liftoff wording under the headline table.
 
+Columns added 2026-11-09 (SP7 step C1a, exit criterion 7; no number changed): the peak
+electrical power of the full-load point runs in both sweep tables ("The exit-speed axis"
+and "The depth axis"), absent from the record (a constant_accel run writes none), printed
+n/a, and in brackets the recorded `drive_power_peak_W` over the point's drive efficiency
+(resolved_config.yaml), derived; and sweep 2's DLF, 1.1273 at every point, in a sentence
+under its table, from the re-run's sweep_index.csv (`silo_cold_200m_s1_st.structure_dlf`).
+
 ## The question
 
 README research question 1 asks how payload or propellant changes with exit speed after
@@ -872,13 +879,13 @@ every pre-existing column equals the first sweep's
 (results/silo_structure_2d/20261016T171522Z) cell for cell (Amendment 1); the pre-registered
 estimates from section 7.
 
-| stroke | exit speed | uncharged x0 (SP1's, reproduced) | structural status | structural x* (% of 41.26 t; % of own x0) | dm1 + dm2 at x* (no offload: at x = 0) | n_peak; F_peak | verification P* - P_ref | max-Q of the structural run (pad 37,191.4 Pa) | facility | electricity of the structural run | peak drive power (full-load point run) | peak q-alpha of the full-load point run (its kick speed; pad 74.7 Pa rad) | pre-registered estimate |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 25 m | 38.35 m/s | 18,765.1 kg | no_offload | no offload: 60.2 m/s of delta-v short of P_ref at x = 0; payload deficit not flown (no payload case at these settings) | 6,526.5 + 0 kg | 4.421 g0; 25.10 MN | n/a | 33,133.7 Pa (at x = 0) | 40 m | 315.1 kWh (at x = 0) | 0.86 GW | 58.9 Pa rad (50.0 m/s, after the vertical rise) | no offload (about 66 m/s short, P* about 580 kg below P_ref; 62 m/s and 545 kg on the quadratic) |
-| 50 m | 54.24 m/s | 28,653.6 kg | no_offload | no offload: 18.3 m/s short at x = 0; payload deficit not flown | 6,486.6 + 0 kg | 4.399 g0; 24.97 MN | n/a | 31,822.0 Pa (at x = 0) | 80 m | 630.2 kWh (at x = 0) | 1.22 GW | 49.4 Pa rad (50.0 m/s, after the vertical rise) | no offload (about 24 m/s, 210 kg; 19 m/s, 171 kg) |
-| 100 m | 76.71 m/s | 41,262.9 kg | ok | 11,420.2 kg (27.7%; 27.7%) | 6,305.2 + 0 kg | 4.389 g0; 24.41 MN | +0.0014 kg | 32,130.7 Pa | 160 m | 1,235.1 kWh | 1.73 GW | 129.9 Pa rad, 1.74 times the pad's (71.8 m/s) | 11,105.2 kg |
-| 200 m | 108.48 m/s | 56,827.2 kg | ok | 31,618.3 kg (76.6%; 55.6%) | 6,020.4 + 0 kg | 4.384 g0; 23.50 MN | +0.0019 kg | 34,195.3 Pa | 320 m | 2,380.9 kWh | 2.44 GW | 574.1 Pa rad, 7.7 times the pad's (103.6 m/s) | 27,888.9 kg |
-| 300 m | 132.86 m/s | 67,285.8 kg | ok | 44,727.9 kg (108.4%; 66.5%): unconstrained kick, an upper bound | 5,846.1 + 0 kg | 4.382 g0; 22.92 MN | +0.488 kg | 36,117.3 Pa | 480 m | 3,484.6 kWh | 2.99 GW | 1,293.3 Pa rad, 17.3 times the pad's (127.9 m/s, unconstrained) | 39,120.9 kg |
+| stroke | exit speed | uncharged x0 (SP1's, reproduced) | structural status | structural x* (% of 41.26 t; % of own x0) | dm1 + dm2 at x* (no offload: at x = 0) | n_peak; F_peak | verification P* - P_ref | max-Q of the structural run (pad 37,191.4 Pa) | facility | electricity of the structural run | peak drive power (full-load point run) | peak electrical power (full-load point run) | peak q-alpha of the full-load point run (its kick speed; pad 74.7 Pa rad) | pre-registered estimate |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 25 m | 38.35 m/s | 18,765.1 kg | no_offload | no offload: 60.2 m/s of delta-v short of P_ref at x = 0; payload deficit not flown (no payload case at these settings) | 6,526.5 + 0 kg | 4.421 g0; 25.10 MN | n/a | 33,133.7 Pa (at x = 0) | 40 m | 315.1 kWh (at x = 0) | 0.86 GW | n/a (1.72 GW derived) | 58.9 Pa rad (50.0 m/s, after the vertical rise) | no offload (about 66 m/s short, P* about 580 kg below P_ref; 62 m/s and 545 kg on the quadratic) |
+| 50 m | 54.24 m/s | 28,653.6 kg | no_offload | no offload: 18.3 m/s short at x = 0; payload deficit not flown | 6,486.6 + 0 kg | 4.399 g0; 24.97 MN | n/a | 31,822.0 Pa (at x = 0) | 80 m | 630.2 kWh (at x = 0) | 1.22 GW | n/a (2.44 GW derived) | 49.4 Pa rad (50.0 m/s, after the vertical rise) | no offload (about 24 m/s, 210 kg; 19 m/s, 171 kg) |
+| 100 m | 76.71 m/s | 41,262.9 kg | ok | 11,420.2 kg (27.7%; 27.7%) | 6,305.2 + 0 kg | 4.389 g0; 24.41 MN | +0.0014 kg | 32,130.7 Pa | 160 m | 1,235.1 kWh | 1.73 GW | n/a (3.45 GW derived) | 129.9 Pa rad, 1.74 times the pad's (71.8 m/s) | 11,105.2 kg |
+| 200 m | 108.48 m/s | 56,827.2 kg | ok | 31,618.3 kg (76.6%; 55.6%) | 6,020.4 + 0 kg | 4.384 g0; 23.50 MN | +0.0019 kg | 34,195.3 Pa | 320 m | 2,380.9 kWh | 2.44 GW | n/a (4.89 GW derived) | 574.1 Pa rad, 7.7 times the pad's (103.6 m/s) | 27,888.9 kg |
+| 300 m | 132.86 m/s | 67,285.8 kg | ok | 44,727.9 kg (108.4%; 66.5%): unconstrained kick, an upper bound | 5,846.1 + 0 kg | 4.382 g0; 22.92 MN | +0.488 kg | 36,117.3 Pa | 480 m | 3,484.6 kWh | 2.99 GW | n/a (5.99 GW derived) | 1,293.3 Pa rad, 17.3 times the pad's (127.9 m/s, unconstrained) | 39,120.9 kg |
 
 (Electricity: the structural run's `electrical_energy_J` over 3.6e6, derived; at a
 no-offload point it is the recorded run at x = 0. The flown felt load on the track is
@@ -892,7 +899,17 @@ interface force or q-alpha for a structural run. At 100 m the structural run's q
 uncharged run, 42.8 t lighter, peaks 1.75 times), so theirs likely peak above the values in
 the table (not measured; Caveats, "Free kick"). Every structural run's max-Q lies below the
 pad's; every uncharged offload run's lies above it (37,264.5 to 41,845.8 Pa,
-`silo_cold_s1.max_q_pa`).)
+`silo_cold_s1.max_q_pa`). The full-load point runs record no electrical peak (a
+constant_accel run writes none), so the peak electrical power column prints n/a and, in
+brackets, the recorded (unrounded) mechanical peak over the point's drive efficiency,
+derived, as the drive table does for silo_cold ("The drive cases"). The efficiency is 0.5
+at every point (`run.assist.drive_efficiency` in the point's resolved_config.yaml, marked
+assumed in experiments/silo_structure_2d.yaml; in each point run's metrics.json,
+`drive_work_in_J` over `electrical_energy_J` equals it), so a bracket can differ by one in
+its last digit from twice the printed mechanical peak. The model writes an electrical
+peak only for the linear motor (`electrical_power_peak_W`, the mechanical peak over the
+efficiency); for this push the bracket assumes that the constant efficiency its
+electricity is charged at also holds at its power peak.)
 
 - **Below 76.71 m/s the structure cancels the offload; the sweep does not resolve the
   crossing between 54.24 and 76.71 m/s.** At 25 and 50 m (38.35 and 54.24 m/s) the
@@ -951,12 +968,12 @@ results/silo_structure_2d/20261019T172327Z/sweep_2/sweep_index.csv
 `speed_at_kick_mps`; every pre-existing column equal to the first sweep's cell for cell) and
 each point's metrics.json (`felt_g_track_peak`).
 
-| stroke (net) | felt on the track (flown) | facility | uncharged x0 | structural status | structural x* (% of 41.26 t) | dm1 + dm2 (no offload: at x = 0) | n_peak; F_peak | upper stack: push against envelope | verification | max-Q of the structural run (pad 37,191.4 Pa) | electricity of the structural run | peak drive power (full-load point run) | pre-registered estimate |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 50 m (6 g0) | 6.996 g0 | 110 m | 41,262.97 kg | no_offload | no offload, stage 2 sized: 190.0 m/s of delta-v short of P_ref at x = 0; payload deficit not flown (no payload case at these settings) | 15,543.0 + 506.1 kg | 7.845 g0; 45.27 MN | 10.75 MN against 7.10 MN: stage 2 and the interstage sized | n/a | 28,868.1 Pa (at x = 0) | 1,121.4 kWh (at x = 0) | 3.02 GW | no offload, stage 2 sized (about 215 m/s, 1,880 kg; 180 m/s, 1,581 kg) |
-| 100 m (3 g0) | 3.996 g0 | 160 m | 41,262.97 kg | ok | 11,420.2 kg (27.7%) | 6,305.2 + 0 kg | 4.389 g0; 24.41 MN | inside | +0.0014 kg | 32,130.7 Pa | 1,235.1 kWh | 1.73 GW | 11,105.3 kg |
-| 200 m (1.5 g0) | 2.496 g0 | 260 m | 41,262.97 kg | ok | 26,686.4 kg (64.7%) | 3,201.8 + 0 kg | 2.689 g0; 14.47 MN | inside | +0.0035 kg | 35,169.6 Pa | 1,493.1 kWh | 1.08 GW | 26,628.9 kg |
-| 300 m (1 g0) | 1.996 g0 | 360 m | 41,262.91 kg | ok | 32,031.0 kg (77.6%) | 2,055.3 + 0 kg | 2.124 g0; 11.30 MN | inside | +0.0053 kg | 36,323.8 Pa | 1,769.8 kWh | 0.86 GW | 32,024.8 kg |
+| stroke (net) | felt on the track (flown) | facility | uncharged x0 | structural status | structural x* (% of 41.26 t) | dm1 + dm2 (no offload: at x = 0) | n_peak; F_peak | upper stack: push against envelope | verification | max-Q of the structural run (pad 37,191.4 Pa) | electricity of the structural run | peak drive power (full-load point run) | peak electrical power (full-load point run) | pre-registered estimate |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 50 m (6 g0) | 6.996 g0 | 110 m | 41,262.97 kg | no_offload | no offload, stage 2 sized: 190.0 m/s of delta-v short of P_ref at x = 0; payload deficit not flown (no payload case at these settings) | 15,543.0 + 506.1 kg | 7.845 g0; 45.27 MN | 10.75 MN against 7.10 MN: stage 2 and the interstage sized | n/a | 28,868.1 Pa (at x = 0) | 1,121.4 kWh (at x = 0) | 3.02 GW | n/a (6.04 GW derived) | no offload, stage 2 sized (about 215 m/s, 1,880 kg; 180 m/s, 1,581 kg) |
+| 100 m (3 g0) | 3.996 g0 | 160 m | 41,262.97 kg | ok | 11,420.2 kg (27.7%) | 6,305.2 + 0 kg | 4.389 g0; 24.41 MN | inside | +0.0014 kg | 32,130.7 Pa | 1,235.1 kWh | 1.73 GW | n/a (3.45 GW derived) | 11,105.3 kg |
+| 200 m (1.5 g0) | 2.496 g0 | 260 m | 41,262.97 kg | ok | 26,686.4 kg (64.7%) | 3,201.8 + 0 kg | 2.689 g0; 14.47 MN | inside | +0.0035 kg | 35,169.6 Pa | 1,493.1 kWh | 1.08 GW | n/a (2.16 GW derived) | 26,628.9 kg |
+| 300 m (1 g0) | 1.996 g0 | 360 m | 41,262.91 kg | ok | 32,031.0 kg (77.6%) | 2,055.3 + 0 kg | 2.124 g0; 11.30 MN | inside | +0.0053 kg | 36,323.8 Pa | 1,769.8 kWh | 0.86 GW | n/a (1.72 GW derived) | 32,024.8 kg |
 
 (Every point's full-load run kicks at the first lit instant at 71.8 m/s into a q-alpha of
 129.9 Pa rad, 1.74 times the pad's (`peak_q_alpha`, `speed_at_kick_mps`; derived); the
@@ -965,7 +982,14 @@ run A's silo_cold_200m_s1_st (181.0 Pa rad, 2.42 times the pad's, derived); the 
 point's lifts off at 542.4 t (derived: 572,354.4 - 32,031.0 + 2,055.3 kg), near run A's
 outer_lo (543.5 t, 194.1 Pa rad, 2.60 times; not measured at the point). Every structural
 run's max-Q lies below the pad's; every uncharged offload run's lies above it (38,437.4 to
-38,438.5 Pa, `silo_cold_200m_s1.max_q_pa`).)
+38,438.5 Pa, `silo_cold_200m_s1.max_q_pa`). The sizing's DLF is 1.1273 at every point
+(`silo_cold_200m_s1_st.structure_dlf`). The full-load point runs record no electrical peak
+(constant_accel), so the peak electrical power column prints n/a and, in brackets, the
+recorded (unrounded) mechanical peak over the point's drive efficiency, derived; the
+efficiency is 0.5 at every point (`run.assist.drive_efficiency` in the point's
+resolved_config.yaml; in each point run's metrics.json, `drive_work_in_J` over
+`electrical_energy_J` equals it), under the assumption stated under sweep 1's table ("The
+exit-speed axis": the efficiency, assumed, is taken to hold at the power peak).)
 
 - **The structural offload rises with the stroke**: from no offload at 50 m (190.0 m/s of
   delta-v short of P_ref at x = 0; payload deficit not flown: no payload case at these
