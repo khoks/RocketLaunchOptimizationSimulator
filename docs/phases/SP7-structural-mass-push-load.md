@@ -860,6 +860,7 @@ use `--results-root <scratch>` (D-SP2-37).
 | S7d | A fast tier that holds under other projects' load (KI-090, KI-091; added after the demo's fast suite failed, deviation 57) | tests/, docs/physics.md's test-map rows | under 32 burners and a disk writer test_video.py and the sizing test 10 of 10, the fast suite in three chunks with and without the burner; a mutation for each changed test; full suite | [x] | cd14968 |
 | S8 | Public face: the demo record, a gallery entry for an SP7 run, the deck slides and PDF, the manual chapters, the landing page, CLAUDE.md layout, status and commands, the protocol's caveat line | docs/demos/SP7/, site/, docs/manual/, CLAUDE.md, docs/process/ | site build with no broken link; visual, honesty and compliance review | [x] | 3a07f07 |
 | C1 | Documents: this file, the board, TODO.md, SP3's file fact-checked, the handoff, memory | docs/, TODO.md, memory | compliance review | [x] | ead6e38 |
+| C1a | The sweeps' missing columns: both sweep tables' peak electrical power (derived) and sweep 2's DLF in the findings note, after C2's first run failed criterion 7 (added, deviation 60) | docs/findings/RQ1-structural-2d.md | every added cell recomputed from the record; physics, compliance and honesty review | [x] | 185e35a |
 | C2 | Independent exit gate on every criterion; full suite; cold read; closing commit; push; Pages | docs/ | each criterion passes or the user accepts a logged miss | [ ] | |
 
 **If room runs out** (put to the user when it happens; compute-only cases and the CLAUDE.md arms
@@ -1661,6 +1662,27 @@ option fairly with its cost)
   gate against its probes' logs, since no later pass ran. While the handoff holds one of C2's
   marks, SP7 is not closed.
   Next: C2.
+- Step C2, first run (2026-11-08 to 2026-11-09, at a0e351e; no file changed). Criteria 1
+  to 6 and 8 to 12 passed (12 as far as it can before the closing documents): the full
+  suite 2,271 of 2,271 (2,217 fast in three chunks, 54 slow in ten groups), ruff, no new
+  dependency, the frozen sets recomputed (largest extremality excess 223.198 kg), the
+  exact 1-D golden tier and the planar pins, the app's slow launch at 41,262.908 kg.
+  Criterion 7 failed on reporting only: the note's two sweep sections gave no peak
+  electrical power, and sweep 2's gave no DLF; every number it checked held (299 checks).
+  The closing documents and the cold read did not run. The user decided to add the two
+  columns from the record and run the gate again in full (D-SP7-57).
+- Step C1a closed (2026-11-09; commit 185e35a). The findings note's sweep tables gain a peak
+  electrical power column for the full-load point runs: n/a, since a constant_accel run
+  writes none, with the recorded mechanical peak over the point's drive efficiency (0.5,
+  from each resolved_config.yaml) in brackets, derived, and the assumption stated that the
+  efficiency the electricity is charged at holds at the power peak; sweep 2 gains its DLF,
+  1.1273 at every point, from the re-run's sweep_index.csv. A dated line in the note; no
+  number changed. Workflow: one implementer; physics, compliance and honesty reviewers in
+  three passes (8, 3 and 1 findings; no major), three fix rounds; the independent gate:
+  every added cell recomputed from the record, a number-token diff with no token lost or
+  changed, the site built with 1,426 links and none broken, every table rendering evenly,
+  fast suite 2,217 in three chunks, ruff, the exact 1-D golden tier, the planar pins, the
+  golden-dump field lists, replay.html's sha256. KI-103 opened. Next: C2's second run.
 
 ## 12. Deviations from the plan
 
@@ -2269,6 +2291,12 @@ Checkpoint 1 and step S6a (2026-10-16):
     lines (that file's section 7, Tolerances;
     reviews' replicas, not runs). For the user's review at the close: handoff section 6
     puts the five to the user beside SP3's questions.
+60. **Step C1a added beyond the plan.** The exit gate's first run failed criterion 7 on
+    two missing columns in the note's sweep sections. Under protocol section 6 the open
+    criterion went to the user, who chose to add the columns from the record and run the
+    gate again in full (D-SP7-57), rather than accept a logged miss. The criterion was
+    not reworded. The electrical peak is derived, not recorded, and its assumption is
+    stated in the note.
 
 ## 13. Prompt to start this phase
 

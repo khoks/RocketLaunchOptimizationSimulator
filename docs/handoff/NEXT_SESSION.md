@@ -82,6 +82,7 @@ session-made and logged as reported in S3's entry of the phase file.
 | S7d | A fast tier that holds under other projects' load (added, deviation 57) | `cd14968` |
 | S8 | The public face: demo record, gallery entry, deck and PDF, manual, landing page | `3a07f07` |
 | C1 | The documents of the close: SP3's file fact-checked, the trackers, this handoff, memory | `ead6e38` |
+| C1a | The sweeps' missing columns, after the exit gate's first run failed criterion 7 on reporting (D-SP7-57, deviation 60) | `185e35a` |
 | C2 | Independent exit gate, full suite, cold read, closing commit, push, Pages | the bookkeeping commit |
 
 **Exit criteria** (SP7 phase file, section 8; 12 criteria, tolerances fixed by the approved
@@ -318,7 +319,8 @@ and a re-run.
 
 - the bookkeeping commit `Close SP7: trackers, handoff, next phase file` (step C2's; it holds
   this file);
-- C1's tracker commit; ead6e38 C1 (the documents of the close);
+- C1a's tracker commit; 185e35a C1a (the sweeps' missing columns, exit criterion 7);
+- a0e351e C1 trackers; ead6e38 C1 (the documents of the close);
 - d03367b S8 trackers; 3a07f07 S8 (the public face);
 - cf6d1db S7d trackers; cd14968 S7d (the fast tier under load);
 - 6940273 the demo runs' four summaries (from 6cf0fd2);
